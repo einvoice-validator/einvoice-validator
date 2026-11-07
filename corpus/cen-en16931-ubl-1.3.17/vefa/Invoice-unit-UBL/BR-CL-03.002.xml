@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+			
+			<cac:AllowanceCharge>
+				<cbc:Amount currencyID="NKK">12</cbc:Amount>
+			</cac:AllowanceCharge>
+			<cac:TaxTotal>
+				<cbc:TaxAmount currencyID="EXR">365.28</cbc:TaxAmount>
+				<cac:TaxSubtotal>
+					<cbc:TaxableAmount currencyID="UZD">1460.5</cbc:TaxableAmount>
+					<cbc:TaxAmount currencyID="MMM">365.13</cbc:TaxAmount>
+				</cac:TaxSubtotal>
+			</cac:TaxTotal>
+			<cac:LegalMonetaryTotal>
+				<cbc:LineExtensionAmount currencyID="NNN">1436.5</cbc:LineExtensionAmount>
+				<cbc:TaxExclusiveAmount currencyID="OOO">1436.5</cbc:TaxExclusiveAmount>
+				<cbc:TaxInclusiveAmount currencyID="OXX">1802.00</cbc:TaxInclusiveAmount>
+				<cbc:AllowanceTotalAmount currencyID="OAB">100</cbc:AllowanceTotalAmount>
+				<cbc:ChargeTotalAmount currencyID="BBB">100</cbc:ChargeTotalAmount>
+				<cbc:PrepaidAmount currencyID="AAA">1000</cbc:PrepaidAmount>
+				<cbc:PayableRoundingAmount currencyID="CCC">0.22</cbc:PayableRoundingAmount>
+				<cbc:PayableAmount currencyID="DDD">802.00</cbc:PayableAmount>
+			</cac:LegalMonetaryTotal>
+			<cac:InvoiceLine>
+				<cbc:LineExtensionAmount currencyID="EEE">1273</cbc:LineExtensionAmount>
+				
+				<cac:AllowanceCharge>
+					<cbc:Amount currencyID="FFF">12</cbc:Amount>
+				</cac:AllowanceCharge>
+				
+				
+				<cac:Price>
+					<cbc:PriceAmount currencyID="GGG">1273</cbc:PriceAmount>
+					<cac:AllowanceCharge>
+						<cbc:Amount currencyID="HHH">225</cbc:Amount>
+						<cbc:BaseAmount currencyID="III">1500</cbc:BaseAmount>
+					</cac:AllowanceCharge>
+				</cac:Price>
+			</cac:InvoiceLine>
+		</Invoice>

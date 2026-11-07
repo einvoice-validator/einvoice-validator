@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CreditNote
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2">
+			<cac:AccountingSupplierParty>
+				<cac:Party>
+					<!--
+				<cac:PartyLegalEntity>
+					<cbc:RegistrationName>The Sellercompany ASA</cbc:RegistrationName>
+				</cac:PartyLegalEntity>
+				-->
+				</cac:Party>
+			</cac:AccountingSupplierParty>
+		</CreditNote>

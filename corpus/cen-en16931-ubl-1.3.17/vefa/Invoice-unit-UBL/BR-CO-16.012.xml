@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+			<cac:LegalMonetaryTotal>
+				<cbc:TaxInclusiveAmount>1200.00</cbc:TaxInclusiveAmount>
+				<!-- <cbc:PrepaidAmount>100</cbc:PrepaidAmount>-->
+				<cbc:PayableAmount>1100.00</cbc:PayableAmount>
+			</cac:LegalMonetaryTotal>
+		</Invoice>

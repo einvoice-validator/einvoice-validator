@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+			<cac:TaxRepresentativeParty>
+				<cac:PartyTaxScheme>
+					<cbc:CompanyID>1234567</cbc:CompanyID>
+					<cac:TaxScheme>
+						<cbc:ID>VAT</cbc:ID>
+					</cac:TaxScheme>
+				</cac:PartyTaxScheme>
+			</cac:TaxRepresentativeParty>
+			
+			<cac:AccountingCustomerParty>
+				<cac:Party>
+					<cac:PartyLegalEntity>
+						<cbc:CompanyID>987654321</cbc:CompanyID>
+					</cac:PartyLegalEntity>
+				</cac:Party>
+			</cac:AccountingCustomerParty>
+			
+			<cac:AllowanceCharge>
+				<cbc:ChargeIndicator>false</cbc:ChargeIndicator>
+				<cac:TaxCategory>
+					<cbc:ID>AE</cbc:ID>
+					<cac:TaxScheme>
+						<cbc:ID>VAT</cbc:ID>
+					</cac:TaxScheme>
+				</cac:TaxCategory>
+			</cac:AllowanceCharge>
+		</Invoice>

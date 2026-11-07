@@ -2,3 +2,5 @@
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
+# Proper nouns of the domain, written as such in docs (".." keeps clippy's defaults).
+doc-valid-idents = ["XPath", ".."]

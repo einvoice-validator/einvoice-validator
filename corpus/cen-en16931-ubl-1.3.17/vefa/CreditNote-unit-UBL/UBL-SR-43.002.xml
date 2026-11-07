@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ns:CreditNote xmlns="http://difi.no/xsd/vefa/validator/1.0"
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns:ns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2">
+
+		  <cac:AdditionalDocumentReference>
+		    <cbc:ID>ID</cbc:ID>
+		    <cbc:DocumentTypeCode>50</cbc:DocumentTypeCode>
+		  </cac:AdditionalDocumentReference>
+
+		</ns:CreditNote>

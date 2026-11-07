@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+			<cac:TaxTotal>
+				<cac:TaxSubtotal>
+					<cbc:TaxAmount>130</cbc:TaxAmount>
+					<cbc:TaxableAmount>1000</cbc:TaxableAmount>
+					<cac:TaxCategory>
+						<cbc:ID>M</cbc:ID>
+						<cbc:Percent>13</cbc:Percent>
+						<cac:TaxScheme>
+							<cbc:ID>VAT</cbc:ID>
+						</cac:TaxScheme>
+					</cac:TaxCategory>
+				</cac:TaxSubtotal>
+				<cac:TaxSubtotal>
+					<cbc:TaxAmount>47</cbc:TaxAmount>
+					<cbc:TaxableAmount>979.15</cbc:TaxableAmount>
+					<cac:TaxCategory>
+						<cbc:ID>M</cbc:ID>
+						<cbc:Percent>4.8</cbc:Percent>
+						<cac:TaxScheme>
+							<cbc:ID>VAT</cbc:ID>
+						</cac:TaxScheme>
+					</cac:TaxCategory>
+				</cac:TaxSubtotal>
+			</cac:TaxTotal>
+
+		</Invoice>

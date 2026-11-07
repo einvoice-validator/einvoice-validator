@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+
+			<cac:PaymentMeans>
+				<cbc:PaymentMeansCode name="Credit transfer">30</cbc:PaymentMeansCode>
+				<cbc:PaymentID>Payment1</cbc:PaymentID>
+				<cac:PayeeFinancialAccount>
+					<cbc:ID>IBAN32423940</cbc:ID>
+					<cbc:Name>AccountName</cbc:Name>
+					<cac:FinancialInstitutionBranch>
+						<cbc:ID>BIC324098</cbc:ID>
+					</cac:FinancialInstitutionBranch>
+				</cac:PayeeFinancialAccount>
+			</cac:PaymentMeans>
+
+		</Invoice>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CreditNote
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2">
+			<cbc:DocumentCurrencyCode>NOK</cbc:DocumentCurrencyCode>
+			<cac:TaxTotal>
+				<cbc:TaxAmount currencyID="NOK">100</cbc:TaxAmount>
+			</cac:TaxTotal>
+			
+			<cac:LegalMonetaryTotal>
+				<cbc:TaxExclusiveAmount currencyID="NOK">-100.00</cbc:TaxExclusiveAmount>
+				<cbc:TaxInclusiveAmount currencyID="NOK">0.01</cbc:TaxInclusiveAmount>
+			</cac:LegalMonetaryTotal>
+		</CreditNote>

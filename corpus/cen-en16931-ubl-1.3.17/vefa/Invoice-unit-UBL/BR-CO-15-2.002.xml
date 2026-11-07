@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice
+            xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+            xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+            xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+            <cbc:DocumentCurrencyCode>DKK</cbc:DocumentCurrencyCode>
+            <cbc:TaxCurrencyCode>NOK</cbc:TaxCurrencyCode>
+            
+            <cac:TaxTotal>
+                <cbc:TaxAmount currencyID="DKK">700.00</cbc:TaxAmount>
+            </cac:TaxTotal>
+            <cac:TaxTotal>
+                <cbc:TaxAmount currencyID="NOK">715</cbc:TaxAmount>
+            </cac:TaxTotal>
+            <cac:LegalMonetaryTotal>
+                <cbc:TaxExclusiveAmount currencyID="DKK">5000.00</cbc:TaxExclusiveAmount>
+                <cbc:TaxInclusiveAmount currencyID="DKK">5700.00</cbc:TaxInclusiveAmount>
+                <cbc:PayableAmount currencyID="DKK">5700.00</cbc:PayableAmount>
+            </cac:LegalMonetaryTotal>
+            
+        </Invoice>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CreditNote
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2">
+
+			<cac:AccountingSupplierParty>
+				<cac:Party>
+					<cac:PostalAddress>
+						<cbc:StreetName>Main street 34</cbc:StreetName>
+						<cbc:AdditionalStreetName>Suite 123</cbc:AdditionalStreetName>
+						<cbc:CityName>Big city</cbc:CityName>
+						<cbc:PostalZone>54321</cbc:PostalZone>
+						<cbc:CountrySubentity>RegionA</cbc:CountrySubentity>
+						<cac:Country>
+							<cbc:IdentificationCode listID="ISO3166-1:Alpha2">NO</cbc:IdentificationCode>
+						</cac:Country>
+					</cac:PostalAddress>
+				</cac:Party>
+			</cac:AccountingSupplierParty>
+		</CreditNote>

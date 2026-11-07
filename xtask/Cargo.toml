@@ -1,0 +1,15 @@
+[package]
+name = "xtask"
+description = "Repository tooling: vendored artefact manifests, test corpus extraction and the Saxon-HE oracle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+roxmltree = "0.21.2"
+sha2 = "0.11.1"
+
+[lints]
+workspace = true

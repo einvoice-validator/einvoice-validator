@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+			
+			<cac:AccountingSupplierParty>
+				<cac:Party>
+					<cac:PartyLegalEntity>
+						<cbc:CompanyID schemeID="0181"/>
+					</cac:PartyLegalEntity>
+				</cac:Party>
+			</cac:AccountingSupplierParty>
+			
+			<cac:AccountingCustomerParty>
+				<cac:Party>
+					<cac:PartyLegalEntity>
+						<cbc:CompanyID schemeID="9901"/>
+					</cac:PartyLegalEntity>
+				</cac:Party>
+			</cac:AccountingCustomerParty>
+			
+			<cac:PayeeParty>
+				<cac:Party>
+					<cac:PartyLegalEntity>
+						<cbc:CompanyID schemeID="0283"/>
+					</cac:PartyLegalEntity>
+				</cac:Party>
+			</cac:PayeeParty>
+			
+
+		</Invoice>

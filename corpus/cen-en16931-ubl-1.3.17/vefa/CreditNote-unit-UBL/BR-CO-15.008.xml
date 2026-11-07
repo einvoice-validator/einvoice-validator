@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CreditNote
+        xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+        xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+        xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2">
+      <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+      <cac:TaxTotal>
+          <cbc:TaxAmount currencyID="EUR">700.00</cbc:TaxAmount>
+      </cac:TaxTotal>
+      <cac:TaxTotal>
+          <cbc:TaxAmount currencyID="EUR">715</cbc:TaxAmount>
+      </cac:TaxTotal>
+      <cac:LegalMonetaryTotal>
+          <cbc:TaxExclusiveAmount currencyID="EUR">5000.00</cbc:TaxExclusiveAmount>
+          <cbc:TaxInclusiveAmount currencyID="EUR">5700.00</cbc:TaxInclusiveAmount>
+          <cbc:PayableAmount currencyID="EUR">5700.00</cbc:PayableAmount>
+      </cac:LegalMonetaryTotal>
+    </CreditNote>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CreditNote
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2">
+			<cac:PaymentMeans>
+			<cbc:PaymentMeansCode>30</cbc:PaymentMeansCode>
+			<cbc:PaymentID>Payment1</cbc:PaymentID>
+			<cac:PayeeFinancialAccount>
+				<cbc:ID>IBAN32423940</cbc:ID>
+				<cbc:Name>AccountName</cbc:Name>
+				<cac:FinancialInstitutionBranch>
+					<cbc:ID>BIC324098</cbc:ID>
+				</cac:FinancialInstitutionBranch>
+			</cac:PayeeFinancialAccount>
+			</cac:PaymentMeans>
+			
+			<cac:PaymentMeans>
+				<cbc:PaymentMeansCode>30</cbc:PaymentMeansCode>
+				<cbc:PaymentID>Payment2</cbc:PaymentID>
+				<cac:PayeeFinancialAccount>
+					<cbc:ID>BBAN1234645</cbc:ID>
+					<cbc:Name>AccountName2</cbc:Name>
+					<cac:FinancialInstitutionBranch>
+						<cbc:ID>BIC998877</cbc:ID>
+					</cac:FinancialInstitutionBranch>
+				</cac:PayeeFinancialAccount>
+			</cac:PaymentMeans>
+			
+		</CreditNote>

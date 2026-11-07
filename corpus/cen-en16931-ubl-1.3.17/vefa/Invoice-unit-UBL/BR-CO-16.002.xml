@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+			<cac:LegalMonetaryTotal>
+				<cbc:LineExtensionAmount currencyID="EUR">6900.0</cbc:LineExtensionAmount>
+				<cbc:TaxExclusiveAmount currencyID="EUR">7000.00</cbc:TaxExclusiveAmount>
+				<cbc:TaxInclusiveAmount currencyID="EUR">8250.00</cbc:TaxInclusiveAmount>
+				<cbc:AllowanceTotalAmount currencyID="EUR">100.00</cbc:AllowanceTotalAmount>
+				<cbc:ChargeTotalAmount currencyID="EUR">200</cbc:ChargeTotalAmount>
+				<cbc:PayableAmount currencyID="EUR">8250.0</cbc:PayableAmount>
+			</cac:LegalMonetaryTotal>
+			
+		</Invoice>

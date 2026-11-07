@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+			
+			<cac:AllowanceCharge>
+				<cbc:ChargeIndicator>false</cbc:ChargeIndicator>
+				<cbc:Amount currencyID="NOK">100</cbc:Amount>
+				<cac:TaxCategory>
+					<cbc:ID>AE</cbc:ID>
+					<cac:TaxScheme>
+						<cbc:ID>VAT</cbc:ID>
+					</cac:TaxScheme>
+				</cac:TaxCategory>
+			</cac:AllowanceCharge>
+			<cac:TaxTotal>
+				<cac:TaxSubtotal>
+					<cbc:TaxableAmount currencyID="EUR">0</cbc:TaxableAmount>
+					<cac:TaxCategory>
+						<cbc:ID>AE</cbc:ID>
+						<cac:TaxScheme>
+							<cbc:ID>VAT</cbc:ID>
+						</cac:TaxScheme>
+					</cac:TaxCategory>
+				</cac:TaxSubtotal>
+			</cac:TaxTotal>
+			<cac:InvoiceLine>
+				<cbc:LineExtensionAmount currencyID="EUR">100</cbc:LineExtensionAmount>
+				<cac:Item>
+					<cac:ClassifiedTaxCategory>
+						<cbc:ID>AE</cbc:ID>
+						<cac:TaxScheme>
+							<cbc:ID>VAT</cbc:ID>
+						</cac:TaxScheme>
+					</cac:ClassifiedTaxCategory>
+				</cac:Item>
+			</cac:InvoiceLine>
+		</Invoice>

@@ -1,0 +1,3 @@
+[alias]
+# `cargo xtask <command>`: repository tooling, see xtask/src/main.rs.
+xtask = "run --locked --package xtask --"

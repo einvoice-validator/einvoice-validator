@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+			
+			<cac:AllowanceCharge>
+				<cbc:Amount>12.000</cbc:Amount>
+			</cac:AllowanceCharge>
+			<cac:TaxTotal>
+				<cbc:TaxAmount>365.281</cbc:TaxAmount>
+				<cac:TaxSubtotal>
+					<cbc:TaxableAmount>1460.511</cbc:TaxableAmount>
+					<cbc:TaxAmount>365.1323</cbc:TaxAmount>
+				</cac:TaxSubtotal>
+			</cac:TaxTotal>
+			<cac:LegalMonetaryTotal>
+				<cbc:LineExtensionAmount>1436.5001</cbc:LineExtensionAmount>
+				<cbc:TaxExclusiveAmount>1436.500</cbc:TaxExclusiveAmount>
+				<cbc:TaxInclusiveAmount>1802.001</cbc:TaxInclusiveAmount>
+				<cbc:AllowanceTotalAmount>100.002</cbc:AllowanceTotalAmount>
+				<cbc:ChargeTotalAmount>100.0021</cbc:ChargeTotalAmount>
+				<cbc:PrepaidAmount>1000.001</cbc:PrepaidAmount>
+				<cbc:PayableRoundingAmount>0.220</cbc:PayableRoundingAmount>
+				<cbc:PayableAmount>802.010</cbc:PayableAmount>
+			</cac:LegalMonetaryTotal>
+			<cac:InvoiceLine>
+				<cbc:LineExtensionAmount>1273.003</cbc:LineExtensionAmount>
+				
+				<cac:AllowanceCharge>
+					<cbc:Amount>12.003</cbc:Amount>
+				</cac:AllowanceCharge>
+				
+				<cac:Price>
+					<cbc:PriceAmount>123.9998888</cbc:PriceAmount>
+					<cac:AllowanceCharge>
+						<cbc:Amount>225.080</cbc:Amount>
+						<cbc:BaseAmount>1500.009</cbc:BaseAmount>
+					</cac:AllowanceCharge>
+				</cac:Price>
+			</cac:InvoiceLine>
+		</Invoice>

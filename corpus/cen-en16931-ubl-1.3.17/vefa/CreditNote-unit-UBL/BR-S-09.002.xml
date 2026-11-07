@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CreditNote
+			xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+			xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+			xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2">
+			<cac:TaxTotal>
+				<cac:TaxSubtotal>
+					<cbc:TaxAmount>592.45</cbc:TaxAmount>
+					<cbc:TaxableAmount>12342.61</cbc:TaxableAmount>
+					<cac:TaxCategory>
+						<cbc:ID>S</cbc:ID>
+						<cbc:Percent>4.8</cbc:Percent>
+						<cac:TaxScheme>
+							<cbc:ID>VAT</cbc:ID>
+						</cac:TaxScheme>
+					</cac:TaxCategory>
+				</cac:TaxSubtotal>
+			</cac:TaxTotal>
+			
+		</CreditNote>
