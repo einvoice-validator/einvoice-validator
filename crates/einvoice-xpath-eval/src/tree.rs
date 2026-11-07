@@ -91,10 +91,17 @@ impl NodeAxis {
     }
 }
 
-/// One node of the arena.
+/// One node of the arena: 32 bytes.
+///
+/// Every field is read directly by the axis walks and node tests, which run in chains of
+/// dependent loads: packing the kind with the name, or sharing fields between the subtree
+/// range of an element and the text range of the other nodes, measured 2 to 3% slower
+/// over a whole validation.
 #[derive(Debug, Clone, Copy)]
 struct Record {
     kind: NodeKind,
+    /// Index in [`Document::names`], or [`NONE`].
+    name: u32,
     parent: u32,
     prev_sibling: u32,
     /// The index just after the node's attributes: its first child if it has one. For a
@@ -102,12 +109,34 @@ struct Record {
     first_child: u32,
     /// The index just after the node's subtree (attributes and descendants).
     end: u32,
-    /// Index in [`Document::names`], or [`NONE`].
-    name: u32,
-    /// Byte range in [`Document::text`] of the text of a text node, comment, processing
-    /// instruction or attribute.
+    /// The range of the text of a text node, comment, processing instruction or
+    /// attribute in the document's text space (see [`Document::own_text`]): start and
+    /// length.
     text_start: u32,
     text_len: u32,
+}
+
+impl Record {
+    /// A node at `index` without children (yet), with its text range.
+    const fn new(
+        kind: NodeKind,
+        name: u32,
+        parent: u32,
+        prev_sibling: u32,
+        index: u32,
+        (text_start, text_len): (u32, u32),
+    ) -> Self {
+        Self {
+            kind,
+            name,
+            parent,
+            prev_sibling,
+            first_child: index + 1,
+            end: index + 1,
+            text_start,
+            text_len,
+        }
+    }
 }
 
 /// A problem building or parsing a tree.
@@ -139,6 +168,11 @@ impl fmt::Display for DocumentError {
 impl std::error::Error for DocumentError {}
 
 /// An immutable XML tree.
+///
+/// The texts of its nodes live in one text space: the source text the document was
+/// parsed from, when the parser was given it as an owned `String` (offsets below its
+/// length), followed by the texts that are not written verbatim in it (offsets from its
+/// length on).
 pub struct Document {
     serial: u64,
     uri: Option<String>,
@@ -146,6 +180,9 @@ pub struct Document {
     has_xml_base: bool,
     records: Vec<Record>,
     names: Vec<QName>,
+    /// The source text, or empty when the texts were copied out of it.
+    source: String,
+    /// The texts that are not in `source`.
     text: String,
 }
 
@@ -165,6 +202,11 @@ impl Document {
     /// tree without notice). `base_uri`, if given, is the base URI of every node (the
     /// location the text was read from, Saxon's system id).
     ///
+    /// The text can be borrowed (`&str`) or given (`String`). Borrowed, the texts of the
+    /// nodes are copied into the tree. Given, the tree keeps it and refers to it for every
+    /// text written verbatim in it (text without entity or character references, line
+    /// ends or, in attributes, whitespace to normalize): only the others are copied.
+    ///
     /// The document has no document URI: in Saxon-HE 12.10, `fn:document-uri` only knows
     /// the documents of its document pool, those that `fn:document` or `fn:doc` loaded,
     /// and is empty for a document given to the transformation, such as the one being
@@ -175,8 +217,11 @@ impl Document {
     ///
     /// XML that is not well-formed or not namespace-well-formed, or that has a document
     /// type declaration.
-    pub fn parse(text: &str, base_uri: Option<&str>) -> Result<Rc<Self>, DocumentError> {
-        Self::parse_with_uris(text, None, base_uri)
+    pub fn parse<'t>(
+        text: impl Into<Cow<'t, str>>,
+        base_uri: Option<&str>,
+    ) -> Result<Rc<Self>, DocumentError> {
+        Self::parse_with_uris(text.into(), None, base_uri)
     }
 
     /// Parses XML text as [`Document::parse`] does, for a document that `fn:document`
@@ -186,61 +231,29 @@ impl Document {
     /// # Errors
     ///
     /// Those of [`Document::parse`].
-    pub fn parse_loaded(text: &str, uri: &str) -> Result<Rc<Self>, DocumentError> {
-        Self::parse_with_uris(text, Some(uri), Some(uri))
+    pub fn parse_loaded<'t>(
+        text: impl Into<Cow<'t, str>>,
+        uri: &str,
+    ) -> Result<Rc<Self>, DocumentError> {
+        Self::parse_with_uris(text.into(), Some(uri), Some(uri))
     }
 
     fn parse_with_uris(
-        text: &str,
+        text: Cow<'_, str>,
         document_uri: Option<&str>,
         base_uri: Option<&str>,
     ) -> Result<Rc<Self>, DocumentError> {
-        let options = roxmltree::ParsingOptions {
-            allow_dtd: false,
-            nodes_limit: u32::MAX,
-            ..roxmltree::ParsingOptions::default()
+        let keep_source = matches!(text, Cow::Owned(_));
+        let builder = build_parsed(&text, keep_source)?;
+        let source = match text {
+            Cow::Owned(source) => source,
+            Cow::Borrowed(_) => String::new(),
         };
-        let parsed = roxmltree::Document::parse_with_options(text, options)
-            .map_err(|e| DocumentError::new(format!("XML: {e}")))?;
-        let mut builder = TreeBuilder::new();
-        // Elements still open, innermost last: closed when the walk in document order
-        // reaches a node that is not inside them.
-        let mut open: Vec<roxmltree::NodeId> = Vec::new();
-        for node in parsed.root().descendants().skip(1) {
-            let parent = node.parent().map(|p| p.id());
-            while open.last().is_some_and(|&id| Some(id) != parent) {
-                open.pop();
-                builder.end_element()?;
-            }
-            match node.node_type() {
-                roxmltree::NodeType::Root => {}
-                roxmltree::NodeType::Element => {
-                    builder.start_element(element_name(text, node))?;
-                    for attribute in node.attributes() {
-                        builder.attribute(attribute_name(text, &attribute), attribute.value())?;
-                    }
-                    open.push(node.id());
-                }
-                roxmltree::NodeType::Text => {
-                    // Text between the top-level nodes is not part of the data model.
-                    if node.parent().is_some_and(|p| !p.is_root()) {
-                        builder.text(node.text().unwrap_or_default())?;
-                    }
-                }
-                roxmltree::NodeType::Comment => {
-                    builder.comment(node.text().unwrap_or_default())?;
-                }
-                roxmltree::NodeType::PI => {
-                    if let Some(pi) = node.pi() {
-                        builder.processing_instruction(pi.target, pi.value.unwrap_or(""))?;
-                    }
-                }
-            }
-        }
-        for _ in open {
-            builder.end_element()?;
-        }
-        builder.finish(document_uri.map(str::to_owned), base_uri.map(str::to_owned))
+        builder.finish_with_source(
+            source,
+            document_uri.map(str::to_owned),
+            base_uri.map(str::to_owned),
+        )
     }
 
     /// The document node.
@@ -297,10 +310,16 @@ impl Document {
         (parent != NONE).then_some(parent)
     }
 
+    /// The text of a text node, comment, processing instruction or attribute: a range of
+    /// the text space, in `source` or, from the length of `source` on, in `text`.
     fn own_text(&self, index: u32) -> &str {
         let r = self.record(index);
         let start = r.text_start as usize;
-        &self.text[start..start + r.text_len as usize]
+        let end = start + r.text_len as usize;
+        match start.checked_sub(self.source.len()) {
+            None => &self.source[start..end],
+            Some(start) => &self.text[start..end - self.source.len()],
+        }
     }
 
     pub(crate) fn string_value(&self, index: u32) -> Cow<'_, str> {
@@ -333,7 +352,8 @@ impl Document {
     /// The start of an axis walk from the node at `index`.
     pub(crate) fn cursor(&self, index: u32, axis: NodeAxis) -> Cursor {
         let r = self.record(index);
-        let is_attribute = r.kind == NodeKind::Attribute;
+        let kind = r.kind;
+        let is_attribute = kind == NodeKind::Attribute;
         match axis {
             NodeAxis::SelfAxis => Cursor::One(index),
             NodeAxis::Parent => match r.parent {
@@ -345,7 +365,7 @@ impl Document {
                 end: r.end,
             },
             NodeAxis::Attribute => {
-                if r.kind == NodeKind::Element {
+                if kind == NodeKind::Element {
                     Cursor::Range {
                         next: index + 1,
                         end: r.first_child,
@@ -360,7 +380,7 @@ impl Document {
             },
             NodeAxis::DescendantOrSelf => Cursor::Descendants {
                 next: index,
-                end: if is_attribute { index + 1 } else { r.end },
+                end: r.end,
             },
             NodeAxis::FollowingSibling => match r.parent {
                 NONE => Cursor::Done,
@@ -642,6 +662,9 @@ pub struct TreeBuilder {
     records: Vec<Record>,
     names: Vec<QName>,
     name_ids: HashMap<QName, u32>,
+    /// The length of the source text the text space starts with (see [`Document`]): the
+    /// texts added are stored from that offset on.
+    source_len: usize,
     text: String,
     /// The open nodes, the document node first.
     open: Vec<u32>,
@@ -663,23 +686,24 @@ fn to_u32(value: usize) -> Result<u32, DocumentError> {
         .ok_or_else(|| DocumentError::new("document too large"))
 }
 
+/// Where the text of a node comes from.
+#[derive(Debug, Clone, Copy)]
+enum NodeText<'s> {
+    /// A range of the source text: offset and length.
+    Source(u32, u32),
+    /// Text to store.
+    Copy(&'s str),
+}
+
 impl TreeBuilder {
     /// A builder holding only the document node.
     #[must_use]
     pub fn new() -> Self {
         Self {
-            records: vec![Record {
-                kind: NodeKind::Document,
-                parent: NONE,
-                prev_sibling: NONE,
-                first_child: 1,
-                end: 1,
-                name: NONE,
-                text_start: 0,
-                text_len: 0,
-            }],
+            records: vec![Record::new(NodeKind::Document, NONE, NONE, NONE, 0, (0, 0))],
             names: Vec::new(),
             name_ids: HashMap::new(),
+            source_len: 0,
             text: String::new(),
             open: vec![0],
             last_child: vec![NONE],
@@ -687,48 +711,74 @@ impl TreeBuilder {
         }
     }
 
+    /// A builder whose text space starts with a source text of `source_len` bytes, with
+    /// room for exactly `nodes` nodes (the document node included) and `text` bytes of
+    /// copied text.
+    fn with_capacity(nodes: usize, text: usize, source_len: usize) -> Self {
+        let mut builder = Self::new();
+        builder.records.reserve_exact(nodes.saturating_sub(1));
+        builder.text.reserve_exact(text);
+        builder.source_len = source_len;
+        builder
+    }
+
     fn intern(&mut self, name: QName) -> Result<u32, DocumentError> {
         if let Some(&id) = self.name_ids.get(&name) {
             return Ok(id);
         }
-        let id = to_u32(self.names.len())?;
-        self.names.push(name.clone());
+        let id = self.push_name(name.clone())?;
         self.name_ids.insert(name, id);
         Ok(id)
     }
 
-    fn store_text(&mut self, value: &str) -> Result<(u32, u32), DocumentError> {
-        let start = to_u32(self.text.len())?;
-        self.text.push_str(value);
-        let len = to_u32(value.len())?;
-        to_u32(self.text.len())?;
-        Ok((start, len))
+    /// Adds a name to the table, without interning it.
+    fn push_name(&mut self, name: QName) -> Result<u32, DocumentError> {
+        let id = to_u32(self.names.len())?;
+        self.names.push(name);
+        Ok(id)
+    }
+
+    /// The range of the text space a text occupies: its offset and length.
+    fn store_text(&mut self, value: NodeText<'_>) -> Result<(u32, u32), DocumentError> {
+        match value {
+            NodeText::Source(start, len) => Ok((start, len)),
+            NodeText::Copy(value) => {
+                let start = to_u32(self.source_len + self.text.len())?;
+                let len = to_u32(value.len())?;
+                to_u32(self.source_len + self.text.len() + value.len())?;
+                self.text.push_str(value);
+                Ok((start, len))
+            }
+        }
     }
 
     fn top(&self) -> u32 {
         self.open.last().copied().unwrap_or(0)
     }
 
-    /// Appends a child of the innermost open node and returns its index.
-    fn append(&mut self, kind: NodeKind, name: u32, text: &str) -> Result<u32, DocumentError> {
+    /// Appends a child of the innermost open node and returns its index: an element (its
+    /// text is ignored), or a node with a text.
+    fn append(
+        &mut self,
+        kind: NodeKind,
+        name: u32,
+        text: NodeText<'_>,
+    ) -> Result<u32, DocumentError> {
         let index = to_u32(self.records.len())?;
-        let (text_start, text_len) = self.store_text(text)?;
+        to_u32(self.records.len() + 1)?;
+        let text = if kind == NodeKind::Element {
+            (0, 0)
+        } else {
+            self.store_text(text)?
+        };
         let parent = self.top();
         let last = self.last_child.last_mut().map_or(NONE, |l| {
             let previous = *l;
             *l = index;
             previous
         });
-        self.records.push(Record {
-            kind,
-            parent,
-            prev_sibling: last,
-            first_child: index + 1,
-            end: index + 1,
-            name,
-            text_start,
-            text_len,
-        });
+        self.records
+            .push(Record::new(kind, name, parent, last, index, text));
         Ok(index)
     }
 
@@ -739,7 +789,11 @@ impl TreeBuilder {
     /// A document too large for the arena.
     pub fn start_element(&mut self, name: QName) -> Result<(), DocumentError> {
         let name = self.intern(name)?;
-        let index = self.append(NodeKind::Element, name, "")?;
+        self.open_element(name)
+    }
+
+    fn open_element(&mut self, name: u32) -> Result<(), DocumentError> {
+        let index = self.append(NodeKind::Element, name, NodeText::Copy(""))?;
         self.open.push(index);
         self.last_child.push(NONE);
         Ok(())
@@ -758,40 +812,51 @@ impl TreeBuilder {
                 "attribute {name} outside an element start"
             )));
         }
-        if name.local == "base" && name.namespace.as_deref() == Some(XML_NAMESPACE) {
-            self.has_xml_base = true;
-        }
         let first = element as usize + 1;
         let existing = (first..self.records.len()).find(|&i| {
             let id = self.records[i].name;
             self.names[id as usize].same_expanded_name(&name)
         });
+        let xml_base = is_xml_base(name.namespace.as_deref(), &name.local);
         let id = self.intern(name)?;
-        let (text_start, text_len) = self.store_text(value)?;
         if let Some(i) = existing {
+            let (text_start, text_len) = self.store_text(NodeText::Copy(value))?;
             let record = &mut self.records[i];
             record.name = id;
             record.text_start = text_start;
             record.text_len = text_len;
+            self.has_xml_base |= xml_base;
             return Ok(());
         }
+        self.push_attribute(id, xml_base, NodeText::Copy(value))
+    }
+
+    /// Adds an attribute, known not to be on the element yet, to the element just opened.
+    fn push_attribute(
+        &mut self,
+        name: u32,
+        xml_base: bool,
+        value: NodeText<'_>,
+    ) -> Result<(), DocumentError> {
+        let element = self.top();
         let index = to_u32(self.records.len())?;
-        let previous = if index as usize == first {
+        to_u32(self.records.len() + 1)?;
+        let previous = if index == element + 1 {
             NONE
         } else {
             index - 1
         };
-        self.records.push(Record {
-            kind: NodeKind::Attribute,
-            parent: element,
-            prev_sibling: previous,
-            first_child: index + 1,
-            end: index + 1,
-            name: id,
-            text_start,
-            text_len,
-        });
+        let text = self.store_text(value)?;
+        self.records.push(Record::new(
+            NodeKind::Attribute,
+            name,
+            element,
+            previous,
+            index,
+            text,
+        ));
         self.records[element as usize].first_child = index + 1;
+        self.has_xml_base |= xml_base;
         Ok(())
     }
 
@@ -805,16 +870,24 @@ impl TreeBuilder {
             return Ok(());
         }
         let last = self.last_child.last().copied().unwrap_or(NONE);
+        // Text merges with the text node just before when that node's text is the end of
+        // the copied texts (always so for a built tree, whose texts are all copied).
         let mergeable = last != NONE
             && last as usize + 1 == self.records.len()
-            && self.records[last as usize].kind == NodeKind::Text;
+            && self.records[last as usize].kind == NodeKind::Text
+            && {
+                let r = &self.records[last as usize];
+                r.text_start as usize + r.text_len as usize == self.source_len + self.text.len()
+                    && r.text_start as usize >= self.source_len
+            };
         if mergeable {
-            self.store_text(value)?;
+            self.store_text(NodeText::Copy(value))?;
             let record = &mut self.records[last as usize];
             record.text_len = to_u32(record.text_len as usize + value.len())?;
             return Ok(());
         }
-        self.append(NodeKind::Text, NONE, value).map(drop)
+        self.append(NodeKind::Text, NONE, NodeText::Copy(value))
+            .map(drop)
     }
 
     /// Adds a comment.
@@ -823,7 +896,8 @@ impl TreeBuilder {
     ///
     /// A document too large for the arena.
     pub fn comment(&mut self, value: &str) -> Result<(), DocumentError> {
-        self.append(NodeKind::Comment, NONE, value).map(drop)
+        self.append(NodeKind::Comment, NONE, NodeText::Copy(value))
+            .map(drop)
     }
 
     /// Adds a processing instruction.
@@ -837,7 +911,7 @@ impl TreeBuilder {
         value: &str,
     ) -> Result<(), DocumentError> {
         let name = self.intern(QName::local(target))?;
-        self.append(NodeKind::ProcessingInstruction, name, value)
+        self.append(NodeKind::ProcessingInstruction, name, NodeText::Copy(value))
             .map(drop)
     }
 
@@ -864,14 +938,33 @@ impl TreeBuilder {
     ///
     /// An element is still open.
     pub fn finish(
+        self,
+        document_uri: Option<String>,
+        base_uri: Option<String>,
+    ) -> Result<Rc<Document>, DocumentError> {
+        self.finish_with_source(String::new(), document_uri, base_uri)
+    }
+
+    /// The finished document, whose text space starts with `source` (as long as the
+    /// builder was told).
+    fn finish_with_source(
         mut self,
+        source: String,
         document_uri: Option<String>,
         base_uri: Option<String>,
     ) -> Result<Rc<Document>, DocumentError> {
         if self.open.len() != 1 {
             return Err(DocumentError::new("unclosed element"));
         }
+        if source.len() != self.source_len {
+            return Err(DocumentError::new("source text of another length"));
+        }
         self.records[0].end = to_u32(self.records.len())?;
+        // No spare capacity is kept: a parsed tree is sized exactly, a built one is
+        // trimmed once.
+        self.records.shrink_to_fit();
+        self.names.shrink_to_fit();
+        self.text.shrink_to_fit();
         Ok(Rc::new(Document {
             serial: NEXT_SERIAL.fetch_add(1, AtomicOrdering::Relaxed),
             uri: document_uri,
@@ -879,17 +972,193 @@ impl TreeBuilder {
             has_xml_base: self.has_xml_base,
             records: self.records,
             names: self.names,
+            source,
             text: self.text,
         }))
     }
 }
 
-/// The prefix of a qualified name as written, if any.
-fn prefix_of(qname: &str) -> Option<String> {
-    qname.split_once(':').map(|(prefix, _)| prefix.to_owned())
+fn is_xml_base(namespace: Option<&str>, local: &str) -> bool {
+    local == "base" && namespace == Some(XML_NAMESPACE)
 }
 
-fn element_name(input: &str, node: roxmltree::Node<'_, '_>) -> QName {
+/// The offset of `part` in `input`, if `part` is a slice of it.
+fn offset_in(input: &str, part: &str) -> Option<usize> {
+    let start = part.as_ptr().addr().checked_sub(input.as_ptr().addr())?;
+    (start.checked_add(part.len())? <= input.len()).then_some(start)
+}
+
+/// A name as the parser sees it: prefix as written (empty for none), namespace URI and
+/// local part, all borrowed from the text or the parsed document.
+type NameKey<'a> = (&'a str, Option<&'a str>, &'a str);
+
+/// Builds the tree of a parsed document, in two passes over the parser's tree: the first
+/// counts the nodes and the bytes of text to copy, so that the arena is allocated once at
+/// its exact size; the second fills it. With `keep_source`, every text that is a slice of
+/// `input` is stored as a range of it instead of being copied (the document then keeps
+/// `input`).
+fn build_parsed(input: &str, keep_source: bool) -> Result<TreeBuilder, DocumentError> {
+    let options = roxmltree::ParsingOptions {
+        allow_dtd: false,
+        nodes_limit: u32::MAX,
+        ..roxmltree::ParsingOptions::default()
+    };
+    let parsed = roxmltree::Document::parse_with_options(input, options)
+        .map_err(|e| DocumentError::new(format!("XML: {e}")))?;
+    let (nodes, text_bytes) = sizes(&parsed, input, keep_source);
+    let mut builder =
+        TreeBuilder::with_capacity(nodes, text_bytes, if keep_source { input.len() } else { 0 });
+    let mut names: HashMap<NameKey<'_>, u32> = HashMap::new();
+    let node_text = |text| node_text(input, keep_source, text);
+    // Elements still open, innermost last: closed when the walk in document order
+    // reaches a node that is not inside them.
+    let mut open: Vec<roxmltree::NodeId> = Vec::new();
+    for node in parsed.root().descendants().skip(1) {
+        let parent = node.parent().map(|p| p.id());
+        while open.last().is_some_and(|&id| Some(id) != parent) {
+            open.pop();
+            builder.end_element()?;
+        }
+        match node.node_type() {
+            roxmltree::NodeType::Root => {}
+            roxmltree::NodeType::Element => {
+                let tag = node.tag_name();
+                let key = (
+                    element_prefix(input, node),
+                    tag.namespace().filter(|ns| !ns.is_empty()),
+                    tag.name(),
+                );
+                let id = name_id(&mut builder, &mut names, key)?;
+                builder.open_element(id)?;
+                // The parser refuses duplicate attributes: each one is new.
+                for attribute in node.attributes() {
+                    let namespace = attribute.namespace().filter(|ns| !ns.is_empty());
+                    let local = attribute.name();
+                    let prefix = input
+                        .get(attribute.range_qname())
+                        .and_then(|q| q.split_once(':'))
+                        .map_or("", |(prefix, _)| prefix);
+                    let id = name_id(&mut builder, &mut names, (prefix, namespace, local))?;
+                    builder.push_attribute(
+                        id,
+                        is_xml_base(namespace, local),
+                        node_text(attribute.value())?,
+                    )?;
+                }
+                open.push(node.id());
+            }
+            roxmltree::NodeType::Text => {
+                // The parser merges adjacent text, so the text nodes it gives are never
+                // adjacent.
+                if is_in_element(node) {
+                    let text = node.text().unwrap_or_default();
+                    if !text.is_empty() {
+                        builder.append(NodeKind::Text, NONE, node_text(text)?)?;
+                    }
+                }
+            }
+            roxmltree::NodeType::Comment => {
+                let text = node_text(node.text().unwrap_or_default())?;
+                builder.append(NodeKind::Comment, NONE, text)?;
+            }
+            roxmltree::NodeType::PI => {
+                if let Some(pi) = node.pi() {
+                    let id = name_id(&mut builder, &mut names, ("", None, pi.target))?;
+                    let text = node_text(pi.value.unwrap_or(""))?;
+                    builder.append(NodeKind::ProcessingInstruction, id, text)?;
+                }
+            }
+        }
+    }
+    for _ in open {
+        builder.end_element()?;
+    }
+    Ok(builder)
+}
+
+/// The number of nodes of the tree of a parsed document (the document node included) and
+/// the bytes of text to copy into it: all of them, or with `keep_source` those that are
+/// not slices of `input`.
+fn sizes(parsed: &roxmltree::Document<'_>, input: &str, keep_source: bool) -> (usize, usize) {
+    let copied = |text: &str| {
+        if keep_source && offset_in(input, text).is_some() {
+            0
+        } else {
+            text.len()
+        }
+    };
+    let (mut nodes, mut text_bytes) = (1usize, 0usize);
+    for node in parsed.root().descendants().skip(1) {
+        match node.node_type() {
+            roxmltree::NodeType::Root => {}
+            roxmltree::NodeType::Element => {
+                nodes += 1;
+                for attribute in node.attributes() {
+                    nodes += 1;
+                    text_bytes += copied(attribute.value());
+                }
+            }
+            roxmltree::NodeType::Text => {
+                if is_in_element(node) {
+                    nodes += 1;
+                    text_bytes += copied(node.text().unwrap_or_default());
+                }
+            }
+            roxmltree::NodeType::Comment => {
+                nodes += 1;
+                text_bytes += copied(node.text().unwrap_or_default());
+            }
+            roxmltree::NodeType::PI => {
+                nodes += 1;
+                text_bytes += node.pi().map_or(0, |pi| copied(pi.value.unwrap_or("")));
+            }
+        }
+    }
+    (nodes, text_bytes)
+}
+
+/// The identity of a name in the builder's table, added on first sight.
+fn name_id<'a>(
+    builder: &mut TreeBuilder,
+    names: &mut HashMap<NameKey<'a>, u32>,
+    key: NameKey<'a>,
+) -> Result<u32, DocumentError> {
+    if let Some(&id) = names.get(&key) {
+        return Ok(id);
+    }
+    let (prefix, namespace, local) = key;
+    let id = builder.push_name(QName {
+        prefix: (!prefix.is_empty()).then(|| prefix.to_owned()),
+        namespace: namespace.map(str::to_owned),
+        local: local.to_owned(),
+    })?;
+    names.insert(key, id);
+    Ok(id)
+}
+
+/// Where the text of a parsed node is stored: as a range of `input` if `keep_source` and
+/// it is a slice of it, else copied.
+fn node_text<'s>(
+    input: &str,
+    keep_source: bool,
+    text: &'s str,
+) -> Result<NodeText<'s>, DocumentError> {
+    Ok(
+        match keep_source.then(|| offset_in(input, text)).flatten() {
+            Some(start) => NodeText::Source(to_u32(start)?, to_u32(text.len())?),
+            None => NodeText::Copy(text),
+        },
+    )
+}
+
+/// Whether a node is inside an element: text between the top-level nodes is not part of
+/// the data model.
+fn is_in_element(node: roxmltree::Node<'_, '_>) -> bool {
+    node.parent().is_some_and(|p| !p.is_root())
+}
+
+/// The prefix an element name is written with, empty for none.
+fn element_prefix<'a>(input: &'a str, node: roxmltree::Node<'_, '_>) -> &'a str {
     let start = node.range().start + 1;
     let written = input
         .get(start..)
@@ -900,27 +1169,7 @@ fn element_name(input: &str, node: roxmltree::Node<'_, '_>) -> QName {
             &rest[..end]
         })
         .unwrap_or_default();
-    QName {
-        prefix: prefix_of(written),
-        namespace: node
-            .tag_name()
-            .namespace()
-            .filter(|ns| !ns.is_empty())
-            .map(str::to_owned),
-        local: node.tag_name().name().to_owned(),
-    }
-}
-
-fn attribute_name(input: &str, attribute: &roxmltree::Attribute<'_, '_>) -> QName {
-    let written = input.get(attribute.range_qname()).unwrap_or_default();
-    QName {
-        prefix: prefix_of(written),
-        namespace: attribute
-            .namespace()
-            .filter(|ns| !ns.is_empty())
-            .map(str::to_owned),
-        local: attribute.name().to_owned(),
-    }
+    written.split_once(':').map_or("", |(prefix, _)| prefix)
 }
 
 /// The `file:` URI that Saxon-HE gives a document read from a file: Java's
@@ -1146,6 +1395,114 @@ mod tests {
         assert_eq!(top.children().count(), 3);
         assert!(Document::parse("<!DOCTYPE r [<!ENTITY e 'x'>]><r>&e;</r>", None).is_err());
         assert!(Document::parse("<r><a></r>", None).is_err());
+    }
+
+    #[test]
+    fn records_are_compact() {
+        assert_eq!(std::mem::size_of::<Record>(), 32);
+    }
+
+    /// Kind, name, string value and parent of every node, in document order.
+    fn dump(tree: &Rc<Document>) -> Vec<String> {
+        (0..tree.node_count())
+            .map(|i| {
+                let node = Node::new(Rc::clone(tree), u32::try_from(i).unwrap());
+                let name = node.name().map(|n| {
+                    format!(
+                        "{}{{{}}}{}",
+                        n,
+                        n.namespace.as_deref().unwrap_or(""),
+                        n.local
+                    )
+                });
+                format!(
+                    "{:?} {name:?} {:?} {:?}",
+                    node.kind(),
+                    node.string_value(),
+                    node.parent().map(|p| p.index())
+                )
+            })
+            .collect()
+    }
+
+    /// Texts written verbatim in an owned source are ranges of it; the others (character
+    /// and entity references, line ends, attribute whitespace, CDATA sections merged with
+    /// text) are copied. The tree is the same as from the borrowed text, which is copied
+    /// whole, and its arenas are sized exactly.
+    #[test]
+    fn owned_source_is_referred_to() {
+        let xml = "<?xml version='1.0'?><!--top--><?pi top data?>\
+            <p:r xmlns:p='urn:p' xmlns='urn:d' a='plain' b='x&amp;y' c='t\tu'>\
+            verbatim<e p:f='1'>a&#65;b</e>line\r\nend<![CDATA[<&>]]>more<!--c-->\
+            <?pi in?><e/>tail</p:r>";
+        let borrowed = Document::parse(xml, None).unwrap();
+        let owned = Document::parse(xml.to_owned(), None).unwrap();
+        assert_eq!(dump(&borrowed), dump(&owned));
+        assert_eq!(borrowed.source, "");
+        assert_eq!(owned.source, xml);
+        // Copied: "x&y", "t u", "aAb", "line\nend<&>more"; everything else is a range.
+        assert_eq!(owned.text, "x&yt uaAbline\nend<&>more");
+        let copied_whole: usize = (0..borrowed.node_count())
+            .map(|i| {
+                let i = u32::try_from(i).unwrap();
+                match borrowed.kind(i) {
+                    NodeKind::Element | NodeKind::Document => 0,
+                    _ => borrowed.own_text(i).len(),
+                }
+            })
+            .sum();
+        assert_eq!(borrowed.text.len(), copied_whole);
+        for tree in [&borrowed, &owned] {
+            assert_eq!(tree.records.capacity(), tree.records.len());
+            assert_eq!(tree.text.capacity(), tree.text.len());
+            assert_eq!(tree.names.capacity(), tree.names.len());
+        }
+        let r = find(&owned, "r");
+        let values: Vec<_> = r
+            .attributes()
+            .map(|a| a.string_value().into_owned())
+            .collect();
+        assert_eq!(values, ["plain", "x&y", "t u"]);
+        assert_eq!(r.string_value(), "verbatimaAbline\nend<&>moretail");
+        assert_eq!(r.name().unwrap().to_string(), "p:r");
+        let e = find(&owned, "e");
+        assert_eq!(e.name().unwrap().namespace.as_deref(), Some("urn:d"));
+        let f = e.attributes().next().unwrap();
+        assert_eq!(f.name().unwrap().to_string(), "p:f");
+        assert_eq!(f.name().unwrap().namespace.as_deref(), Some("urn:p"));
+        // Names are interned: the two `e` elements share one entry.
+        assert_eq!(owned.names.iter().filter(|n| n.local == "e").count(), 1);
+    }
+
+    #[test]
+    fn built_trees_merge_text_after_a_parsed_shape() {
+        // A built tree has no source: all its texts are copied, and adjacent text merges
+        // even after other copied texts.
+        let mut builder = TreeBuilder::new();
+        builder.start_element(QName::local("e")).unwrap();
+        builder.attribute(QName::local("a"), "v").unwrap();
+        builder.comment("c").unwrap();
+        builder.text("x").unwrap();
+        builder.text("y").unwrap();
+        builder.processing_instruction("t", "d").unwrap();
+        builder.text("z").unwrap();
+        builder.end_element().unwrap();
+        let tree = builder.finish(None, None).unwrap();
+        let e = tree.root().children().next().unwrap();
+        let children: Vec<_> = e
+            .children()
+            .map(|c| (c.kind(), c.string_value().into_owned()))
+            .collect();
+        assert_eq!(
+            children,
+            [
+                (NodeKind::Comment, "c".to_owned()),
+                (NodeKind::Text, "xy".to_owned()),
+                (NodeKind::ProcessingInstruction, "d".to_owned()),
+                (NodeKind::Text, "z".to_owned()),
+            ]
+        );
+        assert_eq!(tree.text, "vcxydz");
     }
 
     #[test]

@@ -13,6 +13,7 @@ einvoice-xpath = { path = "../einvoice-xpath", version = "0.0.0" }
 roxmltree = "0.21.2"
 
 [dev-dependencies]
+peak_alloc = "0.3.0"
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 sha2 = "0.11.1"
 

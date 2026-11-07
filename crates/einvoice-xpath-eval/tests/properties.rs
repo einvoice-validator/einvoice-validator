@@ -9,10 +9,10 @@
 use std::fmt::Write as _;
 use std::rc::Rc;
 
-use einvoice_xpath::{NamespaceMap, parse_expr};
+use einvoice_xpath::{NamespaceMap, QName, parse_expr};
 use einvoice_xpath_eval::{
     Context, Document, DynamicContext, Item, NoHost, Node, NodeAxis, NodeKind, SimpleStaticContext,
-    compile,
+    TreeBuilder, compile,
 };
 use proptest::prelude::*;
 
@@ -282,8 +282,126 @@ fn path_steps() -> impl Strategy<Value = Vec<PathStep>> {
     )
 }
 
+/// XML text with everything that makes a parsed text differ from its source: character
+/// and entity references, line ends, CDATA sections, whitespace in attribute values,
+/// comments and processing instructions, prefixed and default-namespace names.
+fn source_text() -> impl Strategy<Value = String> {
+    let piece = prop::sample::select(vec![
+        "a",
+        "é",
+        " ",
+        "\t",
+        "\n",
+        "\r\n",
+        "\r",
+        "&amp;",
+        "&lt;",
+        "&#65;",
+        "&#x1F600;",
+        "<![CDATA[<&]]>",
+        "<!--c-->",
+        "<!--\r\n-->",
+        "<?t d\r\ne?>",
+        "<e/>",
+        "<p:e p:x='1'/>",
+    ]);
+    let content = prop::collection::vec(piece, 0..8).prop_map(|p| p.concat());
+    let value = prop::collection::vec(
+        prop::sample::select(vec![
+            "v", " ", "\t", "\n", "\r\n", "&#9;", "&#10;", "&amp;", "&quot;", "é",
+        ]),
+        0..5,
+    )
+    .prop_map(|p| p.concat());
+    (content.clone(), value, content).prop_map(|(before, value, inner)| {
+        format!(
+            "<?xml version='1.0'?><!--top-->\r\n<p:r xmlns:p='urn:p' xmlns='urn:d' a='{value}' \
+             p:b='{value}'>{before}<e c='{value}'>{inner}</e>{before}</p:r>\r\n<?t top?>"
+        )
+    })
+}
+
+/// The tree of a parsed document, built through the public [`TreeBuilder`] from the
+/// parser's values: the reference for [`Document::parse`].
+fn reference_tree(text: &str) -> Rc<Document> {
+    fn name(prefix: Option<&str>, namespace: Option<&str>, local: &str) -> QName {
+        QName {
+            prefix: prefix.map(str::to_owned),
+            namespace: namespace.filter(|n| !n.is_empty()).map(str::to_owned),
+            local: local.to_owned(),
+        }
+    }
+    fn walk(text: &str, node: roxmltree::Node<'_, '_>, builder: &mut TreeBuilder) {
+        match node.node_type() {
+            roxmltree::NodeType::Root => {}
+            roxmltree::NodeType::Element => {
+                let start = node.range().start + 1;
+                let written = &text[start..start + text[start..].find([' ', '/', '>']).unwrap()];
+                let prefix = written.split_once(':').map(|(p, _)| p);
+                builder
+                    .start_element(name(
+                        prefix,
+                        node.tag_name().namespace(),
+                        node.tag_name().name(),
+                    ))
+                    .unwrap();
+                for a in node.attributes() {
+                    let prefix = text[a.range_qname()].split_once(':').map(|(p, _)| p);
+                    builder
+                        .attribute(name(prefix, a.namespace(), a.name()), a.value())
+                        .unwrap();
+                }
+                for child in node.children() {
+                    walk(text, child, builder);
+                }
+                builder.end_element().unwrap();
+            }
+            roxmltree::NodeType::Text => {
+                if node.parent().is_some_and(|p| !p.is_root()) {
+                    builder.text(node.text().unwrap()).unwrap();
+                }
+            }
+            roxmltree::NodeType::Comment => builder.comment(node.text().unwrap()).unwrap(),
+            roxmltree::NodeType::PI => {
+                let pi = node.pi().unwrap();
+                builder
+                    .processing_instruction(pi.target, pi.value.unwrap_or(""))
+                    .unwrap();
+            }
+        }
+    }
+    let parsed = roxmltree::Document::parse(text).unwrap();
+    let mut builder = TreeBuilder::new();
+    for child in parsed.root().children() {
+        walk(text, child, &mut builder);
+    }
+    builder.finish(None, None).unwrap()
+}
+
+/// Kind, name (with its prefix and namespace), string value and parent position of every
+/// node, in document order.
+fn dump(doc: &Rc<Document>) -> Vec<String> {
+    let all = all_nodes(doc);
+    all.iter()
+        .map(|n| {
+            let name = n
+                .name()
+                .map(|q| format!("{q} {{{}}}", q.namespace.as_deref().unwrap_or("")));
+            let parent = n.parent().map(|p| all.iter().position(|m| *m == p));
+            format!("{:?} {name:?} {:?} {parent:?}", n.kind(), n.string_value())
+        })
+        .collect()
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(500))]
+
+    #[test]
+    fn parsed_trees_match_the_built_reference(text in source_text()) {
+        let expected = dump(&reference_tree(&text));
+        prop_assert_eq!(dump(&Document::parse(text.as_str(), None).unwrap()), expected.clone());
+        prop_assert_eq!(dump(&Document::parse(text, None).unwrap()), expected);
+    }
 
     #[test]
     fn axes_match_their_definition(tree in tree()) {

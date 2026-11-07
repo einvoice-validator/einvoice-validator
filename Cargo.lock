@@ -149,6 +149,7 @@ version = "0.0.0"
 dependencies = [
  "einvoice-xdm",
  "einvoice-xpath",
+ "peak_alloc",
  "proptest",
  "roxmltree",
  "sha2",
