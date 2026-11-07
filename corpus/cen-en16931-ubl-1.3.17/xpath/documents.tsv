@@ -1,0 +1,21 @@
+# The corpus documents of the expression oracle, chosen by
+# `cargo run -p einvoice-xpath-eval --example saxon-oracle -- select-documents`:
+# 214 groups of expressions, 213 reached by some corpus document, all of them by these
+# 17 documents.
+examples/ubl-tc434-example1.xml
+examples/ubl-tc434-creditnote1.xml
+examples/FT G2G_TD01 con Allegato, Bonifico e Split Payment.xml
+examples/sample-discount-price.xml
+testfiles/BIS_Billing_30-Inkopskort.xml
+vefa/Invoice-unit-UBL/UBL-DT-01.002.xml
+vefa/Invoice-unit-UBL/BR-IC-08.007.xml
+testfiles/CreditNote-Max_content.xml
+vefa/Invoice-unit-UBL/BR-AE-01.001.xml
+vefa/Invoice-unit-UBL/BR-G-01.001.xml
+vefa/Invoice-unit-UBL/BR-IG-01.001.xml
+vefa/Invoice-unit-UBL/BR-IP-01.001.xml
+vefa/Invoice-unit-UBL/BR-Z-01.001.xml
+examples/ubl-tc434-example2.xml
+vefa/Invoice-unit-UBL/BR-O-01.001.xml
+vefa/Invoice-unit-UBL/BR-51.001.xml
+vefa/Invoice-unit-UBL/BR-IC-01.001.xml

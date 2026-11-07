@@ -1,0 +1,505 @@
+# Edge cases of the expression oracle: id, document (in docs/), context nodes (an XPath
+# expression Saxon evaluates on the document), what is probed (`v` the value, `vb` also
+# the effective boolean value, as xsl:when computes it), expression. Expected results come from
+# Saxon-HE 9.9.1-8 only (expected.tsv). Escapes: \t \n \r \\ \u{HEX}.
+axes-01	edge.xml	/	vb	/t:root/d:item
+axes-02	edge.xml	/	vb	//d:item/@id
+axes-03	edge.xml	/	vb	//d:item[2]/preceding-sibling::node()
+axes-04	edge.xml	/	vb	//d:item[2]/following-sibling::*
+axes-05	edge.xml	/	vb	//d:c/preceding::*
+axes-06	edge.xml	/	vb	//d:c[@id='c2']/preceding::node()
+axes-07	edge.xml	/	vb	//d:c/ancestor::*
+axes-08	edge.xml	/	vb	//d:c/ancestor-or-self::*[1]
+axes-09	edge.xml	/	vb	//d:c[@id='c2']/ancestor::*[1]
+axes-10	edge.xml	/	vb	//d:c[@id='c2']/preceding::*[1]
+axes-11	edge.xml	/	vb	(//d:c)[1]
+axes-12	edge.xml	/	vb	(//d:c)[last()]
+axes-13	edge.xml	/	vb	//d:c[last()]
+axes-14	edge.xml	/	vb	//d:c[1]
+axes-15	edge.xml	/	vb	//d:b[1]/d:c
+axes-16	edge.xml	/	vb	//d:b/d:c | //d:a/d:b
+axes-17	edge.xml	/	vb	//d:b/..
+axes-18	edge.xml	/	vb	//d:c/../..
+axes-19	edge.xml	/	vb	//node()[self::comment()]
+axes-20	edge.xml	/	vb	//comment()
+axes-21	edge.xml	/	vb	//processing-instruction()
+axes-22	edge.xml	/	vb	/node()
+axes-23	edge.xml	/	vb	/comment()
+axes-24	edge.xml	/	vb	count(//text())
+axes-25	edge.xml	/	vb	count(//*)
+axes-26	edge.xml	/	vb	count(//@*)
+axes-27	edge.xml	/	vb	count(//node())
+axes-28	edge.xml	/	vb	//t:item | //d:item
+axes-29	edge.xml	/	vb	//d:mixed/node()
+axes-30	edge.xml	/	vb	//d:mixed/text()[2]
+axes-31	edge.xml	/	vb	//d:mixed/d:x[1]/following-sibling::text()
+axes-32	edge.xml	/	vb	//d:mixed/node()[last()]
+axes-33	edge.xml	/	vb	/t:root/@*|/t:root/d:empty
+axes-34	edge.xml	/	vb	//d:item/(@id|@n)
+axes-35	edge.xml	/	vb	/t:root/*[1]/parent::*/@t:version
+axes-36	edge.xml	/	vb	//d:c/ancestor::d:b/preceding-sibling::*
+axes-37	edge.xml	/	vb	//d:deep//d:c
+axes-38	edge.xml	/	vb	//d:deep/descendant-or-self::node()
+axes-39	edge.xml	/	vb	//d:a//*
+axes-40	edge.xml	/	vb	/descendant-or-self::node()/self::d:c
+axes-41	edge.xml	/	vb	//plain/child
+axes-42	edge.xml	/	vb	//plain/child/@attr
+axes-43	edge.xml	/	vb	//*:child
+axes-44	edge.xml	/	vb	//t:*
+axes-45	edge.xml	/	vb	count(//d:*)
+axes-46	edge.xml	/	vb	//*[ends-with(name(), 'item')]
+axes-47	edge.xml	/	vb	count(//d:item[not(preceding::d:item/@n = @n)])
+axes-48	edge.xml	/	vb	//d:item[@n > 1]
+axes-49	edge.xml	/	vb	exists(//d:item[@n > 1])
+axes-50	edge.xml	/	vb	//d:item[@n > 1][1]
+axes-51	edge.xml	/	vb	//d:item[@n = 10]
+axes-52	edge.xml	/	vb	//d:item[1]/self::d:item
+axes-53	edge.xml	/	vb	//d:item[1]/self::d:empty
+axes-54	edge.xml	/	vb	.
+axes-55	edge.xml	/	vb	/
+axes-56	edge.xml	/	vb	//d:item/..
+axes-57	edge.xml	/	vb	//@id/..
+axes-59	edge.xml	/	vb	//d:x/preceding::text()
+names-01	edge.xml	/	vb	name(//*[@id='d'])
+names-02	edge.xml	/	vb	local-name(//*[@id='d'])
+names-03	edge.xml	/	vb	namespace-uri(//*[@id='d'])
+names-04	edge.xml	/	vb	name(/*)
+names-05	edge.xml	/	vb	name(//@t:version)
+names-06	edge.xml	/	vb	name(/)
+names-07	edge.xml	/	vb	name(//comment()[1])
+names-08	edge.xml	/	vb	name(//processing-instruction()[1])
+names-09	edge.xml	/	vb	local-name(//processing-instruction()[1])
+names-10	edge.xml	/	vb	namespace-uri(//processing-instruction()[1])
+names-11	edge.xml	/	vb	namespace-uri(//plain)
+names-12	edge.xml	/	vb	name(//plain/child/@attr)
+names-13	edge.xml	/	vb	local-name(())
+names-14	edge.xml	/	vb	name(())
+names-15	edge.xml	/	vb	namespace-uri(())
+names-16	edge.xml	/	vb	namespace-uri(/*) instance of xs:anyURI
+names-17	edge.xml	/	vb	string(/)
+names-18	edge.xml	/	vb	string(//d:item[1])
+names-19	edge.xml	/	vb	string(//d:item[3])
+names-20	edge.xml	/	vb	string(//d:ws)
+names-21	edge.xml	/	vb	normalize-space(//d:ws)
+names-22	edge.xml	/	vb	string-length(//d:ws)
+names-23	edge.xml	/	vb	string(//comment()[2])
+names-24	edge.xml	/	vb	string(//processing-instruction()[1])
+names-25	edge.xml	/	vb	string(//@t:version)
+names-26	edge.xml	/	vb	//comment()[1] = ' top comment '
+names-27	edge.xml	/	vb	string(//d:empty)
+names-28	edge.xml	/	vb	//d:empty = ''
+names-29	edge.xml	/	vb	//d:nothing = ''
+focus-01	edge.xml	//d:item	vb	name()
+focus-02	edge.xml	//d:item	vb	local-name()
+focus-03	edge.xml	//d:item	vb	namespace-uri()
+focus-04	edge.xml	//d:item	vb	position()
+focus-05	edge.xml	//d:item	vb	last()
+focus-06	edge.xml	//d:item	vb	string()
+focus-07	edge.xml	//d:item	vb	.
+focus-08	edge.xml	//d:item	vb	@id
+focus-09	edge.xml	//d:item	vb	../d:empty
+focus-10	edge.xml	//d:item	vb	count(preceding-sibling::d:item)
+focus-11	edge.xml	//d:item	vb	string-length()
+focus-12	edge.xml	//d:item	vb	normalize-space()
+focus-13	edge.xml	//d:item	vb	number()
+focus-14	edge.xml	//d:item	vb	current()/@id
+focus-15	edge.xml	//d:item	vb	//d:item[@id = current()/@id]
+focus-16	edge.xml	//d:item	vb	root()
+focus-17	edge.xml	//d:item	vb	count(root() | /)
+focus-18	edge.xml	//d:item	vb	following-sibling::*[1]
+focus-19	edge.xml	//d:item	vb	preceding::comment()
+num-01	edge.xml	//d:num	vb	. + 0
+num-02	edge.xml	//d:num	vb	number(.)
+num-03	edge.xml	//d:num	vb	xs:decimal(.)
+num-04	edge.xml	//d:num	vb	. = 1.5
+num-05	edge.xml	//d:num	vb	. = '1.50'
+num-06	edge.xml	//d:num	vb	. > 2
+num-07	edge.xml	//d:num	vb	xs:integer(.)
+num-08	edge.xml	//d:num	vb	. castable as xs:decimal
+num-09	edge.xml	//d:num	vb	. castable as xs:integer
+num-10	edge.xml	//d:num	vb	round(.)
+num-11	edge.xml	//d:num	vb	abs(.)
+num-12	edge.xml	//d:num	vb	-.
+num-13	edge.xml	//d:num	vb	. * 2
+num-14	edge.xml	//d:num	vb	. div 0
+num-15	edge.xml	//d:num	vb	. idiv 0
+num-16	edge.xml	//d:num	vb	. mod 2
+num-17	edge.xml	//d:num	vb	boolean(.)
+num-18	edge.xml	//d:num	vb	string-length(.)
+num-19	edge.xml	//d:num	vb	xs:string(.)
+num-20	edge.xml	//d:num	vb	. = 3
+num-21	edge.xml	//d:num	vb	. != 3
+num-22	edge.xml	//d:num	vb	. = (1, 3)
+num-23	edge.xml	//d:num	vb	. eq '3'
+num-24	edge.xml	//d:num	vb	sum(.)
+bool-01	edge.xml	//d:bool	vb	. = true()
+bool-02	edge.xml	//d:bool	vb	. = false()
+bool-03	edge.xml	//d:bool	vb	boolean(.)
+bool-04	edge.xml	//d:bool	vb	xs:string(.)
+bool-05	edge.xml	//d:bool	vb	not(.)
+bool-06	edge.xml	//d:bool	vb	. = 'true'
+date-01	edge.xml	//d:date	v	xs:date(.)
+date-02	edge.xml	//d:date	vb	. castable as xs:date
+date-03	edge.xml	//d:date	vb	xs:date(.) >= xs:date('2024-03-01')
+date-04	edge.xml	//d:date	vb	xs:date(.) = xs:date('2024-02-29Z')
+date-05	edge.xml	//d:date	vb	xs:date(.) < xs:date('2024-01-01Z')
+date-06	edge.xml	//d:date	vb	string(xs:date(.))
+str-01	edge.xml	/	vb	tokenize(//d:code, ' ')
+str-02	edge.xml	/	vb	tokenize(//d:code, '\\s+')
+str-03	edge.xml	/	vb	replace(//d:code, '\\s', '')
+str-04	edge.xml	/	vb	matches(//d:code, '^A')
+str-05	edge.xml	/	vb	matches(//d:code, 'b')
+str-06	edge.xml	/	vb	tokenize('', ',')
+str-07	edge.xml	/	vb	string-join(tokenize(//d:code,' '), '-')
+str-08	edge.xml	/	vb	string-join((1, 2.5, true()), ',')
+str-09	edge.xml	/	vb	string-join((), '-')
+str-10	edge.xml	/	vb	string-join(//d:item/@id, '')
+str-11	edge.xml	/	vb	replace('abc', 'b', '')
+str-12	edge.xml	/	vb	replace('abc', '', 'x')
+str-13	edge.xml	/	vb	replace('a.b.c', '\\.', '')
+str-14	edge.xml	/	v	tokenize('a,b,,c', ',')
+str-15	edge.xml	/	vb	matches('x', '(')
+str-16	edge.xml	/	vb	upper-case(//d:unicode)
+str-17	edge.xml	/	vb	string-length(//d:unicode)
+str-18	edge.xml	/	v	string-to-codepoints('aé𝄞')
+str-19	edge.xml	/	vb	string-to-codepoints('')
+str-20	edge.xml	/	vb	codepoints-to-string((72, 105))
+str-21	edge.xml	/	vb	codepoints-to-string(0)
+str-22	edge.xml	/	vb	codepoints-to-string(())
+str-23	edge.xml	/	vb	codepoints-to-string(55296)
+str-24	edge.xml	/	vb	substring('12345', 1.5, 2.6)
+str-25	edge.xml	/	vb	substring('12345', 0, 3)
+str-26	edge.xml	/	vb	substring('12345', -1 div 0e0, 1 div 0e0)
+str-27	edge.xml	/	vb	substring('abc', 2)
+str-28	edge.xml	/	vb	substring((), 1)
+str-29	edge.xml	/	vb	substring('12345', 2, 0e0 div 0)
+str-30	edge.xml	/	vb	substring('aé𝄞b', 3)
+str-31	edge.xml	/	vb	substring-before('abc', 'b')
+str-32	edge.xml	/	vb	substring-before('abc', '')
+str-33	edge.xml	/	vb	substring-after('abc', '')
+str-34	edge.xml	/	vb	substring-after('abc', 'x')
+str-35	edge.xml	/	vb	contains('', '')
+str-36	edge.xml	/	vb	starts-with('abc', '')
+str-37	edge.xml	/	vb	ends-with('abc', 'bc')
+str-38	edge.xml	/	vb	translate('--aaa--', 'abc-', 'ABC')
+str-39	edge.xml	/	vb	concat('a', 1, 1.0, 1e0, true(), ())
+str-40	edge.xml	/	vb	normalize-space(' a  b ')
+str-41	edge.xml	/	vb	string-length('')
+str-42	edge.xml	/	vb	string-length(())
+str-43	edge.xml	/	vb	concat(//d:item[1]/@id, //d:nothing)
+str-44	edge.xml	/	vb	upper-case(())
+str-45	edge.xml	/	vb	contains(//d:item[1], 'x')
+arith-01	edge.xml	/	vb	1 div 3
+arith-02	edge.xml	/	vb	1.0 div 3
+arith-03	edge.xml	/	vb	1e0 div 3
+arith-04	edge.xml	/	vb	0.1 + 0.2
+arith-05	edge.xml	/	vb	0.1e0 + 0.2e0
+arith-06	edge.xml	/	vb	10 idiv 3
+arith-07	edge.xml	/	vb	-10 idiv 3
+arith-08	edge.xml	/	vb	10 mod -3
+arith-09	edge.xml	/	vb	-10.5 mod 3
+arith-10	edge.xml	/	vb	1 div 0
+arith-11	edge.xml	/	vb	1e0 div 0
+arith-12	edge.xml	/	vb	-1e0 div 0
+arith-13	edge.xml	/	vb	0e0 div 0
+arith-14	edge.xml	/	vb	round(2.5)
+arith-15	edge.xml	/	vb	round(-2.5)
+arith-16	edge.xml	/	vb	round(2.4999)
+arith-17	edge.xml	/	vb	round(1e0 div 0)
+arith-18	edge.xml	/	vb	round(-0.4e0)
+arith-19	edge.xml	/	vb	abs(-0.0)
+arith-20	edge.xml	/	vb	abs(-2)
+arith-21	edge.xml	/	vb	round(xs:decimal('1.005') * 100) div 100
+arith-22	edge.xml	/	vb	xs:decimal('19.99') * 3
+arith-23	edge.xml	/	vb	sum((1, 2.5, 1e0))
+arith-24	edge.xml	/	vb	sum(())
+arith-25	edge.xml	/	vb	sum((1, p:any('a')))
+arith-26	edge.xml	/	vb	sum(//d:num)
+arith-27	edge.xml	/	vb	sum(//d:item/@n)
+arith-28	edge.xml	/	vb	count(())
+arith-29	edge.xml	/	vb	-(1)
+arith-30	edge.xml	/	vb	--1.5
+arith-31	edge.xml	/	vb	2 * 3 + 4 div 8
+arith-32	edge.xml	/	vb	12345678901234567890 * 98765432109876543210
+arith-33	edge.xml	/	vb	1e308 * 10
+arith-34	edge.xml	/	vb	xs:integer('99999999999999999999') + 1
+arith-35	edge.xml	/	vb	1 idiv 0
+arith-36	edge.xml	/	vb	1.5 idiv 0.5
+arith-37	edge.xml	/	vb	7 mod 0
+arith-38	edge.xml	/	vb	xs:decimal(1e0 div 3)
+arith-39	edge.xml	/	vb	xs:decimal('1e3')
+arith-40	edge.xml	/	vb	xs:decimal(' 1.50 ')
+arith-41	edge.xml	/	vb	xs:integer(1.9)
+arith-42	edge.xml	/	vb	xs:integer(-1.9e0)
+arith-43	edge.xml	/	vb	xs:integer('1.0')
+arith-44	edge.xml	/	vb	xs:decimal(0e0 div 0)
+arith-45	edge.xml	/	vb	number('abc')
+arith-46	edge.xml	/	vb	number(())
+arith-47	edge.xml	/	vb	number(' 12 ')
+arith-48	edge.xml	/	vb	number(true())
+arith-49	edge.xml	/	vb	1 + ()
+arith-50	edge.xml	/	vb	() * 2
+cmp-01	edge.xml	/	vb	() = ()
+cmp-02	edge.xml	/	vb	() != ()
+cmp-03	edge.xml	/	vb	1 = ()
+cmp-04	edge.xml	/	vb	(1, 2) = (2, 3)
+cmp-05	edge.xml	/	vb	(1, 2) != (1, 2)
+cmp-06	edge.xml	/	vb	'a' = ('b', 'a')
+cmp-07	edge.xml	/	vb	//d:item/@id = 'c'
+cmp-08	edge.xml	/	vb	//d:item/@id = ('x', 'c')
+cmp-09	edge.xml	/	vb	//d:item/@n = 1
+cmp-10	edge.xml	/	vb	//d:item/@n = 1.0
+cmp-11	edge.xml	/	vb	//d:item/@n = '10'
+cmp-12	edge.xml	/	vb	//d:item/@n > 5
+cmp-13	edge.xml	/	vb	//d:item/@n < //d:num
+cmp-14	edge.xml	/	vb	1 eq 1.0
+cmp-15	edge.xml	/	vb	'a' eq 'a'
+cmp-16	edge.xml	/	vb	() eq 1
+cmp-17	edge.xml	/	vb	p:any((1, 2)) eq 1
+cmp-18	edge.xml	/	vb	//d:item[1]/@n eq '1'
+cmp-19	edge.xml	/	vb	p:any(//d:item[1]/@n) eq 1
+cmp-20	edge.xml	/	vb	p:any('a') = 1
+cmp-21	edge.xml	/	vb	p:any(xs:date('2024-01-01')) = 1
+cmp-22	edge.xml	/	vb	1 = 1e0
+cmp-23	edge.xml	/	vb	0.1 = 0.1e0
+cmp-24	edge.xml	/	vb	xs:decimal('0.1') + xs:decimal('0.2') = 0.3
+cmp-25	edge.xml	/	vb	0.1e0 + 0.2e0 = 0.3
+cmp-26	edge.xml	/	vb	//d:bool = true()
+cmp-27	edge.xml	/	vb	//d:bool[3] = true()
+cmp-28	edge.xml	/	vb	//d:num = 2
+cmp-29	edge.xml	/	vb	//d:num = 'NaN'
+cmp-30	edge.xml	/	vb	//d:num[5] = 0e0 div 0
+cmp-31	edge.xml	/	vb	(0e0 div 0) != (0e0 div 0)
+cmp-32	edge.xml	/	vb	'abc' < 'abd'
+cmp-33	edge.xml	/	vb	'B' < 'a'
+cmp-34	edge.xml	/	vb	xs:date('2024-01-01') = xs:date('2024-01-01Z')
+cmp-35	edge.xml	/	vb	xs:date('2024-01-01+01:00') < xs:date('2024-01-01Z')
+cmp-36	edge.xml	/	vb	//d:date[1] = xs:date('2024-02-29')
+cmp-38	edge.xml	/	vb	true() = p:any(1)
+cmp-39	edge.xml	/	vb	'1' = p:any(1)
+ebv-01	edge.xml	/	vb	boolean(p:any((1, 2)))
+ebv-02	edge.xml	/	vb	boolean((//d:item, 1))
+ebv-03	edge.xml	/	vb	boolean(0)
+ebv-04	edge.xml	/	vb	boolean('0')
+ebv-05	edge.xml	/	vb	boolean(p:any(xs:date('2020-01-01')))
+ebv-06	edge.xml	/	vb	if (1) then 'y' else 'n'
+ebv-07	edge.xml	/	vb	if (()) then 'y' else 'n'
+ebv-08	edge.xml	/	vb	//d:item[1] and 1
+ebv-09	edge.xml	/	vb	not(//d:nothing)
+ebv-10	edge.xml	/	vb	boolean(0e0 div 0)
+ebv-11	edge.xml	/	vb	not('')
+ebv-12	edge.xml	/	vb	boolean(//d:item/@n)
+ebv-13	edge.xml	/	vb	boolean(p:any((1, //d:item)))
+ebv-14	edge.xml	/	vb	exists(())
+ebv-15	edge.xml	/	vb	exists(//d:empty)
+ebv-16	edge.xml	/	vb	1 or p:any(1 div 0)
+ebv-17	edge.xml	/	vb	0 and p:any(1 div 0)
+ebv-18	edge.xml	/	vb	if (//d:empty) then 1 else 1 div 0
+pred-01	edge.xml	/	vb	(10, 20, 30)[2]
+pred-02	edge.xml	/	v	(10, 20, 30)[position() > 1]
+pred-03	edge.xml	/	vb	(10, 20, 30)[last()]
+pred-04	edge.xml	/	vb	(10, 20, 30)[. > 15][1]
+pred-05	edge.xml	/	vb	(10, 20, 30)[2.0]
+pred-06	edge.xml	/	vb	(10, 20, 30)[1.5]
+pred-07	edge.xml	/	vb	(10, 20, 30)[xs:decimal('2')]
+pred-08	edge.xml	/	v	(1, 2, 3)[true()]
+pred-09	edge.xml	/	vb	(1, 2, 3)['']
+pred-10	edge.xml	/	vb	//d:item[xs:integer(@n[. castable as xs:integer]) = 1]
+pred-11	edge.xml	/	vb	(//d:item)[@n castable as xs:integer][last()]
+pred-12	edge.xml	/	vb	(10, 20, 30)[0]
+pred-13	edge.xml	/	vb	(10, 20, 30)[4]
+pred-14	edge.xml	/	vb	(10, 20, 30)[-1]
+pred-15	edge.xml	/	vb	(10, 20, 30)[last() - 1]
+pred-16	edge.xml	/	vb	//d:item[last()]/@id
+pred-17	edge.xml	/	vb	//d:item[position() = last()]
+pred-18	edge.xml	/	vb	(//d:item/@n)[2]
+pred-19	edge.xml	/	vb	(10, 20, 30)[p:any((1, 2))]
+pred-20	edge.xml	/	vb	(10, 20, 30)[p:any(2)]
+pred-21	edge.xml	/	vb	//d:item[p:any(1)]
+pred-22	edge.xml	/	vb	//d:item[@id][2]
+pred-23	edge.xml	/	vb	(1 to 10)[. mod 3 = 0][2]
+pred-24	edge.xml	/	vb	//d:item[3][@id = 'x']
+pred-25	edge.xml	/	vb	//d:item[@n > 1][@n < 5]
+flow-01	edge.xml	/	v	1 to 5
+flow-02	edge.xml	/	vb	5 to 1
+flow-03	edge.xml	/	vb	count(1 to 100000)
+flow-04	edge.xml	/	v	(1 to 5)[. mod 2 = 0]
+flow-05	edge.xml	/	v	xs:integer('2') to 4
+flow-06	edge.xml	/	vb	() to 3
+flow-07	edge.xml	/	vb	for $i in 1 to 3 return $i * 2
+flow-08	edge.xml	/	vb	for $i in (1, 2), $j in (10, 20) return $i + $j
+flow-09	edge.xml	/	vb	for $x in //d:item return string($x/@id)
+flow-10	edge.xml	/	vb	some $x in (1, 2, 3) satisfies $x > 2
+flow-11	edge.xml	/	vb	every $x in (1, 2, 3) satisfies $x > 2
+flow-12	edge.xml	/	vb	every $x in () satisfies false()
+flow-13	edge.xml	/	vb	some $x in () satisfies true()
+flow-14	edge.xml	/	vb	some $i in //d:item, $j in //d:num satisfies $i/@n = $j
+flow-15	edge.xml	/	vb	every $i in //d:item satisfies $i/@n castable as xs:integer
+flow-16	edge.xml	/	vb	some $i in //d:item satisfies $i/@n > 5
+flow-17	edge.xml	/	vb	for $i in (3, 1, 2) return (1 to $i)[last()]
+flow-18	edge.xml	/	v	reverse((1, 2, 3))
+flow-19	edge.xml	/	vb	reverse(//d:item)
+flow-20	edge.xml	/	vb	reverse(())
+flow-21	edge.xml	/	v	distinct-values((1, 1.0, 1e0, '1'))
+flow-22	edge.xml	/	vb	distinct-values((0.1, 0.1e0))
+flow-23	edge.xml	/	vb	distinct-values((0e0 div 0, 0e0 div 0))
+flow-24	edge.xml	/	vb	distinct-values(//d:item/@n)
+flow-25	edge.xml	/	vb	distinct-values(('a', 'b', 'a', //d:item[1]/@id))
+flow-26	edge.xml	/	vb	distinct-values((xs:date('2024-01-01'), xs:date('2024-01-01Z'), xs:date('2024-01-01+01:00')))
+flow-27	edge.xml	/	vb	distinct-values((-0.0e0, 0))
+flow-28	edge.xml	/	v	(1, (), (2, 3))
+flow-29	edge.xml	/	vb	count((//d:item, //d:item))
+types-01	edge.xml	/	vb	1 instance of xs:integer
+types-02	edge.xml	/	vb	1 instance of xs:decimal
+types-03	edge.xml	/	vb	1.0 instance of xs:integer
+types-04	edge.xml	/	vb	//d:item instance of element()
+types-05	edge.xml	/	vb	//d:item instance of element()+
+types-06	edge.xml	/	vb	//d:item instance of element()?
+types-07	edge.xml	/	vb	() instance of element()?
+types-08	edge.xml	/	vb	//@id instance of attribute()*
+types-09	edge.xml	/	vb	(/) instance of element()
+types-10	edge.xml	/	vb	//comment()[1] instance of comment()
+types-11	edge.xml	/	vb	//text()[1] instance of text()
+types-12	edge.xml	/	vb	'a' instance of xs:string
+types-13	edge.xml	/	vb	document-uri(/) instance of xs:anyURI
+types-14	edge.xml	/	vb	document-uri(/) instance of xs:string
+types-15	edge.xml	/	vb	//d:item[1] instance of element(d:item)
+types-16	edge.xml	/	vb	//d:item[1] instance of element(d:sub)
+types-17	edge.xml	/	vb	//@id[1] instance of attribute(id)
+types-18	edge.xml	/	vb	//processing-instruction()[1] instance of processing-instruction()
+types-19	edge.xml	/	vb	1 instance of xs:integer?
+types-20	edge.xml	/	vb	(1, 2) instance of xs:integer+
+types-21	edge.xml	/	vb	(1, 'a') instance of xs:integer*
+types-22	edge.xml	/	vb	() instance of xs:integer
+types-23	edge.xml	/	vb	'1' castable as xs:integer
+types-24	edge.xml	/	vb	' 1 ' castable as xs:integer
+types-25	edge.xml	/	vb	'1.0' castable as xs:integer
+types-26	edge.xml	/	vb	() castable as xs:integer
+types-27	edge.xml	/	vb	() castable as xs:integer?
+types-28	edge.xml	/	vb	(1, 2) castable as xs:integer
+types-29	edge.xml	/	vb	'2024-02-30' castable as xs:date
+types-30	edge.xml	/	vb	'x' castable as xs:string
+types-31	edge.xml	/	vb	1.5 castable as xs:integer
+types-32	edge.xml	/	vb	//d:num[2] castable as xs:decimal
+types-33	edge.xml	/	vb	'1e3' castable as xs:decimal
+types-34	edge.xml	/	v	xs:date('2024-02-29')
+types-35	edge.xml	/	v	xs:date(xs:string('2024-02-30'))
+types-36	edge.xml	/	vb	xs:string(1.50)
+types-37	edge.xml	/	vb	xs:string(())
+types-38	edge.xml	/	vb	xs:decimal(1)
+types-39	edge.xml	/	vb	xs:integer(xs:decimal('5'))
+types-40	edge.xml	/	vb	xs:decimal(//d:item)
+types-41	edge.xml	/	vb	xs:string(1e6)
+types-42	edge.xml	/	vb	xs:string(1e-7)
+types-43	edge.xml	/	vb	xs:string(123456789012e0)
+types-44	edge.xml	/	vb	string(1.0e0)
+err-01	edge.xml	/	vb	p:any((1, 2))/d:x
+err-02	edge.xml	/	vb	//d:item/(if (@id = 'a') then . else 1)
+err-03	edge.xml	/	vb	p:any((1, 2))[d:x]
+err-04	edge.xml	/	vb	p:any(1)/@id
+err-05	edge.xml	/	vb	//d:item/string(@id)
+err-06	edge.xml	/	vb	//d:item/@n/xs:integer(.)
+err-07	edge.xml	/	vb	//d:deep/(d:a, d:a/d:b)
+err-08	edge.xml	/	vb	count(//d:item/(., .))
+err-09	edge.xml	/	vb	//d:item/(1)
+err-10	edge.xml	/	vb	p:any(//d:item) | p:any(1)
+err-11	edge.xml	/	vb	(//d:b, //d:a)/d:c
+uri-01	edge.xml	/	vb	document-uri(/)
+uri-02	edge.xml	/	vb	document-uri()
+uri-03	edge.xml	/	vb	base-uri(/)
+uri-04	edge.xml	/	vb	base-uri(//d:item[1])
+uri-05	edge.xml	/	vb	base-uri(//@id[1])
+uri-06	edge.xml	/	vb	document-uri(//d:item[1])
+uri-07	edge.xml	/	vb	count(root(//d:c[1]) | /)
+uri-08	edge.xml	/	vb	root(//d:c[1])
+uri-09	edge.xml	/	vb	count(document(document-uri(/)) | /)
+uri-10	edge.xml	/	vb	system-property('xsl:version')
+uri-11	edge.xml	/	vb	system-property('xsl:vendor')
+uri-12	edge.xml	/	vb	system-property('xsl:product-name')
+uri-13	edge.xml	/	vb	system-property('xsl:product-version')
+uri-14	edge.xml	/	vb	system-property('xsl:nope')
+uri-15	edge.xml	/	vb	string-length(string(current-dateTime())) > 18
+uri-16	edge.xml	/	vb	current-dateTime() = current-dateTime()
+uri-17	edge.xml	/	vb	current()
+uri-18	edge.xml	/	vb	base-uri(())
+uri-19	edge.xml	/	vb	document-uri(())
+amt-01	amounts.xml	/	vb	xs:decimal(//cac:LegalMonetaryTotal/cbc:LineExtensionAmount) = xs:decimal(round(sum(//cac:InvoiceLine/xs:decimal(cbc:LineExtensionAmount)) * 10 * 10) div 100)
+amt-02	amounts.xml	/	vb	sum(//cac:InvoiceLine/cbc:LineExtensionAmount)
+amt-03	amounts.xml	/	vb	sum(//cac:InvoiceLine/xs:decimal(cbc:LineExtensionAmount))
+amt-04	amounts.xml	/	vb	//cac:InvoiceLine/xs:decimal(cbc:LineExtensionAmount)
+amt-05	amounts.xml	/	vb	sum(//cac:InvoiceLine[cbc:ID != '4']/xs:decimal(cbc:LineExtensionAmount))
+amt-06	amounts.xml	/	vb	xs:decimal(//cac:TaxSubtotal/cbc:TaxableAmount - 1)
+amt-07	amounts.xml	/	vb	//cac:TaxSubtotal/xs:decimal(cbc:TaxableAmount + 1)
+amt-08	amounts.xml	/	vb	//cac:AllowanceCharge[cbc:ChargeIndicator = false()]/cbc:Amount
+amt-09	amounts.xml	/	vb	//cac:AllowanceCharge[cbc:ChargeIndicator = true()]/cbc:Amount
+amt-10	amounts.xml	/	vb	every $c in //cac:AllowanceCharge satisfies $c/cbc:Amount > 0
+amt-11	amounts.xml	/	vb	count(distinct-values(//@currencyID))
+amt-12	amounts.xml	/	vb	distinct-values(//cbc:ChargeIndicator)
+amt-13	amounts.xml	/	vb	for $l in //cac:InvoiceLine[position() < 4] return xs:decimal($l/cbc:LineExtensionAmount) * 2
+amt-14	amounts.xml	/	vb	//cac:InvoiceLine[1]/(xs:decimal(cbc:InvoicedQuantity) * xs:decimal(cac:Price/cbc:PriceAmount))
+amt-15	amounts.xml	/	vb	xs:decimal(//cac:InvoiceLine[3]/cac:Price/cbc:PriceAmount) * 7
+amt-16	amounts.xml	/	vb	xs:decimal(//cac:InvoiceLine[3]/cac:Price/cbc:PriceAmount) div 3
+amt-17	amounts.xml	/	vb	//cac:InvoiceLine[3]/cac:Price/cbc:PriceAmount * 7
+amt-18	amounts.xml	/	vb	xs:decimal('100.00') div 3 * 3
+amt-19	amounts.xml	/	vb	round((xs:decimal(//cbc:LineExtensionAmount[1]) - xs:decimal(//cbc:AllowanceTotalAmount) + xs:decimal(//cbc:ChargeTotalAmount)) * 10 * 10) div 100
+amt-20	amounts.xml	/	vb	xs:decimal(//cbc:TaxExclusiveAmount) = round((xs:decimal(//cac:LegalMonetaryTotal/cbc:LineExtensionAmount) - xs:decimal(//cbc:AllowanceTotalAmount) + xs:decimal(//cbc:ChargeTotalAmount)) * 10 * 10) div 100
+amt-21	amounts.xml	/	vb	xs:date(//cbc:EndDate) >= xs:date(//cbc:StartDate)
+amt-22	amounts.xml	/	vb	//cac:TaxCategory[normalize-space(cbc:ID) = 'S'][cac:TaxScheme/normalize-space(upper-case(cbc:ID)) = 'VAT']
+amt-23	amounts.xml	/	vb	every $rate in //cac:TaxSubtotal/cac:TaxCategory/xs:decimal(cbc:Percent) satisfies sum(//cac:AllowanceCharge[cbc:ChargeIndicator = false()][cac:TaxCategory/xs:decimal(cbc:Percent) = $rate]/xs:decimal(cbc:Amount)) = 10
+amt-24	amounts.xml	/	vb	count(//cac:TaxTotal/xs:decimal(cbc:TaxAmount[@currencyID = 'EUR'])) eq 1
+amt-25	amounts.xml	/	vb	//cbc:Amount[@currencyID = /ubl:Invoice/cbc:DocumentCurrencyCode]
+amt-26	amounts.xml	/	vb	abs(xs:decimal(//cbc:PayableAmount) - xs:decimal(//cbc:TaxInclusiveAmount))
+amt-27	amounts.xml	/	vb	string-length(//cbc:ID[1]) <= 10
+amt-28	amounts.xml	/	vb	//cbc:InvoicedQuantity/@unitCode = 'C62'
+amt-29	amounts.xml	/	vb	exists(//cac:InvoiceLine[4]/cbc:InvoicedQuantity)
+amt-30	amounts.xml	/	vb	xs:decimal(//cac:InvoiceLine[4]/cbc:LineExtensionAmount)
+amt-31	amounts.xml	/	vb	exists(//cac:InvoiceLine[xs:decimal(cbc:LineExtensionAmount) > 50])
+amt-32	amounts.xml	/	vb	//cac:InvoiceLine[xs:decimal(cbc:LineExtensionAmount) > 50]
+amt-33	amounts.xml	/	vb	count(//cbc:Percent[. = 21])
+amt-34	amounts.xml	/	vb	//cbc:Percent = 21.0
+amt-35	amounts.xml	/	vb	(//cbc:Percent)[1] = (//cbc:Percent)[2]
+amtctx-01	amounts.xml	//cac:InvoiceLine	vb	xs:decimal(cbc:LineExtensionAmount)
+amtctx-02	amounts.xml	//cac:InvoiceLine	vb	cbc:LineExtensionAmount * 1
+amtctx-03	amounts.xml	//cac:InvoiceLine	vb	cbc:InvoicedQuantity * cac:Price/cbc:PriceAmount
+amtctx-04	amounts.xml	//cac:InvoiceLine	vb	xs:decimal(cbc:InvoicedQuantity) * xs:decimal(cac:Price/cbc:PriceAmount) div (if (cac:Price/cbc:BaseQuantity) then xs:decimal(cac:Price/cbc:BaseQuantity) else 1)
+amtctx-05	amounts.xml	//cac:InvoiceLine	vb	@* | *
+amtctx-06	amounts.xml	//cac:InvoiceLine	vb	../cbc:DocumentCurrencyCode = cbc:LineExtensionAmount/@currencyID
+amtctx-07	amounts.xml	//cac:InvoiceLine	vb	count(preceding-sibling::cac:InvoiceLine) + 1
+cenpi-01	edge.xml	//processing-instruction()	vb	concat('.processing-instruction-', 1+count(preceding-sibling::processing-instruction()), '-')
+cenpi-02	edge.xml	//processing-instruction()	vb	parent::*
+order-01	edge.xml	/	vb	(p:any('x'), p:any(xs:date('2024-01-01'))) = (p:any('y'), p:any('x'))
+order-02	edge.xml	/	vb	(p:any('x'), p:any(xs:date('2024-01-01'))) = 'x'
+order-03	edge.xml	/	vb	(p:any(xs:date('2024-01-01')), p:any('x')) = 'x'
+order-04	edge.xml	/	vb	//d:nothing = xs:integer(p:any('a'))
+order-05	edge.xml	/	vb	xs:integer(p:any('a')) = //d:nothing
+order-06	edge.xml	/	vb	//d:nothing = //*[@n]/xs:integer(@n)
+order-07	edge.xml	/	vb	//*[@n]/xs:integer(@n) = //d:nothing
+order-08	edge.xml	/	vb	() eq xs:integer(p:any('a'))
+order-09	edge.xml	/	vb	p:any(()) eq xs:integer(p:any('a'))
+order-10	edge.xml	/	vb	p:any(()) + xs:integer(p:any('a'))
+order-11	edge.xml	/	vb	xs:integer(p:any('a')) + p:any(())
+order-12	edge.xml	/	vb	//d:item[1]/@n = (1, xs:integer(p:any('a')))
+order-13	edge.xml	/	vb	(1, xs:integer(p:any('a'))) = //d:item[1]/@n
+order-14	edge.xml	/	vb	//@n = (2, xs:integer(p:any('a')))
+order-15	edge.xml	/	vb	exists(//*[@n]/xs:integer(@n))
+order-16	edge.xml	/	vb	(//*[@n]/xs:integer(@n))[2]
+order-17	edge.xml	/	vb	(//*[@n]/xs:integer(@n))[last()]
+order-18	edge.xml	/	vb	some $n in //@n satisfies $n = 2
+order-19	edge.xml	/	vb	every $n in //@n satisfies $n < 2
+order-20	edge.xml	/	vb	//*[@n = 2] | //*[@n > 5]
+order-21	edge.xml	/	vb	boolean(//*[@n = 1] | //*[@n > 5])
+order-22	edge.xml	/	vb	count(//*[@n = 1] | //d:nothing)
+order-23	edge.xml	/	vb	(//*[@n = 1], //*[@n > 5])[1]
+order-24	edge.xml	/	vb	if (//*[@n > 1]) then 1 else 0
+order-25	edge.xml	/	vb	not(//*[@n > 1])
+order-26	edge.xml	/	vb	//*[@n > 1][last()]
+order-27	edge.xml	/	vb	for $i in //*[@n] return xs:integer($i/@n)
+order-28	edge.xml	/	vb	(for $i in //*[@n] return xs:integer($i/@n))[1]
+order-29	edge.xml	/	vb	sum((1, 0e0 div 0, p:any('a')))
+order-30	edge.xml	/	vb	sum((1, p:any('a'), 0e0 div 0))
+order-31	edge.xml	/	vb	exists(//*[@n = 1] | //d:nothing)
+order-32	edge.xml	/	vb	exists(//*[@n = 1] | //*[@n = 2])
+order-33	edge.xml	/	vb	(//*[@n = 1] | //d:nothing)[1]
+order-34	edge.xml	/	vb	exists(//d:nothing | //*[@n = 1])
+order-35	edge.xml	/	vb	if (count(//*[@n = 1] | //d:nothing)) then 'yes' else 'no'
+order-36	edge.xml	/	vb	(//*[@n = 1] | //d:nothing)[@n = 1]

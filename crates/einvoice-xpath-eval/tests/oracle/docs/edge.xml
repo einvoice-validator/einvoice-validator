@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- top comment -->
+<?top-pi some data?>
+<t:root xmlns:t="urn:t" xmlns:u="urn:t" xmlns="urn:d" t:version="2" plain="p">
+  <item id="a" n="1">first<sub>x</sub>tail</item>
+  <item id="b" n="2"> second </item>
+  <!-- inner comment -->
+  <item id="c" n="10"><![CDATA[<cdata>]]>&amp;more</item>
+  <u:item id="d" n="abc"/>
+  <empty/>
+  <num>3</num><num>1.50</num><num> 2 </num><num>-0</num><num>NaN</num><num>1e3</num><num>INF</num>
+  <bool>true</bool><bool>0</bool><bool>TRUE</bool>
+  <date>2024-02-29</date><date>2024-03-01Z</date><date>2024-02-30</date><date> 2024-01-01+01:00 </date>
+  <code>A B  C</code>
+  <?inner-pi value?>
+  <deep><a><b><c id="c1"/></b><b><c id="c2"/></b></a></deep>
+  <mixed>one<x/>two<x/>three</mixed>
+  <ws>   </ws>
+  <unicode>straße ǆ ﬁ ΐ é</unicode>
+  <plain xmlns=""><child attr="1">no namespace</child></plain>
+</t:root>
