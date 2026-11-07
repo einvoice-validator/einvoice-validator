@@ -7,7 +7,8 @@ name: peppol
 # checked against its pinned checksum), extracts the cases, runs Saxon-HE with
 # both stylesheets, cross-checks the goldens with the VEFA expectations
 # (`cargo xtask peppol`), then requires the engine to give the Saxon-HE result
-# on every case (crates/einvoice-xslt-exec/tests/peppol_equivalence.rs), and
+# on every case (crates/einvoice-xslt-exec/tests/peppol_equivalence.rs and
+# mutation_equivalence.rs), and
 # einvoice-validate, given the bundle that scripts/fetch-peppol.sh writes, to
 # give the Saxon-HE verdicts and findings (crates/einvoice-cli/tests/
 # peppol_bundle.rs).

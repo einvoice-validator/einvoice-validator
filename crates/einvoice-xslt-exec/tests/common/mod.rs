@@ -122,3 +122,118 @@ pub(crate) fn first_difference(golden: &str, ours: &str) -> String {
         o.len()
     )
 }
+
+/// One mutation case (`corpus/<rule set>/mutations.tsv`): its id and its input document
+/// (absolute path).
+#[derive(Debug, Clone)]
+pub(crate) struct MutationCase {
+    pub(crate) id: String,
+    pub(crate) input: String,
+}
+
+/// The cases of `<corpus>/mutations.tsv`, whose inputs are relative to `base`.
+pub(crate) fn mutation_cases(corpus: &Path, base: &Path) -> Result<Vec<MutationCase>, String> {
+    let text = read(&corpus.join("mutations.tsv"))?;
+    let mut lines = text.lines();
+    if lines.next() != Some("case\tinput\tbase\treason") {
+        return Err("mutations.tsv: unexpected header".to_owned());
+    }
+    lines
+        .map(|line| {
+            let mut columns = line.split('\t');
+            let (Some(id), Some(input)) = (columns.next(), columns.next()) else {
+                return Err(format!("mutations.tsv: bad line {line:?}"));
+            };
+            let input = std::path::absolute(join(base, input)).map_err(|e| e.to_string())?;
+            let input = input
+                .to_str()
+                .ok_or_else(|| format!("{}: not UTF-8", input.display()))?
+                .to_owned();
+            Ok(MutationCase {
+                id: id.to_owned(),
+                input,
+            })
+        })
+        .collect()
+}
+
+/// What Saxon-HE gave on a case: its canonical SVRL, or the dynamic error that stopped
+/// it (`<id>.error.txt`: `error <CODE>`, then `message <message>`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Expected {
+    Svrl(String),
+    Error { code: String, message: String },
+}
+
+/// The golden of case `id` in `golden_dir`.
+pub(crate) fn expected(golden_dir: &Path, id: &str) -> Result<Expected, String> {
+    let error = join(golden_dir, &format!("{id}.error.txt"));
+    if error.exists() {
+        let text = read(&error)?;
+        let mut lines = text.lines();
+        let code = lines.next().and_then(|l| l.strip_prefix("error "));
+        let message = lines.next().and_then(|l| l.strip_prefix("message "));
+        return match (code, message, lines.next()) {
+            (Some(code), Some(message), None) => Ok(Expected::Error {
+                code: code.to_owned(),
+                message: message.to_owned(),
+            }),
+            _ => Err(format!("{}: malformed", error.display())),
+        };
+    }
+    read(&join(golden_dir, &format!("{id}.svrl.txt"))).map(Expected::Svrl)
+}
+
+/// Runs the stylesheet on every mutation case and compares with the goldens in
+/// `golden_dir`. Returns the differences (an error with the same code but another message
+/// is not one: it is returned apart, for information).
+pub(crate) fn check_mutations(
+    executable: &Executable,
+    cases: &[MutationCase],
+    golden_dir: &Path,
+) -> (Vec<String>, Vec<String>) {
+    let mut problems = Vec::new();
+    let mut messages = Vec::new();
+    for case in cases {
+        let outcome = (|| -> Result<(), String> {
+            let text = read(Path::new(&case.input))?;
+            let uri = einvoice_xpath_eval::file_uri(Path::new(&case.input));
+            let ours = executable.transform(text.as_str(), uri.as_deref());
+            match (expected(golden_dir, &case.id)?, ours) {
+                (Expected::Svrl(golden), Ok(t)) => {
+                    let canonical = canonical(&t.output, &case.input)?;
+                    if canonical == golden {
+                        Ok(())
+                    } else {
+                        Err(first_difference(&golden, &canonical))
+                    }
+                }
+                (Expected::Svrl(_), Err(e)) => {
+                    Err(format!("  saxon: a report\n  ours:  error {e}"))
+                }
+                (Expected::Error { code, .. }, Ok(_)) => {
+                    Err(format!("  saxon: error {code}\n  ours:  a report"))
+                }
+                (Expected::Error { code, message }, Err(e)) => {
+                    if e.code() != code {
+                        return Err(format!(
+                            "  saxon: error {code} {message}\n  ours:  error {e}"
+                        ));
+                    }
+                    if e.message() != message {
+                        messages.push(format!(
+                            "{}: {code}\n  saxon: {message}\n  ours:  {}",
+                            case.id,
+                            e.message()
+                        ));
+                    }
+                    Ok(())
+                }
+            }
+        })();
+        if let Err(e) = outcome {
+            problems.push(format!("{}\n{e}", case.id));
+        }
+    }
+    (problems, messages)
+}

@@ -303,9 +303,10 @@ job_oracle() {
 # (checksums verified), `cargo xtask peppol` extracts the cases, runs Saxon-HE
 # with both stylesheets and cross-checks the goldens with the VEFA
 # expectations, then the engine must give the Saxon-HE result on every case
-# (tests/peppol_equivalence.rs of einvoice-xslt-exec), and einvoice-validate
+# (tests/peppol_equivalence.rs of einvoice-xslt-exec, and
+# tests/mutation_equivalence.rs for the mutation cases), and einvoice-validate
 # with the bundle that scripts/fetch-peppol.sh writes must give the Saxon-HE
-# verdicts and findings (tests/peppol_bundle.rs of einvoice-cli); both tests
+# verdicts and findings (tests/peppol_bundle.rs of einvoice-cli); these tests
 # are required to run here.
 # Without Java or without network access (and nothing cached yet), SKIPPED,
 # except in CI, where it fails.
@@ -338,7 +339,7 @@ job_peppol() {
     [ "$status" -eq 0 ] || return 1
     cargo xtask peppol || return 1
     EINVOICE_PEPPOL_REQUIRED=1 cargo test --locked --all-features -p einvoice-xslt-exec \
-        --test peppol_equivalence -- --nocapture || return 1
+        --test peppol_equivalence --test mutation_equivalence -- --nocapture || return 1
     EINVOICE_PEPPOL_REQUIRED=1 cargo test --locked --all-features -p einvoice-cli \
         --test peppol_bundle -- --nocapture
 }

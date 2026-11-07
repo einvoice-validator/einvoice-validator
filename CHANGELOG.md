@@ -23,6 +23,11 @@ against.
   from 235 to 973 of 982. A case on which Saxon-HE stops with a dynamic error has the error as
   its golden (`<case>.error.txt`); the oracle runs the mutation cases on one thread with `-t`
   so that every diagnostic is attributed to its document.
+- Mutation equivalence tests (#3): on the 504 CEN mutation cases and, with both stylesheets, on
+  the 505 Peppol ones, the engine gives what Saxon-HE 12.10 gave: the same canonical SVRL, or
+  a dynamic error with the same code (`einvoice-xslt-exec`, `tests/mutation_equivalence.rs`);
+  `einvoice-validate` gives the verdicts and findings of the goldens, with the built-in rule set
+  and with the Peppol bundle (`einvoice-cli` tests).
 - Cargo workspace (edition 2024) with the toolchain pinned in `rust-toolchain.toml`, every
   warning denied, clippy `all` and `pedantic` denied, `unsafe` code forbidden, and a
   dependency policy checked by cargo-deny.

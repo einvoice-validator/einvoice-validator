@@ -166,3 +166,133 @@ pub(crate) fn temp_dir(name: &str) -> PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
+
+/// One mutation case of `<corpus>/mutations.tsv`: its id and its input, relative to the
+/// workspace root (`prefix` is the base directory of the inputs, relative to the root).
+#[derive(Debug, Clone)]
+pub(crate) struct MutationCase {
+    pub(crate) id: String,
+    pub(crate) input: String,
+}
+
+pub(crate) fn mutation_cases(corpus: &str, prefix: &str) -> Vec<MutationCase> {
+    let text = std::fs::read_to_string(join(&workspace_root(), &format!("{corpus}/mutations.tsv")))
+        .unwrap();
+    let mut lines = text.lines();
+    assert_eq!(lines.next(), Some("case\tinput\tbase\treason"));
+    lines
+        .map(|line| {
+            let mut columns = line.split('\t');
+            let id = columns.next().unwrap().to_owned();
+            let input = columns.next().unwrap();
+            let input = if prefix.is_empty() {
+                input.to_owned()
+            } else {
+                format!("{prefix}/{input}")
+            };
+            MutationCase { id, input }
+        })
+        .collect()
+}
+
+/// What Saxon-HE gave with one stylesheet: findings, or the code of the error that
+/// stopped it (`<id>.error.txt`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Golden {
+    Findings(Vec<Finding>),
+    Error(String),
+}
+
+pub(crate) fn golden_of(golden_dir: &str, id: &str) -> Golden {
+    let root = workspace_root();
+    let error = join(&root, &format!("{golden_dir}/{id}.error.txt"));
+    if error.exists() {
+        let text = std::fs::read_to_string(error).unwrap();
+        let code = text.lines().next().unwrap().strip_prefix("error ").unwrap();
+        return Golden::Error(code.to_owned());
+    }
+    let svrl =
+        std::fs::read_to_string(join(&root, &format!("{golden_dir}/{id}.svrl.txt"))).unwrap();
+    Golden::Findings(golden_findings(&svrl))
+}
+
+/// Compares one document of a JSON report with the goldens of its stylesheets
+/// (`(stylesheet name, golden directory)`, in the order they run). Returns the problems.
+pub(crate) fn check_mutation_document(
+    id: &str,
+    document: &json::Value,
+    stylesheets: &[(&str, &str)],
+) -> Vec<String> {
+    let mut problems = Vec::new();
+    let schema_errors = document.get("counts").get("schema_errors").number();
+    let status = document.get("status").str().unwrap();
+    let errors: Vec<(&str, &str)> = document
+        .get("stylesheet_errors")
+        .array()
+        .iter()
+        .map(|e| {
+            (
+                e.get("stylesheet").str().unwrap(),
+                e.get("code").str().unwrap(),
+            )
+        })
+        .collect();
+    let mut fatal = false;
+    let mut stopped = None;
+    for (name, dir) in stylesheets {
+        match golden_of(dir, id) {
+            Golden::Error(code) => {
+                stopped.get_or_insert((*name, code.clone()));
+                if schema_errors > 0 && !errors.contains(&(*name, code.as_str())) {
+                    problems.push(format!(
+                        "{id}: {name}: expected stylesheet error {code}, got {errors:?}"
+                    ));
+                }
+            }
+            Golden::Findings(expected) => {
+                fatal |= expected.iter().any(|f| f.2.as_deref() == Some("fatal"));
+                if stopped.is_some() && schema_errors == 0 {
+                    continue;
+                }
+                let ours: Vec<Finding> = document
+                    .get("findings")
+                    .array()
+                    .iter()
+                    .filter(|f| f.get("stylesheet").str() == Some(*name))
+                    .map(|f| {
+                        (
+                            f.get("kind").str().unwrap().to_owned(),
+                            f.get("id").str().map(str::to_owned),
+                            f.get("flag").str().map(str::to_owned),
+                            f.get("location").str().unwrap().to_owned(),
+                        )
+                    })
+                    .collect();
+                if ours != expected || errors.iter().any(|(s, _)| s == name) {
+                    problems.push(format!(
+                        "{id}: {name}: findings differ (stylesheet errors {errors:?})"
+                    ));
+                }
+            }
+        }
+    }
+    let expected_status = match &stopped {
+        Some((name, code)) if schema_errors == 0 => {
+            let message = document.get("error").get("message").str().unwrap_or("");
+            if document.get("error").get("kind").str() != Some("transform")
+                || !message.contains(code.as_str())
+            {
+                problems.push(format!(
+                    "{id}: {name}: expected a transform error {code}, got {message:?}"
+                ));
+            }
+            "error"
+        }
+        _ if fatal || schema_errors > 0 => "invalid",
+        _ => "valid",
+    };
+    if status != expected_status {
+        problems.push(format!("{id}: {status}, expected {expected_status}"));
+    }
+    problems
+}

@@ -24,11 +24,11 @@ SVRL report as Saxon-HE.
 | `einvoice-xslt`: loader of the XSLT 2.0 subset; loads the CEN 1.3.17 stylesheet | done |
 | `einvoice-xpath-eval`: XPath 2.0 evaluator; agrees with Saxon-HE on every distinct expression of the CEN 1.3.17 stylesheet at nodes of corpus documents | done |
 | `einvoice-xslt-exec`: XSLT executor and SVRL output | done |
-| Same results as Saxon-HE on the whole CEN corpus | done: 1179 / 1179 cases identical; the equivalence test of the 504 mutation cases is to come ([#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
+| Same results as Saxon-HE on the whole CEN corpus | done: 1179 / 1179 cases and 504 / 504 mutation cases identical (the same SVRL, or the same error code where Saxon-HE stops with a dynamic error) ([#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
 | Test corpus of Peppol BIS Billing 3.0.22 (707 cases, and 505 mutation cases), built locally from the pinned release (not redistributed) with the Saxon-HE results of both stylesheets | done ([#4](https://github.com/einvoice-validator/einvoice-validator/issues/4)) |
-| Same results as Saxon-HE on the whole Peppol corpus | done: 707 / 707 cases identical with each of the two stylesheets ([#5](https://github.com/einvoice-validator/einvoice-validator/issues/5)) |
+| Same results as Saxon-HE on the whole Peppol corpus | done: 707 / 707 cases and 505 / 505 mutation cases identical with each of the two stylesheets ([#5](https://github.com/einvoice-validator/einvoice-validator/issues/5), [#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
 | `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1546 cases, every corpus case agrees, the other differences are listed with their cause | done ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6) follow-ups) |
-| Public API (`einvoice-validator`: rule-set bundles, `Validator`, `Report`) and command-line tool (`einvoice-validate`); verdicts and findings agree with Saxon-HE on all 1179 CEN cases and, with the Peppol bundle, on all 707 Peppol cases | done ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
+| Public API (`einvoice-validator`: rule-set bundles, `Validator`, `Report`) and command-line tool (`einvoice-validate`); verdicts and findings agree with Saxon-HE on all 1179 CEN cases and 504 mutation cases and, with the Peppol bundle, on all 707 Peppol cases and 505 mutation cases | done ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
 | WebAssembly build | pending: the library compiles for `wasm32-unknown-unknown` (checked in CI); not usable there yet ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
 | Other rule sets (CEN CII, XRechnung, Factur-X / ZUGFeRD) | planned ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
 
@@ -223,7 +223,7 @@ cargo test -p einvoice-xsd --test oracle         # einvoice-xsd against the xmll
 | `pins` | `scripts/freshness.sh pins` (every pin of `upstream.toml` matches the files that record it, offline) and the tests of `scripts/freshness.sh` (needs `jq`) |
 | `guards` | ShellCheck on `scripts/*.sh` and `.githooks/*`, then the tests of the privacy guard and of the release scripts (need `jq`) |
 | `oracle` | artefact checksums, corpus extraction and VEFA cross-check, then xmllint on the oracle cases of `einvoice-xsd` (needs `xmllint`), then Saxon-HE on every corpus case and on the probes of `einvoice-xdm`, `einvoice-xpath-eval` and `einvoice-xslt-exec`: the goldens must not change (needs Java; each part skipped locally without its tool) |
-| `peppol` | the Peppol corpus in `target/peppol/`: fetch and compile the pinned release, extract the cases, Saxon-HE with both stylesheets, VEFA cross-check, then the engine, and `einvoice-validate` with the Peppol bundle, must match every golden (needs Java and network access the first time; skipped locally without them) |
+| `peppol` | the Peppol corpus in `target/peppol/`: fetch and compile the pinned release, extract the cases, Saxon-HE with both stylesheets, VEFA cross-check, then the engine, and `einvoice-validate` with the Peppol bundle, must match every golden, mutation cases included (needs Java and network access the first time; skipped locally without them) |
 | `privacy` | the repository's pre-commit checks on staged changes (maintainers; skipped when nothing is staged) |
 
 The corpus and the oracle can also be run step by step:
@@ -237,6 +237,7 @@ cargo xtask oracle           # Saxon-HE on every case; the goldens must not chan
 scripts/fetch-peppol.sh      # Peppol BIS Billing release and its compiled stylesheets into target/peppol/, checksums verified
 cargo xtask peppol           # Peppol corpus, Saxon-HE goldens and VEFA cross-check, in target/peppol/
 cargo test -p einvoice-xslt-exec --test peppol_equivalence -- --nocapture   # the engine on the Peppol corpus
+cargo test -p einvoice-xslt-exec --test mutation_equivalence -- --nocapture # the engine on the CEN and Peppol mutation cases
 cargo test -p einvoice-cli --test peppol_bundle -- --nocapture              # einvoice-validate with the Peppol bundle
 cargo run --release -p einvoice-xsd --example xmllint-oracle                # xmllint on the oracle cases of einvoice-xsd
 ```

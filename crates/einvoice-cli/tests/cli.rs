@@ -502,3 +502,33 @@ fn the_whole_corpus_agrees_with_the_saxon_goldens() {
     assert_eq!(summary.get("valid").number(), u64::try_from(valid).unwrap());
     assert_eq!(summary.get("errors").number(), 0);
 }
+
+#[test]
+fn the_built_in_rule_set_agrees_with_the_saxon_goldens_on_the_mutation_cases() {
+    let cases = common::mutation_cases(common::CORPUS, "");
+    assert_eq!(cases.len(), 504);
+    let mut args = vec!["--format", "json", "--jobs", "4"];
+    args.extend(cases.iter().map(|c| c.input.as_str()));
+    let r = run(&args, None);
+    let report = json::parse(&r.stdout).unwrap();
+    let documents = report.get("documents").array();
+    assert_eq!(documents.len(), cases.len());
+    let golden = format!("{}/golden", common::CORPUS);
+    let mut problems = Vec::new();
+    for (case, document) in cases.iter().zip(documents) {
+        problems.extend(common::check_mutation_document(
+            &case.id,
+            document,
+            &[("EN16931-UBL", golden.as_str())],
+        ));
+    }
+    eprintln!(
+        "{} mutation documents, {} disagreements",
+        cases.len(),
+        problems.len()
+    );
+    for p in &problems {
+        eprintln!("DISAGREE {p}");
+    }
+    assert_eq!(problems, Vec::<String>::new());
+}

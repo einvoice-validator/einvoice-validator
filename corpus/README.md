@@ -113,10 +113,11 @@ runs too (`.github/workflows/peppol.yml`):
    Peppol examples there, runs Saxon-HE with each stylesheet (goldens in `golden-peppol/` and
    `golden-cen/`), and cross-checks the findings of both stylesheets together with the VEFA
    expectations, against the committed `vefa-disagreements.tsv`.
-3. The equivalence test of `crates/einvoice-xslt-exec` (`tests/peppol_equivalence.rs`) runs
-   both stylesheets with the engine on every case; each canonical SVRL must equal its golden.
-   Without the cache it prints SKIPPED and passes, unless `EINVOICE_PEPPOL_REQUIRED` is set, as
-   `scripts/check.sh peppol` does.
+3. The equivalence tests of `crates/einvoice-xslt-exec` (`tests/peppol_equivalence.rs`, and
+   `tests/mutation_equivalence.rs` for the mutation cases) run both stylesheets with the engine
+   on every case; each canonical SVRL must equal its golden, and where Saxon-HE stopped with a
+   dynamic error the engine must stop with the same code. Without the cache they print SKIPPED
+   and pass, unless `EINVOICE_PEPPOL_REQUIRED` is set, as `scripts/check.sh peppol` does.
 
 Without Java or network access, `scripts/check.sh peppol` prints SKIPPED, except in CI, where it
 fails. Its cases are listed in `peppol-bis-billing-ubl-3.0.22/README.md`.
@@ -139,4 +140,6 @@ work on the committed corpora. `cargo test` runs the manifest, extraction, mutat
 cross-check checks
 without Java, and the equivalence tests of `crates/einvoice-xslt-exec`: `tests/cen_equivalence.rs`
 runs the vendored stylesheet on every case and its canonical SVRL must equal the golden;
-`tests/peppol_equivalence.rs` does the same on the Peppol corpus when it has been built.
+`tests/peppol_equivalence.rs` does the same on the Peppol corpus when it has been built;
+`tests/mutation_equivalence.rs` does it on the mutation cases of both, where a golden may also
+be a dynamic error, whose code the engine must raise (its message may be worded differently).

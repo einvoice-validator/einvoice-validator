@@ -159,3 +159,47 @@ fn the_peppol_bundle_agrees_with_the_saxon_goldens() {
     assert_eq!(summary.get("errors").number(), 0);
     assert_eq!(r.code, i32::from(invalid > 0), "exit status");
 }
+
+#[test]
+fn the_peppol_bundle_agrees_with_the_saxon_goldens_on_the_mutation_cases() {
+    if cases().is_none() {
+        assert!(
+            std::env::var_os(REQUIRED_VAR).is_none_or(|v| v.is_empty()),
+            "no Peppol bundle and corpus in {BASE}; {REQUIRED_VAR} is set"
+        );
+        eprintln!("SKIPPED: no Peppol bundle and corpus in {BASE}");
+        return;
+    }
+    let cases = common::mutation_cases(&format!("{BASE}/corpus"), BASE);
+    assert!(!cases.is_empty());
+    let mut args = vec!["--bundle", BASE, "--format", "json", "--jobs", "4"];
+    args.extend(cases.iter().map(|c| c.input.as_str()));
+    let r = run(&args, None);
+    let report = json::parse(&r.stdout).unwrap();
+    let documents = report.get("documents").array();
+    assert_eq!(documents.len(), cases.len());
+    let stylesheets: Vec<(&str, String)> = STYLESHEETS
+        .iter()
+        .map(|(name, dir)| (*name, format!("{BASE}/corpus/{dir}")))
+        .collect();
+    let stylesheets: Vec<(&str, &str)> =
+        stylesheets.iter().map(|(n, d)| (*n, d.as_str())).collect();
+    let mut problems = Vec::new();
+    for (case, document) in cases.iter().zip(documents) {
+        assert_eq!(document.get("path").str(), Some(case.input.as_str()));
+        problems.extend(common::check_mutation_document(
+            &case.id,
+            document,
+            &stylesheets,
+        ));
+    }
+    eprintln!(
+        "{} mutation documents, {} disagreements",
+        cases.len(),
+        problems.len()
+    );
+    for p in &problems {
+        eprintln!("DISAGREE {p}");
+    }
+    assert_eq!(problems, Vec::<String>::new());
+}
