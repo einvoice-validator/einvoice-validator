@@ -7,10 +7,17 @@ name: privacy
 # repository. The guard's own tests use a synthetic list and run everywhere.
 # Text published on GitHub (issues, comments, ...) is scanned by
 # privacy-text.yml.
+#
+# The changelog job also lives here, as this workflow is cheap and already
+# runs on every pull request: it fails when a pull request changes more than
+# documentation and tests without updating the Unreleased section of
+# CHANGELOG.md (scripts/changelog.sh guard). The label no-changelog skips it;
+# adding or removing a label re-runs the workflow.
 
 on:
   push:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -49,3 +56,25 @@ jobs:
         run: shellcheck --version && shellcheck scripts/privacy-guard.sh scripts/claude-hook-privacy.sh scripts/test-privacy-guard.sh .githooks/*
       - name: Tests (synthetic term list)
         run: scripts/test-privacy-guard.sh
+
+  changelog:
+    name: changelog (Unreleased updated)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The merge commit of the pull request and its first parent, the base
+      # branch: their difference is what the pull request changes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: CHANGELOG.md updated, or label no-changelog
+        env:
+          NO_CHANGELOG: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        run: |
+          if [ "$NO_CHANGELOG" = true ]; then
+            echo "label no-changelog: check skipped"
+            exit 0
+          fi
+          scripts/changelog.sh guard HEAD^1 HEAD
