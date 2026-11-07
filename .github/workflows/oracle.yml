@@ -4,8 +4,9 @@ name: oracle
 # vendored artefacts against their SHA256SUMS and the extracted corpus against
 # the vendored test sets, runs Saxon-HE on every corpus case and fails if the
 # committed goldens differ, then cross-checks the goldens with the VEFA
-# expectations; then the Saxon goldens of einvoice-xdm, einvoice-xpath-eval and
-# einvoice-xslt-exec.
+# expectations; then xmllint (libxml2) on the oracle cases of einvoice-xsd,
+# whose results must not change; then the Saxon goldens of einvoice-xdm,
+# einvoice-xpath-eval and einvoice-xslt-exec.
 # Only runs when one of those inputs or the tooling changes.
 
 on:
@@ -22,6 +23,9 @@ on:
       - "crates/einvoice-xslt-exec/tests/probes/**"
       - "crates/einvoice-xslt-exec/tests/common/probes.rs"
       - "crates/einvoice-xslt-exec/examples/saxon-probes.rs"
+      - "crates/einvoice-xsd/schemas/**"
+      - "crates/einvoice-xsd/tests/oracle/**"
+      - "crates/einvoice-xsd/examples/xmllint-oracle.rs"
       - "crates/einvoice-svrl/**"
       - "scripts/check.sh"
       - "scripts/fetch-saxon.sh"
@@ -44,6 +48,9 @@ on:
       - "crates/einvoice-xslt-exec/tests/probes/**"
       - "crates/einvoice-xslt-exec/tests/common/probes.rs"
       - "crates/einvoice-xslt-exec/examples/saxon-probes.rs"
+      - "crates/einvoice-xsd/schemas/**"
+      - "crates/einvoice-xsd/tests/oracle/**"
+      - "crates/einvoice-xsd/examples/xmllint-oracle.rs"
       - "crates/einvoice-svrl/**"
       - "scripts/check.sh"
       - "scripts/fetch-saxon.sh"
@@ -74,8 +81,11 @@ defaults:
 
 jobs:
   oracle:
-    name: oracle (Saxon-HE goldens, VEFA cross-check)
-    runs-on: ubuntu-latest
+    name: oracle (Saxon-HE goldens, VEFA cross-check, xmllint)
+    # Not ubuntu-latest: the xmllint results of einvoice-xsd were produced with
+    # libxml2 2.9.14, the version Ubuntu 24.04 ships, and are re-run with the
+    # same version.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,9 +95,16 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      # xmllint (libxml2), the reference of einvoice-xsd.
+      - name: Install xmllint
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libxml2-utils
+          xmllint --version 2>&1 | head -n 1
       - name: Install the toolchain pinned in rust-toolchain.toml
         run: scripts/check.sh toolchain
       # Fetches Saxon-HE from Maven Central (checksum verified) and fails,
-      # rather than skips, if Java is missing: CI=true on GitHub runners.
+      # rather than skips, if Java or xmllint is missing: CI=true on GitHub
+      # runners.
       - name: oracle
         run: scripts/check.sh oracle

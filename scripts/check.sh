@@ -1,23 +1,29 @@
 #!/usr/bin/env bash
-# The checks, run the same way locally and in CI (.github/workflows/ci.yml
-# calls the jobs below): formatting, lints, docs, tests, the dependency
-# policy, the workflow linters and, when something is staged, the privacy
-# guard.
+# The checks, run the same way locally and in CI (.github/workflows/ci.yml,
+# oracle.yml and peppol.yml call the jobs below): formatting, lints, docs,
+# tests, the crates without their default features, the WebAssembly build,
+# the dependency policy, the workflow linters, the upstream pins, the shell
+# scripts and their tests, the reference oracles and, when something is
+# staged, the privacy guard.
 #
-#   scripts/check.sh                # every job: fmt clippy doc test deny actionlint zizmor oracle peppol privacy
+#   scripts/check.sh                # every job: fmt clippy doc test features wasm deny actionlint zizmor pins guards oracle peppol privacy
 #   scripts/check.sh clippy test    # selected jobs
 #   scripts/check.sh toolchain      # only install the pinned toolchain
 #
 # The Rust jobs use the toolchain pinned in rust-toolchain.toml (installed
 # with rustup when missing), so the lint set only moves with a reviewed bump.
-# cargo-deny, actionlint and zizmor are not part of the toolchain: each job
-# runs when its tool is installed and prints SKIPPED otherwise. CI installs
-# all three at pinned versions, so nothing is skipped there. The oracle job
-# needs Java (any recent JRE) and network access the first time, to fetch
-# Saxon-HE; without Java it checks what it can and skips the Saxon run. The
-# peppol job needs Java and network access the first time too (Saxon-HE, the
-# Peppol release, Maven and the Schematron compiler); without them it prints
-# SKIPPED, except in CI, where it fails.
+# The wasm job needs the wasm32-unknown-unknown target of that toolchain
+# (rustup target add wasm32-unknown-unknown). cargo-deny, actionlint, zizmor,
+# jq (pins) and ShellCheck (guards) are not part of the toolchain: each runs
+# when installed and prints SKIPPED otherwise. In CI (CI set) a missing wasm
+# target, jq, ShellCheck, xmllint or Java is a failure, not a skip; CI installs
+# cargo-deny, actionlint and zizmor at pinned versions, so nothing is skipped
+# there. The oracle job needs xmllint (libxml2) for the oracle of
+# einvoice-xsd, and Java (any recent JRE) and network access the first time,
+# to fetch Saxon-HE; locally, without them, it checks what it can and skips
+# the rest. The peppol job needs Java and network access the first time too
+# (Saxon-HE, the Peppol release, Maven and the Schematron compiler); without
+# them it prints SKIPPED, except in CI, where it fails.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -26,6 +32,16 @@ cd "$(git rev-parse --show-toplevel)"
 export RUSTFLAGS="-D warnings" RUSTDOCFLAGS="-D warnings"
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
+
+# missing WHAT: a prerequisite WHAT is missing. SKIPPED locally (status 0), a
+# failure in CI (status 1).
+missing() {
+    if [ -n "${CI:-}" ]; then
+        echo "$1: required in CI" >&2
+        return 1
+    fi
+    echo "SKIPPED: $1"
+}
 
 toolchain_channel() { sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' rust-toolchain.toml; }
 
@@ -51,6 +67,22 @@ job_test() {
     need_toolchain &&
         cargo test --workspace --all-targets --all-features --locked &&
         cargo test --workspace --doc --all-features --locked
+}
+# The library without its default features: no built-in rule set, bundles only.
+job_features() {
+    need_toolchain &&
+        cargo clippy -p einvoice-validator --no-default-features --all-targets --locked -- -D warnings &&
+        cargo test -p einvoice-validator --no-default-features --locked
+}
+# The library builds for WebAssembly (wasm32-unknown-unknown).
+job_wasm() {
+    need_toolchain || return 1
+    local target=wasm32-unknown-unknown
+    if ! rustup target list --installed --toolchain "$(toolchain_channel)" | grep -qx "$target"; then
+        missing "the $target target is not installed (rustup target add $target)"
+        return
+    fi
+    cargo build --locked --target "$target" -p einvoice-validator
 }
 job_deny() {
     if ! cargo deny --version >/dev/null 2>&1; then
@@ -82,31 +114,63 @@ job_zizmor() {
         token=$(gh auth token 2>/dev/null || true)
     fi
     if [ -n "$token" ]; then
-        GH_TOKEN=$token zizmor --persona=pedantic .github/workflows
+        GH_TOKEN=$token zizmor --persona=pedantic .github/workflows .github/dependabot.yml
     else
         echo "no GitHub token: online audits not run"
-        zizmor --persona=pedantic --offline .github/workflows
+        zizmor --persona=pedantic --offline .github/workflows .github/dependabot.yml
     fi
 }
-# The test corpus and its reference oracle (corpus/README.md): the vendored
+# Every pin of upstream.toml matches the files that record it (offline), and
+# the tests of scripts/freshness.sh. Needs jq.
+job_pins() {
+    if ! command -v jq >/dev/null 2>&1; then
+        missing "pins (jq is not installed)"
+        return
+    fi
+    scripts/freshness.sh pins && scripts/freshness-test.sh
+}
+# The shell scripts and git hooks: ShellCheck, then the tests of the privacy
+# guard and of the release scripts (synthetic data, throw-away repositories),
+# which need jq.
+job_guards() {
+    local status=0
+    if command -v shellcheck >/dev/null 2>&1; then
+        shellcheck --version | sed -n 2p
+        shellcheck scripts/*.sh .githooks/* && echo "shellcheck: scripts and hooks clean" || status=1
+    else
+        missing "ShellCheck (shellcheck is not installed)" || status=1
+    fi
+    if command -v jq >/dev/null 2>&1; then
+        scripts/test-privacy-guard.sh || status=1
+        scripts/test-release.sh || status=1
+    else
+        missing "tests of the privacy guard and release scripts (jq is not installed)" || status=1
+    fi
+    return "$status"
+}
+# The test corpus and its reference oracles (corpus/README.md): the vendored
 # artefacts against their SHA256SUMS, the extracted corpus against the vendored
-# test sets, the goldens against the VEFA expectations, then Saxon-HE (fetched
-# from Maven Central, checksum verified) re-run on every case, on the atomic
-# value probes of einvoice-xdm, on the expression probes of
-# einvoice-xpath-eval and on the stylesheet probes of einvoice-xslt-exec: the
-# goldens must not change. Without Java the Saxon run is SKIPPED, except in CI, where it fails.
+# test sets, the goldens against the VEFA expectations; then xmllint (libxml2)
+# on every case of the oracle of einvoice-xsd (its results must not change,
+# every disagreement must be explained); then Saxon-HE (fetched from Maven
+# Central, checksum verified) re-run on every case, on the atomic value probes
+# of einvoice-xdm, on the expression probes of einvoice-xpath-eval and on the
+# stylesheet probes of einvoice-xslt-exec: the goldens must not change.
+# Without xmllint or Java, that run is SKIPPED, except in CI, where it fails.
 job_oracle() {
     need_toolchain || return 1
     cargo xtask manifest || return 1
     cargo xtask corpus || return 1
     cargo xtask crosscheck || return 1
+    local xmllint=${XMLLINT:-xmllint}
+    if command -v "$xmllint" >/dev/null 2>&1; then
+        XMLLINT=$xmllint cargo run --locked --release -p einvoice-xsd --example xmllint-oracle || return 1
+    else
+        missing "xmllint oracle of einvoice-xsd (xmllint is not installed)" || return 1
+    fi
     if ! command -v "${JAVA:-java}" >/dev/null 2>&1; then
-        if [ -n "${CI:-}" ]; then
-            echo "java is not installed: the oracle cannot run" >&2
-            return 1
-        fi
-        echo "SKIPPED: Saxon-HE run (java is not installed); manifest, corpus and cross-check done"
-        return 0
+        missing "Saxon-HE run (java is not installed)"
+        return
     fi
     "${JAVA:-java}" -version 2>&1 | head -n 1
     if [ -n "${SAXON_JAR:-}" ]; then
@@ -173,7 +237,7 @@ job_privacy() {
     scripts/privacy-guard.sh staged && echo "privacy guard: staged content clean"
 }
 
-ALL=(fmt clippy doc test deny actionlint zizmor oracle peppol privacy)
+ALL=(fmt clippy doc test features wasm deny actionlint zizmor pins guards oracle peppol privacy)
 
 jobs=("$@")
 [ ${#jobs[@]} -eq 0 ] && jobs=("${ALL[@]}")

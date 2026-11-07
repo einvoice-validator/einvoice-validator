@@ -94,6 +94,12 @@ against.
   their Schematron states), so that the directory can be given to `einvoice-validate --bundle`
   or `Validator::from_bundle_dir`. A test of `einvoice-cli` checks the verdicts and findings of
   all 707 Peppol cases against the Saxon-HE goldens; `scripts/check.sh peppol` requires it (#10).
+- `scripts/check.sh` jobs `features` (clippy and tests of `einvoice-validator` without its
+  default features), `wasm` (`einvoice-validator` built for `wasm32-unknown-unknown`), `pins`
+  (`scripts/freshness.sh pins` and the freshness tests) and `guards` (ShellCheck on every
+  script and git hook, the tests of the privacy guard and of the release scripts); the `oracle`
+  job also runs the xmllint oracle of `einvoice-xsd`, and zizmor also audits
+  `.github/dependabot.yml`. CI runs them all (#6, #7, #9, #15).
 
 ### Changed
 
@@ -116,6 +122,9 @@ against.
   `scripts/check.sh peppol` can tell a missing network from a real failure.
 - The xtask tooling handles rule sets with several stylesheets (one golden directory each) and
   rule sets built outside the tracked tree.
+- The oracle workflow installs xmllint and runs on Ubuntu 24.04, whose libxml2 (2.9.14) produced
+  the `einvoice-xsd` results; it also runs when the schemas or the oracle files of
+  `einvoice-xsd` change (#6).
 
 ### Fixed
 

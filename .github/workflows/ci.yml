@@ -2,11 +2,16 @@ name: ci
 
 # Every check runs through scripts/check.sh, so CI and a local run execute the
 # same commands. Jobs:
-#   rust       fmt, cargo-deny, clippy, doc, test on Linux (one build)
+#   rust       fmt, cargo-deny, clippy, doc, test on Linux (one build), then
+#              einvoice-validator without its default features and built for
+#              wasm32-unknown-unknown
 #   test       tests on macOS and Windows, pull requests and manual runs only,
 #              after the Linux job has passed
-#   workflows  actionlint and zizmor on .github/workflows; ShellCheck and the
-#              tests of the release scripts (scripts/test-release.sh)
+#   workflows  actionlint, and zizmor on .github/workflows and
+#              .github/dependabot.yml; the pins of upstream.toml and the
+#              tests of scripts/freshness.sh; ShellCheck on every script and
+#              git hook, and the tests of the privacy guard and of the release
+#              scripts
 #   ci-ok      fails unless every job above passed: the single status check
 #              to require for branch protection
 
@@ -40,7 +45,7 @@ defaults:
 
 jobs:
   rust:
-    name: rust (fmt, deny, clippy, doc, test)
+    name: rust (fmt, deny, clippy, doc, test, features, wasm)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -79,6 +84,16 @@ jobs:
       - name: test
         if: ${{ !cancelled() }}
         run: scripts/check.sh test
+      - name: features
+        if: ${{ !cancelled() }}
+        run: scripts/check.sh features
+      # rustup adds the target to the toolchain of rust-toolchain.toml.
+      - name: Install the wasm32-unknown-unknown target
+        if: ${{ !cancelled() }}
+        run: rustup target add wasm32-unknown-unknown
+      - name: wasm
+        if: ${{ !cancelled() }}
+        run: scripts/check.sh wasm
 
   test:
     name: test (${{ matrix.os }})
@@ -103,7 +118,7 @@ jobs:
         run: scripts/check.sh test
 
   workflows:
-    name: workflows (actionlint, zizmor, release scripts)
+    name: workflows (actionlint, zizmor, pins, scripts)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -131,17 +146,19 @@ jobs:
         uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
         with:
           version: 1.32.0
-          inputs: .github/workflows
+          inputs: .github/workflows .github/dependabot.yml
           persona: pedantic
           advanced-security: false
           annotations: true
-      # scripts/release.sh and scripts/changelog.sh in throw-away repositories.
-      - name: Release scripts (ShellCheck, tests)
+      # Offline: every pin of upstream.toml against the files that record it.
+      - name: pins
         if: ${{ !cancelled() }}
-        run: |
-          shellcheck --version
-          shellcheck scripts/release.sh scripts/changelog.sh scripts/test-release.sh
-          scripts/test-release.sh
+        run: scripts/check.sh pins
+      # ShellCheck on scripts/ and .githooks/; the privacy guard on a synthetic
+      # term list and the release scripts in throw-away repositories.
+      - name: guards
+        if: ${{ !cancelled() }}
+        run: scripts/check.sh guards
 
   ci-ok:
     name: ci-ok

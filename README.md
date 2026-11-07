@@ -109,10 +109,12 @@ the corpus and on mutations of synthetic documents. See [`corpus/README.md`](cor
 
 Requirements: [rustup](https://rustup.rs/) (the toolchain, Rust 1.99.1, is pinned in
 `rust-toolchain.toml` and installed on first use), `git` and `bash`. Optional: `cargo-deny`,
-`actionlint` and `zizmor` (their checks are skipped when missing), and Java with network access
-for the Saxon-HE oracle and the Peppol corpus (CI uses Java 21, which regenerating the
-`einvoice-xdm` results needs).
-Regenerating the `einvoice-xsd` results needs `xmllint`; its tests do not.
+`actionlint`, `zizmor`, `jq`, ShellCheck and the `wasm32-unknown-unknown` target
+(`rustup target add wasm32-unknown-unknown`): the checks that need them are skipped when they
+are missing. Java with network access for the Saxon-HE oracle and the Peppol corpus (CI uses
+Java 21, which regenerating the `einvoice-xdm` results needs), and `xmllint` for the xmllint
+oracle of `einvoice-xsd` (its results were produced with libxml2 2.9.14); the tests themselves
+need neither.
 
 ```sh
 scripts/check.sh                          # every job below, as CI runs them
@@ -129,11 +131,15 @@ cargo test -p einvoice-xsd --test oracle         # einvoice-xsd against the xmll
 | `clippy` | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` |
 | `doc` | `cargo doc --workspace --no-deps --all-features --locked` |
 | `test` | `cargo test --workspace --all-targets --all-features --locked`, then the doctests |
+| `features` | clippy and the tests of `einvoice-validator` with `--no-default-features` (no built-in rule set) |
+| `wasm` | `cargo build --locked --target wasm32-unknown-unknown -p einvoice-validator` (skipped locally without the target) |
 | `deny` | `cargo deny --all-features check`: licences, duplicates, sources, advisories |
 | `actionlint` | `actionlint` on the GitHub workflows |
-| `zizmor` | `zizmor --persona=pedantic` on the GitHub workflows |
-| `oracle` | artefact checksums, corpus extraction and VEFA cross-check, then Saxon-HE on every corpus case and on the probes of `einvoice-xdm`, `einvoice-xpath-eval` and `einvoice-xslt-exec`: the goldens must not change (needs Java; skipped locally without it) |
-| `peppol` | the Peppol corpus in `target/peppol/`: fetch and compile the pinned release, extract the cases, Saxon-HE with both stylesheets, VEFA cross-check, then the engine must match every golden (needs Java and network access the first time; skipped locally without them) |
+| `zizmor` | `zizmor --persona=pedantic` on the GitHub workflows and `.github/dependabot.yml` |
+| `pins` | `scripts/freshness.sh pins` (every pin of `upstream.toml` matches the files that record it, offline) and the tests of `scripts/freshness.sh` (needs `jq`) |
+| `guards` | ShellCheck on `scripts/*.sh` and `.githooks/*`, then the tests of the privacy guard and of the release scripts (need `jq`) |
+| `oracle` | artefact checksums, corpus extraction and VEFA cross-check, then xmllint on the oracle cases of `einvoice-xsd` (needs `xmllint`), then Saxon-HE on every corpus case and on the probes of `einvoice-xdm`, `einvoice-xpath-eval` and `einvoice-xslt-exec`: the goldens must not change (needs Java; each part skipped locally without its tool) |
+| `peppol` | the Peppol corpus in `target/peppol/`: fetch and compile the pinned release, extract the cases, Saxon-HE with both stylesheets, VEFA cross-check, then the engine, and `einvoice-validate` with the Peppol bundle, must match every golden (needs Java and network access the first time; skipped locally without them) |
 | `privacy` | the repository's pre-commit checks on staged changes (maintainers; skipped when nothing is staged) |
 
 The corpus and the oracle can also be run step by step:
@@ -147,6 +153,8 @@ cargo xtask oracle           # Saxon-HE on every case; the goldens must not chan
 scripts/fetch-peppol.sh      # Peppol BIS Billing release and its compiled stylesheets into target/peppol/, checksums verified
 cargo xtask peppol           # Peppol corpus, Saxon-HE goldens and VEFA cross-check, in target/peppol/
 cargo test -p einvoice-xslt-exec --test peppol_equivalence -- --nocapture   # the engine on the Peppol corpus
+cargo test -p einvoice-cli --test peppol_bundle -- --nocapture              # einvoice-validate with the Peppol bundle
+cargo run --release -p einvoice-xsd --example xmllint-oracle                # xmllint on the oracle cases of einvoice-xsd
 ```
 
 ## Repository layout
