@@ -1,0 +1,190 @@
+# Every upstream this repository pins: the version in use, how to find the
+# latest published version, and the files that record the pin.
+#
+#   scripts/freshness.sh pins   offline: every [[upstream.pin]] below must match
+#   scripts/freshness.sh        queries each upstream and prints pinned / latest
+#
+# Format: a strict subset of TOML that scripts/freshness.sh reads with jq.
+# Only `[[upstream]]` and `[[upstream.pin]]` tables, `key = "string"` or
+# `key = 'literal string'` lines (no escapes, one line each) and `#` comments;
+# anything else is refused. Regular expressions are Oniguruma (jq) and go in
+# 'literal strings' so that backslashes stay as written.
+#
+# [[upstream]] keys
+#   name             label in the report (unique)
+#   severity         "high": a newer version fails the check (official rule sets)
+#                    "info": a newer version is reported, the check passes (tooling)
+#   pinned           the version in use
+#   source           where the published versions are listed:
+#                    "github-release"  GitHub releases of `repository` (drafts and
+#                                      pre-releases ignored)
+#                    "maven"           maven-metadata.xml of `group`:`artifact` on
+#                                      Maven Central
+#                    "listing"         the page at `url`
+#   version-pattern  regular expression with a group named `v` (the version);
+#                    applied to each release tag (github-release), each version
+#                    (maven) or the whole page, all matches (listing). Only what
+#                    matches is a candidate. Optional except for "listing".
+#   series           also report the latest version starting with "<series>."
+#   hold             "info" only: the pin is held on purpose; a newer version is
+#                    reported as "pinned, newer exists" and opens no issue
+#   unused           no file records this pin yet; says so, and no
+#                    [[upstream.pin]] may follow
+#
+# [[upstream.pin]] keys: every match of `pattern` (group `v`) in `file` must
+# equal `pinned`; there must be at least one. With compare = "prefix", `v` may
+# also be a prefix of `pinned` ending at a dot ("1.99" for "1.99.1").
+#
+# Versions are compared as the sequence of their digit runs: 9.9.1-8 < 12.10 < 13.1.
+
+[[upstream]]
+name = "CEN EN 16931 validation artefacts"
+severity = "high"
+pinned = "1.3.17"
+source = "github-release"
+repository = "ConnectingEurope/eInvoicing-EN16931"
+version-pattern = '^validation-(?<v>[0-9]+(?:\.[0-9]+)*)$'
+
+[[upstream.pin]]
+file = "artefacts/cen-en16931-ubl-1.3.17/README.md"
+pattern = 'validation-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "artefacts/cen-en16931-ubl-1.3.17/README.md"
+pattern = 'en16931-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "corpus/cen-en16931-ubl-1.3.17/README.md"
+pattern = 'validation-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "xtask/src/ruleset.rs"
+pattern = 'cen-en16931-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream]]
+name = "Peppol BIS Billing 3.0"
+severity = "high"
+pinned = "3.0.22"
+source = "github-release"
+repository = "OpenPeppol/peppol-bis-invoice-3"
+version-pattern = '^v?(?<v>[0-9]+(?:\.[0-9]+)*)$'
+unused = "no file of the repository uses this release yet"
+
+[[upstream]]
+name = "OASIS UBL"
+severity = "info"
+pinned = "2.1"
+source = "listing"
+# Each OASIS Standard is published as the directory os-UBL-<version>/.
+url = "https://docs.oasis-open.org/ubl/"
+version-pattern = 'href="os-UBL-(?<v>[0-9]+(?:\.[0-9]+)*)/"'
+hold = "EN 16931 and Peppol BIS Billing 3.0 use UBL 2.1 (CEN rule UBL-CR-002)"
+
+[[upstream.pin]]
+file = "artefacts/cen-en16931-ubl-1.3.17/ubl/schematron/UBL/EN16931-UBL-syntax.sch"
+pattern = "cbc:UBLVersionID = '(?<v>[0-9.]+)'"
+
+[[upstream.pin]]
+file = "artefacts/cen-en16931-ubl-1.3.17/ubl/xslt/EN16931-UBL-validation.xslt"
+pattern = "cbc:UBLVersionID = '(?<v>[0-9.]+)'"
+
+[[upstream]]
+name = "Saxon-HE"
+severity = "info"
+pinned = "9.9.1-8"
+source = "maven"
+group = "net.sf.saxon"
+artifact = "Saxon-HE"
+series = "12"
+hold = "the corpus goldens and the einvoice-xdm oracle are produced with this version"
+
+[[upstream.pin]]
+file = "scripts/fetch-saxon.sh"
+pattern = 'version=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-saxon.sh"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "xtask/src/oracle.rs"
+pattern = 'SAXON_VERSION: &str = "(?<v>[^"]+)"'
+
+[[upstream.pin]]
+file = "xtask/src/oracle.rs"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xdm/examples/saxon-oracle.rs"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "corpus/README.md"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream]]
+name = "ph-schematron"
+severity = "info"
+pinned = "10.3.1"
+source = "maven"
+group = "com.helger.maven"
+artifact = "ph-schematron-maven-plugin"
+unused = "no file of the repository uses this version yet"
+
+[[upstream]]
+name = "Rust toolchain"
+severity = "info"
+pinned = "1.99.1"
+source = "github-release"
+repository = "rust-lang/rust"
+
+[[upstream.pin]]
+file = "rust-toolchain.toml"
+pattern = 'channel = "(?<v>[^"]+)"'
+
+[[upstream.pin]]
+file = "Cargo.toml"
+pattern = 'rust-version = "(?<v>[^"]+)"'
+compare = "prefix"
+
+[[upstream]]
+name = "cargo-deny"
+severity = "info"
+pinned = "0.20.2"
+source = "github-release"
+repository = "EmbarkStudios/cargo-deny"
+
+[[upstream.pin]]
+file = ".github/workflows/ci.yml"
+pattern = 'CARGO_DENY_VERSION: (?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = ".github/workflows/ci.yml"
+pattern = 'cargo-deny/releases/tag/v?(?<v>[^\s/]+)'
+
+[[upstream]]
+name = "actionlint"
+severity = "info"
+pinned = "1.7.12"
+source = "github-release"
+repository = "rhysd/actionlint"
+
+[[upstream.pin]]
+file = ".github/workflows/ci.yml"
+pattern = 'ACTIONLINT_VERSION: (?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = ".github/workflows/ci.yml"
+pattern = 'actionlint/releases/tag/v?(?<v>[^\s/]+)'
+
+[[upstream]]
+name = "zizmor"
+severity = "info"
+pinned = "1.32.0"
+source = "github-release"
+repository = "zizmorcore/zizmor"
+
+# The `version` input of zizmorcore/zizmor-action.
+[[upstream.pin]]
+file = ".github/workflows/ci.yml"
+pattern = 'zizmor-action@[0-9a-f]{40}[^\n]*\n\s+with:\n\s+version: (?<v>[^\s]+)'
