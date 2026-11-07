@@ -23,6 +23,11 @@
 #     must have the SHA-256 below; they go into
 #     DIR/peppol-bis-billing-ubl-3.0.22/xslt/. When both files are already
 #     there with the right checksums, Maven is not run.
+#  3. Write DIR/peppol-bis-billing-ubl-3.0.22/bundle.toml, the rule-set
+#     bundle manifest of einvoice-validator naming both stylesheets with
+#     their pinned SHA-256, CEN rules first, as Peppol validation runs them,
+#     the CEN stylesheet with the version its Schematron file states:
+#     `einvoice-validate --bundle DIR/peppol-bis-billing-ubl-3.0.22 FILE`.
 #
 # Needs bash, curl, tar, gzip, git and Java (CI uses Java 21).
 # Exit status: 0 done; 75 a download failed (no network); 1 anything else,
@@ -137,8 +142,43 @@ compiled() { # true when every stylesheet is in place with its checksum
     done
 }
 
+# --- 3. the bundle manifest ---------------------------------------------------
+
+# Written afresh on every run, from the pins: the stylesheets it names have
+# been checked against the same checksums just before.
+write_bundle() {
+    local cen_version
+    # "<!--Schematron version 1.3.16 - Last update: ...-->"
+    cen_version=$(sed -n 's/.*Schematron version \([0-9][0-9.]*[0-9]\) .*/\1/p' \
+        "$release/source/rules/sch/CEN-EN16931-UBL.sch" | head -n 1)
+    [ -n "$cen_version" ] || fail "rules/sch/CEN-EN16931-UBL.sch states no Schematron version"
+    cat >"$tmp/bundle.toml" <<EOF
+# Peppol BIS Billing $tag (UBL), built by scripts/fetch-peppol.sh: the rule-set
+# bundle manifest of einvoice-validator (einvoice-validate --bundle DIR).
+format = 1
+name = "peppol-bis-billing-ubl"
+title = "Peppol BIS Billing 3.0 UBL"
+version = "$tag"
+schema = "ubl-2.1"
+
+[[stylesheet]]
+name = "CEN-EN16931-UBL"
+path = "xslt/CEN-EN16931-UBL.xslt"
+sha256 = "$cen_xslt_sha256"
+version = "$cen_version"
+
+[[stylesheet]]
+name = "PEPPOL-EN16931-UBL"
+path = "xslt/PEPPOL-EN16931-UBL.xslt"
+sha256 = "$peppol_xslt_sha256"
+EOF
+    mv "$tmp/bundle.toml" "$release/bundle.toml"
+    say "$release/bundle.toml written"
+}
+
 if compiled; then
     say "$release/xslt already compiled, SHA-256 verified"
+    write_bundle
     exit 0
 fi
 
@@ -222,3 +262,4 @@ done
 rm -rf "$release/xslt"
 mv "$work/out" "$release/xslt"
 say "$release/xslt compiled, SHA-256 verified"
+write_bundle

@@ -14,6 +14,15 @@ einvoice-validate --format svrl - < invoice.xml
 einvoice-validate --bundle ./my-bundle invoice.xml
 ```
 
+Peppol BIS Billing 3.0 is used as a bundle: its files may not be redistributed, so
+`scripts/fetch-peppol.sh` (in a clone of the repository) downloads the pinned release, compiles
+its two stylesheets and writes the `bundle.toml` that names them:
+
+```sh
+scripts/fetch-peppol.sh
+einvoice-validate --bundle target/peppol/peppol-bis-billing-ubl-3.0.22 invoice.xml
+```
+
 ## Options
 
 | Option | Meaning |

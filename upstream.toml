@@ -110,6 +110,14 @@ file = "crates/einvoice-xslt-exec/tests/peppol_equivalence.rs"
 pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
 
 [[upstream.pin]]
+file = "crates/einvoice-cli/tests/peppol_bundle.rs"
+pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "crates/einvoice-cli/tests/peppol_bundle.rs"
+pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
 file = "crates/einvoice-xslt-exec/examples/bench-peppol.rs"
 pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
 
@@ -136,6 +144,10 @@ pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
 [[upstream.pin]]
 file = "README.md"
 pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-cli/README.md"
+pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 
 [[upstream]]
 name = "OASIS UBL"

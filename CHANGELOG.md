@@ -89,6 +89,11 @@ against.
   Peppol job (#5).
 - `upstream.toml` pins the Peppol release, ph-schematron-maven-plugin and Apache Maven in the
   files that use them.
+- Peppol BIS Billing 3.0 as a rule-set bundle: `scripts/fetch-peppol.sh` also writes a
+  `bundle.toml` next to the two compiled stylesheets (CEN rules first, with the CEN version
+  their Schematron states), so that the directory can be given to `einvoice-validate --bundle`
+  or `Validator::from_bundle_dir`. A test of `einvoice-cli` checks the verdicts and findings of
+  all 707 Peppol cases against the Saxon-HE goldens; `scripts/check.sh peppol` requires it (#10).
 
 ### Changed
 
