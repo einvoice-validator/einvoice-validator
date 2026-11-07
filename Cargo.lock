@@ -131,6 +131,9 @@ dependencies = [
 name = "einvoice-xsd"
 version = "0.0.0"
 dependencies = [
+ "proptest",
+ "regex",
+ "roxmltree",
  "sha2",
 ]
 

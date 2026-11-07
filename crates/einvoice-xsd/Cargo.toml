@@ -7,7 +7,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[dependencies]
+roxmltree = "0.21.2"
+
 [dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+regex = "1.13.1"
 sha2 = "0.11.1"
 
 [lints]

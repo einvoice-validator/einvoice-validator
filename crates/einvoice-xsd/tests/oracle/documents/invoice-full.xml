@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic test document written for this project: every party, amount and identifier is invented. -->
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+         xmlns:ext="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2"
+         xmlns:sig="urn:oasis:names:specification:ubl:schema:xsd:CommonSignatureComponents-2"
+         xmlns:sac="urn:oasis:names:specification:ubl:schema:xsd:SignatureAggregateComponents-2"
+         xmlns:sbc="urn:oasis:names:specification:ubl:schema:xsd:SignatureBasicComponents-2"
+         xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+         xmlns:xades="http://uri.etsi.org/01903/v1.3.2#"
+         xmlns:xades141="http://uri.etsi.org/01903/v1.4.1#"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns:ex="urn:example:extension">
+  <ext:UBLExtensions>
+    <ext:UBLExtension>
+      <cbc:ID>sig-ext</cbc:ID>
+      <ext:ExtensionURI>urn:oasis:names:specification:ubl:dsig:enveloped:xades</ext:ExtensionURI>
+      <ext:ExtensionContent>
+        <sig:UBLDocumentSignatures>
+          <sac:SignatureInformation>
+            <cbc:ID>urn:oasis:names:specification:ubl:signature:1</cbc:ID>
+            <sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID>
+            <ds:Signature Id="signature-1">
+              <ds:SignedInfo>
+                <ds:CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+                <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+                <ds:Reference Id="reference-1" URI="">
+                  <ds:Transforms>
+                    <ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116">
+                      <ds:XPath>count(ancestor-or-self::sig:UBLDocumentSignatures | here()/ancestor::sig:UBLDocumentSignatures[1]) &gt; count(ancestor-or-self::sig:UBLDocumentSignatures)</ds:XPath>
+                    </ds:Transform>
+                    <ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+                  </ds:Transforms>
+                  <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+                  <ds:DigestValue>3q2+7w==</ds:DigestValue>
+                </ds:Reference>
+                <ds:Reference Type="http://uri.etsi.org/01903#SignedProperties" URI="#signed-properties-1">
+                  <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+                  <ds:DigestValue>AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=</ds:DigestValue>
+                </ds:Reference>
+              </ds:SignedInfo>
+              <ds:SignatureValue Id="signature-value-1">
+                U2lnbmF0dXJlIHZhbHVlIG9mIGEgc3ludGhldGljIHRlc3QgZG9jdW1lbnQu
+                VGhpcyBpcyBub3QgYSByZWFsIHNpZ25hdHVyZS4=
+              </ds:SignatureValue>
+              <ds:KeyInfo>
+                <ds:KeyName>synthetic key</ds:KeyName>
+                <ds:X509Data>
+                  <ds:X509SubjectName>CN=Synthetic Test Signer</ds:X509SubjectName>
+                  <ds:X509IssuerSerial>
+                    <ds:X509IssuerName>CN=Synthetic Test CA</ds:X509IssuerName>
+                    <ds:X509SerialNumber>123456789012345678901234</ds:X509SerialNumber>
+                  </ds:X509IssuerSerial>
+                  <ds:X509Certificate>TUlJQ2VydGlmaWNhdGU=</ds:X509Certificate>
+                </ds:X509Data>
+              </ds:KeyInfo>
+              <ds:Object>
+                <xades:QualifyingProperties Target="#signature-1">
+                  <xades:SignedProperties Id="signed-properties-1">
+                    <xades:SignedSignatureProperties>
+                      <xades:SigningTime>2024-03-01T10:15:30.250+01:00</xades:SigningTime>
+                      <xades:SigningCertificate>
+                        <xades:Cert>
+                          <xades:CertDigest>
+                            <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+                            <ds:DigestValue>AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=</ds:DigestValue>
+                          </xades:CertDigest>
+                          <xades:IssuerSerial>
+                            <ds:X509IssuerName>CN=Synthetic Test CA</ds:X509IssuerName>
+                            <ds:X509SerialNumber>42</ds:X509SerialNumber>
+                          </xades:IssuerSerial>
+                        </xades:Cert>
+                      </xades:SigningCertificate>
+                      <xades:SignaturePolicyIdentifier>
+                        <xades:SignaturePolicyImplied/>
+                      </xades:SignaturePolicyIdentifier>
+                      <xades:SignerRole>
+                        <xades:ClaimedRoles>
+                          <xades:ClaimedRole>Supplier <ex:Role ex:level="1">accounting</ex:Role></xades:ClaimedRole>
+                        </xades:ClaimedRoles>
+                      </xades:SignerRole>
+                    </xades:SignedSignatureProperties>
+                    <xades:SignedDataObjectProperties>
+                      <xades:DataObjectFormat ObjectReference="#reference-1">
+                        <xades:MimeType>text/xml</xades:MimeType>
+                      </xades:DataObjectFormat>
+                    </xades:SignedDataObjectProperties>
+                  </xades:SignedProperties>
+                  <xades:UnsignedProperties>
+                    <xades:UnsignedSignatureProperties>
+                      <xades:SignatureTimeStamp Id="timestamp-1">
+                        <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+                        <xades:EncapsulatedTimeStamp>VGltZXN0YW1w</xades:EncapsulatedTimeStamp>
+                      </xades:SignatureTimeStamp>
+                      <xades141:TimeStampValidationData UR="urn:example:validation-data">
+                        <xades:CertificateValues>
+                          <xades:EncapsulatedX509Certificate>Q2VydA==</xades:EncapsulatedX509Certificate>
+                        </xades:CertificateValues>
+                      </xades141:TimeStampValidationData>
+                    </xades:UnsignedSignatureProperties>
+                  </xades:UnsignedProperties>
+                </xades:QualifyingProperties>
+              </ds:Object>
+            </ds:Signature>
+          </sac:SignatureInformation>
+        </sig:UBLDocumentSignatures>
+      </ext:ExtensionContent>
+    </ext:UBLExtension>
+    <ext:UBLExtension>
+      <ext:ExtensionAgencyID>EX</ext:ExtensionAgencyID>
+      <ext:ExtensionAgencyName languageID="en">Example agency</ext:ExtensionAgencyName>
+      <ext:ExtensionVersionID>1.0</ext:ExtensionVersionID>
+      <ext:ExtensionAgencyURI>urn:example:agency</ext:ExtensionAgencyURI>
+      <ext:ExtensionURI>urn:example:extension:data</ext:ExtensionURI>
+      <ext:ExtensionReasonCode listID="EX">R1</ext:ExtensionReasonCode>
+      <ext:ExtensionReason>Synthetic extension content, validated laxly</ext:ExtensionReason>
+      <ext:ExtensionContent>
+        <ex:Data ex:version="2" plain="attribute">
+          <ex:Item code="A">first <!-- comment --> item</ex:Item>
+          <ex:Item code="B"><ex:Nested/></ex:Item>
+          <cbc:Note languageID="fr">Une note dans une extension</cbc:Note>
+          <cbc:IssueDate>2024-03-01</cbc:IssueDate>
+        </ex:Data>
+      </ext:ExtensionContent>
+    </ext:UBLExtension>
+  </ext:UBLExtensions>
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:ID>INV-2024-0001</cbc:ID>
+  <cbc:CopyIndicator>false</cbc:CopyIndicator>
+  <cbc:UUID>6f1c1d2e-0000-4000-8000-000000000001</cbc:UUID>
+  <cbc:IssueDate>2024-03-01</cbc:IssueDate>
+  <cbc:IssueTime>10:15:30</cbc:IssueTime>
+  <cbc:DueDate>2024-03-31</cbc:DueDate>
+  <cbc:InvoiceTypeCode listID="UNCL1001" listAgencyID="6" listURI="https://example.org/codes/1001">380</cbc:InvoiceTypeCode>
+  <cbc:Note languageID="en-GB">A synthetic invoice for schema validation tests.</cbc:Note>
+  <cbc:Note>Second note,
+spanning two lines.</cbc:Note>
+  <cbc:TaxPointDate>2024-02-29</cbc:TaxPointDate>
+  <cbc:DocumentCurrencyCode listID="ISO4217">EUR</cbc:DocumentCurrencyCode>
+  <cbc:AccountingCost>Cost centre 42</cbc:AccountingCost>
+  <cbc:LineCountNumeric>2</cbc:LineCountNumeric>
+  <cbc:BuyerReference>BUYER-REF-1</cbc:BuyerReference>
+  <cac:InvoicePeriod>
+    <cbc:StartDate>2024-02-01</cbc:StartDate>
+    <cbc:EndDate>2024-02-29Z</cbc:EndDate>
+  </cac:InvoicePeriod>
+  <cac:OrderReference>
+    <cbc:ID>PO-77</cbc:ID>
+  </cac:OrderReference>
+  <cac:AdditionalDocumentReference>
+    <cbc:ID schemeID="ABT" schemeURI="urn:example:scheme" schemeDataURI="https://example.org/data?x=1#frag">DOC-1</cbc:ID>
+    <cbc:DocumentDescription languageID="en">Timesheet</cbc:DocumentDescription>
+    <cac:Attachment>
+      <cbc:EmbeddedDocumentBinaryObject mimeCode="text/csv" filename="timesheet.csv" uri="attachments/timesheet.csv">
+        ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK
+      </cbc:EmbeddedDocumentBinaryObject>
+      <cac:ExternalReference>
+        <cbc:URI>https://example.org/invoices/INV-2024-0001.pdf</cbc:URI>
+      </cac:ExternalReference>
+    </cac:Attachment>
+  </cac:AdditionalDocumentReference>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="0088">0000000000001</cbc:EndpointID>
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="0088">0000000000002</cbc:ID>
+      </cac:PartyIdentification>
+      <cac:PartyName>
+        <cbc:Name>Example Supplier</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>1 Example Street</cbc:StreetName>
+        <cbc:CityName>Exampleville</cbc:CityName>
+        <cbc:PostalZone>00000</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode listID="ISO3166-1:Alpha2">BE</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>BE0000000097</cbc:CompanyID>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Example Supplier Ltd</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+      <cac:Contact>
+        <cbc:Name>Test Contact</cbc:Name>
+        <cbc:ElectronicMail>contact@example.org</cbc:ElectronicMail>
+      </cac:Contact>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="0208">0000000097</cbc:EndpointID>
+      <cac:PartyName>
+        <cbc:Name>Example Customer</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:CityName>Sampletown</cbc:CityName>
+        <cac:Country>
+          <cbc:IdentificationCode>BE</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Example Customer SA</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:Delivery>
+    <cbc:ActualDeliveryDate>2024-02-28</cbc:ActualDeliveryDate>
+    <cbc:ActualDeliveryTime>23:59:59.999-05:30</cbc:ActualDeliveryTime>
+  </cac:Delivery>
+  <cac:PaymentMeans>
+    <cbc:PaymentMeansCode name="Credit transfer">30</cbc:PaymentMeansCode>
+    <cbc:PaymentID>RF00000000000000000000001</cbc:PaymentID>
+    <cac:PayeeFinancialAccount>
+      <cbc:ID>BE00000000000000</cbc:ID>
+    </cac:PayeeFinancialAccount>
+  </cac:PaymentMeans>
+  <cac:PaymentTerms>
+    <cbc:Note>30 days</cbc:Note>
+    <cbc:SettlementDiscountPercent>2.5</cbc:SettlementDiscountPercent>
+  </cac:PaymentTerms>
+  <cac:AllowanceCharge>
+    <cbc:ChargeIndicator>1</cbc:ChargeIndicator>
+    <cbc:AllowanceChargeReasonCode>FC</cbc:AllowanceChargeReasonCode>
+    <cbc:AllowanceChargeReason>Freight</cbc:AllowanceChargeReason>
+    <cbc:MultiplierFactorNumeric>+.5</cbc:MultiplierFactorNumeric>
+    <cbc:Amount currencyID="EUR">10.00</cbc:Amount>
+    <cbc:BaseAmount currencyID="EUR" currencyCodeListVersionID="2001">20.</cbc:BaseAmount>
+    <cac:TaxCategory>
+      <cbc:ID>S</cbc:ID>
+      <cbc:Percent>21</cbc:Percent>
+      <cac:TaxScheme>
+        <cbc:ID>VAT</cbc:ID>
+      </cac:TaxScheme>
+    </cac:TaxCategory>
+  </cac:AllowanceCharge>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">23.10</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">110.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">23.10</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>21.0</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">100.00</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="EUR">110.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">133.10</cbc:TaxInclusiveAmount>
+    <cbc:ChargeTotalAmount currencyID="EUR">10.00</cbc:ChargeTotalAmount>
+    <cbc:PayableAmount currencyID="EUR">  133.10
+    </cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="HUR" unitCodeListID="UNECERec20">8</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">80.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Description>Consulting</cbc:Description>
+      <cbc:Name>Consulting hours</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>21</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>
+      <cbc:BaseQuantity unitCode="HUR">1</cbc:BaseQuantity>
+    </cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>2</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">-2</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">20.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>Travel</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>21</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">-10.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+</Invoice>

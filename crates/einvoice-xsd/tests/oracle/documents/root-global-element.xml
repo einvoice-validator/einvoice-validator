@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic test document: a global element declaration other than Invoice or CreditNote as the document element. -->
+<cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2" schemeID="x">A global element</cbc:ID>

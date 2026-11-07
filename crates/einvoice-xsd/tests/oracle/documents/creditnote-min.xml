@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic test document written for this project: the smallest credit note the UBL 2.1 schema accepts. -->
+<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>CN-1</cbc:ID>
+  <cbc:IssueDate>2024-03-02</cbc:IssueDate>
+  <cac:AccountingSupplierParty/>
+  <cac:AccountingCustomerParty/>
+  <cac:LegalMonetaryTotal>
+    <cbc:PayableAmount currencyID="EUR">0</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:CreditNoteLine>
+    <cbc:ID>1</cbc:ID>
+  </cac:CreditNoteLine>
+</CreditNote>
