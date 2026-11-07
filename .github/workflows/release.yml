@@ -1,0 +1,98 @@
+name: release
+
+# Publishes the GitHub release of a pushed tag vX.Y.Z, made by
+# scripts/release.sh (see RELEASING.md). Jobs:
+#   verify   the tag, the workspace version in Cargo.toml and the CHANGELOG.md
+#            section of that version agree (scripts/release.sh --verify), and
+#            the tagged commit is on main; extracts the section as the notes
+#   publish  creates the GitHub release with those notes; the only job with
+#            write access, and it checks out and runs nothing from the
+#            repository
+# The tag signature is checked by whoever pushes it, not here.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+# One run per tag; a second push of the same tag waits rather than races.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    name: verify (tag, workspace version, changelog)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # check out the tag, compare it with main
+    outputs:
+      notes: ${{ steps.notes.outputs.notes }}
+      prerelease: ${{ steps.notes.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tag, workspace version and changelog agree
+        id: notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          scripts/release.sh --verify "$TAG" "$RUNNER_TEMP/notes.md"
+          case $TAG in
+          *-*) prerelease=true ;;
+          *) prerelease=false ;;
+          esac
+          delimiter="notes_$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')"
+          {
+            echo "prerelease=$prerelease"
+            echo "notes<<$delimiter"
+            cat "$RUNNER_TEMP/notes.md"
+            echo "$delimiter"
+          } >>"$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/notes.md" >>"$GITHUB_STEP_SUMMARY"
+      - name: The tagged commit is on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # "behind" or "identical": the tag is an ancestor of main or main itself.
+          status=$(gh api "repos/$GH_REPO/compare/main...$TAG" --jq .status)
+          echo "main...$TAG: $status"
+          case $status in
+          behind | identical) ;;
+          *)
+            echo "::error title=Tag not on main::$TAG is not on main ($status)"
+            exit 1
+            ;;
+          esac
+
+  publish:
+    name: publish (GitHub release)
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # create the release
+    steps:
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          NOTES: ${{ needs.verify.outputs.notes }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          printf '%s\n' "$NOTES" >"$RUNNER_TEMP/notes.md"
+          flags=(--verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md")
+          if [ "$PRERELEASE" = true ]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$TAG" "${flags[@]}"

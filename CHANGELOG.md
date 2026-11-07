@@ -4,8 +4,9 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). All crates of the workspace
-share one version. Before 1.0.0, a minor version may break the public API. Each release states
-the official rule-set versions it was tested against.
+share one version. Before 1.0.0, a minor version may break the public API; see
+[RELEASING.md](RELEASING.md). Each release states the official rule-set versions it was tested
+against.
 
 ## [Unreleased]
 
@@ -43,5 +44,8 @@ the official rule-set versions it was tested against.
 - Pre-commit, commit-message and pre-push checks in `.githooks/`, also run in CI.
 - This changelog, and a check on pull requests that the Unreleased section is updated (label
   `no-changelog` to opt out).
+- Release process: `RELEASING.md`, `scripts/release.sh` (version bump, changelog section,
+  signed commit and tag, with a dry run) and a workflow that publishes the GitHub release of a
+  pushed tag after checking that the tag, the workspace version and the changelog agree.
 
 [Unreleased]: https://github.com/einvoice-validator/einvoice-validator/commits/main

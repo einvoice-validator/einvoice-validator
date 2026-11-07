@@ -5,7 +5,8 @@ name: ci
 #   rust       fmt, cargo-deny, clippy, doc, test on Linux (one build)
 #   test       tests on macOS and Windows, pull requests and manual runs only,
 #              after the Linux job has passed
-#   workflows  actionlint and zizmor on .github/workflows
+#   workflows  actionlint and zizmor on .github/workflows; ShellCheck and the
+#              tests of the release scripts (scripts/test-release.sh)
 #   ci-ok      fails unless every job above passed: the single status check
 #              to require for branch protection
 
@@ -102,7 +103,7 @@ jobs:
         run: scripts/check.sh test
 
   workflows:
-    name: workflows (actionlint, zizmor)
+    name: workflows (actionlint, zizmor, release scripts)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -134,6 +135,13 @@ jobs:
           persona: pedantic
           advanced-security: false
           annotations: true
+      # scripts/release.sh and scripts/changelog.sh in throw-away repositories.
+      - name: Release scripts (ShellCheck, tests)
+        if: ${{ !cancelled() }}
+        run: |
+          shellcheck --version
+          shellcheck scripts/release.sh scripts/changelog.sh scripts/test-release.sh
+          scripts/test-release.sh
 
   ci-ok:
     name: ci-ok
