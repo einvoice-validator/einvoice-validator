@@ -22,7 +22,7 @@ the test corpus it will be judged against.
 | XSLT executor and SVRL output | planned ([#2](https://github.com/einvoice-validator/einvoice-validator/issues/2)) |
 | Same results as Saxon-HE on the whole CEN corpus | planned ([#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
 | Peppol BIS Billing 3.0.22: corpus, then same results as Saxon-HE | planned ([#4](https://github.com/einvoice-validator/einvoice-validator/issues/4), [#5](https://github.com/einvoice-validator/einvoice-validator/issues/5)) |
-| UBL 2.1 XML Schema validation | in progress ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6)) |
+| `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1546 cases, every corpus case agrees, the other differences are listed with their cause | in progress ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6)) |
 | Public API and command-line tool | planned ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
 | WebAssembly build | planned ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
 | Other rule sets (CEN CII, XRechnung, Factur-X / ZUGFeRD) | planned ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
@@ -50,13 +50,14 @@ changes are listed in [CHANGELOG.md](CHANGELOG.md).
   that names it and its line, and a value whose reference behaviour is not reproduced is
   refused rather than guessed.
 
-## Rule sets
+## Rule sets and schemas
 
-| Rule set | Version | In this repository |
+| Rule set or schema | Version | In this repository |
 |---|---|---|
 | CEN EN 16931, UBL syntax | 1.3.17 | Artefacts vendored unmodified in `artefacts/`; test corpus and Saxon-HE results in `corpus/`. Engine in progress. |
 | Peppol BIS Billing 3.0 | 3.0.22 | Planned. The upstream repository publishes no licence, so its files are not vendored: they will be fetched at test time from the pinned tag, with checksums. |
 | CEN EN 16931 CII, XRechnung, Factur-X / ZUGFeRD | | Planned. |
+| OASIS UBL 2.1 schemas (Invoice, CreditNote) | 2.1 | Vendored unmodified in `crates/einvoice-xsd/schemas/`; `einvoice-xsd` validates against them. |
 
 The pinned versions are listed in `upstream.toml`; a weekly workflow reports newer upstream
 releases.
@@ -72,6 +73,8 @@ flowchart LR
     eval --> exec["XSLT executor + SVRL<br/>(planned)"]
     invoice["Invoice XML"] --> exec
     exec --> api["einvoice-validator<br/>API (planned)"]
+    invoice --> xsd["einvoice-xsd<br/>UBL 2.1 schemas"]
+    xsd --> api
     exec -.->|compared with| golden["Saxon-HE goldens<br/>(corpus/)"]
 ```
 
@@ -81,7 +84,7 @@ flowchart LR
 | [`einvoice-xpath`](crates/einvoice-xpath) | Parser and syntax tree for the XPath 2.0 subset, XSLT match patterns, sequence types and attribute value templates. |
 | [`einvoice-xpath-eval`](crates/einvoice-xpath-eval) | Node model and evaluator of the XPath 2.0 subset, with the behaviour of Saxon-HE 9.9.1-8; unknown functions and variables are refused when an expression is compiled. |
 | [`einvoice-xslt`](crates/einvoice-xslt) | Loader for the XSLT 2.0 subset emitted by the Schematron compilers: templates, modes, priorities, functions, variables, parameters and instructions, each with its source line. |
-| `einvoice-xsd` | UBL 2.1 XML Schema validation; planned ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6)). |
+| [`einvoice-xsd`](crates/einvoice-xsd) | XML Schema validation of UBL 2.1 Invoice and CreditNote documents against the official OASIS UBL 2.1 schemas, which it embeds; implements exactly the XML Schema 1.0 constructs those schemas use and refuses any other at load time. |
 | [`einvoice-validator`](crates/einvoice-validator) | The public crate; no API yet ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)). |
 | [`xtask`](xtask) | Repository tooling, not published: artefact checksums, corpus extraction, the Saxon-HE oracle, the VEFA cross-check. |
 
@@ -93,7 +96,8 @@ on every case whenever the corpus or its tooling changes and fails if a golden d
 cross-checks the goldens with the expectations written in the VEFA tests. The crates are
 checked the same way: `einvoice-xdm` against 5068 Saxon-HE results of atomic operations,
 `einvoice-xpath-eval` against Saxon-HE's value of every distinct expression of the CEN
-stylesheet at nodes of corpus documents. See [`corpus/README.md`](corpus/README.md).
+stylesheet at nodes of corpus documents. `einvoice-xsd` is compared with xmllint (libxml2) on
+the corpus and on mutations of synthetic documents. See [`corpus/README.md`](corpus/README.md).
 
 ## Building and testing
 
@@ -101,6 +105,7 @@ Requirements: [rustup](https://rustup.rs/) (the toolchain, Rust 1.99.1, is pinne
 `rust-toolchain.toml` and installed on first use), `git` and `bash`. Optional: `cargo-deny`,
 `actionlint` and `zizmor` (their checks are skipped when missing), and Java with network access
 for the Saxon-HE oracle (CI uses Java 21, which regenerating the `einvoice-xdm` results needs).
+Regenerating the `einvoice-xsd` results needs `xmllint`; its tests do not.
 
 ```sh
 scripts/check.sh                          # every job below, as CI runs them
@@ -108,6 +113,7 @@ scripts/check.sh clippy test              # selected jobs
 cargo test -p einvoice-xpath --test cen_1_3_17   # one test target
 cargo test -p einvoice-xdm --test oracle         # einvoice-xdm against the Saxon-HE results
 cargo test -p einvoice-xpath-eval --test oracle  # the evaluator against the Saxon-HE results
+cargo test -p einvoice-xsd --test oracle         # einvoice-xsd against the xmllint results
 ```
 
 | `scripts/check.sh` job | What it runs |
@@ -135,7 +141,7 @@ cargo xtask oracle           # Saxon-HE on every case; the goldens must not chan
 ## Repository layout
 
 ```text
-crates/              the library crates (see the table above)
+crates/              the library crates (see the table above); einvoice-xsd holds the UBL 2.1 schemas
 xtask/               repository tooling (cargo xtask ...)
 artefacts/           official validation artefacts, unmodified, with SHA256SUMS
 corpus/              test cases and Saxon-HE goldens, one directory per rule set
@@ -172,8 +178,12 @@ upstream.toml        every pinned upstream version and the files that record it
   downloads it from Maven Central into `target/`; it is neither part of the repository nor
   distributed.
 - Peppol BIS Billing 3.0 files will be fetched at test time and not redistributed.
-- The OASIS UBL 2.1 schemas are not in the repository. If they are vendored for XML Schema
-  validation, they keep the OASIS copyright notice and terms.
+- `crates/einvoice-xsd/schemas/oasis-ubl-2.1/` holds the fifteen schema documents of the OASIS
+  UBL 2.1 Standard reachable from the Invoice and CreditNote schemas, vendored unmodified and
+  embedded in `einvoice-xsd`. They are not under the MIT licence: each keeps the terms in its
+  own header (OASIS, UN/CEFACT, W3C), as the README of that directory explains.
+- xmllint (libxml2) is the reference of the `einvoice-xsd` tests only; it is neither part of the
+  repository nor a dependency.
 
 ## Contributing
 

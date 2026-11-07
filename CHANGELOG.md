@@ -29,6 +29,12 @@ against.
   of Saxon-HE 9.9.1-8. Unknown functions and variables are refused when an expression is
   compiled. Checked against Saxon-HE on every distinct expression of the CEN 1.3.17 stylesheet,
   evaluated at nodes of corpus documents, and on hand-written edge cases.
+- `einvoice-xsd`: XML Schema validation of UBL 2.1 Invoice and CreditNote documents against the
+  official OASIS UBL 2.1 schemas, vendored unmodified (under their own notices, not MIT) and
+  embedded. Exactly the XML Schema 1.0 constructs those schemas use are implemented; any other
+  is refused when a schema set is loaded. Errors carry a stable kind, the line and column.
+  Compared with xmllint on the corpus and on mutations; every difference is listed with its
+  cause.
 - The CEN EN 16931 UBL validation artefacts 1.3.17, vendored unmodified (EUPL-1.2) with their
   SHA-256 checksums.
 - A test corpus of 1179 cases derived from those artefacts (official examples, test files and
