@@ -249,6 +249,22 @@ fn ambiguous_matches_are_warnings() {
 }
 
 #[test]
+fn a_test_error_names_the_line_of_its_xsl_when() {
+    let executable = prepare(
+        r#"<xsl:template match="/">
+<xsl:choose>
+<xsl:when test="false()"/>
+<xsl:when test="xs:integer('x')"/>
+</xsl:choose>
+</xsl:template>"#,
+    )
+    .unwrap();
+    let error = executable.transform("<a/>", None).unwrap_err();
+    assert_eq!(error.code(), "FORG0001");
+    assert_eq!(error.line(), Some(5));
+}
+
+#[test]
 fn errors_name_the_instruction_line() {
     let executable = prepare(
         r#"<xsl:template match="/">

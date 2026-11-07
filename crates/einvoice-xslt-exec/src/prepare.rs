@@ -145,8 +145,7 @@ pub(crate) enum Inst {
     },
     /// `xsl:choose`, and `xsl:if` as a choose with one branch.
     Choose {
-        line: u32,
-        whens: Vec<(Box<CompiledExpr>, Vec<Inst>)>,
+        whens: Vec<When>,
         otherwise: Vec<Inst>,
     },
     ForEach {
@@ -190,6 +189,15 @@ pub(crate) enum Inst {
         attributes: Vec<(Arc<QName>, CompiledAvt)>,
         body: Vec<Inst>,
     },
+}
+
+/// A branch of `xsl:choose` (`xsl:when`), or `xsl:if`: an error in its test is
+/// attributed to its own line, as Saxon attributes it.
+#[derive(Debug)]
+pub(crate) struct When {
+    pub(crate) line: u32,
+    pub(crate) test: Box<CompiledExpr>,
+    pub(crate) body: Vec<Inst>,
 }
 
 /// A template rule as Saxon-HE 12.10 registers it: one per alternative of a match
@@ -729,25 +737,28 @@ impl Compiler<'_> {
                 for when in &choose.whens {
                     let test = self.expr(when.line, &when.test, Some(frame));
                     let body = self.sequence_constructor(&when.body, frame, content);
-                    whens.push((test?, body));
+                    whens.push(When {
+                        line: when.line,
+                        test: test?,
+                        body,
+                    });
                 }
                 let otherwise = choose
                     .otherwise
                     .as_ref()
                     .map(|body| self.sequence_constructor(body, frame, content))
                     .unwrap_or_default();
-                Inst::Choose {
-                    line: choose.line,
-                    whens,
-                    otherwise,
-                }
+                Inst::Choose { whens, otherwise }
             }
             Instruction::If(i) => {
                 let test = self.expr(i.line, &i.test, Some(frame));
                 let body = self.sequence_constructor(&i.body, frame, content);
                 Inst::Choose {
-                    line: i.line,
-                    whens: vec![(test?, body)],
+                    whens: vec![When {
+                        line: i.line,
+                        test: test?,
+                        body,
+                    }],
                     otherwise: Vec::new(),
                 }
             }

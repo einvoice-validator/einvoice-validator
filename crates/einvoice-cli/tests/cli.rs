@@ -282,7 +282,9 @@ fn a_document_that_is_not_xml_is_invalid() {
 }
 
 /// The official stylesheet stops on a non-numeric amount; the schema has already found
-/// the document invalid, so the verdict stands.
+/// the document invalid, so the verdict stands. The line is that of the `xsl:when` whose
+/// test raised the error, as Saxon-HE 12.10 reports it (its `xsl:choose` is on the line
+/// before).
 #[test]
 fn a_stylesheet_error_on_a_schema_invalid_document_exits_with_1() {
     let text = String::from_utf8(read(VALID)).unwrap();
@@ -297,7 +299,7 @@ fn a_stylesheet_error_on_a_schema_invalid_document_exits_with_1() {
     assert_eq!(r.code, 1);
     assert_eq!(
         r.stdout,
-        "-: invalid: 1 schema error, 1 stylesheet error\n  schema   81:13: invalid-value: element cbc:TaxableAmount: \"abc\" is not a valid value of xs:decimal\n  error    stylesheet EN16931-UBL stopped, line 2528: FORG0001: Cannot convert string \"abc\" to xs:decimal: invalid character 'a'\n"
+        "-: invalid: 1 schema error, 1 stylesheet error\n  schema   81:13: invalid-value: element cbc:TaxableAmount: \"abc\" is not a valid value of xs:decimal\n  error    stylesheet EN16931-UBL stopped, line 2529: FORG0001: Cannot convert string \"abc\" to xs:decimal: invalid character 'a'\n"
     );
     let r = run(&["-f", "json", "-"], Some(text.as_bytes()));
     assert_eq!(r.code, 1);
@@ -308,7 +310,7 @@ fn a_stylesheet_error_on_a_schema_invalid_document_exits_with_1() {
     let error = &document.get("stylesheet_errors").array()[0];
     assert_eq!(error.get("stylesheet").str(), Some("EN16931-UBL"));
     assert_eq!(error.get("code").str(), Some("FORG0001"));
-    assert_eq!(error.get("line").number(), 2528);
+    assert_eq!(error.get("line").number(), 2529);
     let r = run(&["-f", "svrl", "-"], Some(text.as_bytes()));
     assert_eq!(r.code, 1);
     assert_eq!(r.stdout, "");

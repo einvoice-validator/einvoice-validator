@@ -726,14 +726,10 @@ impl<'e, 'a> Runtime<'e, 'a> {
                 )
                 .at(*line)
             }
-            Inst::Choose {
-                line,
-                whens,
-                otherwise,
-            } => {
-                for (test, body) in whens {
-                    if self.test(test, state.context).at(*line)? {
-                        return self.exec(body, state, sink);
+            Inst::Choose { whens, otherwise } => {
+                for when in whens {
+                    if self.test(&when.test, state.context).at(when.line)? {
+                        return self.exec(&when.body, state, sink);
                     }
                 }
                 self.exec(otherwise, state, sink)
