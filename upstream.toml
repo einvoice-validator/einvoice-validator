@@ -91,12 +91,12 @@ pattern = "cbc:UBLVersionID = '(?<v>[0-9.]+)'"
 [[upstream]]
 name = "Saxon-HE"
 severity = "info"
-pinned = "9.9.1-8"
+pinned = "12.10"
 source = "maven"
 group = "net.sf.saxon"
 artifact = "Saxon-HE"
 series = "12"
-hold = "the corpus goldens and the einvoice-xdm oracle are produced with this version"
+hold = "the corpus goldens and the einvoice-xdm, einvoice-xpath-eval and einvoice-xslt-exec oracles are produced with this version"
 
 [[upstream.pin]]
 file = "scripts/fetch-saxon.sh"
@@ -115,12 +115,128 @@ file = "xtask/src/oracle.rs"
 pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
 
 [[upstream.pin]]
+file = "xtask/src/main.rs"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
 file = "crates/einvoice-xdm/examples/saxon-oracle.rs"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xpath-eval/examples/saxon-oracle.rs"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xdm/Cargo.toml"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xpath-eval/Cargo.toml"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xdm/src/lib.rs"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xpath-eval/src/lib.rs"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xslt-exec/src/lib.rs"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+# The value of system-property('xsl:product-version') that the engine and the test host
+# of the einvoice-xpath-eval oracle give, as Saxon does.
+[[upstream.pin]]
+file = "crates/einvoice-xslt-exec/src/run.rs"
+pattern = '"product-version" => "HE (?<v>[0-9]+(?:\.[0-9]+)*)"'
+
+[[upstream.pin]]
+file = "crates/einvoice-xpath-eval/tests/oracle.rs"
+pattern = '"product-version" => "HE (?<v>[0-9]+(?:\.[0-9]+)*)"'
+
+[[upstream.pin]]
+file = "README.md"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xdm/tests/oracle/README.md"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xpath-eval/tests/oracle/README.md"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xdm/tests/oracle/cases.tsv"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xpath-eval/tests/oracle/cases.tsv"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xdm/tests/oracle/expected.tsv"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xpath-eval/tests/oracle/expected.tsv"
 pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
 
 [[upstream.pin]]
 file = "corpus/README.md"
 pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "corpus/SVRL-CANONICAL.md"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "corpus/cen-en16931-ubl-1.3.17/README.md"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "corpus/cen-en16931-ubl-1.3.17/xpath/expected.tsv"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+# The XML Resolver, which Saxon-HE 12.10 needs at run time (a dependency in its POM).
+[[upstream]]
+name = "XML Resolver"
+severity = "info"
+pinned = "5.3.3"
+source = "maven"
+group = "org.xmlresolver"
+artifact = "xmlresolver"
+hold = "the version Saxon-HE 12.10 declares in its POM"
+
+[[upstream.pin]]
+file = "scripts/fetch-saxon.sh"
+pattern = 'resolver=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-saxon.sh"
+pattern = 'xmlresolver[-:](?<v>[0-9]+(?:\.[0-9]+)+)'
+
+[[upstream.pin]]
+file = "xtask/src/oracle.rs"
+pattern = 'xmlresolver[-:](?<v>[0-9]+(?:\.[0-9]+)+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xdm/examples/saxon-oracle.rs"
+pattern = 'xmlresolver-(?<v>[0-9]+(?:\.[0-9]+)+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xpath-eval/examples/saxon-oracle.rs"
+pattern = 'xmlresolver-(?<v>[0-9]+(?:\.[0-9]+)+)'
+
+[[upstream.pin]]
+file = "corpus/README.md"
+pattern = 'xmlresolver-(?<v>[0-9]+(?:\.[0-9]+)+)'
+
+[[upstream.pin]]
+file = "README.md"
+pattern = 'XML Resolver (?<v>[0-9]+(?:\.[0-9]+)+)'
 
 [[upstream]]
 name = "ph-schematron"
