@@ -61,6 +61,14 @@ pattern = 'validation-(?<v>[0-9]+(?:\.[0-9]+)*)'
 file = "xtask/src/ruleset.rs"
 pattern = 'cen-en16931-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 
+[[upstream.pin]]
+file = "crates/einvoice-validator/bundles/cen-ubl.toml"
+pattern = 'version = "(?<v>[0-9]+(?:\.[0-9]+)*)"'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/src/builtin.rs"
+pattern = 'cen-en16931-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
 [[upstream]]
 name = "Peppol BIS Billing 3.0"
 severity = "high"
@@ -199,6 +207,10 @@ pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
 
 [[upstream.pin]]
 file = "crates/einvoice-xpath-eval/src/lib.rs"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/src/lib.rs"
 pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
 
 [[upstream.pin]]

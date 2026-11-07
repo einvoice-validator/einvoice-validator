@@ -12,7 +12,7 @@
 //!    [`einvoice_xsd`]: every validity error, with its line and column;
 //! 3. every stylesheet of the rule set, with [`einvoice_xslt_exec`], which executes the
 //!    official compiled Schematron with the behaviour of the reference engine
-//!    (Saxon-HE 9.9.1-8) and writes its SVRL report.
+//!    (Saxon-HE 12.10) and writes its SVRL report.
 //!
 //! The [`Report`] holds the schema errors, then, for each stylesheet, its raw SVRL
 //! report, its findings (failed asserts and successful reports, with their id, flag,
