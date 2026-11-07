@@ -7,7 +7,9 @@
 //! * [`compile`]: an expression parsed by [`einvoice_xpath`] is resolved against a
 //!   [`StaticContext`] (variables, host functions, whether the XSLT functions exist) into
 //!   a [`CompiledExpr`]. Unknown functions and variables are errors here, not at
-//!   evaluation.
+//!   evaluation. The static types Saxon infers are inferred too, where they change a
+//!   result: `xs:decimal` of an argument statically typed `xs:integer` strips its
+//!   trailing zeros, as Saxon-HE 12.10's up-casting converter does.
 //! * [`CompiledExpr::evaluate`] and [`CompiledExpr::effective_boolean_value`] evaluate it
 //!   in a [`DynamicContext`] (the [`Host`], the implicit timezone, the current date and
 //!   time) with a [`Context`] (focus and current item). Atomic values and their

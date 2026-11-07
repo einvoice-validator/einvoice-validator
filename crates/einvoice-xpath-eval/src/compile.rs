@@ -9,15 +9,23 @@
 //! evaluation strategy, never the result: a path whose order is known is evaluated
 //! lazily, one whose order is not is sorted; a general comparison reads first the
 //! operand known to be a single item, as Saxon does.
+//!
+//! It also infers the static item type of every subexpression as Saxon-HE 12.10 does
+//! (`Expression.getItemType`, with the literals it folds), as far as it decides a
+//! result: the constructor `xs:decimal` strips the trailing zeros of an argument that is
+//! statically an `xs:integer` (see [`StaticType`]).
 
 use std::sync::Arc;
 
 use einvoice_xdm::{AtomicType, AtomicValue, Decimal, Integer, XPathRegex, ops, parse_double};
 use einvoice_xpath::{self as ast, AtomicKind, KindTest, NameOrWildcard, NameTest, QName};
 
-use crate::context::{Cardinality, FunctionId, StaticContext, VariableId};
+use crate::context::{
+    Cardinality, Context, DynamicContext, FunctionId, NoHost, StaticContext, VariableId,
+};
 use crate::error::{Error, ErrorCode, Result, err};
 use crate::functions::{self, Builtin, Returns};
+use crate::item::Item;
 use crate::tree::{Document, NodeAxis, NodeKind};
 
 /// A compiled expression.
@@ -115,6 +123,11 @@ pub(crate) enum CallData {
     Regex(Arc<std::result::Result<XPathRegex, Error>>),
     /// The property named by the literal argument of `system-property`.
     Property(QName),
+    /// `xs:decimal` of an argument whose static type is `xs:integer`: Saxon-HE 12.10
+    /// casts it with its up-casting converter, which strips the trailing zeros
+    /// (`AtomicValue::upcast`), where the cast of an operand typed at run time keeps
+    /// scale 0.
+    Upcast,
 }
 
 /// An axis step.
@@ -243,6 +256,241 @@ enum Class {
     Unknown,
 }
 
+/// The static item type of a value as Saxon-HE 12.10 infers it (`getItemType`), reduced
+/// to the distinctions that can change a result. It decides one thing: whether the
+/// argument of `xs:decimal` is an `xs:integer`, which Saxon then casts with its
+/// up-casting converter (trailing zeros stripped) rather than with the converter chosen
+/// at run time (scale 0 kept). The rules are Saxon's:
+///
+/// * literals have their type, and so have the expressions Saxon-HE folds into literals
+///   (its optimizer option `CONSTANT_FOLDING` is off, so only a few): unary minus of a
+///   literal and sequences of literals when parsed, arithmetic on two literals and casts
+///   of a literal when type-checked, and, when optimized, filters of a literal sequence
+///   that depend on the focus only (after which what contains them is type-checked
+///   again, see [`Typing`]); function calls and `if` are not folded;
+/// * `count`, `string-length`, `position`, `last`, `string-to-codepoints`, `to`,
+///   `xs:integer` give integers; `number` doubles; `xs:decimal` decimals;
+///   `distinct-values`, host functions and the external variables anything;
+/// * arithmetic follows Saxon's calculators: untyped operands count as doubles, any
+///   double operand gives a double, any decimal one a decimal, two integers an integer,
+///   except that `div` of two integers is a decimal and `idiv` always an integer; an
+///   operand of unknown type makes the result unknown;
+/// * `sum` gives the common type of its atomized argument (doubles for untyped values)
+///   and `xs:integer`, or the argument's type when it is exactly one item; `round`
+///   and `abs` the type of their argument; `reverse`, filters, unary minus, `for` and
+///   the range variables keep the type of their operand; `if` and sequences the
+///   common super type of their branches or items (`()` aside), integer and decimal
+///   giving decimal and any other mix giving anything;
+/// * a filter `E[. instance of T]` has type `T`, unless the items of `E` are known to be
+///   of type `T` (the test is then folded into `true()`);
+/// * elements, attributes, text and document nodes atomize to untyped values (Saxon-HE
+///   has no schema), comments and processing instructions to strings.
+///
+/// The context item at the top of an expression is of unknown type (the host knows
+/// it); inside a predicate or on the right of `/` it has the type of the items it
+/// ranges over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StaticType {
+    /// No item: the empty sequence (Saxon's `ErrorType`), neutral in a common type.
+    Empty,
+    Integer,
+    Decimal,
+    Double,
+    UntypedAtomic,
+    /// A non-numeric atomic type: string, boolean, anyURI, date or dateTime.
+    OtherAtomic,
+    /// Elements, attributes, text or document nodes: their typed value is untyped.
+    UntypedNodes,
+    /// Comments or processing instructions: their typed value is a string.
+    StringNodes,
+    /// Nodes of kinds from both groups above, or of any kind.
+    Nodes,
+    /// Any item, any atomic value, any number.
+    Unknown,
+}
+
+impl StaticType {
+    /// The common super type (`Type.getCommonSuperType`).
+    const fn union(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Empty, t) | (t, Self::Empty) => t,
+            (Self::Integer, Self::Integer) => Self::Integer,
+            (Self::Integer | Self::Decimal, Self::Integer | Self::Decimal) => Self::Decimal,
+            (Self::Double, Self::Double) => Self::Double,
+            (Self::UntypedAtomic, Self::UntypedAtomic) => Self::UntypedAtomic,
+            (Self::OtherAtomic, Self::OtherAtomic) => Self::OtherAtomic,
+            (Self::UntypedNodes, Self::UntypedNodes) => Self::UntypedNodes,
+            (Self::StringNodes, Self::StringNodes) => Self::StringNodes,
+            (
+                Self::UntypedNodes | Self::StringNodes | Self::Nodes,
+                Self::UntypedNodes | Self::StringNodes | Self::Nodes,
+            ) => Self::Nodes,
+            _ => Self::Unknown,
+        }
+    }
+
+    /// The type of the atomized items (`Atomizer`, nodes untyped).
+    const fn atomized(self) -> Self {
+        match self {
+            Self::UntypedNodes => Self::UntypedAtomic,
+            Self::StringNodes => Self::OtherAtomic,
+            Self::Nodes => Self::Unknown,
+            t => t,
+        }
+    }
+
+    /// The type of an operand of arithmetic, `round`, `abs` or `sum`: atomized,
+    /// untyped values converted to doubles.
+    const fn numeric(self) -> Self {
+        match self.atomized() {
+            Self::UntypedAtomic => Self::Double,
+            t => t,
+        }
+    }
+
+    /// The type of `a op b`: the result type of Saxon's calculator for the operand
+    /// types (`Calculator.getResultType`), unknown when there is no specific one.
+    const fn arithmetic(op: ops::ArithmeticOp, a: Self, b: Self) -> Self {
+        let (a, b) = (a.numeric(), b.numeric());
+        let idiv = matches!(op, ops::ArithmeticOp::IntegerDivide);
+        match (a, b) {
+            (Self::Empty, _) | (_, Self::Empty) => Self::Empty,
+            (Self::Double, Self::Integer | Self::Decimal | Self::Double)
+            | (Self::Integer | Self::Decimal, Self::Double) => {
+                if idiv {
+                    Self::Integer
+                } else {
+                    Self::Double
+                }
+            }
+            (Self::Decimal, Self::Integer | Self::Decimal) | (Self::Integer, Self::Decimal) => {
+                if idiv {
+                    Self::Integer
+                } else {
+                    Self::Decimal
+                }
+            }
+            (Self::Integer, Self::Integer) => {
+                if matches!(op, ops::ArithmeticOp::Divide) {
+                    Self::Decimal
+                } else {
+                    Self::Integer
+                }
+            }
+            _ => Self::Unknown,
+        }
+    }
+
+    /// The type of the items of a value.
+    fn of_items(items: &[Item]) -> Self {
+        items.iter().fold(Self::Empty, |t, item| {
+            t.union(match item {
+                Item::Node(node) => match node.kind() {
+                    NodeKind::Comment | NodeKind::ProcessingInstruction => Self::StringNodes,
+                    _ => Self::UntypedNodes,
+                },
+                Item::Atomic(value) => Self::of_atomic(value.atomic_type()),
+            })
+        })
+    }
+
+    const fn of_atomic(t: AtomicType) -> Self {
+        match t {
+            AtomicType::Integer => Self::Integer,
+            AtomicType::Decimal => Self::Decimal,
+            AtomicType::Double => Self::Double,
+            AtomicType::UntypedAtomic => Self::UntypedAtomic,
+            _ => Self::OtherAtomic,
+        }
+    }
+
+    /// The type of the nodes a node test selects.
+    const fn of_test(test: &NodeTest) -> Self {
+        match test {
+            NodeTest::AnyNode => Self::Nodes,
+            NodeTest::Kind(NodeKind::Comment | NodeKind::ProcessingInstruction) => {
+                Self::StringNodes
+            }
+            NodeTest::Kind(_) | NodeTest::Named { .. } => Self::UntypedNodes,
+        }
+    }
+
+    /// Whether every item of this type is of type `t` (for `. instance of t`).
+    const fn subsumed_by(self, t: Self) -> bool {
+        matches!(
+            (self, t),
+            (Self::Integer, Self::Integer | Self::Decimal)
+                | (Self::Decimal, Self::Decimal)
+                | (Self::Double, Self::Double)
+                | (Self::OtherAtomic, Self::OtherAtomic)
+                | (Self::UntypedNodes, Self::UntypedNodes)
+                | (Self::StringNodes, Self::StringNodes)
+        )
+    }
+
+    /// The type of `-x` (`NegateExpression`: the primitive type of the operand).
+    const fn negated(self) -> Self {
+        match self.numeric() {
+            t @ (Self::Empty | Self::Integer | Self::Decimal | Self::Double) => t,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// The static item type of a value at the two moments Saxon-HE 12.10 computes it.
+/// `checked` is the type after type checking, when a cast chooses its converter: an
+/// argument of `xs:decimal` of type `xs:integer` gets the up-casting converter, one of
+/// type `xs:decimal` is returned unchanged, one of unknown type gets no converter (it is
+/// chosen at run time). `optimized` is the type after optimization, which folds the
+/// filters of literal sequences: an expression that contains such a filter is
+/// type-checked again, so that a cast without a converter then gets the up-casting
+/// one if its argument has become a literal integer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Typing {
+    checked: StaticType,
+    optimized: StaticType,
+}
+
+impl Typing {
+    const fn of(t: StaticType) -> Self {
+        Self {
+            checked: t,
+            optimized: t,
+        }
+    }
+
+    const fn union(self, other: Self) -> Self {
+        Self {
+            checked: self.checked.union(other.checked),
+            optimized: self.optimized.union(other.optimized),
+        }
+    }
+
+    fn map(self, f: impl Fn(StaticType) -> StaticType) -> Self {
+        Self {
+            checked: f(self.checked),
+            optimized: f(self.optimized),
+        }
+    }
+
+    fn zip(self, other: Self, f: impl Fn(StaticType, StaticType) -> StaticType) -> Self {
+        Self {
+            checked: f(self.checked, other.checked),
+            optimized: f(self.optimized, other.optimized),
+        }
+    }
+
+    /// Whether Saxon casts a value of this type to `xs:decimal` with its up-casting
+    /// converter: an integer when type-checked, or of unknown type then and an integer
+    /// once optimized.
+    const fn upcasts_to_decimal(self) -> bool {
+        matches!(
+            (self.checked.atomized(), self.optimized.atomized()),
+            (StaticType::Integer, _) | (StaticType::Unknown, StaticType::Integer)
+        )
+    }
+}
+
 /// Statically known properties of a value.
 #[derive(Debug, Clone, Copy)]
 struct Props {
@@ -253,6 +501,35 @@ struct Props {
     ordered: bool,
     /// No node is an ancestor of another (only meaningful with `ordered`).
     peer: bool,
+    /// The static item type.
+    ty: Typing,
+    /// Whether it is statically exactly one item.
+    count: Count,
+    /// Whether Saxon folds it into a literal.
+    folding: Folding,
+}
+
+/// Whether a value is statically exactly one item (for `sum`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Count {
+    ExactlyOne,
+    Other,
+}
+
+impl Count {
+    const fn of(one: bool) -> Self {
+        if one { Self::ExactlyOne } else { Self::Other }
+    }
+}
+
+/// When Saxon-HE folds an expression into a literal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Folding {
+    Never,
+    /// When optimizing.
+    Optimized,
+    /// When type checking (and so when optimizing too).
+    Checked,
 }
 
 impl Props {
@@ -263,10 +540,13 @@ impl Props {
             class,
             ordered: false,
             peer: false,
+            ty: Typing::of(StaticType::Unknown),
+            count: Count::Other,
+            folding: Folding::Never,
         }
     }
 
-    const BOOLEAN: Self = Self::atomic(true, Class::NotNumeric);
+    const BOOLEAN: Self = Self::atomic(true, Class::NotNumeric).typed(StaticType::OtherAtomic);
 
     const fn unknown(max_one: bool) -> Self {
         Self {
@@ -275,6 +555,9 @@ impl Props {
             class: Class::Unknown,
             ordered: max_one,
             peer: max_one,
+            ty: Typing::of(StaticType::Unknown),
+            count: Count::Other,
+            folding: Folding::Never,
         }
     }
 
@@ -285,25 +568,82 @@ impl Props {
             class: Class::NotNumeric,
             ordered,
             peer,
+            ty: Typing::of(StaticType::Nodes),
+            count: Count::Other,
+            folding: Folding::Never,
         }
     }
 
+    const fn typed(self, ty: StaticType) -> Self {
+        Self {
+            ty: Typing::of(ty),
+            ..self
+        }
+    }
+
+    const fn typing(self, ty: Typing) -> Self {
+        Self { ty, ..self }
+    }
+
+    const fn exactly_one(self, one: bool) -> Self {
+        Self {
+            count: Count::of(one),
+            ..self
+        }
+    }
+
+    const fn one(&self) -> bool {
+        matches!(self.count, Count::ExactlyOne)
+    }
+
+    /// Whether Saxon folds it into a literal when type-checking, and when optimizing.
+    const fn literal(self, checked: bool, optimized: bool) -> Self {
+        Self {
+            folding: if checked {
+                Folding::Checked
+            } else if optimized {
+                Folding::Optimized
+            } else {
+                Folding::Never
+            },
+            ..self
+        }
+    }
+
+    /// A literal once type-checked.
+    const fn is_literal(&self) -> bool {
+        matches!(self.folding, Folding::Checked)
+    }
+
+    /// A literal once optimized.
+    const fn folds(&self) -> bool {
+        matches!(self.folding, Folding::Checked | Folding::Optimized)
+    }
+
     /// Either of two values (the branches of `if`).
-    fn either(a: Self, b: Self) -> Self {
+    const fn either(a: Self, b: Self) -> Self {
         Self {
             max_one: a.max_one && b.max_one,
-            kinds: if a.kinds == b.kinds {
+            kinds: if matches!(
+                (a.kinds, b.kinds),
+                (Kinds::Nodes, Kinds::Nodes)
+                    | (Kinds::Atomics, Kinds::Atomics)
+                    | (Kinds::Unknown, Kinds::Unknown)
+            ) {
                 a.kinds
             } else {
                 Kinds::Unknown
             },
-            class: if a.class == Class::NotNumeric && b.class == Class::NotNumeric {
+            class: if matches!((a.class, b.class), (Class::NotNumeric, Class::NotNumeric)) {
                 Class::NotNumeric
             } else {
                 Class::Unknown
             },
             ordered: a.ordered && b.ordered,
             peer: a.peer && b.peer,
+            ty: a.ty.union(b.ty),
+            count: Count::of(a.one() && b.one()),
+            folding: Folding::Never,
         }
     }
 }
@@ -335,6 +675,7 @@ pub fn compile(expr: &ast::Expr, context: &dyn StaticContext) -> Result<Compiled
     let mut compiler = Compiler {
         context,
         locals: Vec::new(),
+        focus: Typing::of(StaticType::Unknown),
     };
     let (expr, props) = compiler.expr(expr)?;
     Ok(CompiledExpr {
@@ -345,8 +686,72 @@ pub fn compile(expr: &ast::Expr, context: &dyn StaticContext) -> Result<Compiled
 
 struct Compiler<'a> {
     context: &'a dyn StaticContext,
-    /// The range variables in scope, innermost last.
-    locals: Vec<QName>,
+    /// The range variables in scope, innermost last, with their static item type.
+    locals: Vec<(QName, Typing)>,
+    /// The static type of the context item.
+    focus: Typing,
+}
+
+/// The type of the value of an expression Saxon folds into a literal, evaluated as Saxon
+/// does at compile time, or `None` when the evaluation fails (Saxon then keeps the
+/// expression, and reports the error only if it is evaluated).
+fn folded_type(expr: &Expr) -> Option<StaticType> {
+    let dc = DynamicContext::new(&NoHost).ok()?;
+    let compiled = CompiledExpr {
+        expr: expr.clone(),
+        max_one: false,
+    };
+    let items = compiled.evaluate(&dc, &Context::new()).ok()?;
+    Some(StaticType::of_items(&items))
+}
+
+/// Whether an expression refers to a variable or a host function anywhere
+/// (`ExpressionTool.refersToVariableOrFunction`).
+fn refers_to_variable_or_function(expr: &Expr) -> bool {
+    let any = |items: &[Expr]| items.iter().any(refers_to_variable_or_function);
+    let preds = |predicates: &[Predicate]| {
+        predicates
+            .iter()
+            .any(|p| refers_to_variable_or_function(&p.expr))
+    };
+    match expr {
+        Expr::Local(_) | Expr::External(_) | Expr::HostCall { .. } => true,
+        Expr::Literal(_) | Expr::ContextItem | Expr::Root => false,
+        Expr::Call { args, .. } | Expr::Sequence(args) => any(args),
+        Expr::Filter { base, predicates } => {
+            refers_to_variable_or_function(base) || preds(predicates)
+        }
+        Expr::Step(step) => preds(&step.predicates),
+        Expr::Path { lhs, rhs, .. }
+        | Expr::Union { lhs, rhs, .. }
+        | Expr::Arithmetic { lhs, rhs, .. }
+        | Expr::Range(lhs, rhs)
+        | Expr::GeneralComparison { lhs, rhs, .. }
+        | Expr::ValueComparison { lhs, rhs, .. }
+        | Expr::And(lhs, rhs)
+        | Expr::Or(lhs, rhs)
+        | Expr::For {
+            sequence: lhs,
+            body: rhs,
+        }
+        | Expr::Quantified {
+            sequence: lhs,
+            satisfies: rhs,
+            ..
+        } => refers_to_variable_or_function(lhs) || refers_to_variable_or_function(rhs),
+        Expr::Negate(e)
+        | Expr::InstanceOf { operand: e, .. }
+        | Expr::Castable { operand: e, .. } => refers_to_variable_or_function(e),
+        Expr::If {
+            condition,
+            then,
+            otherwise,
+        } => {
+            refers_to_variable_or_function(condition)
+                || refers_to_variable_or_function(then)
+                || refers_to_variable_or_function(otherwise)
+        }
+    }
 }
 
 fn boxed(e: Expr) -> Box<Expr> {
@@ -568,33 +973,82 @@ impl Compiler<'_> {
         match expr {
             ast::Expr::Literal(literal) => literal_value(literal),
             ast::Expr::VarRef(name) => self.variable(name),
-            ast::Expr::ContextItem => Ok((Expr::ContextItem, Props::unknown(true))),
+            ast::Expr::ContextItem => Ok((
+                Expr::ContextItem,
+                Props::unknown(true).typing(self.focus).exactly_one(true),
+            )),
             ast::Expr::FunctionCall { name, args } => self.call(name, args),
             ast::Expr::Sequence(items) => self.sequence(items),
-            ast::Expr::Filter { base, predicates } => {
+            ast::Expr::Filter {
+                base,
+                predicates: ast_predicates,
+            } => {
                 let (base, props) = self.expr(base)?;
-                let predicates = self.predicates(predicates)?;
+                let predicates = self.with_focus(props.ty, |c| c.predicates(ast_predicates))?;
                 let positional = predicates
                     .iter()
                     .any(|p| matches!(p.kind, PredicateKind::Position(_)));
+                // `E[. instance of T]` has type T, unless the test is always true.
+                let ty = ast_predicates.iter().fold(props.ty, |ty, p| match p {
+                    ast::Expr::InstanceOf { operand, target }
+                        if matches!(**operand, ast::Expr::ContextItem) =>
+                    {
+                        let tested = match &target.item {
+                            ast::ItemType::Atomic(atomic) => {
+                                StaticType::of_atomic(atomic_type(atomic.kind))
+                            }
+                            ast::ItemType::Kind(kind) => StaticType::of_test(&kind_test(kind)),
+                        };
+                        ty.map(|t| if t.subsumed_by(tested) { t } else { tested })
+                    }
+                    _ => ty,
+                });
+                // The optimizer folds the filter of a literal sequence (not a range)
+                // when every predicate is `[1]` (`FirstItemExpression`), or when none
+                // is positional (numeric, or reading the position or the size) and
+                // each depends on the focus only (`tryEarlyEvaluation`). Other
+                // positional predicates are rewritten and not folded, and so is `[1]`
+                // after another predicate.
+                let first_items = predicates
+                    .iter()
+                    .all(|p| p.kind == PredicateKind::Position(Some(1)));
+                let early = predicates.iter().all(|p| {
+                    p.kind == PredicateKind::Boolean
+                        && !calls_focus(&p.expr, true)
+                        && !refers_to_variable_or_function(&p.expr)
+                        && !depends_on_more_than_focus(&p.expr)
+                });
+                let folds =
+                    props.folds() && !matches!(base, Expr::Range(..)) && (first_items || early);
+                let compiled = Expr::Filter {
+                    base: boxed(base),
+                    predicates,
+                };
+                let ty = match folds.then(|| folded_type(&compiled)).flatten() {
+                    Some(value) => Typing {
+                        optimized: value,
+                        ..ty
+                    },
+                    None => ty,
+                };
                 let props = Props {
                     max_one: props.max_one || positional,
+                    count: Count::Other,
                     ..props
-                };
-                Ok((
-                    Expr::Filter {
-                        base: boxed(base),
-                        predicates,
-                    },
-                    props,
-                ))
+                }
+                .typing(ty)
+                .literal(false, folds);
+                Ok((compiled, props))
             }
             ast::Expr::Path(path) => self.path(path),
             ast::Expr::Negate(operand) => {
-                let (operand, _) = self.expr(operand)?;
+                let (operand, p) = self.expr(operand)?;
                 Ok((
                     Expr::Negate(boxed(operand)),
-                    Props::atomic(true, Class::Unknown),
+                    Props::atomic(true, Class::Unknown)
+                        .typing(p.ty.map(StaticType::negated))
+                        .exactly_one(p.one())
+                        .literal(p.is_literal(), p.folds()),
                 ))
             }
             ast::Expr::Castable { operand, target } => {
@@ -605,7 +1059,7 @@ impl Compiler<'_> {
                         target: atomic_type(target.atomic.kind),
                         allows_empty: target.allows_empty,
                     },
-                    Props::BOOLEAN,
+                    Props::BOOLEAN.exactly_one(true),
                 ))
             }
             ast::Expr::InstanceOf { operand, target } => {
@@ -620,7 +1074,7 @@ impl Compiler<'_> {
                         item,
                         occurrence: target.occurrence,
                     },
-                    Props::BOOLEAN,
+                    Props::BOOLEAN.exactly_one(true),
                 ))
             }
             ast::Expr::Union(lhs, rhs) => {
@@ -633,19 +1087,39 @@ impl Compiler<'_> {
                         lhs_ordered: lp.ordered && lp.kinds == Kinds::Nodes,
                         rhs_ordered: rp.ordered && rp.kinds == Kinds::Nodes,
                     },
-                    Props::nodes(false, true, false),
+                    Props::nodes(false, true, false).typing(lp.ty.union(rp.ty)),
                 ))
             }
             ast::Expr::Arithmetic { op, lhs, rhs } => {
-                let (lhs, _) = self.expr(lhs)?;
-                let (rhs, _) = self.expr(rhs)?;
+                let op = arithmetic_op(*op);
+                let (lhs, lp) = self.expr(lhs)?;
+                let (rhs, rp) = self.expr(rhs)?;
+                let compiled = Expr::Arithmetic {
+                    op,
+                    lhs: boxed(lhs),
+                    rhs: boxed(rhs),
+                };
+                let mut ty = lp.ty.zip(rp.ty, |a, b| StaticType::arithmetic(op, a, b));
+                // Arithmetic on two literals is folded when type-checked (and, after
+                // optimization, on two operands folded by then), unless it fails.
+                let (mut literal, mut folds) = (false, false);
+                if lp.folds()
+                    && rp.folds()
+                    && let Some(value) = folded_type(&compiled)
+                {
+                    literal = lp.is_literal() && rp.is_literal();
+                    folds = true;
+                    ty.optimized = value;
+                    if literal {
+                        ty.checked = value;
+                    }
+                }
                 Ok((
-                    Expr::Arithmetic {
-                        op: arithmetic_op(*op),
-                        lhs: boxed(lhs),
-                        rhs: boxed(rhs),
-                    },
-                    Props::atomic(true, Class::Unknown),
+                    compiled,
+                    Props::atomic(true, Class::Unknown)
+                        .typing(ty)
+                        .exactly_one(lp.one() && rp.one())
+                        .literal(literal, folds),
                 ))
             }
             ast::Expr::Range(lhs, rhs) => {
@@ -653,7 +1127,7 @@ impl Compiler<'_> {
                 let (rhs, _) = self.expr(rhs)?;
                 Ok((
                     Expr::Range(boxed(lhs), boxed(rhs)),
-                    Props::atomic(false, Class::Unknown),
+                    Props::atomic(false, Class::Unknown).typed(StaticType::Integer),
                 ))
             }
             ast::Expr::Comparison { op, lhs, rhs } => self.comparison(*op, lhs, rhs),
@@ -665,13 +1139,15 @@ impl Compiler<'_> {
                 } else {
                     Expr::Or(boxed(l), boxed(r))
                 };
-                Ok((e, Props::BOOLEAN))
+                Ok((e, Props::BOOLEAN.exactly_one(true)))
             }
             ast::Expr::If {
                 condition,
                 then,
                 otherwise,
             } => {
+                // Not folded, even with a literal condition (the optimizer option
+                // `CONSTANT_FOLDING` is off in Saxon-HE).
                 let (condition, _) = self.expr(condition)?;
                 let (then, a) = self.expr(then)?;
                 let (otherwise, b) = self.expr(otherwise)?;
@@ -687,15 +1163,16 @@ impl Compiler<'_> {
             ast::Expr::For { bindings, body } => self
                 .bindings(bindings, &mut |c| {
                     let (body, props) = c.expr(body)?;
-                    Ok((body, props.kinds))
+                    Ok((body, (props.kinds, props.ty)))
                 })
-                .map(|(e, kinds)| {
+                .map(|(e, (kinds, ty))| {
                     (
                         e,
                         Props {
                             kinds,
                             ..Props::unknown(false)
-                        },
+                        }
+                        .typing(ty),
                     )
                 }),
             ast::Expr::Quantified {
@@ -707,13 +1184,17 @@ impl Compiler<'_> {
     }
 
     fn variable(&self, name: &QName) -> Result<(Expr, Props)> {
-        if let Some(depth) = self
+        if let Some((depth, (_, ty))) = self
             .locals
             .iter()
             .rev()
-            .position(|local| local.same_expanded_name(name))
+            .enumerate()
+            .find(|(_, (local, _))| local.same_expanded_name(name))
         {
-            return Ok((Expr::Local(depth), Props::unknown(true)));
+            return Ok((
+                Expr::Local(depth),
+                Props::unknown(true).typing(*ty).exactly_one(true),
+            ));
         }
         match self.context.variable(name) {
             Some(info) => Ok((
@@ -730,19 +1211,26 @@ impl Compiler<'_> {
     fn sequence(&mut self, items: &[ast::Expr]) -> Result<(Expr, Props)> {
         let mut compiled = Vec::with_capacity(items.len());
         let mut props: Option<Props> = None;
+        let mut all_literal = true;
         for item in items {
             let (e, p) = self.expr(item)?;
+            all_literal &= p.is_literal() && p.kinds == Kinds::Atomics;
             compiled.push(e);
-            props = Some(props.map_or(p, |q| Props::either(p, q)));
+            props = Some(props.map_or(p, |q| Props::either(q, p)));
         }
         let props = match props {
-            None => Props::atomic(true, Class::NotNumeric),
+            // `()` and a sequence of literals are literals once parsed.
+            None => Props::atomic(true, Class::NotNumeric)
+                .typed(StaticType::Empty)
+                .literal(true, true),
             Some(p) => Props {
                 max_one: false,
                 ordered: false,
                 peer: false,
+                count: Count::Other,
                 ..p
-            },
+            }
+            .literal(all_literal, all_literal),
         };
         Ok((Expr::Sequence(compiled), props))
     }
@@ -755,6 +1243,8 @@ impl Compiler<'_> {
     ) -> Result<(Expr, Props)> {
         let (l, lp) = self.expr(lhs)?;
         let (r, rp) = self.expr(rhs)?;
+        let props = Props::BOOLEAN
+            .exactly_one(matches!(op, ast::ComparisonOp::General(_)) || (lp.one() && rp.one()));
         let e = match op {
             ast::ComparisonOp::General(kind) => Expr::GeneralComparison {
                 op: comparison_op(kind),
@@ -773,7 +1263,7 @@ impl Compiler<'_> {
                 rhs: boxed(r),
             },
         };
-        Ok((e, Props::BOOLEAN))
+        Ok((e, props))
     }
 
     /// Compiles nested bindings (`for $a in A, $b in B return E` is
@@ -787,8 +1277,8 @@ impl Compiler<'_> {
         let Some((first, rest)) = bindings.split_first() else {
             return inner(self);
         };
-        let (sequence, _) = self.expr(&first.sequence)?;
-        self.locals.push(first.variable.clone());
+        let (sequence, p) = self.expr(&first.sequence)?;
+        self.locals.push((first.variable.clone(), p.ty));
         let body = self.bindings(rest, inner);
         self.locals.pop();
         let (body, extra) = body?;
@@ -810,8 +1300,8 @@ impl Compiler<'_> {
         let Some((first, rest)) = bindings.split_first() else {
             return err(ErrorCode::Internal, "quantified expression without binding");
         };
-        let (sequence, _) = self.expr(&first.sequence)?;
-        self.locals.push(first.variable.clone());
+        let (sequence, p) = self.expr(&first.sequence)?;
+        self.locals.push((first.variable.clone(), p.ty));
         let body = if rest.is_empty() {
             self.expr(satisfies).map(|(e, _)| e)
         } else {
@@ -852,6 +1342,18 @@ impl Compiler<'_> {
             .collect()
     }
 
+    /// Runs `compile` with the context item of that static type.
+    fn with_focus<T>(
+        &mut self,
+        focus: Typing,
+        compile: impl FnOnce(&mut Self) -> Result<T>,
+    ) -> Result<T> {
+        let outer = std::mem::replace(&mut self.focus, focus);
+        let result = compile(self);
+        self.focus = outer;
+        result
+    }
+
     /// Whether the predicates of a `child::` step can be moved to a `descendant::` step
     /// (`//name[p]`): none of them may depend on the position.
     fn positional(predicates: &[Predicate]) -> bool {
@@ -874,7 +1376,9 @@ impl Compiler<'_> {
                 && dos.predicates.is_empty()
                 && child.axis == ast::Axis::Child
             {
-                let predicates = self.predicates(&child.predicates)?;
+                let test = node_test(&child.test, NodeAxis::Child);
+                let focus = Typing::of(StaticType::of_test(&test));
+                let predicates = self.with_focus(focus, |c| c.predicates(&child.predicates))?;
                 if !Self::positional(&predicates) {
                     steps.push(PathStep::Descendant(child));
                     i += 2;
@@ -885,7 +1389,12 @@ impl Compiler<'_> {
             i += 1;
         }
         let mut acc = match path.start {
-            ast::PathStart::Root => Some((Expr::Root, Props::nodes(true, true, true))),
+            ast::PathStart::Root => Some((
+                Expr::Root,
+                Props::nodes(true, true, true)
+                    .typed(StaticType::UntypedNodes)
+                    .exactly_one(true),
+            )),
             ast::PathStart::Relative => None,
         };
         for step in steps {
@@ -896,7 +1405,10 @@ impl Compiler<'_> {
                 PathStep::Descendant(axis_step) => {
                     self.axis_step(NodeAxis::Descendant, axis_step)?
                 }
-                PathStep::Ast(ast::Step::Expr(e)) => self.expr(e)?,
+                PathStep::Ast(ast::Step::Expr(e)) => {
+                    let focus = acc.as_ref().map_or(self.focus, |(_, p)| p.ty);
+                    self.with_focus(focus, |c| c.expr(e))?
+                }
             };
             acc = Some(match acc {
                 None => (rhs, rhs_props),
@@ -908,8 +1420,9 @@ impl Compiler<'_> {
 
     fn axis_step(&mut self, axis: NodeAxis, step: &ast::AxisStep) -> Result<(Expr, Props)> {
         let test = node_test(&step.test, axis);
-        let predicates = self.predicates(&step.predicates)?;
-        let props = step_props(axis, &test, &predicates);
+        let ty = StaticType::of_test(&test);
+        let predicates = self.with_focus(Typing::of(ty), |c| c.predicates(&step.predicates))?;
+        let props = step_props(axis, &test, &predicates).typed(ty);
         Ok((
             Expr::Step(Box::new(Step {
                 axis,
@@ -930,9 +1443,12 @@ impl Compiler<'_> {
         let (mode, props) = match rhs_kinds {
             Kinds::Atomics => (
                 PathMode::Atomic,
-                Props::atomic(lp.max_one && rp.max_one, rp.class),
+                Props::atomic(lp.max_one && rp.max_one, rp.class).typing(rp.ty),
             ),
-            Kinds::Unknown => (PathMode::Dynamic, Props::unknown(lp.max_one && rp.max_one)),
+            Kinds::Unknown => (
+                PathMode::Dynamic,
+                Props::unknown(lp.max_one && rp.max_one).typing(rp.ty),
+            ),
             Kinds::Nodes => {
                 let ordered = axis.is_some_and(|a| path_is_ordered(lp, a));
                 let peer = if lp.max_one {
@@ -951,7 +1467,7 @@ impl Compiler<'_> {
                     } else {
                         PathMode::Sort
                     },
-                    Props::nodes(lp.max_one && rp.max_one, true, peer),
+                    Props::nodes(lp.max_one && rp.max_one, true, peer).typing(rp.ty),
                 )
             }
         };
@@ -992,19 +1508,48 @@ impl Compiler<'_> {
                 ),
             };
         };
-        let data = self.call_data(builtin, args)?;
-        let compiled = args
-            .iter()
-            .map(|a| self.expr(a).map(|(e, _)| e))
-            .collect::<Result<Vec<_>>>()?;
+        let mut data = self.call_data(builtin, args)?;
+        let mut compiled = Vec::with_capacity(args.len());
+        let mut arg_props = Vec::with_capacity(args.len());
+        for arg in args {
+            let (e, p) = self.expr(arg)?;
+            compiled.push(e);
+            arg_props.push(p);
+        }
         let many = builtin.returns_many();
         let props = match builtin.returns() {
             Returns::Boolean => Props::BOOLEAN,
-            Returns::NonNumeric => Props::atomic(!many, Class::NotNumeric),
+            Returns::NonNumeric => {
+                Props::atomic(!many, Class::NotNumeric).typed(StaticType::OtherAtomic)
+            }
             Returns::Atomic => Props::atomic(!many, Class::Unknown),
             Returns::Nodes => Props::nodes(!many, !many, !many),
             Returns::Items => Props::unknown(!many),
         };
+        let first = arg_props.first().copied();
+        let ty = Typing {
+            checked: call_type(builtin, first.map(|p| (p.ty.checked, p.one())))
+                .unwrap_or(props.ty.checked),
+            optimized: call_type(builtin, first.map(|p| (p.ty.optimized, p.one())))
+                .unwrap_or(props.ty.optimized),
+        };
+        let constructor = matches!(
+            builtin,
+            Builtin::XsDecimal | Builtin::XsDate | Builtin::XsInteger | Builtin::XsString
+        );
+        let one = if constructor {
+            first.is_some_and(|p| p.one())
+        } else {
+            builtin.exactly_one()
+        };
+        if builtin == Builtin::XsDecimal && first.is_some_and(|p| p.ty.upcasts_to_decimal()) {
+            data = CallData::Upcast;
+        }
+        // A cast of a literal is folded (other calls are not: no `CONSTANT_FOLDING`).
+        let props = props.typing(ty).exactly_one(one).literal(
+            constructor && first.is_some_and(|p| p.is_literal()),
+            constructor && first.is_some_and(|p| p.folds()),
+        );
         Ok((
             Expr::Call {
                 function: builtin,
@@ -1083,5 +1628,176 @@ fn literal_value(literal: &ast::Literal) -> Result<(Expr, Props)> {
         }
         ast::Literal::Double(text) => (AtomicValue::Double(parse_double(text)?), Class::Unknown),
     };
-    Ok((Expr::Literal(value), Props::atomic(true, class)))
+    let ty = StaticType::of_atomic(value.atomic_type());
+    Ok((
+        Expr::Literal(value),
+        Props::atomic(true, class)
+            .typed(ty)
+            .exactly_one(true)
+            .literal(true, true),
+    ))
+}
+
+/// The static type of a call to a built-in function, when it does not follow from what
+/// the function returns: `first` is the type of the first argument and whether it is
+/// exactly one item.
+fn call_type(builtin: Builtin, first: Option<(StaticType, bool)>) -> Option<StaticType> {
+    let arg = first.map_or(StaticType::Unknown, |(t, _)| t);
+    Some(match builtin {
+        Builtin::Count
+        | Builtin::StringLength
+        | Builtin::Position
+        | Builtin::Last
+        | Builtin::StringToCodepoints
+        | Builtin::XsInteger => StaticType::Integer,
+        Builtin::Number => StaticType::Double,
+        Builtin::XsDecimal => StaticType::Decimal,
+        // `Sum.getResultItemType`.
+        Builtin::Sum => {
+            let base = arg.numeric();
+            if first.is_some_and(|(_, one)| one) {
+                base
+            } else {
+                base.union(StaticType::Integer)
+            }
+        }
+        // AS_PRIM_ARG0: the atomized type of the argument, untyped as double.
+        Builtin::Round | Builtin::Abs => arg.negated(),
+        // AS_ARG0.
+        Builtin::Reverse => arg,
+        Builtin::DistinctValues | Builtin::Current => StaticType::Unknown,
+        Builtin::Document => StaticType::UntypedNodes,
+        _ => return None,
+    })
+}
+
+/// Whether a predicate depends on more than the focus (`current()`, the current date
+/// and time, `document()`), so that Saxon does not fold the filter.
+fn depends_on_more_than_focus(expr: &Expr) -> bool {
+    let any = |items: &[Expr]| items.iter().any(depends_on_more_than_focus);
+    let preds = |predicates: &[Predicate]| {
+        predicates
+            .iter()
+            .any(|p| depends_on_more_than_focus(&p.expr))
+    };
+    match expr {
+        Expr::Call { function, args, .. } => {
+            matches!(
+                function,
+                Builtin::Current | Builtin::CurrentDateTime | Builtin::Document
+            ) || any(args)
+        }
+        Expr::Literal(_) | Expr::ContextItem | Expr::Root | Expr::Local(_) | Expr::External(_) => {
+            false
+        }
+        Expr::HostCall { args, .. } | Expr::Sequence(args) => any(args),
+        Expr::Filter { base, predicates } => depends_on_more_than_focus(base) || preds(predicates),
+        Expr::Step(step) => preds(&step.predicates),
+        Expr::Path { lhs, rhs, .. }
+        | Expr::Union { lhs, rhs, .. }
+        | Expr::Arithmetic { lhs, rhs, .. }
+        | Expr::Range(lhs, rhs)
+        | Expr::GeneralComparison { lhs, rhs, .. }
+        | Expr::ValueComparison { lhs, rhs, .. }
+        | Expr::And(lhs, rhs)
+        | Expr::Or(lhs, rhs)
+        | Expr::For {
+            sequence: lhs,
+            body: rhs,
+        }
+        | Expr::Quantified {
+            sequence: lhs,
+            satisfies: rhs,
+            ..
+        } => depends_on_more_than_focus(lhs) || depends_on_more_than_focus(rhs),
+        Expr::Negate(e)
+        | Expr::InstanceOf { operand: e, .. }
+        | Expr::Castable { operand: e, .. } => depends_on_more_than_focus(e),
+        Expr::If {
+            condition,
+            then,
+            otherwise,
+        } => {
+            depends_on_more_than_focus(condition)
+                || depends_on_more_than_focus(then)
+                || depends_on_more_than_focus(otherwise)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::SimpleStaticContext;
+    use einvoice_xpath::{NamespaceMap, XS_NAMESPACE, parse_expr};
+
+    /// The static types of an expression, and whether it is an up-casting `xs:decimal`.
+    fn typing(text: &str) -> (Typing, bool) {
+        let ns = NamespaceMap::new().bind("xs", XS_NAMESPACE);
+        let context = SimpleStaticContext::new();
+        let mut compiler = Compiler {
+            context: &context,
+            locals: Vec::new(),
+            focus: Typing::of(StaticType::Unknown),
+        };
+        let (expr, props) = compiler.expr(&parse_expr(text, &ns).unwrap()).unwrap();
+        let upcast = matches!(
+            expr,
+            Expr::Call {
+                function: Builtin::XsDecimal,
+                data: CallData::Upcast,
+                ..
+            }
+        );
+        (props.ty, upcast)
+    }
+
+    #[test]
+    fn calculator_result_types() {
+        use StaticType::{Decimal, Double, Integer, Unknown, UntypedAtomic};
+        let t = StaticType::arithmetic;
+        assert_eq!(t(ops::ArithmeticOp::Add, Integer, Integer), Integer);
+        assert_eq!(t(ops::ArithmeticOp::Divide, Integer, Integer), Decimal);
+        assert_eq!(
+            t(ops::ArithmeticOp::IntegerDivide, Decimal, Integer),
+            Integer
+        );
+        assert_eq!(
+            t(ops::ArithmeticOp::IntegerDivide, UntypedAtomic, Integer),
+            Integer
+        );
+        assert_eq!(
+            t(ops::ArithmeticOp::Multiply, UntypedAtomic, Integer),
+            Double
+        );
+        assert_eq!(t(ops::ArithmeticOp::Subtract, Decimal, Integer), Decimal);
+        assert_eq!(t(ops::ArithmeticOp::Add, Unknown, Integer), Unknown);
+        assert_eq!(Integer.union(Decimal), Decimal);
+        assert_eq!(Integer.union(Double), Unknown);
+        assert_eq!(StaticType::Empty.union(Integer), Integer);
+    }
+
+    #[test]
+    fn xs_decimal_upcasts_static_integers_only() {
+        // Statically xs:integer: up-cast.
+        assert!(typing("xs:decimal(300)").1);
+        assert!(typing("xs:decimal(count(//a) * 100)").1);
+        assert!(
+            typing("xs:decimal(3000 div 10)").1,
+            "literal arithmetic is folded"
+        );
+        assert!(
+            typing("xs:decimal((300, 'a')[1])").1,
+            "folded when optimized"
+        );
+        // Statically decimal, unknown or untyped: the converter of the run time.
+        assert!(!typing("xs:decimal(count(//a) * 1000 div 10)").1);
+        assert!(!typing("xs:decimal((300, 2.5)[1])").1);
+        assert!(!typing("xs:decimal(if (true()) then 300 else 'a')").1);
+        assert!(!typing("xs:decimal(sum((150, 150)) div 1)").1);
+        assert!(!typing("xs:decimal(//a)").1);
+        assert!(!typing("xs:decimal(('a', 300)[2])").1);
+        assert_eq!(typing("(300, 'a')[1]").0.checked, StaticType::Unknown);
+        assert_eq!(typing("(300, 'a')[1]").0.optimized, StaticType::Integer);
+    }
 }

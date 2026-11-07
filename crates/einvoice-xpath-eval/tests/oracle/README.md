@@ -42,6 +42,10 @@ leaves `document-uri(/)` empty for a document given to the transformation (see
 purpose (the literal predicate `[0]`); the example accepts exactly those, listed in
 `EXPECTED_WARNINGS`, and fails on any other output.
 
+The `upcast-*` edge cases probe the static types Saxon infers for the argument of `xs:decimal`
+(an `xs:integer` one is cast with trailing zeros stripped, which changes the digits of a
+following division), including the few literals Saxon-HE folds.
+
 Saxon refuses statically some expressions that are only dynamic errors here (its type
 inference sees them); such edge cases pass their operand through `p:any`, an identity
 function that hides the static type, and some probe only the value (`v`) because Saxon

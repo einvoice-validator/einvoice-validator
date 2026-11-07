@@ -340,6 +340,45 @@ impl Builtin {
         }
     }
 
+    /// Whether a call statically returns exactly one item (the cardinality Saxon's
+    /// function library declares).
+    pub(crate) const fn exactly_one(self) -> bool {
+        matches!(
+            self,
+            Self::Not
+                | Self::True
+                | Self::False
+                | Self::Boolean
+                | Self::Count
+                | Self::Sum
+                | Self::NormalizeSpace
+                | Self::StringLength
+                | Self::String
+                | Self::Number
+                | Self::Contains
+                | Self::StartsWith
+                | Self::EndsWith
+                | Self::SubstringBefore
+                | Self::SubstringAfter
+                | Self::Substring
+                | Self::Concat
+                | Self::Translate
+                | Self::UpperCase
+                | Self::Name
+                | Self::LocalName
+                | Self::NamespaceUri
+                | Self::Last
+                | Self::Position
+                | Self::Exists
+                | Self::Matches
+                | Self::Replace
+                | Self::StringJoin
+                | Self::CodepointsToString
+                | Self::CurrentDateTime
+                | Self::SystemProperty
+        )
+    }
+
     /// Whether the function may return more than one item.
     pub(crate) const fn returns_many(self) -> bool {
         matches!(

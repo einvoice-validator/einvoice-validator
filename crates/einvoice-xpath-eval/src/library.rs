@@ -313,6 +313,11 @@ impl<'a> Run<'a> {
                 };
                 match self.atomic_opt(&args[0], ctx, &format!("first argument of {f}()"))? {
                     None => empty(),
+                    // An argument statically typed xs:integer (Saxon-HE 12.10's
+                    // up-casting converter: trailing zeros stripped).
+                    Some(value) if matches!(data, CallData::Upcast) => {
+                        atomic(value.upcast(target)?)
+                    }
                     Some(value) => atomic(value.cast(target)?),
                 }
             }
