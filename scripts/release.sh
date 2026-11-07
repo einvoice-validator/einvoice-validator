@@ -32,7 +32,6 @@
 #
 # Exit status: 0 done, 1 refused or failed, 2 usage error.
 set -euo pipefail
-export LC_ALL=C
 
 die() {
     printf 'release: %s\n' "$*" >&2
@@ -46,6 +45,15 @@ changelog() { "$script_dir/changelog.sh" "$@"; }
 
 semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
 is_semver() { [[ $1 =~ $semver_re ]]; }
+
+# 0 if the strings $1 and $2 differ and $1 sorts after $2 in ASCII order.
+# Only `sort` gets LC_ALL=C: the locale of the release, and of the
+# scripts/check.sh it runs, is left as it is.
+ascii_gt() {
+    local first
+    first=$(printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort | sed -n 1p)
+    [ "$1" != "$2" ] && [ "$first" = "$2" ]
+}
 
 # 0 if version $1 has a higher precedence than version $2 (SemVer 2.0.0,
 # section 11), 1 otherwise. Both must be valid.
@@ -63,7 +71,7 @@ semver_gt() {
             return
         fi
         if [[ ${a_core[i]} != "${b_core[i]}" ]]; then
-            [[ ${a_core[i]} > ${b_core[i]} ]]
+            ascii_gt "${a_core[i]}" "${b_core[i]}"
             return
         fi
     done
@@ -83,13 +91,13 @@ semver_gt() {
                 [ ${#x} -gt ${#y} ]
                 return
             fi
-            [[ $x > $y ]]
+            ascii_gt "$x" "$y"
             return
         fi
         # A numeric identifier is lower than an alphanumeric one.
         [[ $x =~ ^[0-9]+$ ]] && return 1
         [[ $y =~ ^[0-9]+$ ]] && return 0
-        [[ $x > $y ]]
+        ascii_gt "$x" "$y"
         return
     done
 }

@@ -50,10 +50,12 @@ cat >"$GIT_CONFIG_GLOBAL" <<EOF
 	detachedHead = false
 EOF
 
-# The stub of scripts/check.sh: exits with CHECK_STATUS (default 0) and logs
-# each run to CHECK_LOG.
-export CHECK_LOG=$tmp/check.log
+# The stub of scripts/check.sh: exits with CHECK_STATUS (default 0), logs
+# each run to CHECK_LOG and writes the locale it was given to CHECK_ENV.
+export CHECK_LOG=$tmp/check.log CHECK_ENV=$tmp/check.env
 : >"$CHECK_LOG"
+# What the stub must see: the locale of this script, unchanged by release.sh.
+expected_env="LC_ALL=${LC_ALL-<unset>} LANG=${LANG-<unset>}"
 
 ok() {
     printf 'ok    %s\n' "$1"
@@ -103,6 +105,7 @@ cat >scripts/check.sh <<'EOF'
 #!/usr/bin/env bash
 echo "check.sh stub: status ${CHECK_STATUS:-0}"
 echo run >>"$CHECK_LOG"
+echo "LC_ALL=${LC_ALL-<unset>} LANG=${LANG-<unset>}" >"$CHECK_ENV"
 exit "${CHECK_STATUS:-0}"
 EOF
 chmod +x scripts/*.sh
@@ -300,6 +303,7 @@ check "dry run: worktree removed" one_worktree
 
 expect "release 0.1.0" 0 "git push --atomic origin main v0.1.0" release 0.1.0
 check "0.1.0: check.sh ran" check_runs 3
+check "0.1.0: check.sh got the caller's locale" test "$(cat "$CHECK_ENV")" = "$expected_env"
 check "0.1.0: one new commit" test "$(git rev-parse HEAD~1)" = "$before"
 check "0.1.0: commit message" test "$(git log -1 --format=%s)" = "Release 0.1.0"
 check "0.1.0: commit signed and valid" git verify-commit HEAD
@@ -382,6 +386,7 @@ expect "rc.1 < rc.2" 1 "is not greater" release 0.2.0-rc.1
 expect "rc < rc.2 (fewer identifiers)" 1 "is not greater" release 0.2.0-rc
 expect "beta < rc.2" 1 "is not greater" release 0.2.0-beta.9
 expect "1 < rc (numeric lower)" 1 "is not greater" release 0.2.0-1
+expect "RC.3 < rc.2 (ASCII order, not the locale's)" 1 "is not greater" release 0.2.0-RC.3
 expect "rc.10 > rc.2 (numeric order)" 0 "dry run: nothing changed" release --dry-run 0.2.0-rc.10
 expect "rc.2.1 > rc.2" 0 "dry run: nothing changed" release --dry-run 0.2.0-rc.2.1
 expect "0.2.0 > 0.2.0-rc.2" 0 "dry run: nothing changed" release --dry-run 0.2.0
