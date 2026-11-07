@@ -159,7 +159,8 @@ upstream.toml        every pinned upstream version and the files that record it
   `#[expect(lint, reason = "...")]` attributes next to the code they concern.
 - `unsafe` code is forbidden. Integer overflow is checked in release builds too.
 - Property tests (proptest) and golden tests against the reference engine.
-- `cargo-deny`: permissive licences only (today only MIT), no duplicate versions, crates.io as
+- `cargo-deny`: permissive licences only (today only MIT, plus the schema terms of
+  `einvoice-xsd`, allowed for that crate only), no duplicate versions, crates.io as
   the only source, advisories and yanked releases are errors.
 - The toolchain is pinned, `Cargo.lock` is committed and every cargo command uses `--locked`.
 - CI on GitHub-hosted runners: Linux for every check, macOS and Windows tests on pull requests.
@@ -182,7 +183,10 @@ upstream.toml        every pinned upstream version and the files that record it
 - `crates/einvoice-xsd/schemas/oasis-ubl-2.1/` holds the fifteen schema documents of the OASIS
   UBL 2.1 Standard reachable from the Invoice and CreditNote schemas, vendored unmodified and
   embedded in `einvoice-xsd`. They are not under the MIT licence: each keeps the terms in its
-  own header (OASIS, UN/CEFACT, W3C), as the README of that directory explains.
+  own header (OASIS, UN/CEFACT, W3C; the two ETSI XAdES schemas carry none). The crate declares
+  `MIT AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND
+  W3C-19980720 AND LicenseRef-ETSI-XAdES`, with the texts in `crates/einvoice-xsd/LICENSES/`, as
+  the README of the schema directory explains.
 - xmllint (libxml2) is the reference of the `einvoice-xsd` tests only; it is neither part of the
   repository nor a dependency.
 

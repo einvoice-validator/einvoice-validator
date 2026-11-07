@@ -92,4 +92,11 @@ against.
   warnings name the node by Saxon's path (`/r/x[2]`, `/r/text()[1]`) and the two rules in
   Saxon's order (#8).
 
+### Fixed
+
+- `einvoice-xsd` declares the licences of the OASIS UBL 2.1 schemas it embeds
+  (`MIT AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND
+  W3C-19980720 AND LicenseRef-ETSI-XAdES`) instead of MIT alone, and ships their texts in
+  `LICENSES/` (#6).
+
 [Unreleased]: https://github.com/einvoice-validator/einvoice-validator/commits/main
