@@ -8,9 +8,10 @@ artefacts, in pure Rust: no JVM, no C library, no FFI.
 
 ## Status
 
-**Pre-alpha. It does not validate invoices yet.** There is no release, no public API and no
-command-line tool. What exists today is the foundation the validation engine is built on, and
-the test corpus it will be judged against.
+**Pre-alpha. Not usable as a validator yet:** there is no release, no public API and no
+command-line tool. The engine already runs the official CEN EN 16931 UBL 1.3.17 stylesheet and
+produces the same SVRL report as Saxon-HE on every case of its test corpus; packaging it as a
+library and a tool is the next step.
 
 | Part | State |
 |---|---|
@@ -19,8 +20,8 @@ the test corpus it will be judged against.
 | `einvoice-xpath`: parser of the XPath 2.0 subset; parses every expression of the CEN 1.3.17 stylesheet | done |
 | `einvoice-xslt`: loader of the XSLT 2.0 subset; loads the CEN 1.3.17 stylesheet | done |
 | `einvoice-xpath-eval`: XPath 2.0 evaluator; agrees with Saxon-HE on every distinct expression of the CEN 1.3.17 stylesheet at nodes of corpus documents | done |
-| XSLT executor and SVRL output | in progress ([#2](https://github.com/einvoice-validator/einvoice-validator/issues/2)) |
-| Same results as Saxon-HE on the whole CEN corpus | planned ([#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
+| `einvoice-xslt-exec`: XSLT executor and SVRL output | done |
+| Same results as Saxon-HE on the whole CEN corpus | done: 1179 / 1179 cases identical; own mutation cases to come ([#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
 | Peppol BIS Billing 3.0.22: corpus, then same results as Saxon-HE | planned ([#4](https://github.com/einvoice-validator/einvoice-validator/issues/4), [#5](https://github.com/einvoice-validator/einvoice-validator/issues/5)) |
 | `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1546 cases, every corpus case agrees, the other differences are listed with their cause | done ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6) follow-ups) |
 | Public API and command-line tool | planned ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
