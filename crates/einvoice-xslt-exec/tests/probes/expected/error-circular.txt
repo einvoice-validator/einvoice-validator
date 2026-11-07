@@ -1,0 +1,3 @@
+error XTDE0640
+warnings 0
+---

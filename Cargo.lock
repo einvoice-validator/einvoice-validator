@@ -153,6 +153,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "einvoice-xslt-exec"
+version = "0.0.0"
+dependencies = [
+ "einvoice-svrl",
+ "einvoice-xdm",
+ "einvoice-xpath",
+ "einvoice-xpath-eval",
+ "einvoice-xslt",
+ "proptest",
+ "roxmltree",
+ "sha2",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

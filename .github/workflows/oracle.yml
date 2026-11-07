@@ -4,7 +4,8 @@ name: oracle
 # vendored artefacts against their SHA256SUMS and the extracted corpus against
 # the vendored test sets, runs Saxon-HE on every corpus case and fails if the
 # committed goldens differ, then cross-checks the goldens with the VEFA
-# expectations; then the Saxon goldens of einvoice-xdm and einvoice-xpath-eval.
+# expectations; then the Saxon goldens of einvoice-xdm, einvoice-xpath-eval and
+# einvoice-xslt-exec.
 # Only runs when one of those inputs or the tooling changes.
 
 on:
@@ -18,6 +19,10 @@ on:
       - "crates/einvoice-xdm/examples/**"
       - "crates/einvoice-xpath-eval/tests/oracle/**"
       - "crates/einvoice-xpath-eval/examples/saxon-oracle.rs"
+      - "crates/einvoice-xslt-exec/tests/probes/**"
+      - "crates/einvoice-xslt-exec/tests/common/probes.rs"
+      - "crates/einvoice-xslt-exec/examples/saxon-probes.rs"
+      - "crates/einvoice-svrl/**"
       - "scripts/check.sh"
       - "scripts/fetch-saxon.sh"
       - ".github/workflows/oracle.yml"
@@ -36,6 +41,10 @@ on:
       - "crates/einvoice-xdm/examples/**"
       - "crates/einvoice-xpath-eval/tests/oracle/**"
       - "crates/einvoice-xpath-eval/examples/saxon-oracle.rs"
+      - "crates/einvoice-xslt-exec/tests/probes/**"
+      - "crates/einvoice-xslt-exec/tests/common/probes.rs"
+      - "crates/einvoice-xslt-exec/examples/saxon-probes.rs"
+      - "crates/einvoice-svrl/**"
       - "scripts/check.sh"
       - "scripts/fetch-saxon.sh"
       - ".github/workflows/oracle.yml"

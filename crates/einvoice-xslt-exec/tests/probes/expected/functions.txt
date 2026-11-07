@@ -1,0 +1,4 @@
+result
+warnings 0
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:f="urn:f"><add>12.5 true</add><fact>2432902008176640000 1</fact><scale>3 7.5</scale><untyped>true true</untyped><allowed>true false true</allowed><arity>one two</arity><nodes>3 1 2 3</nodes></out>

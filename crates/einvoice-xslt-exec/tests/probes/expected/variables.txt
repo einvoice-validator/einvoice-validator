@@ -1,0 +1,4 @@
+result
+warnings 0
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:xs="http://www.w3.org/2001/XMLSchema"><params>[][3][7]</params><globals>11 r</globals><tree>2 2 xy u 2</tree><typed>15.75 true</typed><local>in11;in12;in13;1</local><local-tree>3 6</local-tree><local-unused>ok</local-unused><local-lazy>lazy</local-lazy><typed-local>21 true</typed-local><typed-content>5,a,b,1,2,3</typed-content><call>[y y 2 true]</call><call-defaults>[ default-a 2 true]</call-defaults><with-param-tree>[ tree 4 true]</with-param-tree><with-param-seq>3 1 2 3</with-param-seq></out>

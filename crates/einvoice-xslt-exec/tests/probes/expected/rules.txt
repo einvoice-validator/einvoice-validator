@@ -1,0 +1,20 @@
+result
+warnings 19
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:p="urn:p"><tie>second</tie><explicit>[A[Bt1]]</explicit><split>[S[St1]]</split><split-equal>[F[Et1]]</split-equal><default-priorities>(@a)(@*)(@p:*)(text)(x)(text)[all (*)](text)(x[2])(text)(*:x)(text)(comment)(text)(node)(text)(*)(text)(x)(text)(*)(text)(*)(text)</default-priorities><all>[all w1]|[all w2]</all><current>C1C2C3</current><builtin-default>[all w2]</builtin-default><builtin-named>
+  t1
+  [all ]
+  t4
+  t5
+  
+  
+  
+    10.50
+    2
+     3.25 
+  
+  
+  A B  C
+  a--b- &amp; &lt;tag&gt; "q" 'a' 	tab
+line&#xD;cr nbsp
+1[all ]</builtin-named><builtin-params>[all [default]]</builtin-params><next-param>{d2{from-next-match{d0}}}</next-param><positions>1/3;2/3;3/3;</positions><no-select>[(t2)(t3)]</no-select></out>

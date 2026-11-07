@@ -36,6 +36,14 @@ against.
   is refused when a schema set is loaded. Errors carry a stable kind, the line and column.
   Compared with xmllint on the corpus and on mutations; every difference is listed with its
   cause.
+- `einvoice-xslt-exec`: executor of the XSLT 2.0 subset of the official validation
+  stylesheets, with the behaviour of Saxon-HE 9.9.1-8. A stylesheet is prepared once and run
+  on any number of documents; the result is written straight to XML (SVRL for the rule
+  sets). Template rules are chosen, and `xsl:next-match` continues, as Saxon does; built-in
+  rules, parameters, variables, temporary trees, `as` conversion, `xsl:function`,
+  `xsl:number`, simple and complex content and namespace fixup follow XSLT 2.0. Constructs
+  whose result would differ from Saxon's are refused when the stylesheet is prepared. 18
+  synthetic probe stylesheets are checked against Saxon-HE results.
 - `einvoice-svrl`: the canonical, line-oriented form of SVRL reports (`corpus/SVRL-CANONICAL.md`),
   shared by the oracle tooling and the equivalence tests.
 - The CEN EN 16931 UBL validation artefacts 1.3.17, vendored unmodified (EUPL-1.2) with their

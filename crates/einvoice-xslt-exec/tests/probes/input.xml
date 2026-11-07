@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--before-->
+<r xmlns:p="urn:p" a="1" b="two" p:c="3">
+  <x n="1">t1</x>
+  <y z="3">t2<w/>t3</y>
+  <x n="2">t4</x>
+  <p:x>t5</p:x>
+  <!--c1-->
+  <?pi data?>
+  <amounts>
+    <amount>10.50</amount>
+    <amount>2</amount>
+    <amount> 3.25 </amount>
+  </amounts>
+  <x n="3"/>
+  <codes>A B  C</codes>
+  <text>a--b- &amp; &lt;tag&gt; "q" 'a' &#9;tab&#10;line&#13;cr&#xA0;nbsp</text>
+</r>
+<?after?>

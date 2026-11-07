@@ -1,0 +1,4 @@
+result
+warnings 7
+---
+<?xml version="1.0" encoding="UTF-8"?><out><three>[T[all[Tt1]]]</three><three-after>[B[A[all[At1]]]]</three-after><chains>[C[C[all[Ct1]]]]</chains><chains-after>[E[D[D[all[Dt1]]]]]</chains-after><all-first>[all[early-modet1]]</all-first><all-last>[late-mode[allt1]]</all-last><explicit-three>[X[all[Yt1]]]</explicit-three><negative>[all[N2[N1[N4[N3[N3t1]]]]]]</negative></out>

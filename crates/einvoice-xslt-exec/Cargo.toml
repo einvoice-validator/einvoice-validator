@@ -1,0 +1,23 @@
+[package]
+name = "einvoice-xslt-exec"
+description = "Executor of the XSLT 2.0 subset used by the official e-invoicing validation stylesheets: runs the compiled Schematron and writes SVRL, with the behaviour of Saxon-HE"
+keywords = ["xslt", "schematron", "svrl", "einvoice", "peppol"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+einvoice-xdm = { path = "../einvoice-xdm", version = "0.0.0" }
+einvoice-xpath = { path = "../einvoice-xpath", version = "0.0.0" }
+einvoice-xpath-eval = { path = "../einvoice-xpath-eval", version = "0.0.0" }
+einvoice-xslt = { path = "../einvoice-xslt", version = "0.0.0" }
+
+[dev-dependencies]
+einvoice-svrl = { path = "../einvoice-svrl", version = "0.0.0" }
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+roxmltree = "0.21.2"
+sha2 = "0.11.1"
+
+[lints]
+workspace = true
