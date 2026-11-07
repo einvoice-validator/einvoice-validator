@@ -29,7 +29,7 @@ SVRL report as Saxon-HE.
 | Same results as Saxon-HE on the whole Peppol corpus | done: 707 / 707 cases and 505 / 505 mutation cases identical with each of the two stylesheets ([#5](https://github.com/einvoice-validator/einvoice-validator/issues/5), [#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
 | `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1546 cases, every corpus case agrees, the other differences are listed with their cause | done ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6) follow-ups) |
 | Public API (`einvoice-validator`: rule-set bundles, `Validator`, `Report`) and command-line tool (`einvoice-validate`); verdicts and findings agree with Saxon-HE on all 1179 CEN cases and 504 mutation cases and, with the Peppol bundle, on all 707 Peppol cases and 505 mutation cases | done ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
-| WebAssembly build | pending: the library compiles for `wasm32-unknown-unknown` (checked in CI); not usable there yet ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
+| WebAssembly build | in progress: the library runs on `wasm32-unknown-unknown`, with the current date and time given by the caller (CI validates two corpus documents with the built-in rule set under wasmtime); bindings and an npm package are pending ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
 | Other rule sets (CEN CII, XRechnung, Factur-X / ZUGFeRD) | planned ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
 
 Every open item is tracked in the [issues](https://github.com/einvoice-validator/einvoice-validator/issues);
@@ -216,7 +216,8 @@ cargo test -p einvoice-xsd --test oracle         # einvoice-xsd against the xmll
 | `doc` | `cargo doc --workspace --no-deps --all-features --locked` |
 | `test` | `cargo test --workspace --all-targets --all-features --locked`, then the doctests |
 | `features` | clippy and the tests of `einvoice-validator` with `--no-default-features` (no built-in rule set) |
-| `wasm` | `cargo build --locked --target wasm32-unknown-unknown -p einvoice-validator` (skipped locally without the target) |
+| `wasm` | `cargo build --locked --target wasm32-unknown-unknown -p einvoice-validator`, then the examples `wasm-smoke` (`einvoice-xpath-eval`) and `wasm-validate` (`einvoice-validator`, the built-in rule set on two corpus documents) built for that target: they must import nothing and return 0 under wasmtime (skipped locally without the target or wasmtime) |
+| `package` | the publishable crates packaged as crates.io would receive them and built from their packages; each term of a crate's licence expression has its text in the package's `LICENSES/` (needs `jq`) |
 | `deny` | `cargo deny --all-features check`: licences, duplicates, sources, advisories |
 | `actionlint` | `actionlint` on the GitHub workflows |
 | `zizmor` | `zizmor --persona=pedantic` on the GitHub workflows and `.github/dependabot.yml` |
@@ -279,10 +280,13 @@ upstream.toml        every pinned upstream version and the files that record it
   under the European Union Public Licence 1.2 (EUPL-1.2). `corpus/cen-en16931-ubl-1.3.17/` is
   derived from them, its mutation cases included, and is EUPL-1.2 too. Each directory has a README with the provenance and a
   `LICENSE.txt`.
-- `einvoice-validator` embeds the CEN stylesheet of `artefacts/cen-en16931-ubl-1.3.17/` (EUPL-1.2)
-  through its default feature `cen-ubl`, which provides the built-in rule set `cen-ubl`; so does
-  the `einvoice-validate` binary. Built with `default-features = false`, the library embeds no
-  rule set and uses only the bundles it is given.
+- `einvoice-validator` embeds the CEN stylesheet of `artefacts/cen-en16931-ubl-1.3.17/` (EUPL-1.2),
+  vendored unmodified in the crate (`crates/einvoice-validator/bundles/cen-ubl/`), through its
+  default feature `cen-ubl`, which provides the built-in rule set `cen-ubl`; so does the
+  `einvoice-validate` binary. `einvoice-validator` and `einvoice-cli` are therefore licensed
+  `MIT AND EUPL-1.2`. Built with `default-features = false`, the library embeds no rule set and
+  uses only the bundles it is given. Every crate ships the texts of its licences in its
+  `LICENSES/` directory.
 - Saxon-HE 12.10 (MPL-2.0) is the reference engine of the tests only, with the XML Resolver
   5.3.3 (Apache-2.0) it needs at run time. `scripts/fetch-saxon.sh` downloads them from Maven
   Central into `target/`; they are neither part of the repository nor distributed.

@@ -28,6 +28,12 @@ against.
   a dynamic error with the same code (`einvoice-xslt-exec`, `tests/mutation_equivalence.rs`);
   `einvoice-validate` gives the verdicts and findings of the goldens, with the built-in rule set
   and with the Peppol bundle (`einvoice-cli` tests).
+- `Validator::validate_owned` and `validate_owned_with`, which take the document as an owned
+  buffer; `einvoice-validate` uses them for files.
+- `ValidateOptions::clock` and `einvoice_validator::Clock`; on `wasm32-unknown-unknown` a clock
+  is required.
+- The `wasm-validate` example of `einvoice-validator`; CI runs both wasm examples under wasmtime
+  50.0.1 and checks that they import nothing.
 - Cargo workspace (edition 2024) with the toolchain pinned in `rust-toolchain.toml`, every
   warning denied, clippy `all` and `pedantic` denied, `unsafe` code forbidden, and a
   dependency policy checked by cargo-deny.
@@ -164,6 +170,12 @@ against.
 - `einvoice-xslt-exec`: without a system clock (`wasm32-unknown-unknown`),
   `TransformOptions::current_date_time` is required; a current date and time without a timezone
   is refused (#9).
+- `einvoice-xslt-exec`: `Executable::transform` and `transform_with` accept an owned `String`;
+  the tree keeps the text instead of copying it, which roughly halves the transform peak on the
+  largest CEN document (6.5 → 3.3 MB).
+- The CEN 1.3.17 stylesheet is vendored in the `einvoice-validator` crate (`bundles/cen-ubl/`);
+  `einvoice-validator` and `einvoice-cli` are licensed `MIT AND EUPL-1.2`; every crate ships its
+  licence texts in `LICENSES/` and has repository, homepage and docs.rs links.
 - `einvoice-xslt-exec`: `Transformation::warnings` holds each distinct warning once, in the
   order first reported, as Saxon-HE's error reporter prints them (it held every occurrence).
 
