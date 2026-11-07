@@ -16,8 +16,8 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use einvoice_validator::{
-    BUILTIN_RULE_SETS, Error, ErrorKind, FindingKind, MANIFEST_FILE, RuleSet, SchemaId, Severity,
-    ValidateOptions, Validator, Verdict, file_uri,
+    BUILTIN_RULE_SETS, Clock, Error, ErrorKind, FindingKind, MANIFEST_FILE, RuleSet, SchemaId,
+    Severity, ValidateOptions, Validator, Verdict, file_uri,
 };
 use sha2::{Digest, Sha256};
 
@@ -288,6 +288,48 @@ fn a_document_given_as_a_buffer() {
             "{document:?}"
         );
     }
+}
+
+#[test]
+fn the_clock_is_an_option() {
+    // A stylesheet that writes the current date and time, and whether the implicit
+    // timezone is +02:00.
+    let xslt = r#"<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:svrl="http://purl.oclc.org/dsdl/svrl">
+  <xsl:template match="/">
+    <svrl:schematron-output title="clock">
+      <svrl:active-pattern id="P" documents=""/>
+      <svrl:fired-rule context="/*"/>
+      <svrl:successful-report id="NOW" location="/*[1]" test="true()">
+        <svrl:text><xsl:value-of select="current-dateTime(), xs:date('2026-09-10') = xs:date('2026-09-10+02:00')"/></svrl:text>
+      </svrl:successful-report>
+    </svrl:schematron-output>
+  </xsl:template>
+</xsl:stylesheet>"#;
+    let validator = Validator::from_bundle(
+        &manifest(None, &[("clock", "clock.xsl", xslt.as_bytes())]),
+        &[("clock.xsl", xslt.as_bytes())],
+    )
+    .unwrap();
+    let clock = Clock::from_unix_millis(120, 1_789_000_123_456).unwrap();
+    let text = |report: einvoice_validator::Report| {
+        report.findings().next().map(|f| f.text.clone()).unwrap()
+    };
+    let options = ValidateOptions::new().clock(clock);
+    assert_eq!(
+        text(validator.validate_with(b"<a/>", &options).unwrap()),
+        "2026-09-10T02:28:43.456+02:00 true"
+    );
+    assert_eq!(
+        text(
+            validator
+                .validate_owned_with(b"<a/>".to_vec(), &options)
+                .unwrap()
+        ),
+        "2026-09-10T02:28:43.456+02:00 true"
+    );
+    // Without a clock: the system clock, in UTC.
+    let now = text(validator.validate(b"<a/>").unwrap());
+    assert!(now.ends_with("Z false"), "{now}");
 }
 
 #[test]

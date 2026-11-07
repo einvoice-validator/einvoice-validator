@@ -386,6 +386,23 @@ file = "Cargo.toml"
 pattern = 'rust-version = "(?<v>[^"]+)"'
 compare = "prefix"
 
+# Runs the wasm examples in CI (.github/workflows/ci.yml, scripts/check.sh wasm).
+[[upstream]]
+name = "wasmtime"
+severity = "info"
+pinned = "50.0.1"
+source = "github-release"
+repository = "bytecodealliance/wasmtime"
+version-pattern = '^v(?<v>[0-9]+\.[0-9]+\.[0-9]+)$'
+
+[[upstream.pin]]
+file = ".github/workflows/ci.yml"
+pattern = 'WASMTIME_VERSION: (?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = ".github/workflows/ci.yml"
+pattern = 'wasmtime/releases/tag/v(?<v>[^\s/]+)'
+
 [[upstream]]
 name = "cargo-deny"
 severity = "info"

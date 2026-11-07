@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
+use einvoice_xpath_eval::Clock;
 use einvoice_xslt::LoadErrorKind;
 use einvoice_xslt_exec::{Executable, TransformError, TransformOptions};
 use roxmltree::ParsingOptions;
@@ -16,13 +17,29 @@ use crate::{Error, builtin};
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ValidateOptions<'a> {
     document_uri: Option<&'a str>,
+    clock: Option<Clock>,
 }
 
 impl<'a> ValidateOptions<'a> {
-    /// The default options: the document has no URI.
+    /// The default options: the document has no URI, and the clock is the system clock
+    /// in UTC.
     #[must_use]
     pub const fn new() -> Self {
-        Self { document_uri: None }
+        Self {
+            document_uri: None,
+            clock: None,
+        }
+    }
+
+    /// The clock of the stylesheets: the implicit timezone and the value of
+    /// `fn:current-dateTime()` (read once per validation, as the reference engine reads
+    /// it once per transformation). By default, the system clock in UTC; required on
+    /// targets without a system clock, such as `wasm32-unknown-unknown`, where
+    /// validating without it fails with [`Error::Unsupported`].
+    #[must_use]
+    pub const fn clock(mut self, clock: Clock) -> Self {
+        self.clock = Some(clock);
+        self
     }
 
     /// The URI of the document: what `document-uri(/)` returns in the stylesheets, and
@@ -248,7 +265,11 @@ impl Validator {
                     .errors
             }
         };
-        let transform_options = TransformOptions::default();
+        let transform_options = TransformOptions {
+            implicit_timezone: options.clock.map(|c| c.implicit_timezone()),
+            current_date_time: options.clock.map(|c| c.current_date_time()),
+            ..TransformOptions::default()
+        };
         let mut stylesheets = Vec::with_capacity(self.stylesheets.len());
         let count = self.stylesheets.len();
         // The text, until the last stylesheet is given it.

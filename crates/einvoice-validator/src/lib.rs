@@ -73,6 +73,16 @@
 //! basic strings (escapes `\"` and `\\` only), literal strings or non-negative integers,
 //! and `[[stylesheet]]` headers.
 //!
+//! # WebAssembly
+//!
+//! The crate builds for `wasm32-unknown-unknown` and needs nothing from the host there:
+//! the built-in rule set is embedded, and a bundle can be given from memory. That target
+//! has no system clock, so the caller gives the one the stylesheets read with
+//! [`ValidateOptions::clock`] (for instance [`Clock::from_unix_millis`] with
+//! JavaScript's `Date.now()`); without it, a validation fails with
+//! [`Error::Unsupported`]. The `wasm-validate` example validates two embedded documents
+//! that way and runs under wasmtime.
+//!
 //! # Errors
 //!
 //! A schema error or a failed assert is not an error: it is in the [`Report`]. An
@@ -95,6 +105,10 @@ pub use report::{
     StylesheetFailure, StylesheetReport, Verdict,
 };
 pub use validator::{ValidateOptions, Validator, file_uri};
+
+/// The clock of a validation ([`ValidateOptions::clock`]): the implicit timezone and the
+/// value of `fn:current-dateTime()`.
+pub use einvoice_xpath_eval::Clock;
 
 /// The version of this crate, as published.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

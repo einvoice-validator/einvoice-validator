@@ -13,11 +13,12 @@
 # The Rust jobs use the toolchain pinned in rust-toolchain.toml (installed
 # with rustup when missing), so the lint set only moves with a reviewed bump.
 # The wasm job needs the wasm32-unknown-unknown target of that toolchain
-# (rustup target add wasm32-unknown-unknown). cargo-deny, actionlint, zizmor,
-# jq (pins) and ShellCheck (guards) are not part of the toolchain: each runs
-# when installed and prints SKIPPED otherwise. In CI (CI set) a missing wasm
-# target, jq, ShellCheck, xmllint or Java is a failure, not a skip; CI installs
-# cargo-deny, actionlint and zizmor at pinned versions, so nothing is skipped
+# (rustup target add wasm32-unknown-unknown) and wasmtime to run the wasm
+# examples. cargo-deny, actionlint, zizmor, wasmtime, jq (pins) and ShellCheck
+# (guards) are not part of the toolchain: each runs when installed and prints
+# SKIPPED otherwise. In CI (CI set) a missing wasm target, wasmtime, jq,
+# ShellCheck, xmllint or Java is a failure, not a skip; CI installs cargo-deny,
+# actionlint, zizmor and wasmtime at pinned versions, so nothing is skipped
 # there. The oracle job needs xmllint (libxml2) for the oracle of
 # einvoice-xsd, and Java (any recent JRE) and network access the first time,
 # to fetch Saxon-HE; locally, without them, it checks what it can and skips
@@ -74,7 +75,48 @@ job_features() {
         cargo clippy -p einvoice-validator --no-default-features --all-targets --locked -- -D warnings &&
         cargo test -p einvoice-validator --no-default-features --locked
 }
-# The library builds for WebAssembly (wasm32-unknown-unknown).
+# wasm_leb FILE OFFSET: the unsigned LEB128 number at byte OFFSET of FILE, and
+# its length in bytes.
+wasm_leb() {
+    local value=0 shift=0 length=0 byte
+    for byte in $(od -An -v -tu1 -j "$2" -N 5 "$1"); do
+        value=$((value | (byte & 127) << shift))
+        length=$((length + 1))
+        shift=$((shift + 7))
+        [ "$byte" -lt 128 ] && break
+    done
+    echo "$value $length"
+}
+
+# wasm_imports FILE: the number of imports of the WebAssembly module FILE (the
+# count of its import section, 0 without one).
+wasm_imports() {
+    local file=$1 size offset=8 id length n count _
+    if [ "$(od -An -tx1 -N 8 "$file" | tr -d ' \n')" != 0061736d01000000 ]; then
+        echo "$file: not a WebAssembly 1.0 module" >&2
+        return 1
+    fi
+    size=$(wc -c <"$file")
+    while [ "$offset" -lt "$size" ]; do
+        id=$(od -An -tu1 -j "$offset" -N 1 "$file" | tr -d ' ')
+        read -r length n <<<"$(wasm_leb "$file" $((offset + 1)))"
+        if [ "$id" -eq 2 ]; then
+            read -r count _ <<<"$(wasm_leb "$file" $((offset + 1 + n)))"
+            echo "$count"
+            return
+        fi
+        offset=$((offset + 1 + n + length))
+    done
+    echo 0
+}
+
+# The library builds for WebAssembly (wasm32-unknown-unknown); then the
+# wasm-smoke example of einvoice-xpath-eval (parse and evaluate) and the
+# wasm-validate example of einvoice-validator (the built-in rule set on two
+# embedded corpus documents) are built in release mode for that target, must
+# import nothing, and must return 0 under wasmtime (WASMTIME, default wasmtime
+# on PATH). Without wasmtime, the runs are SKIPPED, except in CI, where it
+# fails (CI installs a pinned release).
 job_wasm() {
     need_toolchain || return 1
     local target=wasm32-unknown-unknown
@@ -82,7 +124,41 @@ job_wasm() {
         missing "the $target target is not installed (rustup target add $target)"
         return
     fi
-    cargo build --locked --target "$target" -p einvoice-validator
+    cargo build --locked --target "$target" -p einvoice-validator || return 1
+    local status=0 package example wasm imports result
+    local wasmtime=${WASMTIME:-wasmtime}
+    if ! command -v "$wasmtime" >/dev/null 2>&1; then
+        missing "the wasm examples under wasmtime (wasmtime is not installed)" || status=1
+        wasmtime=
+    else
+        "$wasmtime" --version
+    fi
+    for package in einvoice-xpath-eval:wasm-smoke einvoice-validator:wasm-validate; do
+        example=${package#*:}
+        package=${package%%:*}
+        cargo build --locked --release --target "$target" -p "$package" --example "$example" || return 1
+        wasm=target/$target/release/examples/$example.wasm
+        imports=$(wasm_imports "$wasm") || return 1
+        echo "$package $example: $wasm, $(wc -c <"$wasm") bytes, $imports imports"
+        if [ "$imports" != 0 ]; then
+            echo "$wasm: imports $imports functions or objects; it must import nothing" >&2
+            status=1
+        fi
+        [ -n "$wasmtime" ] || continue
+        # The example's main(argc, argv) returns 0 when every check passes.
+        result=$("$wasmtime" run --invoke main "$wasm" 0 0 2>/dev/null) || {
+            echo "$wasm: wasmtime failed" >&2
+            status=1
+            continue
+        }
+        if [ "$result" = 0 ]; then
+            echo "$package $example: 0 under wasmtime"
+        else
+            echo "$wasm: returned ${result:-nothing} under wasmtime (the first failing check)" >&2
+            status=1
+        fi
+    done
+    return "$status"
 }
 job_deny() {
     if ! cargo deny --version >/dev/null 2>&1; then

@@ -4,7 +4,8 @@ name: ci
 # same commands. Jobs:
 #   rust       fmt, cargo-deny, clippy, doc, test on Linux (one build), then
 #              einvoice-validator without its default features and built for
-#              wasm32-unknown-unknown
+#              wasm32-unknown-unknown, and the wasm examples of
+#              einvoice-xpath-eval and einvoice-validator run under wasmtime
 #   test       tests on macOS and Windows, pull requests and manual runs only,
 #              after the Linux job has passed
 #   workflows  actionlint, and zizmor on .github/workflows and
@@ -52,6 +53,9 @@ jobs:
       # https://github.com/EmbarkStudios/cargo-deny/releases/tag/0.20.2
       CARGO_DENY_VERSION: 0.20.2
       CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+      # https://github.com/bytecodealliance/wasmtime/releases/tag/v50.0.1
+      WASMTIME_VERSION: 50.0.1
+      WASMTIME_SHA256: 685466455dd42a14774a86c36c8f2e45cbb9bd6d92a850139315df60a75498a5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,9 +95,18 @@ jobs:
       - name: Install the wasm32-unknown-unknown target
         if: ${{ !cancelled() }}
         run: rustup target add wasm32-unknown-unknown
+      - name: Install wasmtime (pinned version and checksum)
+        if: ${{ !cancelled() }}
+        run: |
+          name="wasmtime-v${WASMTIME_VERSION}-x86_64-linux"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/$name.tar.xz" \
+            "https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/$name.tar.xz"
+          echo "${WASMTIME_SHA256}  $RUNNER_TEMP/$name.tar.xz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xJf "$RUNNER_TEMP/$name.tar.xz" -C "$RUNNER_TEMP/bin" --strip-components=1 "$name/wasmtime"
       - name: wasm
         if: ${{ !cancelled() }}
-        run: scripts/check.sh wasm
+        run: PATH="$RUNNER_TEMP/bin:$PATH" scripts/check.sh wasm
 
   test:
     name: test (${{ matrix.os }})
