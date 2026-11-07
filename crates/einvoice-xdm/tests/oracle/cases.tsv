@@ -1,0 +1,696 @@
+# Probe cases of the atomic value layer. Format: tests/oracle/format.rs.
+# Every expected result is produced by Saxon-HE 9.9.1-8 (expected.tsv), never by hand.
+# Ids starting with "refuse-" are cases this crate refuses on purpose (Unsupported).
+#
+# Operand kinds: string untyped node decimal idecimal (xs:decimal(xs:integer(.)))
+# integer double boolean date dateTime.
+
+# --- decimal: lexical forms -----------------------------------------------------
+dec-lex-01	string	decimal: 1.50\u{20}
+dec-lex-02	string	decimal:1.0
+dec-lex-03	string	decimal:-0
+dec-lex-04	string	decimal:-.5
+dec-lex-05	string	decimal:+1
+dec-lex-06	string	decimal:1.
+dec-lex-07	string	decimal:100
+dec-lex-08	string	decimal:100.00
+dec-lex-09	string	decimal:0.000000000000000000000000000001
+dec-lex-10	string	decimal:12345678901234567890.123456789
+dec-lex-11	string	decimal:\t\n 7.25\r\n
+dec-lex-12	string	decimal:00012.3400
+dec-lex-13	string	decimal:-0.000
+dec-lex-14	cast-decimal	string:1e3
+dec-lex-15	cast-decimal	string:1,5
+dec-lex-16	cast-decimal	string:NaN
+dec-lex-17	cast-decimal	string:INF
+dec-lex-18	cast-decimal	string:.
+dec-lex-19	cast-decimal	string:
+dec-lex-20	cast-decimal	string:1 .5
+dec-lex-21	cast-decimal	string:- 1
+dec-lex-22	cast-decimal	string:+-1
+dec-lex-23	cast-decimal	string:1..2
+dec-lex-24	cast-decimal	string:1-
+dec-lex-25	cast-decimal	string:\u{663}
+dec-lex-26	castable-decimal	string: 1.50\u{20}
+dec-lex-27	castable-decimal	string:1e3
+dec-lex-28	castable-decimal	string:.5
+dec-lex-29	cast-decimal	untyped: 1.50\u{20}
+dec-lex-30	cast-decimal	node:100
+dec-lex-31	cast-decimal	string:\u{A0}1
+dec-lex-32	cast-decimal	string:+
+dec-lex-33	cast-decimal	string:1.5\u{20}
+dec-lex-34	cast-decimal	string:1.\u{20}
+dec-lex-35	cast-decimal	string:1 1
+
+# --- decimal: arithmetic ------------------------------------------------------
+dec-ar-01	add	decimal:0.1	decimal:0.2
+dec-ar-02	mul	decimal:1.005	integer:100
+dec-ar-03	sub	decimal:100.10	decimal:100.00
+dec-ar-04	mul	decimal:0.1	decimal:0.1
+dec-ar-05	add	decimal:99999999999999999999999999999	integer:1
+dec-ar-06	mul	decimal:12345678901234567890.123456789	integer:1000
+dec-ar-07	mul	decimal:19.99	integer:3
+dec-ar-08	mul	decimal:1234.565	decimal:0.21
+dec-ar-09	idiv	decimal:10	integer:3
+dec-ar-10	mod	decimal:10.5	integer:3
+dec-ar-11	mod	decimal:-10.5	integer:3
+dec-ar-12	mod	decimal:10.5	integer:-3
+dec-ar-13	idiv	decimal:-10.5	decimal:3
+dec-ar-14	mul	decimal:100.00	integer:1
+dec-ar-15	sub	decimal:0.30	decimal:0.30
+dec-ar-16	neg	decimal:0
+dec-ar-17	neg	decimal:1.50
+dec-ar-18	add	decimal:1e0	decimal:1
+dec-ar-19	div	decimal:1	decimal:0
+dec-ar-20	mod	decimal:1	decimal:0
+dec-ar-21	idiv	decimal:1	decimal:0.0
+dec-ar-22	mul	decimal:123456789012345678901234567890	decimal:987654321098765432109876543210
+dec-ar-23	sub	decimal:0.000000000000000000000000000001	decimal:1
+dec-ar-24	add	decimal:-5	integer:5
+dec-ar-25	mul	idecimal:300	decimal:0.01
+dec-ar-26	add	idecimal:300	idecimal:0
+dec-ar-27	mod	decimal:0.3	decimal:0.1
+dec-ar-28	idiv	decimal:0.3	decimal:0.1
+dec-ar-29	mod	decimal:5	decimal:-0.7
+dec-ar-30	idiv	decimal:99999999999999999999.9	decimal:0.3
+
+# --- decimal: division precision -------------------------------------------------
+dec-div-01	div	decimal:1	integer:3
+dec-div-02	div	integer:1	integer:3
+dec-div-03	div	decimal:2	integer:3
+dec-div-04	div	decimal:1.1	decimal:300
+dec-div-05	div	decimal:1.1	integer:300
+dec-div-06	div	decimal:1.1	idecimal:300
+dec-div-07	div	decimal:1.1	idecimal:00000000000000300
+dec-div-08	div	decimal:0.001	decimal:3
+dec-div-09	div	decimal:0.001	decimal:3000
+dec-div-10	div	decimal:3000	decimal:0.007
+dec-div-11	div	decimal:1	decimal:0.3
+dec-div-12	div	decimal:1	decimal:3.0
+dec-div-13	div	decimal:1.00000000000000000000001	decimal:3
+dec-div-14	div	decimal:2	decimal:3
+dec-div-15	div	decimal:-2	decimal:3
+dec-div-16	div	decimal:10	decimal:4
+dec-div-17	div	decimal:7	decimal:7
+dec-div-18	div	decimal:1	decimal:8000000000000000000
+dec-div-19	div	decimal:1	decimal:0.000000000000000000000000000007
+dec-div-20	div	decimal:123.456	decimal:7.89
+dec-div-21	div	decimal:-1	decimal:-3
+dec-div-22	div	decimal:5	decimal:0.0000000000000000002
+dec-div-23	div	integer:1	decimal:3
+dec-div-24	div	untyped:1	decimal:3
+dec-div-25	div	decimal:1.5	integer:2
+dec-div-26	div	decimal:0	decimal:3
+dec-div-27	div	decimal:1	decimal:12345678901234567890123
+dec-div-28	div	decimal:1.2345678901234567890123	decimal:3
+dec-div-29	div	decimal:0.00000000000000000025	integer:1
+dec-div-30	div	decimal:0.000000000000000000005	integer:10
+
+# --- integer division: Saxon's 64-bit and big representations ---------------------
+int-div-01	div	integer:6	integer:2
+int-div-02	div	integer:-6	integer:2
+int-div-03	div	integer:6	integer:-2
+int-div-04	div	integer:1	integer:300
+int-div-05	div	integer:-1	integer:300
+int-div-06	div	integer:1	integer:-300
+int-div-07	div	integer:1	integer:2000000000000000000
+int-div-08	div	integer:3	integer:2000000000000000000
+int-div-09	div	integer:-3	integer:2000000000000000000
+int-div-10	div	integer:1	integer:3000000000
+int-div-11	div	integer:1	integer:00000000000000300
+int-div-12	div	integer:00000000000000001	integer:300
+int-div-13	div	integer:2147483647	integer:3
+int-div-14	div	integer:2147483648	integer:3
+int-div-15	div	integer:2147483648	integer:2
+int-div-16	div	integer:6000000000	integer:3000000000
+int-div-17	div	integer:0	integer:5
+int-div-18	div	integer:-0	integer:5
+int-div-19	div	integer:5	integer:0
+int-div-20	idiv	integer:5	integer:0
+int-div-21	mod	integer:5	integer:0
+int-div-22	idiv	integer:-7	integer:2
+int-div-23	mod	integer:-7	integer:2
+int-div-24	mod	integer:7	integer:-2
+int-div-25	div	integer:1	integer:3
+int-div-26	div	integer:10	integer:4
+int-div-27	div	integer:100000000000000000000	integer:3
+int-div-28	div	integer:-100	integer:-7
+int-div-29	div	integer:1	integer:7000
+int-div-30	div	integer:12	integer:3000
+int-div-31	div	integer:00000000000000012	integer:00000000000000003
+int-div-32	add	integer:9223372036854775807	integer:1
+int-div-33	mul	integer:9223372036854775807	integer:9223372036854775807
+int-div-34	sub	integer:-9223372036854775808	integer:1
+int-div-35	mod	integer:123456789012345678901234567890	integer:97
+int-div-36	idiv	integer:123456789012345678901234567890	integer:97
+int-div-37	abs	integer:-9223372036854775808
+int-div-38	div	integer:1	idecimal:3
+int-div-39	neg	integer:-5
+int-div-40	neg	integer:-00000000000000005
+int-div-41	abs	integer:-00000000000000005
+int-div-42	div	integer:1	integer:-00000000000000005
+int-div-43	div	integer:6	integer:00000000000000002
+int-div-44	idiv	integer:-00000000000000007	integer:2
+int-div-45	mod	integer:3214282912345698765432161182	integer:97
+
+# --- integer: lexical forms -------------------------------------------------------
+int-lex-01	string	integer:007
+int-lex-02	string	integer: +12\u{20}
+int-lex-03	cast-integer	string:1.0
+int-lex-04	cast-integer	string:
+int-lex-05	cast-integer	string:+
+int-lex-06	cast-integer	string:-
+int-lex-07	cast-integer	string:1e2
+int-lex-08	string	integer:+-1234567890123456
+int-lex-09	cast-integer	string:+-12345678901234
+int-lex-10	string	integer:++1234567890123456
+int-lex-11	string	integer:\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}
+int-lex-12	cast-integer	string:\u{663}\u{663}\u{663}
+int-lex-13	castable-integer	string:\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}\u{663}
+int-lex-14	string	integer:-0
+int-lex-15	string	integer:000000000000000000000000000000000000001
+int-lex-16	cast-integer	string:1-1111111111111111
+int-lex-17	cast-integer	string:11111111111111111-
+int-lex-18	string	integer:123456789012345678901234567890
+int-lex-19	cast-integer	string:\u{1D7CF}\u{1D7CF}\u{1D7CF}\u{1D7CF}\u{1D7CF}\u{1D7CF}\u{1D7CF}\u{1D7CF}\u{1D7CF}\u{1D7CF}
+int-lex-20	castable-integer	string:12345678901234567
+int-lex-21	castable-integer	string:1 2
+int-lex-22	castable-integer	untyped: 42\n
+int-lex-23	cast-integer	string:\u{FF11}\u{FF12}\u{FF13}\u{FF14}\u{FF15}\u{FF16}\u{FF17}\u{FF18}\u{FF19}\u{FF10}\u{FF11}\u{FF12}\u{FF13}\u{FF14}\u{FF15}\u{FF16}\u{FF17}
+int-lex-24	cast-integer	string:-9223372036854775808
+int-lex-25	cast-integer	string:9223372036854775808
+int-lex-26	string	integer:    0000000000000000000000000000000000000000000000000000
+int-lex-27	cast-integer	string:1 1111111111111111111
+
+# --- casts between numeric types --------------------------------------------------
+cast-01	cast-integer	decimal:-2.7
+cast-02	cast-integer	decimal:99999999999999999999.99
+cast-03	cast-integer	double:-2.7
+cast-04	cast-integer	double:NaN
+cast-05	cast-integer	double:INF
+cast-06	cast-integer	double:-INF
+cast-07	cast-integer	double:9.223372036854775808E18
+cast-08	cast-integer	double:-9.223372036854775808E18
+cast-09	cast-integer	double:1e23
+cast-10	cast-integer	double:1.8446744073709552E19
+cast-11	cast-integer	double:9.223372036854774784E18
+cast-12	cast-integer	double:1.7976931348623157E308
+cast-13	cast-integer	double:-0.5
+cast-14	cast-decimal	double:0.1
+cast-15	cast-decimal	double:NaN
+cast-16	cast-decimal	double:INF
+cast-17	cast-decimal	double:-0
+cast-18	cast-decimal	double:1e20
+cast-19	cast-decimal	double:4.9E-324
+cast-20	cast-decimal	double:99.1
+cast-21	cast-decimal	integer:300
+cast-22	cast-decimal	boolean:true
+cast-23	cast-double	decimal:0.1
+cast-24	cast-double	decimal:123456789012345678901234567890
+cast-25	cast-double	integer:9007199254740993
+cast-26	cast-double	decimal:1e0
+cast-27	cast-double	string: 1e3\u{20}
+cast-28	cast-double	string:+INF
+cast-29	cast-double	string:-INF
+cast-30	cast-double	string:inf
+cast-31	cast-double	string:Infinity
+cast-32	cast-double	string:1.5d
+cast-33	cast-double	string:0x10
+cast-34	cast-double	string:1e
+cast-35	cast-double	string:-0
+cast-36	cast-double	decimal:0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001
+cast-37	cast-double	decimal:1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+cast-38	cast-boolean	decimal:0.0
+cast-39	cast-boolean	double:NaN
+cast-40	cast-boolean	double:-0
+cast-41	cast-boolean	integer:-3
+cast-42	cast-boolean	string: true\u{20}
+cast-43	cast-boolean	string:1
+cast-44	cast-boolean	string:TRUE
+cast-45	cast-boolean	string:yes
+cast-46	cast-integer	boolean:true
+cast-47	cast-double	boolean:false
+cast-48	cast-string	double:1e6
+cast-49	cast-untypedAtomic	decimal:1.50
+cast-50	cast-string	boolean:0
+cast-51	cast-date	decimal:1
+cast-52	cast-decimal	date:2020-01-01
+cast-53	castable-decimal	date:2020-01-01
+cast-54	cast-boolean	date:2020-01-01
+cast-55	castable-integer	double:NaN
+cast-56	cast-integer	untyped:12.0
+cast-57	cast-double	node:1.5
+cast-58	cast-decimal	double:1e-7
+cast-59	cast-decimal	double:123456789.125
+cast-60	cast-integer	double:4503599627370497.5
+
+# --- doubles: string conversion ---------------------------------------------------
+dbl-str-01	string	double:1e6
+dbl-str-02	string	double:999999
+dbl-str-03	string	double:1e-6
+dbl-str-04	string	double:1e-7
+dbl-str-05	string	double:0.1
+dbl-str-06	string	double:1E21
+dbl-str-07	string	double:1.0E7
+dbl-str-08	string	double:1234567.0
+dbl-str-09	string	double:100.10
+dbl-str-10	string	double:-0
+dbl-str-11	string	double:NaN
+dbl-str-12	string	double:INF
+dbl-str-13	string	double:-INF
+dbl-str-14	string	double:1.7976931348623157E308
+dbl-str-15	string	double:4.9E-324
+dbl-str-16	string	double:2.2250738585072014E-308
+dbl-str-17	string	double:2.225073858507201E-308
+dbl-str-18	string	double:1e-310
+dbl-str-19	string	double:123456.789
+dbl-str-20	string	double:0.001
+dbl-str-21	string	double:0.01
+dbl-str-22	string	double:0.0123
+dbl-str-23	string	double:5e-324
+dbl-str-24	string	double:9007199254740993
+dbl-str-25	string	double:1e22
+dbl-str-26	string	double:1e23
+dbl-str-27	string	double:9.999999999999999E22
+dbl-str-28	string	double:0.3
+dbl-str-29	string	double:2.675
+dbl-str-30	string	double:100
+dbl-str-31	string	double:-1.5e-9
+dbl-str-32	string	double:3.0517578125E-5
+dbl-str-33	string	double:0.000001234
+dbl-str-34	string	double:999999.9999999999
+dbl-str-35	string	double:0.000000999999999999
+
+# --- doubles: arithmetic -------------------------------------------------------
+dbl-ar-01	add	double:0.1	double:0.2
+dbl-ar-02	add	untyped:0.1	untyped:0.2
+dbl-ar-03	add	node:0.1	node:0.2
+dbl-ar-04	div	double:1	integer:3
+dbl-ar-05	div	double:1	integer:0
+dbl-ar-06	div	double:-1	integer:0
+dbl-ar-07	div	double:0	integer:0
+dbl-ar-08	mod	double:-5.5	integer:2
+dbl-ar-09	mod	double:5	double:0
+dbl-ar-10	idiv	double:7.9	integer:2
+dbl-ar-11	idiv	double:-7.9	integer:2
+dbl-ar-12	idiv	double:5	double:0
+dbl-ar-13	idiv	double:INF	integer:2
+dbl-ar-14	idiv	double:NaN	integer:0
+dbl-ar-15	idiv	double:5	double:NaN
+dbl-ar-16	idiv	double:5	double:INF
+dbl-ar-17	idiv	double:1e300	double:1e-10
+dbl-ar-18	add	decimal:0.1	double:0.2
+dbl-ar-19	sub	untyped:100.10	integer:1
+dbl-ar-20	mul	untyped:abc	integer:1
+dbl-ar-21	add	string:1	integer:1
+dbl-ar-22	add	boolean:true	integer:1
+dbl-ar-23	neg	double:0
+dbl-ar-24	neg	untyped:5
+dbl-ar-25	neg	string:5
+dbl-ar-26	mul	untyped: 2\u{20}	integer:3
+dbl-ar-27	add	untyped:	integer:1
+dbl-ar-28	idiv	untyped:7	integer:2
+dbl-ar-29	add	untyped:INF	untyped:-INF
+dbl-ar-30	idiv	double:-0.5	integer:1
+dbl-ar-31	mod	double:-0	integer:3
+refuse-dbl-ar-32	sub	date:2020-01-02	date:2020-01-01
+dbl-ar-33	add	date:2020-01-02	integer:1
+dbl-ar-34	idiv	double:9.3e18	double:1
+
+# --- doubles: parsing (fn:number) ----------------------------------------------
+num-01	number	string:. 5
+num-02	number	string: .  5
+num-03	number	string:1. 5
+num-04	number	string:INF\u{20}
+num-05	number	string: INF
+num-06	number	string:NaN\u{20}
+num-07	number	string:-INF\u{20}
+num-08	number	string:INF
+num-09	number	string:+INF
+num-10	number	string:abc
+num-11	number	string:
+num-12	number	string:1e3
+num-13	number	string: 1e3\u{20}
+num-14	number	string:1 e3
+num-15	number	string:12345678.9
+num-16	number	string:   123456789\u{20}\u{20}\u{20}
+num-17	number	string:1_000
+num-18	number	string:١
+num-19	number	boolean:true
+num-20	number	decimal:0.1
+num-21	number	integer:12345678901234567890
+num-22	number	date:2020-01-01
+num-23	number	untyped: 1.5\u{20}
+num-24	number	string:.e1
+num-25	number	string:1.e1
+num-26	number	string:+.5
+num-27	number	string:-
+num-28	number	string:5.
+num-29	number	string:1e400
+num-30	number	string:1e-400
+num-31	number	string:0.1e-5
+num-32	number	string:NaN
+num-33	number	string:          NaN
+num-34	number	string:-NaN
+num-35	number	string:1D
+num-36	number	string:   1.5e3x
+num-37	number	string:00000000000000000000000000001
+num-38	number	string:1.2.3
+
+# --- rounding ------------------------------------------------------------------
+rnd-01	round	decimal:2.5
+rnd-02	round	decimal:-2.5
+rnd-03	round	decimal:-2.51
+rnd-04	round	decimal:2.4999
+rnd-05	round	integer:-7
+rnd-06	round	double:2.5
+rnd-07	round	double:-2.5
+rnd-08	round	double:-0.5
+rnd-09	round	double:-0.3
+rnd-10	round	double:0.49999999999999994
+rnd-11	round	double:4503599627370497
+rnd-12	round	double:1e300
+rnd-13	round	double:-1e300
+rnd-14	round	double:NaN
+rnd-15	round	untyped:2.5
+rnd-16	round	string:2.5
+rnd-17	floor	decimal:-2.5
+rnd-18	ceiling	decimal:-2.5
+rnd-19	floor	double:-0.5
+rnd-20	ceiling	double:-0.5
+rnd-21	abs	decimal:-0.005
+rnd-22	abs	double:-0
+rnd-23	abs	untyped:-3
+rnd-24	round	decimal:259.25865
+rnd-25	round	idecimal:300
+rnd-26	floor	idecimal:300
+rnd-27	round	double:1.7976931348623157E308
+rnd-28	round	double:9.3e18
+rnd-29	round	double:-9.3e18
+rnd-30	round	double:1.2345678901234567e19
+rnd-31	round	double:8.98846567431158E307
+rnd-32	ceiling	double:-0.2
+rnd-33	round	untyped:abc
+
+# --- the amount rules' patterns, as in BR-CO-10 and co -------------------------
+amt-01	div	decimal:23456	integer:100
+amt-02	round	decimal:1234.5
+amt-03	mul	decimal:0.505	integer:10
+amt-04	cast-decimal	double:99.09999999999999
+amt-05	sum	decimal:0.1	decimal:0.2	decimal:0.3
+amt-06	sum	node:0.1	node:0.2	node:0.3
+amt-07	sum	untyped:0.1	decimal:0.2
+amt-08	sum	decimal:0.1	untyped:0.2
+amt-09	sum
+amt-10	sum	integer:1	integer:2
+amt-11	sum	integer:1	decimal:2.50
+amt-12	sum	decimal:2.50
+amt-13	sum	idecimal:300
+amt-14	sum	string:1
+amt-15	sum	integer:1	string:1
+amt-16	sum	double:NaN	string:a
+amt-17	sum	untyped:abc
+amt-18	sum	date:2020-01-01
+amt-19	sum	integer:9223372036854775807	integer:1
+amt-20	g-eq	decimal:100.00	integer:100
+amt-21	v-eq	decimal:0.30	decimal:0.3
+amt-22	g-eq	node:100	integer:100
+amt-23	g-eq	untyped:1.5	decimal:1.5
+amt-24	sub	untyped:100.10	integer:1
+
+# --- general comparisons ---------------------------------------------------------
+cmp-01	g-eq	untyped:-0	integer:0
+cmp-02	g-eq	untyped:-0	decimal:0
+cmp-03	g-eq	untyped:-0	double:0
+cmp-04	g-eq	untyped:-0.0	integer:0
+cmp-05	g-eq	untyped:NaN	double:NaN
+cmp-06	g-gt	untyped:NaN	integer:5
+cmp-07	g-lt	untyped:5	double:NaN
+cmp-08	g-ne	untyped:5	double:NaN
+cmp-09	g-eq	untyped:abc	integer:1
+cmp-10	g-eq	untyped: 7\u{20}	integer:7
+cmp-11	g-eq	untyped:007	integer:7
+cmp-12	g-eq	untyped:7.0	integer:7
+cmp-13	g-lt	integer:3	untyped:10
+cmp-14	g-lt	untyped:10	untyped:3
+cmp-15	g-eq	untyped:a	string:a
+cmp-16	g-eq	untyped:true	boolean:true
+cmp-17	g-eq	untyped:1	boolean:true
+cmp-18	g-eq	untyped:yes	boolean:true
+cmp-19	g-eq	untyped:2020-01-01	date:2020-01-01
+cmp-20	g-eq	untyped:2020-1-1	date:2020-01-01
+cmp-21	g-eq	string:1	integer:1
+cmp-22	g-eq	boolean:true	integer:1
+cmp-23	g-eq	double:NaN	double:NaN
+cmp-24	g-ne	double:NaN	double:NaN
+cmp-25	g-gt	double:NaN	integer:1
+cmp-26	g-lt	integer:1	double:NaN
+cmp-27	g-eq	double:0	double:-0
+cmp-28	g-eq	decimal:0.1	double:0.1
+cmp-29	g-eq	decimal:0.3	double:0.30000000000000004
+cmp-30	g-eq	integer:9007199254740993	double:9007199254740992
+cmp-31	g-eq	integer:9007199254740993	decimal:9007199254740992
+cmp-32	g-lt	string:B	string:a
+cmp-33	g-lt	string:\u{FFFD}	string:\u{1F600}
+cmp-34	g-lt	boolean:false	boolean:true
+cmp-35	g-eq	date:2020-01-01	dateTime:2020-01-01T00:00:00
+cmp-36	g-eq	date:2020-01-01+01:00	date:2020-01-01
+cmp-37	g-eq	date:2020-01-01Z	date:2020-01-01
+cmp-38	g-lt	date:2020-01-01+14:00	date:2019-12-31-10:00
+cmp-39	g-ge	node:2020-01-02	date:2020-01-01
+cmp-40	g-eq	untyped:12345678901234567	integer:12345678901234567
+cmp-41	g-eq	untyped:1234567890123456789	integer:1234567890123456788
+cmp-42	g-eq	untyped:-0	integer:-0
+cmp-43	g-le	untyped:-.5	integer:0
+cmp-44	g-gt	untyped:99999999999	integer:9999999999
+cmp-45	g-eq	untyped:INF	double:INF
+cmp-46	g-eq	untyped:1e0	integer:1
+cmp-47	g-eq	untyped:	integer:0
+cmp-48	g-eq	untyped:	string:
+cmp-49	g-ge	integer:0	untyped:-0
+cmp-50	g-lt	double:-0	untyped:0
+cmp-51	g-eq	decimal:0	untyped:-0
+cmp-52	g-ne	untyped:a	untyped:b
+cmp-53	g-eq	string:a	date:2020-01-01
+cmp-54	g-eq	untyped:5	untyped:5.0
+
+# --- value comparisons -------------------------------------------------------------
+vcmp-01	v-eq	untyped:5	integer:5
+vcmp-02	v-eq	untyped:a	string:a
+vcmp-03	v-eq	untyped:5	untyped:5.0
+vcmp-04	v-lt	integer:3	decimal:3.5
+vcmp-05	v-eq	double:NaN	double:NaN
+vcmp-06	v-ne	double:NaN	double:NaN
+vcmp-07	v-eq	integer:1	string:1
+vcmp-08	v-eq	date:2020-01-01	date:2020-01-01Z
+vcmp-09	v-gt	boolean:true	boolean:false
+vcmp-10	v-eq	integer:1	double:1
+vcmp-11	v-eq	decimal:1	integer:1
+
+# --- effective boolean value, string ------------------------------------------------
+ebv-01	boolean	string:
+ebv-02	boolean	string:false
+ebv-03	boolean	untyped:
+ebv-04	boolean	double:NaN
+ebv-05	boolean	double:-0
+ebv-06	boolean	decimal:0.000
+ebv-07	boolean	integer:-1
+ebv-08	boolean	date:2020-01-01
+ebv-10	boolean	boolean:false
+str-01	string	boolean:true
+str-02	string	date:2020-01-01
+str-03	string	idecimal:300
+str-04	string	node: x\u{20}
+
+# --- dates ------------------------------------------------------------------------
+date-01	string	date: 2020-02-29\u{20}
+date-02	cast-date	string:2021-02-29
+date-03	cast-date	string:1900-02-29
+date-04	string	date:2000-02-29
+date-05	string	date:0000-01-01
+date-06	string	date:-0001-01-01
+date-07	string	date:-0000-01-01
+date-08	string	date:2020-01-01-00:00
+date-09	string	date:2020-01-01+14:00
+date-10	cast-date	string:2020-01-01+14:30
+date-11	cast-date	string:2020-01-01+15:00
+date-12	string	date:12020-01-01
+date-13	cast-date	string:02020-01-01
+date-14	cast-date	string:99999999999-01-01
+date-15	cast-date	string:2020-1-01
+date-16	cast-date	string:2020-01-01T00:00:00
+date-17	cast-date	string:2020-01-01Z+01:00
+date-18	cast-date	string:+2020-01-01
+date-19	cast-date	string:2020-13-01
+date-20	cast-date	string:2020-00-01
+date-21	cast-date	string:2020-01-32
+date-22	cast-date	string:2020-01-01+01:0
+date-23	cast-date	string:2020-01-01+1:00
+date-24	cast-date	string:2020-01-01\u{20}
+date-25	cast-date	string:2020-01-01+01:00:00
+date-26	castable-date	string:2020-02-30
+date-27	castable-date	untyped:2024-02-29
+date-28	cast-date	string:20200101
+date-29	cast-date	string:2147483647-12-31
+date-30	cast-date	string:2147483648-01-01
+date-31	cast-date	string:2020-01-01-
+date-32	cast-date	string:2020-01-01+aa:00
+date-33	cast-date	string:-2020-01-01
+date-34	cast-date	string:202a-01-01
+date-35	cast-date	string:2020-01-01+05:60
+date-36	cast-date	dateTime:2020-01-01T23:59:59+05:00
+date-37	cast-dateTime	date:2020-01-01Z
+date-38	cast-string	date:2020-06-15-05:30
+dt-01	string	dateTime:2020-01-01T10:00:00
+dt-02	string	dateTime:2020-12-31T24:00:00
+dt-03	string	dateTime:2020-02-28T24:00:00Z
+dt-04	cast-dateTime	string:2020-01-01T24:00:01
+dt-05	string	dateTime:2020-01-01T10:00:00.1234567891Z
+dt-06	string	dateTime:2020-01-01T10:00:00.500+01:00
+dt-07	string	dateTime:2020-01-01T10:00:00.000
+dt-08	string	dateTime:2020-01-01T10:00:00.9999999999
+dt-09	cast-dateTime	string:2020-01-01T10:00
+dt-10	cast-dateTime	string:2020-01-01T10:00:60
+dt-11	cast-dateTime	string:2020-01-01T10:00:00+14:01
+dt-12	string	dateTime:2020-01-01T10:00:00-14:00
+dt-13	cast-dateTime	string:2020-01-01T10:00:00Z+01:00
+dt-14	cast-dateTime	string:2020-01-01T10:00:00.
+dt-15	cast-dateTime	string:2020-01-01T10:00:00+01
+dt-16	string	dateTime:-0044-03-15T12:00:00
+dt-17	g-lt	dateTime:2020-01-01T10:00:00+01:00	dateTime:2020-01-01T09:30:00Z
+dt-18	string	dateTime:2020-01-01T10:00:00.000000001
+dt-19	string	dateTime:2020-01-01T10:00:00.1e
+dt-20	cast-dateTime	string:2020-01-01T10:00:00.5.5
+dt-21	string	dateTime:0000-01-01T00:00:00
+dt-22	cast-dateTime	string:2020-01-01T10:00:00+01:00Z
+
+# --- regular expressions: the 27 patterns of the rule sets ---------------------------
+re-01a	tokenize	string: a\tb  c\n	string:\s
+re-01b	replace	string: a\tb \u{A0}c\u{20}	string:\s	string:
+re-02a	replace	string: a\tb\n\rc\u{A0}	string:([ \\n\\r\\t\s])	string:
+re-02b	matches	string:\u{2003}	string:([ \\n\\r\\t\s])
+re-03a	matches	string:NL123456789B01	string:^NL[0-9]{9}B[0-9]{2}$
+re-03b	matches	string:NL123456789B01\n	string:^NL[0-9]{9}B[0-9]{2}$
+re-04a	matches	string:GB82WEST12345698765432	string:^[A-Z]{2}[0-9]{2}[a-zA-Z0-9]{0,30}$
+re-04b	matches	string:gb82WEST12345698765432	string:^[A-Z]{2}[0-9]{2}[a-zA-Z0-9]{0,30}$
+re-05a	matches	string:0123456789	string:^\d+$
+re-05b	matches	string:١٢٣	string:^\d+$
+re-05c	matches	string:\u{A9F0}	string:^\d+$
+re-05d	matches	string:\u{1D7CE}	string:^\d+$
+re-05e	matches	string:12a	string:^\d+$
+re-06a	tokenize	string:2020-01-31	string:-
+re-07a	matches	string:12345	string:^[0-9]+$
+re-07b	matches	string:	string:^[0-9]+$
+re-08a	matches	string:123456789	string:^[0-9]{9}$
+re-08b	matches	string:1234567890	string:^[0-9]{9}$
+re-09a	matches	string:1234567890	string:^[0-9]{10}$
+re-10a	matches	string:12345678901	string:^[0-9]{11}$
+re-11a	matches	string:12345678	string:^[0-9]{8}$
+re-12a	matches	string:12345678901234567890	string:^[0-9]{20}$
+re-13a	matches	string:123456789012	string:^[0-9]{12}$
+re-14a	matches	string:123456789MVA	string:^[0-9]{9}MVA$
+re-14b	matches	string:123456789mva	string:^[0-9]{9}MVA$
+re-15a	matches	string:1234567	string:^[0-9]{7,8}$
+re-15b	matches	string:123456789	string:^[0-9]{7,8}$
+re-16a	matches	string:ABCDEFGHIJK1	string:^[A-Z0-9]{11,16}$
+re-16b	matches	string:ABCDEFGHIJ	string:^[A-Z0-9]{11,16}$
+re-17a	tokenize	string:a|b||c	string:\|
+re-18a	tokenize	string:/a/b/	string:/
+re-19a	matches	string:31/12/2020	string:^(0?[1-9]|[12][0-9]|3[01])[-\\\\/ ]?(0?[1-9]|1[0-2])[-\\\\/ ]?(19|20)[0-9]{2}
+re-19b	matches	string:1-1-1999	string:^(0?[1-9]|[12][0-9]|3[01])[-\\\\/ ]?(0?[1-9]|1[0-2])[-\\\\/ ]?(19|20)[0-9]{2}
+re-19c	matches	string:32/12/2020	string:^(0?[1-9]|[12][0-9]|3[01])[-\\\\/ ]?(0?[1-9]|1[0-2])[-\\\\/ ]?(19|20)[0-9]{2}
+re-19d	matches	string:01\\01\\2020	string:^(0?[1-9]|[12][0-9]|3[01])[-\\\\/ ]?(0?[1-9]|1[0-2])[-\\\\/ ]?(19|20)[0-9]{2}
+re-20a	replace	string:12345	string:^[1-9]([0-9]*)	string:
+re-20b	replace	string:012345	string:^[1-9]([0-9]*)	string:
+re-21a	tokenize	string:a\r\nb\nc	string:(\\r?\\n)
+re-22a	matches	string:#SKONTO#TAGE=14#PROZENT=2.00#\n	string:(^|\\r?\\n)#(SKONTO)#TAGE=([0-9]+#PROZENT=[0-9]+\.[0-9]{2})(#BASISBETRAG=-?[0-9]+\.[0-9]{2})?#$
+re-22b	matches	string:#SKONTO#TAGE=14#PROZENT=2.00#BASISBETRAG=-12.50#	string:(^|\\r?\\n)#(SKONTO)#TAGE=([0-9]+#PROZENT=[0-9]+\.[0-9]{2})(#BASISBETRAG=-?[0-9]+\.[0-9]{2})?#$
+re-22c	matches	string:x\r\n#SKONTO#TAGE=7#PROZENT=3.5#	string:(^|\\r?\\n)#(SKONTO)#TAGE=([0-9]+#PROZENT=[0-9]+\.[0-9]{2})(#BASISBETRAG=-?[0-9]+\.[0-9]{2})?#$
+re-23a	matches	string:  \t\nabc	string:^\s*\\n
+re-23b	matches	string:abc\n	string:^\s*\\n
+re-24a	matches	string:a#b#c	string:#.+#
+re-24b	matches	string:#\r#	string:#.+#
+re-24c	matches	string:##	string:#.+#
+re-25a	matches	string:https://example.org	string:^([a-zA-Z])([a-zA-Z0-9+.-])+:.*
+re-25b	matches	string:1http://x	string:^([a-zA-Z])([a-zA-Z0-9+.-])+:.*
+re-25c	matches	string:a-b.c+d:\r	string:^([a-zA-Z])([a-zA-Z0-9+.-])+:.*
+re-26a	matches	string:+32 (0)2 123	string:.*([0-9].*){3,}.*
+re-26b	matches	string:12	string:.*([0-9].*){3,}.*
+re-26c	matches	string:1\n2\n3	string:.*([0-9].*){3,}.*
+re-27a	matches	string:john.doe@example.com	string:^[^@\s]+@([^@.\s]+\.)+[^@.\s]+$
+re-27b	matches	string:john doe@example.com	string:^[^@\s]+@([^@.\s]+\.)+[^@.\s]+$
+re-27c	matches	string:a@b	string:^[^@\s]+@([^@.\s]+\.)+[^@.\s]+$
+re-27d	matches	string:a\u{A0}b@c.d	string:^[^@\s]+@([^@.\s]+\.)+[^@.\s]+$
+
+# --- regular expressions: semantics ---------------------------------------------
+re-sem-01	matches	string:\r	string:^.$
+re-sem-02	matches	string:\n	string:^.$
+re-sem-03	matches	string:\u{1F600}	string:^.$
+re-sem-04	matches	string:abc\n	string:abc$
+re-sem-05	matches	string:\nabc	string:^abc
+re-sem-06	matches	string:\u{A0}	string:^\s$
+re-sem-07	matches	string:\u{2028}	string:\s
+re-sem-08	replace	string:abab	string:(a)(b)	string:$2$1\$
+re-sem-09	replace	string:abc	string:b	string:$1
+re-sem-10	replace	string:abc	string:b	string:$
+re-sem-11	replace	string:abc	string:b	string:\x
+re-sem-12	replace	string:abc	string:x*	string:
+re-sem-13	tokenize	string:abc	string:x*
+re-sem-14	tokenize	string:	string:a
+re-sem-15	tokenize	string: a b\u{20}	string:\s
+re-sem-16	replace	string:aaa	string:a*?b|a	string:X
+re-sem-17	matches	string:ab	string:a{0}b
+re-sem-18	matches	string:a.b	string:a\.b
+re-sem-19	matches	string:-	string:[a-]
+re-sem-20	matches	string:^	string:[\^]
+re-sem-21	matches	string:a$	string:a\$
+re-sem-22	matches	string:x	string:[^\d\s]
+re-sem-23	matches	string:5	string:[^\d\s]
+re-sem-24	matches	string:é	string:\D
+re-sem-25	matches	string:aB	string:^[a-z][A-Z]$
+re-sem-26	replace	string:aaaa	string:a{2}	string:b
+re-sem-27	replace	string:abcdefghijk	string:(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)	string:$10-$11-$12-$1
+re-sem-28	replace	string:abc	string:(x)?b	string:[$1]
+re-sem-29	matches	string:a	string:
+re-sem-30	tokenize	string:a,b	string:,|
+re-sem-31	matches	string:ab	string:a|b|
+re-sem-32	replace	string:a.b	string:\.	string:\\\\
+re-sem-48	replace	string:a.b	string:\.	string:\\
+re-sem-33	matches	string:}	string:\}
+re-sem-34	matches	string:x	string:[
+re-sem-35	matches	string:x	string:(
+re-sem-36	matches	string:x	string:a{2,1}
+re-sem-37	matches	string:x	string:*
+re-sem-38	matches	string:x	string:\q
+re-sem-39	matches	string:x	string:[b-a]
+re-sem-40	matches	string:x	string:a)
+re-sem-41	matches	string:x	string:[]
+re-sem-42	matches	string:x	string:a{,2}
+re-sem-43	matches	string:x	string:]
+re-sem-44	matches	string:-	string:[-a]
+re-sem-45	matches	string:ab	string:^a{1,}b?$
+re-sem-46	matches	string:a\tb	string:a\\tb
+re-sem-47	matches	string:x	string:^\^?x
+refuse-re-01	matches	string:a	string:\p{L}
+refuse-re-02	matches	string:a	string:\w
+refuse-re-03	matches	string:a	string:\i
+refuse-re-04	matches	string:aa	string:(a)\1
+refuse-re-05	matches	string:a	string:(?:a)
+refuse-re-06	matches	string:b	string:[a-z-[aeiou]]
+refuse-re-07	matches	string:-	string:[a-c-e]
+refuse-re-08	matches	string:a	string:\c
+refuse-re-09	matches	string:a	string:\P{Nd}
+refuse-re-10	matches	string:a	string:\p{IsBasicLatin}
+
+# --- regular expressions: character sets over every XML character ------------------
+cps-01	cps-regex	string:^\d$
+cps-02	cps-regex	string:^\s$
+cps-03	cps-regex	string:^.$
+cps-04	cps-regex	string:^\D$
+cps-05	cps-regex	string:^\S$
+cps-06	cps-regex	string:^[^@\s]$
+cps-07	cps-regex	string:^[\d\s]$
+cps-08	cps-regex	string:^[^\D]$
+
+# --- decimal digits of the long integer path ---------------------------------------
+int-digits-01	int-digits
