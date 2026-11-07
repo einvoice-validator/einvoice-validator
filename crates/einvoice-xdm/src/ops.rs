@@ -596,19 +596,33 @@ pub fn abs(value: &AtomicValue) -> Result<AtomicValue> {
 /// `FORG0006` for a value that is neither numeric nor untyped, `FORG0001` for an
 /// untyped value that is not a number, and the errors of [`arithmetic`].
 pub fn sum<'a>(values: impl IntoIterator<Item = &'a AtomicValue>) -> Result<AtomicValue> {
+    sum_lazily(values.into_iter().map(|v| Ok::<_, XdmError>(v.clone())))
+}
+
+/// [`sum`] over values that are produced on demand and may fail: the first error of
+/// the input is returned, and, as in [`sum`], nothing is read after a running total
+/// that is the double NaN.
+///
+/// # Errors
+///
+/// The errors of the input and those of [`sum`].
+pub fn sum_lazily<E: From<XdmError>>(
+    values: impl IntoIterator<Item = std::result::Result<AtomicValue, E>>,
+) -> std::result::Result<AtomicValue, E> {
     let mut total: Option<AtomicValue> = None;
     for value in values {
-        let value = match value {
-            AtomicValue::UntypedAtomic(s) => AtomicValue::Double(parse_double(s)?),
-            v if v.is_numeric() => v.clone(),
+        let value = match value? {
+            AtomicValue::UntypedAtomic(s) => AtomicValue::Double(parse_double(&s)?),
+            v if v.is_numeric() => v,
             other => {
-                return err(
+                return Err(XdmError::new(
                     ErrorCode::Forg0006,
                     format!(
                         "Input to sum() contains a value of type {} which is neither numeric, nor a duration",
                         other.atomic_type()
                     ),
-                );
+                )
+                .into());
             }
         };
         let next = match total {
