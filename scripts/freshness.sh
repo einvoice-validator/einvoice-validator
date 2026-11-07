@@ -284,11 +284,12 @@ fi
 
 # A Cargo.toml, read as a strict TOML subset: the [package] name, the
 # [workspace] members, and every line of [dependencies], [dev-dependencies] and
-# [build-dependencies] (`name = "requirement"` or a one-line inline table).
-# Other tables are only checked to be `key = value` lines; what could change
-# the dependencies without being read (target-specific or workspace dependency
-# tables, dotted keys such as `x.workspace = true`, [patch], git or other
-# registries, multi-line strings) is refused.
+# [build-dependencies], also under [target.<platform>] (`name = "requirement"`
+# or a one-line inline table). Other tables are only checked to be
+# `key = value` lines; what could change the dependencies without being read
+# (workspace dependency tables, dependency subtables, dotted keys such as
+# `x.workspace = true`, [patch], git or other registries, multi-line strings)
+# is refused.
 read -r -d '' manifest_jq <<'JQ' || true
 def fail($n; $msg): error("\($file):\($n): \($msg)");
 def key_re: "(?:[A-Za-z0-9_-]+|\"[^\"\\\\]*\"|'[^']*')";
@@ -364,8 +365,14 @@ reduce inputs as $raw ({n: 0, table: null, kind: null, array: null,
           | if $m.o == "[" and ($keys | length) == 1 and ($keys[0] | known(dep_tables[0:3])) then
               .table = $keys
               | .kind = {"dependencies": "normal", "dev-dependencies": "dev", "build-dependencies": "build"}[$keys[0]]
+            elif $m.o == "[" and ($keys | length) == 3 and $keys[0] == "target"
+                 and ($keys[2] | known(dep_tables[0:3])) then
+              # [target.'cfg(...)'.dev-dependencies]: platform-specific, recorded in
+              # Cargo.lock all the same.
+              .table = $keys
+              | .kind = {"dependencies": "normal", "dev-dependencies": "dev", "build-dependencies": "build"}[$keys[2]]
             elif any($keys[]; known(dep_tables)) then
-              fail($n; "unsupported table \($t): only [dependencies], [dev-dependencies] and [build-dependencies] are read")
+              fail($n; "unsupported table \($t): only [dependencies], [dev-dependencies] and [build-dependencies], also under [target.<platform>], are read")
             elif $keys[0] == "patch" or $keys == ["replace"] then
               fail($n; "unsupported table \($t): it changes what Cargo.lock records")
             elif $m.o == "[[" then .table = null | .kind = null

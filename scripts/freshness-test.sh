@@ -442,8 +442,25 @@ printf '\n[workspace.dependencies]\nnum-bigint = "0.4.8"\n' >>"$tmp/ws/Cargo.tom
 stubbed expect "crates: [workspace.dependencies] is refused" 2 "Cargo.toml:8: unsupported table [workspace.dependencies]" crates
 
 workspace_ws
-printf "\n[target.'cfg(unix)'.dependencies]\nlibc = \"0.2\"\n" >>"$tmp/ws/crates/b/Cargo.toml"
-stubbed expect "crates: target-specific dependencies are refused" 2 "unsupported table [target.'cfg(unix)'.dependencies]" crates
+crate_json num-bigint 0.4.8
+crate_json libc 0.2.0 0.3.0
+printf "\n[target.'cfg(not(target_family = \"wasm\"))'.dev-dependencies]\nlibc = \"0.2\"\n" \
+    >>"$tmp/ws/crates/b/Cargo.toml"
+awk '{ print } /^name = "b"$/ { getline; print; print "dependencies = ["; print " \"libc\","; print "]" }' \
+    "$tmp/ws/Cargo.lock" >"$tmp/x.lock" && mv "$tmp/x.lock" "$tmp/ws/Cargo.lock"
+cat >>"$tmp/ws/Cargo.lock" <<'LOCK'
+
+[[package]]
+name = "libc"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+LOCK
+stubbed expect "crates: target-specific dependencies are checked" 0 "newest 0.3.0 (major, manual migration); used by b (dev)" \
+    "${crates_args[@]}"
+
+workspace_ws
+printf "\n[target.'cfg(unix)'.dependencies.libc]\nversion = \"0.2\"\n" >>"$tmp/ws/crates/b/Cargo.toml"
+stubbed expect "crates: a target-specific dependency subtable is refused" 2 "unsupported table [target.'cfg(unix)'.dependencies.libc]" crates
 
 workspace_ws
 printf '\n[dependencies.serde]\nversion = "1"\n' >>"$tmp/ws/crates/b/Cargo.toml"
