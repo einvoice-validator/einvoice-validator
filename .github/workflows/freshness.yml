@@ -1,0 +1,122 @@
+name: freshness
+
+# Weekly check that every upstream pinned in upstream.toml is current
+# (scripts/freshness.sh). Jobs:
+#   check  checks the pins against the repository, then queries every upstream
+#   issue  keeps ONE tracking issue, "Upstream updates available", opened by
+#          this workflow: updated while something has a newer version (status
+#          OUTDATED or "newer exists"), closed once everything is current or
+#          held on purpose; then fails the run if an official rule set is
+#          OUTDATED. Skipped when the check errs (network, API): nothing is
+#          known then, so the issue is left as it is.
+
+on:
+  schedule:
+    # Mondays, 06:23 UTC.
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+# Two runs at once could open two issues.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: check (query the upstreams)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      actionable: ${{ steps.query.outputs.actionable }}
+      outdated: ${{ steps.query.outputs.outdated }}
+      report: ${{ steps.query.outputs.report }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pins against the repository
+        run: scripts/freshness.sh pins
+      - name: Query the upstreams
+        id: query
+        env:
+          # Read-only token: raises the GitHub API rate limit.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          status=0
+          scripts/freshness.sh --json "$RUNNER_TEMP/freshness.json" \
+            --markdown "$RUNNER_TEMP/freshness.md" || status=$?
+          # 1: an official rule set is outdated, reported by the issue job;
+          # anything else but 0 is an error and fails here.
+          case $status in 0 | 1) ;; *) exit "$status" ;; esac
+          actionable=$(jq '[.[] | select(.actionable)] | length' "$RUNNER_TEMP/freshness.json")
+          delimiter="report_$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')"
+          {
+            echo "actionable=$actionable"
+            echo "outdated=$status"
+            echo "report<<$delimiter"
+            cat "$RUNNER_TEMP/freshness.md"
+            echo "$delimiter"
+          } >>"$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/freshness.md" >>"$GITHUB_STEP_SUMMARY"
+
+  issue:
+    name: issue (tracking issue)
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write # open, update and close the tracking issue
+    steps:
+      - name: Open, update or close the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ACTIONABLE: ${{ needs.check.outputs.actionable }}
+          REPORT: ${{ needs.check.outputs.report }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Upstream updates available"
+          # Only an open issue this workflow opened: an issue anyone else
+          # opens with the same title is never edited.
+          numbers=$(gh api --paginate \
+            "repos/$GH_REPO/issues?state=open&creator=github-actions%5Bbot%5D&per_page=100" \
+            --jq ".[] | select(.pull_request == null and .title == \"$title\") | .number")
+          number=$(printf '%s\n' "$numbers" | sort -n | sed -n 1p)
+          if [ "$ACTIONABLE" -gt 0 ]; then
+            body="$RUNNER_TEMP/body.md"
+            {
+              echo "Upstream versions checked by the [freshness workflow]($RUN_URL) on $(date -u +%F)."
+              echo
+              printf '%s\n' "$REPORT"
+              echo
+              echo "Every pin is listed in \`upstream.toml\`; run \`scripts/freshness.sh\` to check locally."
+              echo "This issue is updated by each weekly run and closed once every upstream is current."
+            } >"$body"
+            if [ -n "$number" ]; then
+              gh issue edit "$number" --body-file "$body"
+              echo "updated issue #$number"
+            else
+              gh issue create --title "$title" --body-file "$body"
+            fi
+          elif [ -n "$number" ]; then
+            gh issue close "$number" --comment "Every pinned upstream is current or held on purpose: $RUN_URL"
+            echo "closed issue #$number"
+          else
+            echo "every pinned upstream is current or held on purpose; no open issue"
+          fi
+      - name: Fail if an official rule set is outdated
+        env:
+          OUTDATED: ${{ needs.check.outputs.outdated }}
+        run: |
+          if [ "$OUTDATED" != 0 ]; then
+            echo "::error title=Official rule set outdated::An official rule set has a newer release; see the tracking issue."
+            exit 1
+          fi
