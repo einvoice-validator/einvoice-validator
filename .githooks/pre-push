@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Last check before anything leaves the machine: the whole history.
+exec "$(git rev-parse --show-toplevel)/scripts/privacy-guard.sh" history

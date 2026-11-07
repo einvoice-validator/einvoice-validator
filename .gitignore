@@ -1,0 +1,6 @@
+/target
+/.venv
+# Private, local-only context and plans. Never commit them.
+/CLAUDE.local.md
+/.private/
+/CLAUDE.md

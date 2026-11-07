@@ -1,0 +1,27 @@
+name: privacy
+
+# This repository is public. The private term list is the PRIVATE_TERMS
+# repository secret (never in the tree); see scripts/privacy-guard.sh.
+# Pull requests from forks get no secrets, so the job only runs where the
+# secret exists: pushes, and pull requests from branches of this repository.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  privacy-guard:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan the whole history
+        env:
+          PRIVATE_TERMS: ${{ secrets.PRIVATE_TERMS }}
+        run: scripts/privacy-guard.sh history

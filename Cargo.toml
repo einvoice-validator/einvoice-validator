@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+# Keep in step with the channel pinned in rust-toolchain.toml.
+rust-version = "1.99"
+license = "MIT"
+
+[workspace.lints.rust]
+# Every warning is an error, locally and in CI: a plain `cargo build` / `cargo clippy` fails.
+warnings = "deny"
+unsafe_code = "forbid"
+missing_debug_implementations = "deny"
+unreachable_pub = "deny"
+
+[workspace.lints.clippy]
+# Whole groups are errors. There is NO workspace-level allow-list: any exception must
+# be a local `#[expect(lint, reason = "...")]` next to the code it concerns.
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# Restriction picks: no panicking shortcuts in non-test code (clippy.toml relaxes
+# them inside #[test] / #[cfg(test)] only).
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+allow_attributes_without_reason = "deny"
+allow_attributes = "deny"
+
+[profile.release]
+# Integer overflow must never wrap silently, not even in release builds.
+overflow-checks = true

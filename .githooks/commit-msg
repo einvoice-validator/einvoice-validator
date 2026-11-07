@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Refuse commit messages that carry private references.
+exec "$(git rev-parse --show-toplevel)/scripts/privacy-guard.sh" message "$1"

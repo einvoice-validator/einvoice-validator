@@ -1,0 +1,11 @@
+[package]
+name = "einvoice-validator"
+description = "Validate EN 16931 and Peppol BIS Billing 3.0 e-invoices against the official validation artefacts, in pure Rust"
+keywords = ["peppol", "en16931", "einvoice", "ubl", "schematron"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true

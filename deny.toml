@@ -1,0 +1,43 @@
+# cargo-deny: licences, bans, advisories and sources of the dependency graph.
+# scripts/check.sh runs `cargo deny --all-features check`.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+# Vulnerabilities, unsound and unmaintained crates are errors (the version 2
+# defaults), and so is a yanked release: no warning is tolerated.
+yanked = "deny"
+ignore = []
+
+[licenses]
+version = 2
+# Exactly what the graph uses today (check with `cargo deny list`), so that a
+# crate under a new licence is a decision recorded here rather than something
+# a broad allow-list lets through. Permissive licences only.
+allow = [
+    "MIT",
+]
+# Deliberately absent: GPL, LGPL, MPL and other copyleft licences.
+confidence-threshold = 0.8
+# Dev-dependencies are part of the licence check too.
+include-dev = true
+
+[bans]
+multiple-versions = "deny"
+# Same for duplicates: dev-dependencies count.
+multiple-versions-include-dev = true
+wildcards = "deny"
+# Workspace members depend on each other by path.
+allow-wildcard-paths = true
+highlight = "all"
+skip = []
+
+[sources]
+# Only crates.io. A git or alternative-registry dependency is a supply-chain
+# decision, not a warning.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

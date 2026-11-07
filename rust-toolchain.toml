@@ -1,0 +1,7 @@
+# The single source of truth for the toolchain: rustup, scripts/check.sh and
+# CI all use it, so the lint set only moves with a reviewed bump.
+# Keep `rust-version` in Cargo.toml in step.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
