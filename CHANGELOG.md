@@ -89,6 +89,18 @@ against.
   Peppol job (#5).
 - `upstream.toml` pins the Peppol release, ph-schematron-maven-plugin and Apache Maven in the
   files that use them.
+- `einvoice-validator`: public API. A `Validator` is built once from a rule-set bundle (schema
+  loaded, official stylesheets prepared), is `Send + Sync`, and validates any number of
+  documents: XML check, UBL 2.1 schema, then each stylesheet. The `Report` gives the schema
+  errors with line and column, the findings (id, flag, location, rule context, test, text), the
+  raw and canonical SVRL, the rule-set version and the verdict. Bundles are a `bundle.toml`
+  manifest with the SHA-256 of each stylesheet, loaded from memory or a directory; the CEN
+  EN 16931 UBL 1.3.17 rule set is built in (`cen-ubl`). Findings and verdicts agree with
+  Saxon-HE on all 1179 corpus cases (#10).
+- `einvoice-validate` (crate `einvoice-cli`): command-line tool. Validates files and standard
+  input with a built-in rule set or a bundle directory, on one or more threads; output as text,
+  JSON (versioned format, documented) or raw SVRL; documented exit codes (0 valid, 1 invalid,
+  2 usage or I/O error, 3 unsupported or internal) (#10).
 - Peppol BIS Billing 3.0 as a rule-set bundle: `scripts/fetch-peppol.sh` also writes a
   `bundle.toml` next to the two compiled stylesheets (CEN rules first, with the CEN version
   their Schematron states), so that the directory can be given to `einvoice-validate --bundle`

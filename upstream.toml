@@ -146,6 +146,10 @@ file = "README.md"
 pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
 
 [[upstream.pin]]
+file = "README.md"
+pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
 file = "crates/einvoice-cli/README.md"
 pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 
