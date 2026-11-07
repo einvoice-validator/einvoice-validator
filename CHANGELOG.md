@@ -71,5 +71,25 @@ against.
   pushed tag after checking that the tag, the workspace version and the changelog agree.
 - README with the project status, design, build and test instructions, and licences;
   `SECURITY.md` for private vulnerability reports.
+- `einvoice-xdm`: `AtomicValue::upcast` and `Integer::to_decimal_upcast`; `einvoice-xpath-eval`:
+  Saxon-style static type inference, so that `xs:decimal` of an argument Saxon knows to be an
+  integer strips trailing zeros as Saxon-HE 12.10 does (#8).
+
+### Changed
+
+- The oracles use Saxon-HE 12.10, with the XML Resolver 5.3.3 it needs, fetched and
+  checksum-checked by `scripts/fetch-saxon.sh`; all goldens regenerated (#8).
+- `einvoice-xdm` follows Saxon-HE 12.10: a double cast to an integer beyond ±2^63 is exact; an
+  untyped value compared with a numeric NaN is false (true for `!=`) without being read; `sum()`
+  checks every item, also after a NaN total (#8).
+- `einvoice-xpath-eval`: `document-uri()` is empty for the document given to the
+  transformation; `Document::parse` sets only the base URI, the new `Document::parse_loaded`
+  sets both for documents loaded by `document()` (#8).
+- `einvoice-xslt-exec` follows Saxon-HE 12.10: a document loaded by `document()` has its URI as
+  document URI, the transformed document has none, so `active-pattern/@documents` is empty in
+  the SVRL; the URI given to `Executable::transform` is the document's base URI; a union pattern
+  with an explicit priority is a single template rule, which changes the ambiguity warnings;
+  warnings name the node by Saxon's path (`/r/x[2]`, `/r/text()[1]`) and the two rules in
+  Saxon's order (#8).
 
 [Unreleased]: https://github.com/einvoice-validator/einvoice-validator/commits/main

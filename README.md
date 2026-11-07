@@ -43,7 +43,7 @@ changes are listed in [CHANGELOG.md](CHANGELOG.md).
   compute exactly what Saxon-HE computes, never through floating point where the stylesheet
   asks for decimals.
 - **Checked rule by rule against the reference engine.** The expected result of every test case
-  is the SVRL report of Saxon-HE 9.9.1-8 running the same stylesheet, stored in a canonical
+  is the SVRL report of Saxon-HE 12.10 running the same stylesheet, stored in a canonical
   text form. The goal is identical reports: the same fired rules, the same failed asserts and
   successful reports with the same id, flag, location and text, in the same order.
 - **Loud refusal.** The engine implements the XPath and XSLT subset the official stylesheets
@@ -81,9 +81,9 @@ flowchart LR
 
 | Crate | Role |
 |---|---|
-| [`einvoice-xdm`](crates/einvoice-xdm) | Atomic values of the XPath 2.0 data model: exact `xs:decimal` and `xs:integer`, `xs:double`, dates, casts, arithmetic, comparisons and XSD regular expressions, with the behaviour of Saxon-HE 9.9.1-8. |
+| [`einvoice-xdm`](crates/einvoice-xdm) | Atomic values of the XPath 2.0 data model: exact `xs:decimal` and `xs:integer`, `xs:double`, dates, casts, arithmetic, comparisons and XSD regular expressions, with the behaviour of Saxon-HE 12.10. |
 | [`einvoice-xpath`](crates/einvoice-xpath) | Parser and syntax tree for the XPath 2.0 subset, XSLT match patterns, sequence types and attribute value templates. |
-| [`einvoice-xpath-eval`](crates/einvoice-xpath-eval) | Node model and evaluator of the XPath 2.0 subset, with the behaviour of Saxon-HE 9.9.1-8; unknown functions and variables are refused when an expression is compiled. |
+| [`einvoice-xpath-eval`](crates/einvoice-xpath-eval) | Node model and evaluator of the XPath 2.0 subset, with the behaviour of Saxon-HE 12.10; unknown functions and variables are refused when an expression is compiled. |
 | [`einvoice-xslt`](crates/einvoice-xslt) | Loader for the XSLT 2.0 subset emitted by the Schematron compilers: templates, modes, priorities, functions, variables, parameters and instructions, each with its source line. |
 | [`einvoice-xsd`](crates/einvoice-xsd) | XML Schema validation of UBL 2.1 Invoice and CreditNote documents against the official OASIS UBL 2.1 schemas, which it embeds; implements exactly the XML Schema 1.0 constructs those schemas use and refuses any other at load time. |
 | [`einvoice-validator`](crates/einvoice-validator) | The public crate; no API yet ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)). |
@@ -126,7 +126,7 @@ cargo test -p einvoice-xsd --test oracle         # einvoice-xsd against the xmll
 | `deny` | `cargo deny --all-features check`: licences, duplicates, sources, advisories |
 | `actionlint` | `actionlint` on the GitHub workflows |
 | `zizmor` | `zizmor --persona=pedantic` on the GitHub workflows |
-| `oracle` | artefact checksums, corpus extraction and VEFA cross-check, then Saxon-HE on every corpus case and on the probes of `einvoice-xdm` and `einvoice-xpath-eval`: the goldens must not change (needs Java; skipped locally without it) |
+| `oracle` | artefact checksums, corpus extraction and VEFA cross-check, then Saxon-HE on every corpus case and on the probes of `einvoice-xdm`, `einvoice-xpath-eval` and `einvoice-xslt-exec`: the goldens must not change (needs Java; skipped locally without it) |
 | `privacy` | the repository's pre-commit checks on staged changes (maintainers; skipped when nothing is staged) |
 
 The corpus and the oracle can also be run step by step:
@@ -135,7 +135,7 @@ The corpus and the oracle can also be run step by step:
 cargo xtask manifest         # vendored artefacts match their SHA256SUMS
 cargo xtask corpus           # corpus/*/cases.tsv and the extracted VEFA documents are up to date
 cargo xtask crosscheck       # goldens against the VEFA expectations
-scripts/fetch-saxon.sh       # Saxon-HE 9.9.1-8 from Maven Central into target/, checksum verified
+scripts/fetch-saxon.sh       # Saxon-HE 12.10 and the XML Resolver 5.3.3 from Maven Central into target/, checksums verified
 cargo xtask oracle           # Saxon-HE on every case; the goldens must not change
 ```
 
@@ -175,9 +175,9 @@ upstream.toml        every pinned upstream version and the files that record it
   under the European Union Public Licence 1.2 (EUPL-1.2). `corpus/cen-en16931-ubl-1.3.17/` is
   derived from them and is EUPL-1.2 too. Each directory has a README with the provenance and a
   `LICENSE.txt`.
-- Saxon-HE 9.9.1-8 (MPL-2.0) is the reference engine of the tests only. `scripts/fetch-saxon.sh`
-  downloads it from Maven Central into `target/`; it is neither part of the repository nor
-  distributed.
+- Saxon-HE 12.10 (MPL-2.0) is the reference engine of the tests only, with the XML Resolver
+  5.3.3 (Apache-2.0) it needs at run time. `scripts/fetch-saxon.sh` downloads them from Maven
+  Central into `target/`; they are neither part of the repository nor distributed.
 - Peppol BIS Billing 3.0 files will be fetched at test time and not redistributed.
 - `crates/einvoice-xsd/schemas/oasis-ubl-2.1/` holds the fifteen schema documents of the OASIS
   UBL 2.1 Standard reachable from the Invoice and CreditNote schemas, vendored unmodified and
