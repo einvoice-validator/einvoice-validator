@@ -11,9 +11,10 @@
 //!   result: `xs:decimal` of an argument statically typed `xs:integer` strips its
 //!   trailing zeros, as Saxon-HE 12.10's up-casting converter does.
 //! * [`CompiledExpr::evaluate`] and [`CompiledExpr::effective_boolean_value`] evaluate it
-//!   in a [`DynamicContext`] (the [`Host`], the implicit timezone, the current date and
-//!   time) with a [`Context`] (focus and current item). Atomic values and their
-//!   operations are those of [`einvoice_xdm`].
+//!   in a [`DynamicContext`] (the [`Host`] and the [`Clock`]: the implicit timezone and
+//!   the current date and time, given by the caller, so that the evaluator reads no clock,
+//!   which `wasm32-unknown-unknown` does not have) with a [`Context`] (focus and current
+//!   item). Atomic values and their operations are those of [`einvoice_xdm`].
 //!
 //! Sequences are evaluated lazily, so that consumers that stop early (effective boolean
 //! values, `exists`, general comparisons, `some`/`every`, `[1]`) raise only the errors
@@ -32,12 +33,13 @@
 //!
 //! ```
 //! use einvoice_xpath::{NamespaceMap, XS_NAMESPACE, parse_expr};
-//! use einvoice_xpath_eval::{Context, Document, DynamicContext, Item, NoHost, SimpleStaticContext, compile};
+//! use einvoice_xpath_eval::{Clock, Context, Document, DynamicContext, Item, NoHost, SimpleStaticContext, compile};
 //!
 //! let doc = Document::parse("<i><l a='19.99'/><l a='0.01'/></i>", None)?;
 //! let ns = NamespaceMap::new().bind("xs", XS_NAMESPACE);
 //! let expr = compile(&parse_expr("sum(//l/xs:decimal(@a))", &ns)?, &SimpleStaticContext::new())?;
-//! let dc = DynamicContext::new(&NoHost)?;
+//! // UTC, and the current date and time read by the host: 2026-09-10T00:26:40Z.
+//! let dc = DynamicContext::new(&NoHost, Clock::from_unix_millis(0, 1_789_000_000_000)?);
 //! let result = expr.evaluate(&dc, &Context::for_item(Item::Node(doc.root())))?;
 //! assert_eq!(result[0].string_value(), "20");
 //! # Ok::<(), Box<dyn std::error::Error>>(())
@@ -54,8 +56,8 @@ pub mod tree;
 
 pub use compile::{CompiledExpr, compile};
 pub use context::{
-    Cardinality, Context, DynamicContext, Focus, FunctionId, Host, NoHost, SimpleStaticContext,
-    StaticContext, VariableId, VariableInfo,
+    Cardinality, Clock, Context, DynamicContext, Focus, FunctionId, Host, NoHost,
+    SimpleStaticContext, StaticContext, VariableId, VariableInfo,
 };
 pub use error::{Error, ErrorCode, Result};
 pub use item::Item;

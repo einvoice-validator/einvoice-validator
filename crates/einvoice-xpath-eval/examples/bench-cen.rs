@@ -23,8 +23,8 @@ use einvoice_xpath::{
     NamespaceMap, PatternAlternative, PatternAnchor, PatternLink, QName, parse_expr, parse_pattern,
 };
 use einvoice_xpath_eval::{
-    Cardinality, CompiledExpr, Context, Document, DynamicContext, Error, FunctionId, Host, Item,
-    Node, SimpleStaticContext, VariableId, compile,
+    Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext, Error, FunctionId, Host,
+    Item, Node, SimpleStaticContext, VariableId, compile,
 };
 
 const LARGEST: &str = "artefacts/cen-en16931-ubl-1.3.17/ubl/examples/FT G2G_TD01 con Allegato, Bonifico e Split Payment.xml";
@@ -179,7 +179,9 @@ fn evaluate_document(
     let host = BenchHost {
         values: std::cell::RefCell::new(Vec::new()),
     };
-    let dc = DynamicContext::new(&host).map_err(|e| e.to_string())?;
+    // UTC; the CEN rules do not read the current date and time.
+    let clock = Clock::from_unix_millis(0, 1_789_000_123_456).map_err(|e| e.to_string())?;
+    let dc = DynamicContext::new(&host, clock);
     let empty: Rc<[Item]> = Rc::from(vec![Item::Atomic(AtomicValue::String(String::new()))]);
     let root = doc.root();
     totals.per_group.resize(groups.len(), Duration::ZERO);

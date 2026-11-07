@@ -21,7 +21,7 @@ use einvoice_xdm::{AtomicType, AtomicValue, Decimal, Integer, XPathRegex, ops, p
 use einvoice_xpath::{self as ast, AtomicKind, KindTest, NameOrWildcard, NameTest, QName};
 
 use crate::context::{
-    Cardinality, Context, DynamicContext, FunctionId, NoHost, StaticContext, VariableId,
+    Cardinality, Clock, Context, DynamicContext, FunctionId, NoHost, StaticContext, VariableId,
 };
 use crate::error::{Error, ErrorCode, Result, err};
 use crate::functions::{self, Builtin, Returns};
@@ -696,7 +696,9 @@ struct Compiler<'a> {
 /// does at compile time, or `None` when the evaluation fails (Saxon then keeps the
 /// expression, and reports the error only if it is evaluated).
 fn folded_type(expr: &Expr) -> Option<StaticType> {
-    let dc = DynamicContext::new(&NoHost).ok()?;
+    // Only the type of the value is used: `current-dateTime()` has the same at any time,
+    // so any clock does.
+    let dc = DynamicContext::new(&NoHost, Clock::from_unix_millis(0, 0).ok()?);
     let compiled = CompiledExpr {
         expr: expr.clone(),
         max_one: false,

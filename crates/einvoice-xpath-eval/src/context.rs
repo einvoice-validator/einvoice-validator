@@ -5,7 +5,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use einvoice_xdm::{Date, DateTime, XPathRegex};
 use einvoice_xpath::{NamespaceMap, Namespaces, QName};
@@ -187,15 +186,102 @@ impl Host for NoHost {
     }
 }
 
-/// The dynamic context shared by evaluations: the host, the implicit timezone, the
-/// current date and time (stable across evaluations) and a cache of compiled regular
-/// expressions.
+/// The clock of an evaluation: the implicit timezone and the value of
+/// `fn:current-dateTime()`. Both are inputs: the evaluator never reads a clock itself, and
+/// the current date and time stays the same for every evaluation made with the clock, as
+/// Saxon reads its clock once per transformation.
+///
+/// [`Clock::system`] reads the system clock on the targets that have one; elsewhere, such
+/// as `wasm32-unknown-unknown`, the host gives the time it reads, for instance with
+/// [`Clock::from_unix_millis`] and JavaScript's `Date.now()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Clock {
+    implicit_timezone: i16,
+    current_date_time: DateTime,
+}
+
+impl Clock {
+    /// The implicit timezone, in minutes east of UTC (Saxon takes the JVM's), and the value
+    /// of `fn:current-dateTime()`, returned as given.
+    ///
+    /// # Errors
+    ///
+    /// An offset beyond ±14:00, or a date and time without a timezone (the current date
+    /// and time always has one).
+    pub fn new(implicit_timezone: i16, current_date_time: DateTime) -> Result<Self> {
+        check_timezone(implicit_timezone)?;
+        if current_date_time.timezone().is_none() {
+            return err(
+                ErrorCode::Unsupported,
+                "the current date and time has no timezone",
+            );
+        }
+        Ok(Self {
+            implicit_timezone,
+            current_date_time,
+        })
+    }
+
+    /// The implicit timezone, in minutes east of UTC, and the instant `millis`
+    /// milliseconds after the Unix epoch (1970-01-01T00:00:00Z) as the current date and
+    /// time, expressed in that timezone.
+    ///
+    /// # Errors
+    ///
+    /// An offset beyond ±14:00, or an instant beyond the supported dates.
+    pub fn from_unix_millis(implicit_timezone: i16, millis: i64) -> Result<Self> {
+        check_timezone(implicit_timezone)?;
+        Ok(Self {
+            implicit_timezone,
+            current_date_time: date_time_from_millis(millis, implicit_timezone)?,
+        })
+    }
+
+    /// The implicit timezone, in minutes east of UTC, and the current reading of the
+    /// system clock, expressed in that timezone. Not available on
+    /// `wasm32-unknown-unknown`, which has no clock.
+    ///
+    /// # Errors
+    ///
+    /// An offset beyond ±14:00, or a system clock beyond the supported dates.
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    pub fn system(implicit_timezone: i16) -> Result<Self> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let millis = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(after) => i64::try_from(after.as_millis()),
+            Err(before) => i64::try_from(before.duration().as_millis()).map(|m| -m),
+        }
+        .map_err(|_| crate::error::Error::new(ErrorCode::Fodt0001, "system clock out of range"))?;
+        Self::from_unix_millis(implicit_timezone, millis)
+    }
+
+    /// The implicit timezone in minutes.
+    #[must_use]
+    pub const fn implicit_timezone(&self) -> i16 {
+        self.implicit_timezone
+    }
+
+    /// The value of `fn:current-dateTime()`.
+    #[must_use]
+    pub const fn current_date_time(&self) -> DateTime {
+        self.current_date_time
+    }
+}
+
+fn check_timezone(minutes: i16) -> Result<()> {
+    if (-840..=840).contains(&minutes) {
+        Ok(())
+    } else {
+        err(ErrorCode::Unsupported, "timezone offset out of range")
+    }
+}
+
+/// The dynamic context shared by evaluations: the host, the [`Clock`] (implicit timezone
+/// and current date and time) and a cache of compiled regular expressions.
 pub struct DynamicContext<'h> {
     pub(crate) host: &'h dyn Host,
     pub(crate) implicit_timezone: i16,
     pub(crate) current_date_time: DateTime,
-    /// The clock reading `current_date_time` comes from, unless it was fixed by the caller.
-    clock_millis: Option<i64>,
     pub(crate) regex_cache: RefCell<HashMap<(String, String), Rc<XPathRegex>>>,
 }
 
@@ -209,49 +295,24 @@ impl std::fmt::Debug for DynamicContext<'_> {
 }
 
 impl<'h> DynamicContext<'h> {
-    /// A context with the UTC implicit timezone and the current date and time of the
-    /// system clock.
-    ///
-    /// # Errors
-    ///
-    /// A system clock before 1970 or beyond the supported dates.
-    pub fn new(host: &'h dyn Host) -> Result<Self> {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| crate::error::Error::new(ErrorCode::Internal, e.to_string()))?;
-        let millis = i64::try_from(now.as_millis()).unwrap_or(i64::MAX);
-        Ok(Self {
-            host,
-            implicit_timezone: 0,
-            current_date_time: date_time_from_millis(millis, 0)?,
-            clock_millis: Some(millis),
-            regex_cache: RefCell::new(HashMap::new()),
-        })
-    }
-
-    /// Sets the implicit timezone, in minutes east of UTC (Saxon takes the JVM's); the
-    /// clock reading of the current date and time is expressed in that timezone.
-    ///
-    /// # Errors
-    ///
-    /// An offset beyond ±14:00.
-    pub fn with_implicit_timezone(mut self, minutes: i16) -> Result<Self> {
-        if !(-840..=840).contains(&minutes) {
-            return err(ErrorCode::Unsupported, "timezone offset out of range");
-        }
-        self.implicit_timezone = minutes;
-        if let Some(millis) = self.clock_millis {
-            self.current_date_time = date_time_from_millis(millis, minutes)?;
-        }
-        Ok(self)
-    }
-
-    /// Fixes the value of `fn:current-dateTime()`.
+    /// A context with this host and clock.
     #[must_use]
-    pub const fn with_current_date_time(mut self, value: DateTime) -> Self {
-        self.current_date_time = value;
-        self.clock_millis = None;
-        self
+    pub fn new(host: &'h dyn Host, clock: Clock) -> Self {
+        Self {
+            host,
+            implicit_timezone: clock.implicit_timezone,
+            current_date_time: clock.current_date_time,
+            regex_cache: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// The clock: implicit timezone and current date and time.
+    #[must_use]
+    pub const fn clock(&self) -> Clock {
+        Clock {
+            implicit_timezone: self.implicit_timezone,
+            current_date_time: self.current_date_time,
+        }
     }
 
     /// The implicit timezone in minutes.
@@ -279,7 +340,9 @@ impl<'h> DynamicContext<'h> {
 
 /// The date-time `millis` after the epoch, in the timezone `offset` (minutes).
 fn date_time_from_millis(millis: i64, offset: i16) -> Result<DateTime> {
-    let local = millis + i64::from(offset) * 60_000;
+    let local = millis
+        .checked_add(i64::from(offset) * 60_000)
+        .ok_or_else(|| crate::error::Error::new(ErrorCode::Fodt0001, "instant out of range"))?;
     let days = local.div_euclid(86_400_000);
     let in_day = local.rem_euclid(86_400_000);
     // Civil date from days since 1970-01-01 (proleptic Gregorian).
@@ -375,5 +438,14 @@ mod tests {
         assert_eq!(dt.to_string(), "2026-09-10T01:28:43.456+01:00");
         let dt = date_time_from_millis(-1, -300).unwrap();
         assert_eq!(dt.to_string(), "1969-12-31T18:59:59.999-05:00");
+        // An offset that takes the instant beyond i64: an error, never an overflow.
+        for (millis, offset) in [(i64::MAX, 840), (i64::MIN, -840)] {
+            assert_eq!(
+                date_time_from_millis(millis, offset).unwrap_err().code(),
+                ErrorCode::Fodt0001
+            );
+        }
+        let dt = date_time_from_millis(i64::MAX, 0).unwrap();
+        assert_eq!(dt.to_string(), "292278994-08-17T07:12:55.807Z");
     }
 }

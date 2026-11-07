@@ -18,8 +18,8 @@ use std::rc::{Rc, Weak};
 use einvoice_xdm::{AtomicType, AtomicValue, DateTime};
 use einvoice_xpath::{AtomicKind, ItemType, Occurrence, QName, SequenceType};
 use einvoice_xpath_eval::{
-    CompiledExpr, Context, Document, DynamicContext, ErrorCode, FunctionId, Host, Item, Node,
-    NodeAxis, NodeKind, VariableId,
+    Clock, CompiledExpr, Context, Document, DynamicContext, ErrorCode, FunctionId, Host, Item,
+    Node, NodeAxis, NodeKind, VariableId,
 };
 use einvoice_xslt::NumberLevel;
 
@@ -40,7 +40,9 @@ pub trait DocumentResolver {
 pub struct TransformOptions<'r> {
     /// The implicit timezone in minutes east of UTC (Saxon takes the JVM's). Default: UTC.
     pub implicit_timezone: Option<i16>,
-    /// The value of `fn:current-dateTime()`. Default: the system clock.
+    /// The value of `fn:current-dateTime()`, with a timezone. Default: the system clock,
+    /// read once per transformation; required on targets without one
+    /// (`wasm32-unknown-unknown`).
     pub current_date_time: Option<DateTime>,
     /// Values of the global parameters (`xsl:param`), by name.
     pub parameters: Vec<(QName, Vec<Item>)>,
@@ -92,7 +94,8 @@ impl Executable {
     ///
     /// # Errors
     ///
-    /// As [`Executable::transform`], and an invalid timezone.
+    /// As [`Executable::transform`], and an invalid timezone or current date and time
+    /// (or none given on a target without a system clock).
     pub fn transform_with(
         &self,
         source: &str,
@@ -117,13 +120,12 @@ impl Executable {
             warnings: RefCell::new(Vec::new()),
             stashed: RefCell::new(None),
         };
-        let mut dc = DynamicContext::new(&runtime)?;
-        if let Some(minutes) = options.implicit_timezone {
-            dc = dc.with_implicit_timezone(minutes)?;
-        }
-        if let Some(now) = options.current_date_time {
-            dc = dc.with_current_date_time(now);
-        }
+        let timezone = options.implicit_timezone.unwrap_or(0);
+        let clock = match options.current_date_time {
+            Some(now) => Clock::new(timezone, now)?,
+            None => system_clock(timezone)?,
+        };
+        let dc = DynamicContext::new(&runtime, clock);
         runtime.dc.set(Some(&dc));
         let mut writer = XmlWriter::new(self.serialization);
         runtime.apply_rule(&root, 1, 1, self.default_mode, None, &[], &mut writer)?;
@@ -131,6 +133,22 @@ impl Executable {
         let warnings = runtime.warnings.take();
         Ok(Transformation { output, warnings })
     }
+}
+
+/// The system clock, in the implicit timezone.
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+fn system_clock(timezone: i16) -> Result<Clock> {
+    Ok(Clock::system(timezone)?)
+}
+
+/// No system clock on this target: the caller must give the current date and time.
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+fn system_clock(_timezone: i16) -> Result<Clock> {
+    Err(einvoice_xpath_eval::Error::new(
+        ErrorCode::Unsupported,
+        "no system clock on this target: give TransformOptions::current_date_time",
+    )
+    .into())
 }
 
 #[derive(Debug)]

@@ -12,8 +12,8 @@ use std::rc::Rc;
 use einvoice_xdm::AtomicValue;
 use einvoice_xpath::{NamespaceMap, QName, XS_NAMESPACE, parse_expr};
 use einvoice_xpath_eval::{
-    Cardinality, CompiledExpr, Context, Document, DynamicContext, Error, ErrorCode, FunctionId,
-    Host, Item, NoHost, Node, SimpleStaticContext, TreeBuilder, VariableId, compile,
+    Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext, Error, ErrorCode,
+    FunctionId, Host, Item, NoHost, Node, SimpleStaticContext, TreeBuilder, VariableId, compile,
 };
 
 fn namespaces() -> NamespaceMap {
@@ -38,8 +38,13 @@ fn strings(items: &[Item]) -> Vec<String> {
         .collect()
 }
 
+/// A fixed clock: UTC, 2026-09-10T00:28:43.456Z.
+fn clock() -> Clock {
+    Clock::from_unix_millis(0, 1_789_000_123_456).unwrap()
+}
+
 fn eval_at(text: &str, node: &Node) -> Result<Vec<String>, ErrorCode> {
-    let dc = DynamicContext::new(&NoHost).unwrap();
+    let dc = DynamicContext::new(&NoHost, clock());
     plain(text)
         .evaluate(&dc, &Context::for_item(Item::Node(node.clone())))
         .map(|items| strings(&items))
@@ -79,7 +84,7 @@ fn static_errors() {
 
 #[test]
 fn absent_focus() {
-    let dc = DynamicContext::new(&NoHost).unwrap();
+    let dc = DynamicContext::new(&NoHost, clock());
     for text in [
         ".",
         "/",
@@ -115,7 +120,7 @@ fn focus_from_the_caller() {
         .children()
         .nth(1)
         .unwrap();
-    let dc = DynamicContext::new(&NoHost).unwrap();
+    let dc = DynamicContext::new(&NoHost, clock());
     let context = Context::at(Item::Node(second), 2, 3);
     let result = plain("(position(), last(), count(preceding-sibling::*))")
         .evaluate(&dc, &context)
@@ -184,7 +189,7 @@ fn host_variables_functions_and_documents() {
         calls: Cell::new(0),
         other: Document::parse_loaded("<o><x>1</x><x>2</x></o>", "urn:other").unwrap(),
     };
-    let dc = DynamicContext::new(&host).unwrap();
+    let dc = DynamicContext::new(&host, clock());
     let eval = |text: &str| {
         compiled(text, &context)
             .unwrap()
@@ -235,7 +240,7 @@ fn temporary_trees_built_with_the_builder() {
     let doc = builder.finish(None, Some("urn:base".to_owned())).unwrap();
     let root = doc.root();
     let ns = namespaces().bind("svrl", "http://purl.oclc.org/dsdl/svrl");
-    let dc = DynamicContext::new(&NoHost).unwrap();
+    let dc = DynamicContext::new(&NoHost, clock());
     let eval = |text: &str| {
         compile(&parse_expr(text, &ns).unwrap(), &SimpleStaticContext::new())
             .unwrap()
@@ -312,27 +317,61 @@ fn static_cardinality() {
 }
 
 #[test]
-fn current_date_time_is_stable_and_settable() {
-    let dc = DynamicContext::new(&NoHost)
-        .unwrap()
-        .with_implicit_timezone(120)
-        .unwrap();
+fn the_clock_is_an_input() {
+    // An instant the host read (1_789_000_123_456 ms after the epoch), seen in the
+    // implicit timezone +02:00: no clock is read by the evaluator.
+    let clock = Clock::from_unix_millis(120, 1_789_000_123_456).unwrap();
+    assert_eq!(clock.implicit_timezone(), 120);
+    let dc = DynamicContext::new(&NoHost, clock);
+    assert_eq!(dc.clock(), clock);
+    assert_eq!(dc.implicit_timezone(), 120);
+    let eval = |dc: &DynamicContext<'_>, text: &str| {
+        strings(&plain(text).evaluate(dc, &Context::new()).unwrap())
+    };
+    // The same value at every call and in every evaluation.
+    let now = "2026-09-10T02:28:43.456+02:00";
+    assert_eq!(
+        eval(&dc, "(current-dateTime(), current-dateTime())"),
+        [now, now]
+    );
+    assert_eq!(eval(&dc, "string(current-dateTime())"), [now]);
+    // The implicit timezone is that of values without one.
+    let same_day = "xs:date('2026-09-10') = xs:date('2026-09-10+02:00')";
+    assert_eq!(eval(&dc, same_day), ["true"]);
+    let utc = DynamicContext::new(&NoHost, Clock::from_unix_millis(0, 0).unwrap());
+    assert_eq!(eval(&utc, same_day), ["false"]);
+    assert_eq!(eval(&utc, "current-dateTime()"), ["1970-01-01T00:00:00Z"]);
+    // A date and time given as such is returned as given.
+    let fixed = einvoice_xdm::DateTime::parse("2024-01-31T12:00:00Z").unwrap();
+    let dc = DynamicContext::new(&NoHost, Clock::new(60, fixed).unwrap());
+    assert_eq!(dc.current_date_time(), fixed);
+    assert_eq!(eval(&dc, "current-dateTime()"), ["2024-01-31T12:00:00Z"]);
+    // Out of range or without timezone: refused.
+    assert_eq!(
+        Clock::from_unix_millis(900, 0).unwrap_err().code(),
+        ErrorCode::Unsupported
+    );
+    assert!(Clock::new(-841, fixed).is_err());
+    assert!(Clock::new(840, fixed).is_ok());
+    let floating = einvoice_xdm::DateTime::parse("2024-01-31T12:00:00").unwrap();
+    assert_eq!(
+        Clock::new(0, floating).unwrap_err().code(),
+        ErrorCode::Unsupported
+    );
+}
+
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+#[test]
+fn system_clock() {
+    let clock = Clock::system(-300).unwrap();
+    assert_eq!(clock.implicit_timezone(), -300);
+    assert_eq!(clock.current_date_time().timezone(), Some(-300));
+    let dc = DynamicContext::new(&NoHost, clock);
     let text = plain("string(current-dateTime())")
         .evaluate(&dc, &Context::new())
         .unwrap();
-    assert!(strings(&text)[0].ends_with("+02:00"), "{text:?}");
-    let fixed = einvoice_xdm::DateTime::parse("2024-01-31T12:00:00Z").unwrap();
-    let dc = dc.with_current_date_time(fixed);
-    let result = plain("current-dateTime()")
-        .evaluate(&dc, &Context::new())
-        .unwrap();
-    assert_eq!(strings(&result), ["2024-01-31T12:00:00Z"]);
-    assert!(
-        DynamicContext::new(&NoHost)
-            .unwrap()
-            .with_implicit_timezone(900)
-            .is_err()
-    );
+    assert!(strings(&text)[0].ends_with("-05:00"), "{text:?}");
+    assert!(Clock::system(900).is_err());
 }
 
 #[test]

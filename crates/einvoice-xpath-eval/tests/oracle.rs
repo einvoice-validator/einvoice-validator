@@ -18,8 +18,8 @@ use std::rc::Rc;
 
 use einvoice_xpath::{NamespaceMap, QName, parse_expr};
 use einvoice_xpath_eval::{
-    Cardinality, CompiledExpr, Context, Document, DynamicContext, Error, FunctionId, Host, Item,
-    Node, SimpleStaticContext, VariableId, compile, file_uri,
+    Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext, Error, FunctionId, Host,
+    Item, Node, SimpleStaticContext, VariableId, compile, file_uri,
 };
 
 /// Edge-case lines whose disagreement with Saxon is understood and accepted, with the
@@ -263,7 +263,12 @@ fn replay(suite: &Suite, known_differences: &[(&str, &str, &str)]) -> Outcome {
         loaded: RefCell::new(BTreeMap::new()),
         any,
     };
-    let dc = DynamicContext::new(&host).unwrap();
+    // UTC, as the oracle runs Saxon; no case depends on the value of the current date and
+    // time, only on its being stable.
+    let dc = DynamicContext::new(
+        &host,
+        Clock::from_unix_millis(0, 1_789_000_123_456).unwrap(),
+    );
     let mut compiled: BTreeMap<String, Result<Compiled, String>> = BTreeMap::new();
     let mut problems = Vec::new();
     let mut known_count = 0;

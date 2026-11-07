@@ -5,14 +5,16 @@
 // Integration tests are only ever built with `cfg(test)`; saying so lets clippy apply its
 // test exemptions (unwrap, expect, panic) to the helpers outside `#[test]` functions too.
 #![cfg(test)]
+// Proptest is not a dependency on wasm targets.
+#![cfg(not(target_family = "wasm"))]
 
 use std::fmt::Write as _;
 use std::rc::Rc;
 
 use einvoice_xpath::{NamespaceMap, QName, parse_expr};
 use einvoice_xpath_eval::{
-    Context, Document, DynamicContext, Item, NoHost, Node, NodeAxis, NodeKind, SimpleStaticContext,
-    TreeBuilder, compile,
+    Clock, Context, Document, DynamicContext, Item, NoHost, Node, NodeAxis, NodeKind,
+    SimpleStaticContext, TreeBuilder, compile,
 };
 use proptest::prelude::*;
 
@@ -250,7 +252,7 @@ fn evaluate(doc: &Rc<Document>, text: &str) -> Vec<Node> {
         &SimpleStaticContext::new(),
     )
     .unwrap();
-    let dc = DynamicContext::new(&NoHost).unwrap();
+    let dc = DynamicContext::new(&NoHost, Clock::from_unix_millis(0, 0).unwrap());
     expr.evaluate(&dc, &Context::for_item(Item::Node(doc.root())))
         .unwrap()
         .into_iter()
@@ -264,7 +266,7 @@ fn single(doc: &Rc<Document>, text: &str) -> String {
         &SimpleStaticContext::new(),
     )
     .unwrap();
-    let dc = DynamicContext::new(&NoHost).unwrap();
+    let dc = DynamicContext::new(&NoHost, Clock::from_unix_millis(0, 0).unwrap());
     let items = expr
         .evaluate(&dc, &Context::for_item(Item::Node(doc.root())))
         .unwrap();
@@ -401,6 +403,17 @@ proptest! {
         let expected = dump(&reference_tree(&text));
         prop_assert_eq!(dump(&Document::parse(text.as_str(), None).unwrap()), expected.clone());
         prop_assert_eq!(dump(&Document::parse(text, None).unwrap()), expected);
+    }
+
+    #[test]
+    fn any_clock_reading_is_a_value_or_an_error(millis in any::<i64>(), offset in -900i16..=900) {
+        // Never a panic (overflow checks are on in every profile).
+        let clock = Clock::from_unix_millis(offset, millis);
+        prop_assert_eq!(clock.is_ok(), (-840..=840).contains(&offset)
+            && millis.checked_add(i64::from(offset) * 60_000).is_some());
+        if let Ok(clock) = clock {
+            prop_assert_eq!(clock.current_date_time().timezone(), Some(offset));
+        }
     }
 
     #[test]
