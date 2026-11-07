@@ -7,5 +7,27 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["cen-ubl"]
+# Embeds the official CEN EN 16931 UBL 1.3.17 stylesheet (EUPL-1.2, about 900 kB) and
+# provides the built-in rule set `cen-ubl`.
+cen-ubl = []
+
+[dependencies]
+einvoice-svrl = { path = "../einvoice-svrl", version = "0.0.0" }
+einvoice-xpath-eval = { path = "../einvoice-xpath-eval", version = "0.0.0" }
+einvoice-xsd = { path = "../einvoice-xsd", version = "0.0.0" }
+einvoice-xslt = { path = "../einvoice-xslt", version = "0.0.0" }
+einvoice-xslt-exec = { path = "../einvoice-xslt-exec", version = "0.0.0" }
+roxmltree = "0.21.2"
+sha2 = "0.11.1"
+
+[dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+
+[[example]]
+name = "bench"
+required-features = ["cen-ubl"]
+
 [lints]
 workspace = true

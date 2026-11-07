@@ -1,0 +1,190 @@
+//! The errors of loading a rule set and of validating a document.
+
+use std::fmt;
+use std::path::PathBuf;
+
+/// Why a rule set could not be loaded, or a document could not be validated.
+///
+/// Validity problems of a document (schema errors, failed asserts) are not errors: they
+/// are in the [`Report`](crate::Report). An error means that no complete verdict could
+/// be given.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum Error {
+    /// A file could not be read.
+    Io {
+        /// The file.
+        path: PathBuf,
+        /// The cause.
+        source: std::io::Error,
+    },
+    /// The bundle is not usable: a manifest that does not follow the format, a missing
+    /// file, an unknown schema name, a stylesheet that is not well-formed XSLT, or one
+    /// whose result is not an SVRL report.
+    Bundle {
+        /// What is wrong, naming the file and line when known.
+        message: String,
+    },
+    /// A file of the bundle does not have the SHA-256 its manifest records.
+    Checksum {
+        /// The file, relative to the bundle.
+        path: String,
+        /// The SHA-256 the manifest records (lower-case hexadecimal).
+        expected: String,
+        /// The SHA-256 of the file.
+        actual: String,
+    },
+    /// The document is not well-formed XML (or not UTF-8, or not namespace-well-formed).
+    NotXml {
+        /// 1-based line.
+        line: u32,
+        /// 1-based column.
+        column: u32,
+        /// The parser's message.
+        message: String,
+    },
+    /// The document or a rule-set artefact needs a construct that this engine does not
+    /// implement (an encoding other than UTF-8, a document type declaration, an XSLT or
+    /// XML Schema construct outside the supported subset). Refused rather than answered
+    /// differently from the reference engine.
+    Unsupported {
+        /// What is not supported, and where.
+        message: String,
+    },
+    /// A stylesheet of the rule set raised a dynamic error on the document (the
+    /// reference engine fails on it as well).
+    Transform {
+        /// The stylesheet, by its name in the bundle.
+        stylesheet: String,
+        /// The XPath or XSLT error code (`FORG0001`, ...).
+        code: String,
+        /// The line of the stylesheet instruction, when known.
+        line: Option<u32>,
+        /// The explanation.
+        message: String,
+    },
+    /// A bug of this engine: a result it cannot read back.
+    Internal {
+        /// What went wrong.
+        message: String,
+    },
+}
+
+/// The kind of an [`Error`], for callers that only need to classify it (the exit code of
+/// a command-line tool, ...).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ErrorKind {
+    /// [`Error::Io`].
+    Io,
+    /// [`Error::Bundle`] and [`Error::Checksum`].
+    Bundle,
+    /// [`Error::NotXml`].
+    NotXml,
+    /// [`Error::Unsupported`].
+    Unsupported,
+    /// [`Error::Transform`].
+    Transform,
+    /// [`Error::Internal`].
+    Internal,
+}
+
+impl ErrorKind {
+    /// A stable identifier of the kind: `io`, `bundle`, `not-xml`, `unsupported`,
+    /// `transform` or `internal`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Io => "io",
+            Self::Bundle => "bundle",
+            Self::NotXml => "not-xml",
+            Self::Unsupported => "unsupported",
+            Self::Transform => "transform",
+            Self::Internal => "internal",
+        }
+    }
+}
+
+impl fmt::Display for ErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Error {
+    /// The kind of the error.
+    #[must_use]
+    pub const fn kind(&self) -> ErrorKind {
+        match self {
+            Self::Io { .. } => ErrorKind::Io,
+            Self::Bundle { .. } | Self::Checksum { .. } => ErrorKind::Bundle,
+            Self::NotXml { .. } => ErrorKind::NotXml,
+            Self::Unsupported { .. } => ErrorKind::Unsupported,
+            Self::Transform { .. } => ErrorKind::Transform,
+            Self::Internal { .. } => ErrorKind::Internal,
+        }
+    }
+
+    pub(crate) fn bundle(message: impl Into<String>) -> Self {
+        Self::Bundle {
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn unsupported(message: impl Into<String>) -> Self {
+        Self::Unsupported {
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn internal(message: impl Into<String>) -> Self {
+        Self::Internal {
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io { path, source } => write!(f, "{}: {source}", path.display()),
+            Self::Bundle { message } => write!(f, "invalid rule-set bundle: {message}"),
+            Self::Checksum {
+                path,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "invalid rule-set bundle: {path}: SHA-256 {actual}, the manifest records {expected}"
+            ),
+            Self::NotXml {
+                line,
+                column,
+                message,
+            } => write!(f, "{line}:{column}: not well-formed XML: {message}"),
+            Self::Unsupported { message } => write!(f, "unsupported: {message}"),
+            Self::Transform {
+                stylesheet,
+                code,
+                line,
+                message,
+            } => {
+                write!(f, "stylesheet {stylesheet}")?;
+                if let Some(line) = line {
+                    write!(f, ", line {line}")?;
+                }
+                write!(f, ": {code}: {message}")
+            }
+            Self::Internal { message } => write!(f, "internal error: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
