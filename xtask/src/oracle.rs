@@ -2,8 +2,9 @@
 //! case; its SVRL, in canonical form, is the golden result.
 //!
 //! Saxon is not part of the repository: `scripts/fetch-saxon.sh` downloads
-//! the jar from Maven Central into `target/oracle/saxon/`, and this module
-//! refuses to run any jar whose SHA-256 is not the pinned one.
+//! it from Maven Central into `target/oracle/saxon/`, with the two jars of the
+//! XML Resolver it needs at run time, and this module refuses to run if any of
+//! the three jars does not have the pinned SHA-256.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -14,12 +15,29 @@ use crate::ruleset::RuleSet;
 use crate::svrl;
 use crate::util::{self, Error, Result};
 
-/// Saxon-HE 9.9.1-8 (Maven Central `net.sf.saxon:Saxon-HE:9.9.1-8`).
-pub(crate) const SAXON_VERSION: &str = "9.9.1-8";
-pub(crate) const SAXON_SHA256: &str =
-    "504ad5c71b55a3fd04c5609419b5e51d51b419f26628b4b6254c38766487abdf";
-/// Where `scripts/fetch-saxon.sh` puts the jar, relative to the repository root.
-pub(crate) const SAXON_DEFAULT: &str = "target/oracle/saxon/Saxon-HE-9.9.1-8.jar";
+/// Saxon-HE 12.10 (Maven Central `net.sf.saxon:Saxon-HE:12.10`).
+pub(crate) const SAXON_VERSION: &str = "12.10";
+/// The class path of the oracle, file name and SHA-256 of each jar: Saxon-HE
+/// first, then the XML Resolver 5.3.3 (`org.xmlresolver:xmlresolver:5.3.3`,
+/// plain and with the `data` classifier), a dependency in Saxon-HE 12.10's POM
+/// that `net.sf.saxon.Transform` loads at start-up. Saxon's jar is the one
+/// given (`--saxon`, `$SAXON_JAR`), the other two are taken from its directory.
+pub(crate) const SAXON_JARS: [(&str, &str); 3] = [
+    (
+        "Saxon-HE-12.10.jar",
+        "b571af282f25d7301059f788b9a149aab8b5cdc14ef3d212dc5425d3dcbb9a97",
+    ),
+    (
+        "xmlresolver-5.3.3.jar",
+        "1fe4d5b92f708dcdb82dbce12919e0171e6b5ca62c6dca6220483625098feb5f",
+    ),
+    (
+        "xmlresolver-5.3.3-data.jar",
+        "b0c487ad2f3e558be8d829c916d2458d10aca6a5bafa7a4d0524b70845e48a5c",
+    ),
+];
+/// Where `scripts/fetch-saxon.sh` puts Saxon's jar, relative to the repository root.
+pub(crate) const SAXON_DEFAULT: &str = "target/oracle/saxon/Saxon-HE-12.10.jar";
 /// Scratch directory of the oracle runs, relative to the repository root.
 const WORK_DIR: &str = "target/oracle/runs";
 
@@ -46,7 +64,7 @@ pub(crate) struct Outcome {
 /// Runs Saxon on every case of the rule set, then compares the canonical SVRL
 /// with the goldens (or writes them).
 pub(crate) fn run(root: &Path, rule_set: &RuleSet, options: &Options) -> Result<Outcome> {
-    check_saxon(&options.saxon)?;
+    let class_path = saxon_class_path(&options.saxon)?;
     // The cases come from the committed index, which `corpus::verify` checks
     // against the vendored files.
     let cases = corpus::read_index(root, rule_set)?;
@@ -72,8 +90,9 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet, options: &Options) -> Result<
     let threads = std::thread::available_parallelism().map_or(1, |n| n.get().min(8));
     let mut command = Command::new(&options.java);
     command
-        .arg("-jar")
-        .arg(&options.saxon)
+        .arg("-cp")
+        .arg(&class_path)
+        .arg("net.sf.saxon.Transform")
         .arg(arg("-xsl:", &xslt))
         .arg(arg("-s:", &input_dir))
         .arg(arg("-o:", &output_dir))
@@ -163,8 +182,25 @@ fn absolute(path: &Path) -> Result<String> {
         .ok_or_else(|| Error::new(format!("{}: not UTF-8", absolute.display())))
 }
 
-/// Refuses a missing jar or one that is not the pinned release.
-fn check_saxon(jar: &Path) -> Result<()> {
+/// The class path of the oracle ([`SAXON_JARS`]), from Saxon's jar and its
+/// directory. Refuses a missing jar or one that is not the pinned release.
+fn saxon_class_path(saxon: &Path) -> Result<OsString> {
+    let dir = saxon.parent().unwrap_or_else(|| Path::new(""));
+    let mut jars = Vec::with_capacity(SAXON_JARS.len());
+    for (index, (name, sha256)) in SAXON_JARS.iter().enumerate() {
+        let jar = if index == 0 {
+            saxon.to_owned()
+        } else {
+            dir.join(name)
+        };
+        check_jar(&jar, sha256)?;
+        jars.push(jar);
+    }
+    std::env::join_paths(&jars).map_err(|e| Error::new(format!("class path: {e}")))
+}
+
+/// Refuses a missing jar or one whose SHA-256 is not `sha256`.
+fn check_jar(jar: &Path, sha256: &str) -> Result<()> {
     if !jar.is_file() {
         return Err(Error::new(format!(
             "{} not found: run scripts/fetch-saxon.sh (or pass --saxon / set SAXON_JAR)",
@@ -172,11 +208,11 @@ fn check_saxon(jar: &Path) -> Result<()> {
         )));
     }
     let hash = util::sha256_hex(&util::read(jar)?);
-    if hash == SAXON_SHA256 {
+    if hash == sha256 {
         Ok(())
     } else {
         Err(Error::new(format!(
-            "{}: SHA-256 {hash}, expected {SAXON_SHA256} (Saxon-HE {SAXON_VERSION})",
+            "{}: SHA-256 {hash}, expected {sha256} (Saxon-HE {SAXON_VERSION})",
             jar.display()
         )))
     }

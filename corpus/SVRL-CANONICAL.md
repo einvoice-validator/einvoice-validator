@@ -29,7 +29,9 @@ Then one line per SVRL element and per comment, in document order:
   namespace and `{<namespace URI>}<name>` otherwise.
 - Attribute values are verbatim, as the XML parser reports them, with one exception:
   in `active-pattern/@documents`, the URI of the validated document is written `{document}`.
-  Any other URI there is an error.
+  Any other URI there is an error. (The CEN stylesheets fill this attribute with
+  `document-uri(/)`, which Saxon-HE 12.10 leaves empty for the document being validated: their
+  goldens have `documents=""`.)
 - Elements that hold text (`text`, `diagnostic-reference`) end with their text, always present,
   even when empty (`""`). Comments are written `comment "<text>"`. Both are whitespace
   normalised as by XPath `normalize-space`: leading and trailing space, tab, CR and LF are
@@ -43,7 +45,7 @@ svrl-canonical 1
 schematron-output schemaVersion="" title="EN16931  model bound to UBL"
 comment "\u{a0} \u{a0} \u{a0}"
 ns-prefix-in-attribute-values prefix="cbc" uri="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
-active-pattern documents="{document}" id="UBL-model" name="UBL-model"
+active-pattern documents="" id="UBL-model" name="UBL-model"
 fired-rule context="/ubl:Invoice | /cn:CreditNote"
 failed-assert flag="fatal" id="BR-02" location="/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]" test="normalize-space(cbc:ID) != ''"
   text "[BR-02]-An Invoice shall have an Invoice number (BT-1)."

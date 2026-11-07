@@ -38,12 +38,13 @@ VEFA element, a test with no document or two) is an error.
 
 ## Goldens
 
-`<rule set>/golden/<case id>.svrl.txt` is the SVRL that Saxon-HE 9.9.1-8 produces when it runs
+`<rule set>/golden/<case id>.svrl.txt` is the SVRL that Saxon-HE 12.10 produces when it runs
 the rule set's compiled XSLT on the case, in the canonical form of `SVRL-CANONICAL.md`. The
 invocation, with all cases copied into one input directory:
 
 ```sh
-java -jar Saxon-HE-9.9.1-8.jar -xsl:<compiled XSLT> -s:<input dir> -o:<output dir> -threads:<n>
+java -cp Saxon-HE-12.10.jar:xmlresolver-5.3.3.jar:xmlresolver-5.3.3-data.jar net.sf.saxon.Transform \
+    -xsl:<compiled XSLT> -s:<input dir> -o:<output dir> -threads:<n>
 ```
 
 Saxon's defaults apply otherwise (no whitespace stripping of the source documents); the output
@@ -63,7 +64,7 @@ differ from that list in either direction.
 ```sh
 cargo xtask manifest            # vendored files match artefacts/*/SHA256SUMS
 cargo xtask corpus              # cases.tsv, vefa/ and LICENSE.txt match what extraction produces
-scripts/fetch-saxon.sh          # Saxon-HE from Maven Central, checksum verified, into target/oracle/saxon/
+scripts/fetch-saxon.sh          # Saxon-HE and the XML Resolver from Maven Central, checksums verified, into target/oracle/saxon/
 cargo xtask oracle              # Saxon on every case; the goldens must match (needs Java)
 cargo xtask crosscheck          # goldens against the VEFA expectations
 ```

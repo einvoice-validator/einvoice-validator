@@ -10,8 +10,9 @@
 //!
 //! Without `--write` every command only checks, and exits with status 1 on
 //! any difference. `oracle` takes Java from `--java`, else `$JAVA`, else
-//! `java` on the PATH, and the Saxon jar from `--saxon`, else `$SAXON_JAR`,
-//! else where `scripts/fetch-saxon.sh` puts it.
+//! `java` on the PATH, and the Saxon-HE jar from `--saxon`, else `$SAXON_JAR`,
+//! else where `scripts/fetch-saxon.sh` puts it; the two XML Resolver jars that
+//! Saxon-HE 12.10 needs are taken from the directory of Saxon's jar.
 
 mod corpus;
 mod crosscheck;

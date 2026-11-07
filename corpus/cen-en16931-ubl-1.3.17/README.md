@@ -15,7 +15,7 @@ upstream licence. The rest of the repository is MIT.
 - `cases.tsv`: every case: 19 example documents, 29 whole test documents and 1131 documents
   extracted from the VEFA unit test sets, with the rule ids each VEFA test expects.
 - `vefa/`: the extracted documents, one per `<test>`.
-- `golden/`: the expected result of each case, Saxon-HE 9.9.1-8 running
+- `golden/`: the expected result of each case, Saxon-HE 12.10 running
   `ubl/xslt/EN16931-UBL-validation.xslt`, in the canonical form described in
   `../SVRL-CANONICAL.md`.
 - `vefa-disagreements.tsv`: the cases where the goldens and the VEFA expectations disagree, each
