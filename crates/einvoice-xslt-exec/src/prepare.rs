@@ -96,6 +96,9 @@ pub(crate) struct CompiledTemplate {
     pub(crate) slots: usize,
     /// The compiled alternatives of the match pattern (empty without one).
     pub(crate) pattern: Vec<Alternative>,
+    /// The match pattern as written, and each of its alternatives, for warnings.
+    pub(crate) pattern_text: String,
+    pub(crate) alternative_texts: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -180,7 +183,7 @@ pub(crate) enum Inst {
         line: u32,
         level: NumberLevel,
         /// `None`: nodes of the context node's kind and name.
-        count: Option<Vec<Alternative>>,
+        count: Option<CountPattern>,
     },
     Element {
         line: u32,
@@ -198,6 +201,13 @@ pub(crate) struct When {
     pub(crate) line: u32,
     pub(crate) test: Box<CompiledExpr>,
     pub(crate) body: Vec<Inst>,
+}
+
+/// The `count` pattern of `xsl:number`, and its text for warnings.
+#[derive(Debug)]
+pub(crate) struct CountPattern {
+    pub(crate) alternatives: Vec<Alternative>,
+    pub(crate) text: String,
 }
 
 /// A template rule as Saxon-HE 12.10 registers it: one per alternative of a match
@@ -843,7 +853,10 @@ impl Compiler<'_> {
                 }
                 let count = match &n.count {
                     None => None,
-                    Some(p) => Some(self.pattern(n.line, p)?),
+                    Some(p) => Some(CountPattern {
+                        alternatives: self.pattern(n.line, p)?,
+                        text: p.to_string(),
+                    }),
                 };
                 Inst::Number {
                     line: n.line,
@@ -923,9 +936,13 @@ impl Compiler<'_> {
         let mut frame = Frame::default();
         let params = self.params(&template.params, &mut frame);
         let body = self.sequence_constructor(&template.body, &mut frame, Content::Nodes);
-        let pattern = match &template.pattern {
-            Some(p) => self.pattern(template.line, p).unwrap_or_default(),
-            None => Vec::new(),
+        let (pattern, pattern_text, alternative_texts) = match &template.pattern {
+            Some(p) => (
+                self.pattern(template.line, p).unwrap_or_default(),
+                p.to_string(),
+                p.alternatives.iter().map(ToString::to_string).collect(),
+            ),
+            None => (Vec::new(), String::new(), Vec::new()),
         };
         CompiledTemplate {
             line: template.line,
@@ -933,6 +950,8 @@ impl Compiler<'_> {
             body,
             slots: frame.slots,
             pattern,
+            pattern_text,
+            alternative_texts,
         }
     }
 }

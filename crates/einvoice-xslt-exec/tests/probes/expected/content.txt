@@ -1,5 +1,6 @@
 result
 warnings 0
+pattern-errors
 ---
 <?xml version="1.0" encoding="UTF-8"?><out xmlns:p="urn:p"><atomics>1 2a34 s 1.5 true</atomics><attr-content v="12a34"/><attr-select v="1 b 1 2 3"/><attr-nodes v="t1t41"/><attr-replace a="last"/><value-of-select>t1 t4 |t2t3|1, 2, 3||10.5+2+3.25</value-of-select><value-of-content>12tu|1-2-tv</value-of-content><copy b="two"><y z="3">t2<w/>t3</y></copy><copy-attr-first a="1" p:c="3">text</copy-attr-first><copy-document><a b="c">d<e/></a></copy-document><comments><!--a- -b- --><!---x--><!--a- -b- & <tag> "q" 'a' 	tab
 linecr nbsp--><!----></comments><text-escapes t="a--b- &amp; &lt;tag&gt; &#34;q&#34; 'a' &#x9;tab&#xA;line&#xD;cr nbsp">a--b- &amp; &lt;tag&gt; "q" 'a' 	tab

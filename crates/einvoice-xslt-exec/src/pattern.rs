@@ -14,10 +14,9 @@ use einvoice_xpath::{
     PatternAlternative, PatternAnchor, PatternAxis, PatternLink, PatternStep, Step,
 };
 use einvoice_xpath_eval::{
-    CompiledExpr, Context, DynamicContext, Focus, Item, Node, NodeKind, StaticContext, compile,
+    CompiledExpr, Context, DynamicContext, Focus, Item, Node, NodeKind, Result, StaticContext,
+    compile,
 };
-
-use crate::error::Result;
 
 /// How a name test matches a name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -508,7 +507,10 @@ fn compile_step(
     Ok(CompiledStep { test, predicates })
 }
 
-/// Matching, given the dynamic context.
+/// Matching, given the dynamic context. Errors are the evaluator's, as raised: the
+/// caller converts them (an error a host callback raised, such as a global variable
+/// evaluated in a predicate, is given back by the runtime) and decides whether to
+/// recover from them.
 pub(crate) struct Matcher<'d, 'h> {
     pub(crate) dc: &'d DynamicContext<'h>,
 }

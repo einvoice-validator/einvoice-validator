@@ -54,7 +54,7 @@ against.
   rules, parameters, variables, temporary trees, `as` conversion, `xsl:function`,
   `xsl:number`, simple and complex content and namespace fixup follow XSLT 2.0. Constructs
   whose result would differ from Saxon's are refused when the stylesheet is prepared. On all
-  1179 cases of the CEN 1.3.17 corpus, the canonical SVRL equals the Saxon-HE golden; 18
+  1179 cases of the CEN 1.3.17 corpus, the canonical SVRL equals the Saxon-HE golden; 25
   synthetic probe stylesheets are checked against Saxon-HE results.
 - `einvoice-svrl`: the canonical, line-oriented form of SVRL reports (`corpus/SVRL-CANONICAL.md`),
   shared by the oracle tooling and the equivalence tests.
@@ -159,9 +159,19 @@ against.
 - `einvoice-xslt-exec`: without a system clock (`wasm32-unknown-unknown`),
   `TransformOptions::current_date_time` is required; a current date and time without a timezone
   is refused (#9).
+- `einvoice-xslt-exec`: `Transformation::warnings` holds each distinct warning once, in the
+  order first reported, as Saxon-HE's error reporter prints them (it held every occurrence).
 
 ### Fixed
 
+- `einvoice-xslt-exec` recovers from a dynamic error raised while matching a pattern (a
+  template rule's, in `xsl:apply-templates`, `xsl:next-match` and the built-in rules, or the
+  `count` pattern of `xsl:number`) as Saxon-HE 12.10 does: the node does not match and the error
+  is a warning (`line <L>: <CODE>: An error occurred matching pattern {...}: ...`), instead of
+  ending the transformation; a circular global variable (`XTDE0640`) still ends it, and a global
+  variable whose evaluation failed is evaluated again when next referred to. An error raised in
+  a global variable or a function called from a pattern kept the code `HOST` instead of its own
+  (#3).
 - `einvoice-xpath-eval` evaluates `and` and `or` as Saxon-HE 12.10 does: when the first operand
   raises a dynamic error, the second is evaluated, and the error is raised only if the second
   does not decide the result (an error of the second operand wins) (#3).

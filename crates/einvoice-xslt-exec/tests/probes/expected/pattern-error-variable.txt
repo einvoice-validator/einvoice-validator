@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors 9:XPTY0004 10:XPTY0004 12:XPTY0004 15:XPTY0004
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:f="urn:f" xmlns:xs="http://www.w3.org/2001/XMLSchema">[x][y][x][p:x]good[x][codes][text]two</out>

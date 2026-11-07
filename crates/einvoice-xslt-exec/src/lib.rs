@@ -22,6 +22,11 @@
 //!   the last declared rule with an XTDE0540 warning), the built-in rules for every node
 //!   kind, and for atomic values, which Saxon, an XSLT 3.0 processor, lets
 //!   `xsl:apply-templates` select and writes as text;
+//! - dynamic errors raised while matching a pattern (a template rule's, or the `count`
+//!   pattern of `xsl:number`), in its predicates or in a global variable or function
+//!   they use: as in Saxon, the node does not match and the error is a warning, except
+//!   a circular global variable (`XTDE0640`), which ends the transformation; a global
+//!   variable whose evaluation failed is evaluated again when next referred to;
 //! - `xsl:apply-templates`, `xsl:call-template`, `xsl:next-match` with `xsl:with-param`;
 //!   template, function and global parameters and variables, with `as` conversion;
 //!   `xsl:function`;
@@ -37,10 +42,13 @@
 //!   that URI as document URI, the source document none (`document-uri(/)` is empty, as
 //!   in Saxon-HE 12.10).
 //!
-//! One known difference: Saxon simplifies constant predicates before computing the
+//! Known differences: Saxon simplifies constant predicates before computing the
 //! default priority of a pattern (`x[true()]` gets the priority of `x`, 0, where XSLT
 //! gives 0.5); this crate uses the pattern as written. The official stylesheets have
-//! no constant predicate in a pattern.
+//! no constant predicate in a pattern. Error messages are worded differently from
+//! Saxon's (the codes are the same), and some of Saxon's quote the values involved
+//! where this crate's do not: the warnings for errors in patterns are then fewer
+//! distinct messages, for the same patterns and codes.
 //!
 //! Refused when the stylesheet is prepared, rather than run differently from the
 //! reference engine: instructions that construct nodes (or call templates) inside an

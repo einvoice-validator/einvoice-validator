@@ -1,0 +1,4 @@
+error XTDE0640
+warnings 0
+pattern-errors
+---

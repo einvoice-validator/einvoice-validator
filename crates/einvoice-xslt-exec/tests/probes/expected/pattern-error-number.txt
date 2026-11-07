@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors 9:FORG0001 14:FORG0001
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:f="urn:f" xmlns:xs="http://www.w3.org/2001/XMLSchema"><n/><n/><n>1</n><n/><n/><n>2</n><n/><n/><m>1</m><m>2</m><m>3</m></out>

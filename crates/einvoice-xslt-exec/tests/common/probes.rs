@@ -5,6 +5,12 @@
 //! result                  or: error <CODE>
 //! warnings <N>            the number of XTDE0540 (ambiguous rule match) warnings, each
 //!                         distinct warning once, as Saxon's error reporter prints them
+//! pattern-errors <L:CODE> ...
+//!                         the dynamic errors recovered while matching a pattern, each
+//!                         reported as a warning: the distinct pairs of the line of the
+//!                         pattern's instruction and the error code, sorted (the
+//!                         messages are not compared: Saxon's quote values where ours
+//!                         do not, so that their distinct messages are not ours)
 //! ---
 //! <the serialized result, exactly as Saxon wrote it; empty after an error>
 //! ```
@@ -22,6 +28,8 @@ pub(crate) struct Expected {
     /// The error code, when the transformation failed.
     pub(crate) error: Option<String>,
     pub(crate) warnings: usize,
+    /// `(line, code)` of the errors recovered while matching patterns, sorted.
+    pub(crate) pattern_errors: Vec<(u32, String)>,
     pub(crate) output: String,
 }
 
@@ -31,13 +39,24 @@ impl Expected {
             Some(code) => format!("error {code}"),
             None => "result".to_owned(),
         };
-        format!("{status}\nwarnings {}\n---\n{}", self.warnings, self.output)
+        let pattern_errors: String = std::iter::once("pattern-errors".to_owned())
+            .chain(
+                self.pattern_errors
+                    .iter()
+                    .map(|(line, code)| format!("{line}:{code}")),
+            )
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!(
+            "{status}\nwarnings {}\n{pattern_errors}\n---\n{}",
+            self.warnings, self.output
+        )
     }
 
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
-        let mut parts = text.splitn(4, '\n');
-        let (Some(status), Some(warnings), Some("---")) =
-            (parts.next(), parts.next(), parts.next())
+        let mut parts = text.splitn(5, '\n');
+        let (Some(status), Some(warnings), Some(pattern_errors), Some("---")) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
         else {
             return Err("expected file: bad header".to_owned());
         };
@@ -53,9 +72,20 @@ impl Expected {
             .strip_prefix("warnings ")
             .and_then(|n| n.parse().ok())
             .ok_or_else(|| format!("bad warnings line {warnings:?}"))?;
+        let bad = || format!("bad pattern-errors line {pattern_errors:?}");
+        let pattern_errors = pattern_errors
+            .strip_prefix("pattern-errors")
+            .ok_or_else(bad)?
+            .split_whitespace()
+            .map(|pair| {
+                let (line, code) = pair.split_once(':').ok_or_else(bad)?;
+                Ok((line.parse().map_err(|_| bad())?, code.to_owned()))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         Ok(Self {
             error,
             warnings,
+            pattern_errors,
             output: parts.next().unwrap_or("").to_owned(),
         })
     }
@@ -81,6 +111,18 @@ pub(crate) fn probes() -> Result<Vec<String>, String> {
     }
     names.sort();
     Ok(names)
+}
+
+/// The `(line, code)` of a warning of this crate for an error recovered while matching
+/// a pattern (`line <L>: <CODE>: An error occurred matching pattern ...`), `None` for
+/// any other warning.
+pub(crate) fn pattern_error(warning: &str) -> Option<(u32, String)> {
+    let rest = warning.strip_prefix("line ")?;
+    let (line, rest) = rest.split_once(": ")?;
+    let (code, rest) = rest.split_once(": ")?;
+    rest.starts_with("An error occurred matching pattern ")
+        .then(|| Some((line.parse().ok()?, code.to_owned())))
+        .flatten()
 }
 
 pub(crate) fn expected_path(name: &str) -> PathBuf {

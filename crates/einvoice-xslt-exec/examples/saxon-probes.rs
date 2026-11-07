@@ -1,6 +1,8 @@
 //! The Saxon-HE oracle of the probes in `tests/probes/` (format in
 //! `tests/common/probes.rs`): runs Saxon on every probe stylesheet with `input.xml` and
 //! compares its result, error code and warnings with `expected/`, or rewrites them.
+//! Saxon may print two kinds of warnings, ambiguous rule matches (XTDE0540) and dynamic
+//! errors recovered while matching a pattern; any other is an error.
 //!
 //! ```text
 //! cargo run -p einvoice-xslt-exec --example saxon-probes              compare with expected/
@@ -163,6 +165,66 @@ fn error_code(stderr: &str) -> Option<String> {
         })
 }
 
+/// Saxon's warnings, read from its standard error: each is a line starting with
+/// `Warning`, which holds the location (`on line <L>`), then the lines up to the next
+/// warning or error (the first of which, indented, starts with the code; the message of
+/// an XTDE0540 warning goes on over unindented lines).
+#[derive(Debug, Default)]
+struct Warnings {
+    /// The number of XTDE0540 warnings.
+    ambiguities: usize,
+    /// `(line, code)` of the errors recovered while matching a pattern.
+    pattern_errors: std::collections::BTreeSet<(u32, String)>,
+    /// The other lines of the standard error, the error that stopped Saxon if any.
+    rest: String,
+}
+
+/// Whether a line of Saxon's standard error starts a warning or an error
+/// (`StandardErrorReporter`: `Warning`, `Error `, `Type error `, `Static error `,
+/// `Syntax error `).
+fn starts_report(line: &str) -> bool {
+    [
+        "Warning",
+        "Error ",
+        "Type error ",
+        "Static error ",
+        "Syntax error ",
+    ]
+    .iter()
+    .any(|p| line.starts_with(p))
+}
+
+fn warnings(stderr: &str) -> Result<Warnings, String> {
+    let mut found = Warnings::default();
+    let mut lines = stderr.lines().peekable();
+    while let Some(line) = lines.next() {
+        if !line.starts_with("Warning") {
+            found.rest.push_str(line);
+            found.rest.push('\n');
+            continue;
+        }
+        let mut body = Vec::new();
+        while let Some(more) = lines.next_if(|l| !starts_report(l)) {
+            body.push(more.trim());
+        }
+        let body = body.join(" ");
+        let code = error_code(&body).ok_or_else(|| format!("a warning without code: {line}"))?;
+        if code == "XTDE0540" {
+            found.ambiguities += 1;
+        } else if body.contains("An error occurred matching pattern") {
+            let at = line
+                .split_once(" on line ")
+                .and_then(|(_, after)| after.split(' ').next())
+                .and_then(|n| n.parse().ok())
+                .ok_or_else(|| format!("a warning without line: {line}"))?;
+            found.pattern_errors.insert((at, code));
+        } else {
+            return Err(format!("an unexpected warning: {line}\n  {body}"));
+        }
+    }
+    Ok(found)
+}
+
 fn run_saxon(
     java: &str,
     class_path: &std::ffi::OsStr,
@@ -191,29 +253,29 @@ fn run_saxon(
             probe.display()
         ));
     }
-    let warnings = stderr.matches("XTDE0540").count();
+    let found = warnings(&stderr).map_err(|e| format!("{}: {e}", probe.display()))?;
+    let pattern_errors = found.pattern_errors.into_iter().collect();
     if output.status.success() {
-        let unexpected: Vec<&str> = stderr
-            .lines()
-            .filter(|l| l.contains("Warning") || l.contains("Error"))
-            .collect();
-        if unexpected.len() != warnings {
+        if !found.rest.trim().is_empty() {
             return Err(format!(
-                "{}: Saxon printed warnings other than XTDE0540:\n{stderr}",
+                "{}: Saxon printed more than warnings:\n{stderr}",
                 probe.display()
             ));
         }
         Ok(Expected {
             error: None,
-            warnings,
+            warnings: found.ambiguities,
+            pattern_errors,
             output: stdout,
         })
     } else {
-        let code = error_code(&stderr)
+        // The code of the error, after the warnings.
+        let code = error_code(&found.rest)
             .ok_or_else(|| format!("{}: no error code in\n{stderr}", probe.display()))?;
         Ok(Expected {
             error: Some(code),
-            warnings,
+            warnings: found.ambiguities,
+            pattern_errors,
             output: String::new(),
         })
     }

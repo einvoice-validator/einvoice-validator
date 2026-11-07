@@ -1,6 +1,7 @@
 //! Every probe of `tests/probes/` gives the result Saxon-HE gave (`expected/`, written by
-//! the `saxon-probes` example): the same result tree, or the same error code, and the
-//! same number of distinct ambiguous-rule warnings. No Java is needed.
+//! the `saxon-probes` example): the same result tree, or the same error code, the same
+//! number of distinct ambiguous-rule warnings, and the same errors recovered while
+//! matching patterns (line and code). No Java is needed.
 //!
 //! Result trees are compared node by node, not as text: the serializations of two
 //! engines may differ (attribute order, quoting, where namespaces are declared) without
@@ -78,6 +79,49 @@ fn tree(xml: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// Compares the warnings of a transformation with Saxon's: the number of distinct
+/// XTDE0540 warnings (Saxon-HE 12.10's standard error reporter prints each distinct
+/// warning once), and the distinct `(line, code)` of the errors recovered while matching
+/// patterns. Any other warning is a failure.
+fn check_warnings(
+    name: &str,
+    warnings: &[String],
+    expected: &probes::Expected,
+    failures: &mut Vec<String>,
+) {
+    let distinct: std::collections::BTreeSet<&String> = warnings.iter().collect();
+    if distinct.len() != warnings.len() {
+        failures.push(format!("{name}: a warning is repeated: {warnings:?}"));
+    }
+    let ambiguities = distinct
+        .iter()
+        .filter(|w| w.starts_with("XTDE0540: "))
+        .count();
+    let pattern_errors: std::collections::BTreeSet<(u32, String)> = distinct
+        .iter()
+        .filter_map(|w| probes::pattern_error(w))
+        .collect();
+    if distinct
+        .iter()
+        .any(|w| !w.starts_with("XTDE0540: ") && probes::pattern_error(w).is_none())
+    {
+        failures.push(format!("{name}: an unknown warning: {warnings:?}"));
+    }
+    if ambiguities != expected.warnings {
+        failures.push(format!(
+            "{name}: {ambiguities} distinct XTDE0540 warnings, Saxon {}: {warnings:?}",
+            expected.warnings
+        ));
+    }
+    let pattern_errors: Vec<(u32, String)> = pattern_errors.into_iter().collect();
+    if pattern_errors != expected.pattern_errors {
+        failures.push(format!(
+            "{name}: errors recovered in patterns {pattern_errors:?}, Saxon {:?}: {warnings:?}",
+            expected.pattern_errors
+        ));
+    }
+}
+
 #[test]
 fn every_probe_gives_the_saxon_result() {
     let dir = probes::probes_dir();
@@ -85,7 +129,7 @@ fn every_probe_gives_the_saxon_result() {
     let input = std::fs::read_to_string(&input_path).unwrap();
     let uri = einvoice_xpath_eval::file_uri(&std::path::absolute(&input_path).unwrap());
     let names = probes::probes().unwrap();
-    assert!(names.len() >= 17, "{names:?}");
+    assert!(names.len() >= 25, "{names:?}");
     let mut failures = Vec::new();
     for name in &names {
         let stylesheet = std::fs::read_to_string(dir.join(format!("{name}.xsl"))).unwrap();
@@ -131,19 +175,12 @@ fn every_probe_gives_the_saxon_result() {
                         ours.output
                     ));
                 }
-                // Saxon-HE 12.10's standard error reporter prints each distinct warning
-                // once.
-                let distinct: std::collections::BTreeSet<&String> = ours.warnings.iter().collect();
-                if distinct.len() != expected.warnings {
-                    failures.push(format!(
-                        "{name}: {} distinct warnings, Saxon {}: {:?}",
-                        distinct.len(),
-                        expected.warnings,
-                        ours.warnings
-                    ));
-                }
+                check_warnings(name, &ours.warnings, &expected, &mut failures);
             }
-            (Err(e), Some(code)) if e.code() == code => {}
+            (Err(e), Some(code)) if e.code() == code => {
+                // The warnings reported before the error are not compared: the
+                // transformation gives none back when it fails.
+            }
             (Err(e), _) => failures.push(format!("{name}: error {e}, Saxon: {:?}", expected.error)),
             (Ok(ours), Some(code)) => {
                 failures.push(format!(

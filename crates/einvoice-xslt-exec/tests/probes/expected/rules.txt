@@ -1,5 +1,6 @@
 result
 warnings 19
+pattern-errors
 ---
 <?xml version="1.0" encoding="UTF-8"?><out xmlns:p="urn:p"><tie>second</tie><explicit>[A[Bt1]]</explicit><split>[S[St1]]</split><split-equal>[F[Et1]]</split-equal><default-priorities>(@a)(@*)(@p:*)(text)(x)(text)[all (*)](text)(x[2])(text)(*:x)(text)(comment)(text)(node)(text)(*)(text)(x)(text)(*)(text)(*)(text)</default-priorities><all>[all w1]|[all w2]</all><current>C1C2C3</current><builtin-default>[all w2]</builtin-default><builtin-named>
   t1

@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors 7:FORG0001 8:XPTY0004 10:FORG0001 13:FORG0001
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:f="urn:f" xmlns:xs="http://www.w3.org/2001/XMLSchema">(5(1))(y5(y2b(1)))(5(2a(1)))(5(1))</out>

@@ -249,6 +249,30 @@ fn ambiguous_matches_are_warnings() {
 }
 
 #[test]
+fn errors_in_patterns_are_warnings_reported_once() {
+    // Line 4: the rule's pattern fails on both b (xs:integer('x')); they get the next rule.
+    let executable = prepare(
+        r#"<xsl:output omit-xml-declaration="yes"/>
+<xsl:template match="/"><r><xsl:apply-templates select="a/b"/></r></xsl:template>
+<xsl:template match="b[xs:integer(@n) gt 0]" priority="2">1</xsl:template>
+<xsl:template match="b">2</xsl:template>"#,
+    )
+    .unwrap();
+    let result = executable
+        .transform("<a><b n='x'/><b n='x'/></a>", None)
+        .unwrap();
+    assert_eq!(result.output, format!("<r{NS}>22</r>"));
+    assert_eq!(result.warnings.len(), 1, "{:?}", result.warnings);
+    assert!(
+        result.warnings[0].starts_with(
+            "line 4: FORG0001: An error occurred matching pattern {b[xs:integer(@n) gt 0]}: "
+        ),
+        "{:?}",
+        result.warnings
+    );
+}
+
+#[test]
 fn a_test_error_names_the_line_of_its_xsl_when() {
     let executable = prepare(
         r#"<xsl:template match="/">

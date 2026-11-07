@@ -2,7 +2,8 @@
 //!
 //! Template rules are chosen as Saxon-HE chooses them: highest priority first, the last
 //! declared on a tie (an ambiguity is reported as a warning, as Saxon does), then the
-//! built-in rules of XSLT 2.0 section 6.6. Variables live in frames, one per template,
+//! built-in rules of XSLT 2.0 section 6.6. A dynamic error while matching a pattern is
+//! recovered as Saxon recovers it: a warning, and the rule does not match. Variables live in frames, one per template,
 //! function or global variable invocation; the XPath evaluator reads them through the
 //! [`Host`] interface, and calls stylesheet functions through it too.
 //!
@@ -14,6 +15,7 @@
 
 use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
+use std::collections::HashSet;
 use std::rc::{Rc, Weak};
 
 use einvoice_xdm::{AtomicType, AtomicValue, DateTime};
@@ -25,8 +27,10 @@ use einvoice_xpath_eval::{
 use einvoice_xslt::NumberLevel;
 
 use crate::error::{Result, TransformError, err};
-use crate::pattern::{self, Alternative, Matcher};
-use crate::prepare::{AvtItem, Binding, CompiledAvt, Executable, Inst, ModeRef, Value, WithParam};
+use crate::pattern::{self, Matcher};
+use crate::prepare::{
+    AvtItem, Binding, CompiledAvt, CountPattern, Executable, Inst, ModeRef, Value, WithParam,
+};
 use crate::sink::{SequenceSink, Sink, TextSink, TreeSink, XmlWriter, attribute_name};
 
 /// Fetches the documents that `document()` asks for, by absolute URI. The engine never
@@ -67,9 +71,12 @@ impl std::fmt::Debug for TransformOptions<'_> {
 pub struct Transformation {
     /// The result document, serialized as `xsl:output` asks.
     pub output: String,
-    /// Recoverable conditions reported as warnings, as Saxon reports them (ambiguous
-    /// template rule matches, XTDE0540), each time it reports them: Saxon's standard
-    /// error reporter then prints each distinct message once.
+    /// Recoverable conditions reported as warnings, as Saxon reports them, each
+    /// distinct message once in the order first reported, as Saxon's standard error
+    /// reporter prints them: ambiguous template rule matches (`XTDE0540: ...`), and
+    /// dynamic errors raised while matching a pattern, after which the node is taken
+    /// not to match (`line <L>: <CODE>: An error occurred matching pattern {...}:
+    /// <message>`, `L` the line of the `xsl:template` or `xsl:number`).
     pub warnings: Vec<String>,
 }
 
@@ -135,6 +142,7 @@ impl Executable {
             frames: RefCell::new(Vec::new()),
             documents: RefCell::new(Vec::new()),
             warnings: RefCell::new(Vec::new()),
+            warned: RefCell::new(HashSet::new()),
             stashed: RefCell::new(None),
         };
         let timezone = options.implicit_timezone.unwrap_or(0);
@@ -229,7 +237,9 @@ struct Runtime<'e, 'a> {
     frames: RefCell<Vec<Rc<Frame<'e>>>>,
     /// Documents loaded by `document()`, by absolute URI.
     documents: RefCell<Vec<(String, Node)>>,
+    /// The warnings, each distinct one once, in the order first reported.
     warnings: RefCell<Vec<String>>,
+    warned: RefCell<HashSet<String>>,
     /// The error a host callback raised, given back when the evaluator returns it.
     stashed: RefCell<Option<TransformError>>,
 }
@@ -798,7 +808,9 @@ impl<'e, 'a> Runtime<'e, 'a> {
             }
             Inst::Text(text) => sink.text(text),
             Inst::Number { line, level, count } => {
-                let text = self.number(*level, count.as_deref(), state).at(*line)?;
+                let text = self
+                    .number(*line, *level, count.as_ref(), state)
+                    .at(*line)?;
                 sink.text(&text).at(*line)
             }
             Inst::Element {
@@ -901,22 +913,62 @@ impl<'e, 'a> Runtime<'e, 'a> {
         }
     }
 
+    /// Whether `node` matches the pattern of a rule. A dynamic error while matching is
+    /// recovered as Saxon recovers it (see [`Runtime::pattern_error`]).
     fn rule_matches(&self, rank: u32, mode: usize, node: &Node) -> Result<bool> {
         let rule = &self.exe.modes[mode].rules[rank as usize];
-        let pattern = &self.exe.templates[rule.template].pattern;
+        let template = &self.exe.templates[rule.template];
         let matcher = Matcher { dc: self.dc()? };
         // A union pattern with an explicit priority is one rule: its alternatives in
-        // order.
-        let alternatives = match rule.alternative {
-            Some(index) => pattern.get(index..=index).unwrap_or_default(),
-            None => pattern.as_slice(),
+        // order, the first error ending the match.
+        let (alternatives, text) = match rule.alternative {
+            Some(index) => (
+                template.pattern.get(index..=index).unwrap_or_default(),
+                template
+                    .alternative_texts
+                    .get(index)
+                    .map_or("", String::as_str),
+            ),
+            None => (template.pattern.as_slice(), template.pattern_text.as_str()),
         };
-        for alternative in alternatives {
-            if matcher.matches(alternative, node)? {
-                return Ok(true);
-            }
+        let outcome = alternatives
+            .iter()
+            .try_fold(false, |found, a| Ok(found || matcher.matches(a, node)?));
+        outcome.or_else(|e| self.pattern_error(e, template.line, text))
+    }
+
+    /// A dynamic error raised while matching a pattern (of a template rule, or the
+    /// `count` pattern of `xsl:number`), as Saxon-HE 12.10 handles it
+    /// (`Pattern.matchesItem`): the node does not match, and the error is reported as
+    /// a warning, whatever its code, except a circularity (`XTDE0640`), which ends the
+    /// transformation. A global variable whose evaluation failed is not kept in error:
+    /// the next reference evaluates it again (`GlobalVariable.actuallyEvaluate`), in a
+    /// pattern or elsewhere. The refusals and bugs of this crate (`UNSUPPORTED`,
+    /// `INTERNAL`) are never recovered: Saxon would not have raised them.
+    fn pattern_error(
+        &self,
+        e: einvoice_xpath_eval::Error,
+        line: u32,
+        pattern: &str,
+    ) -> Result<bool> {
+        let e = self.xerr(e);
+        if matches!(e.code(), "XTDE0640" | "UNSUPPORTED" | "INTERNAL" | "HOST") {
+            return Err(e.at(line));
         }
+        self.warn(format!(
+            "line {line}: {}: An error occurred matching pattern {{{pattern}}}: {}",
+            e.code(),
+            e.message()
+        ));
         Ok(false)
+    }
+
+    /// Reports a warning, once: Saxon's standard error reporter prints each distinct
+    /// warning once.
+    fn warn(&self, message: String) {
+        if self.warned.borrow_mut().insert(message.clone()) {
+            self.warnings.borrow_mut().push(message);
+        }
     }
 
     /// The rule for `node` in `mode`, chosen exactly as Saxon-HE 12.10 chooses it
@@ -1000,7 +1052,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
             &self.exe.templates[b.template],
         );
         let later = if a.sequence > b.sequence { ta } else { tb };
-        self.warnings.borrow_mut().push(format!(
+        self.warn(format!(
             "XTDE0540: Ambiguous rule match for {} in mode {}: matches the template rules on line {} and line {}; the one on line {} is used",
             describe(node),
             mode.name,
@@ -1115,8 +1167,9 @@ impl<'e, 'a> Runtime<'e, 'a> {
 
     fn number(
         &self,
+        line: u32,
         level: NumberLevel,
-        count: Option<&'e [Alternative]>,
+        count: Option<&'e CountPattern>,
         state: &State<'_>,
     ) -> Result<String> {
         let Some(Item::Node(node)) = state.context.focus.as_ref().map(|f| &f.item) else {
@@ -1125,14 +1178,13 @@ impl<'e, 'a> Runtime<'e, 'a> {
         let matcher = Matcher { dc: self.dc()? };
         let counted = |n: &Node| -> Result<bool> {
             match count {
-                Some(alternatives) => {
-                    for a in alternatives {
-                        if matcher.matches(a, n)? {
-                            return Ok(true);
-                        }
-                    }
-                    Ok(false)
-                }
+                // As a template rule's pattern, an error is recovered (Saxon's
+                // `Navigator` matches the count pattern with `matchesItem`).
+                Some(pattern) => pattern
+                    .alternatives
+                    .iter()
+                    .try_fold(false, |found, a| Ok(found || matcher.matches(a, n)?))
+                    .or_else(|e| self.pattern_error(e, line, &pattern.text)),
                 None => Ok(n.kind() == node.kind()
                     && match (n.name(), node.name()) {
                         (Some(a), Some(b)) => a.same_expanded_name(b),

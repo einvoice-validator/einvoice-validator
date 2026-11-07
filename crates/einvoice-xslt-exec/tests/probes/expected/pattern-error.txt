@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors 7:XPTY0004 9:FORG0001 11:FORG0001 13:FOAR0001 15:FORG0001 17:FORG0001 19:FORG0001
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:f="urn:f" xmlns:p="urn:p" xmlns:xs="http://www.w3.org/2001/XMLSchema">[x][y][x]px[amounts][x][codes]text-split</out>

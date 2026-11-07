@@ -144,8 +144,9 @@ pub struct StylesheetReport {
     pub svrl: String,
     /// Its failed asserts and successful reports, in report order.
     pub findings: Vec<Finding>,
-    /// Recoverable conditions the transformation reported (ambiguous rule matches), as
-    /// the reference engine reports them.
+    /// Recoverable conditions the transformation reported (ambiguous rule matches,
+    /// dynamic errors raised while matching a pattern, after which the rule did not
+    /// match), as the reference engine reports them: each distinct message once.
     pub warnings: Vec<String>,
     /// The dynamic error that stopped the stylesheet, if it did not finish: then
     /// `svrl` is empty and there are no findings. This only happens in a report with
