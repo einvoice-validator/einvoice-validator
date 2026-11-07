@@ -1,0 +1,80 @@
+name: privacy-text
+
+# This repository is public. This workflow scans the text published on its
+# GitHub pages (issues, pull requests, comments, reviews, discussions,
+# releases, labels, milestones) with `scripts/privacy-guard.sh text`: the
+# private terms of the PRIVATE_TERMS secret and home paths. It runs once the
+# text is published, so a failed run means: edit or delete that text now.
+# The log names neither the term nor the matching text.
+#
+# Every string of the event payload is scanned: titles, bodies, comments,
+# branch names, label, milestone and release names, and the repository
+# description. `changes` is left out: it holds the text an edit replaced.
+#
+# Security: the job checks out one file, scripts/privacy-guard.sh, from the
+# default branch, never code from a pull request; it reads the event text as
+# data from the payload file ($GITHUB_EVENT_PATH), never through an
+# expression in a script; its token can only read the repository contents.
+
+# No concurrency group: each event carries its own text and must be scanned,
+# and a group would cancel the pending runs of a busy thread.
+on: # zizmor: ignore[concurrency-limits] every event must be scanned, none cancelled
+  issues:
+    types: [opened, edited, reopened]
+  # issue_comment and pull_request_target run with the secret for text
+  # written by anyone. They are dangerous when a run checks out, builds or
+  # runs what the event points at; this one only reads the payload as data.
+  issue_comment: # zizmor: ignore[dangerous-triggers] text only, nothing checked out or run from the event
+    types: [created, edited]
+  # pull_request_target, not pull_request: pull requests from forks get no
+  # secret under pull_request, so their titles and bodies would go unscanned.
+  # pull_request_target runs this file from the default branch with the
+  # secret; no step checks out, builds or runs anything from the pull
+  # request: the guard comes from the default branch and the pull request
+  # text is only read from the payload file.
+  pull_request_target: # zizmor: ignore[dangerous-triggers] text only, no checkout of the pull request
+    types: [opened, edited, reopened, synchronize]
+  # Reviews of pull requests from forks get no secret: the guard then fails
+  # for want of a term list rather than pass unscanned.
+  pull_request_review:
+    types: [submitted, edited]
+  pull_request_review_comment:
+    types: [created, edited]
+  discussion:
+    types: [created, edited]
+  discussion_comment:
+    types: [created, edited]
+  release:
+    types: [published, edited]
+  label:
+    types: [created, edited]
+  milestone:
+    types: [created, edited]
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  scan:
+    name: privacy guard (published text)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # the sparse checkout of the guard script
+    steps:
+      - name: Check out the guard script from the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/privacy-guard.sh
+          sparse-checkout-cone-mode: false
+      - name: Scan every string of the event
+        env:
+          PRIVATE_TERMS: ${{ secrets.PRIVATE_TERMS }}
+        run: |
+          jq -r 'del(.changes) | .. | strings' "$GITHUB_EVENT_PATH" >"$RUNNER_TEMP/event-text"
+          scripts/privacy-guard.sh text <"$RUNNER_TEMP/event-text"
