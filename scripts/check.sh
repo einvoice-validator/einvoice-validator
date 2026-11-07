@@ -109,7 +109,8 @@ job_oracle() {
     else
         scripts/fetch-saxon.sh || return 1
     fi
-    cargo xtask oracle
+    cargo xtask oracle || return 1
+    cargo run --locked -p einvoice-xdm --example saxon-oracle
 }
 # The pre-commit guard on the index; nothing staged, nothing to check.
 job_privacy() {
