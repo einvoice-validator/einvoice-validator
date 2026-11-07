@@ -295,6 +295,24 @@ ebv-15	edge.xml	/	vb	exists(//d:empty)
 ebv-16	edge.xml	/	vb	1 or p:any(1 div 0)
 ebv-17	edge.xml	/	vb	0 and p:any(1 div 0)
 ebv-18	edge.xml	/	vb	if (//d:empty) then 1 else 1 div 0
+andor-01	edge.xml	/	vb	xs:decimal(//d:item[1]/@id) > 0 and exists(//d:nothing)
+andor-02	edge.xml	/	vb	xs:decimal(//d:item[1]/@id) > 0 and exists(//d:empty)
+andor-03	edge.xml	/	vb	exists(//d:nothing) and xs:decimal(//d:item[1]/@id) > 0
+andor-04	edge.xml	/	vb	xs:decimal(//d:item[1]/@id) > 0 and normalize-space(//d:item) = ''
+andor-05	edge.xml	/	vb	xs:decimal(//d:item[1]/@id) > 0 or exists(//d:empty)
+andor-06	edge.xml	/	vb	xs:decimal(//d:item[1]/@id) > 0 or exists(//d:nothing)
+andor-07	edge.xml	/	vb	exists(//d:empty) or xs:decimal(//d:item[1]/@id) > 0
+andor-08	edge.xml	/	vb	xs:decimal(//d:item[1]/@id) > 0 or normalize-space(//d:item) = ''
+andor-09	edge.xml	/	vb	(xs:decimal(//d:item[1]/@id) > 0 and exists(//d:nothing)) or exists(//d:nothing)
+andor-10	edge.xml	/	vb	not(xs:decimal(//d:item[1]/@id) > 0 and exists(//d:nothing))
+andor-11	edge.xml	/	vb	if (xs:decimal(//d:item[1]/@id) > 0 or exists(//d:empty)) then 'y' else 'n'
+andor-12	edge.xml	/	v	//d:item[xs:decimal(@n) > 1 and @id = 'zz']
+andor-13	edge.xml	/	v	//*:item[xs:decimal(@n) > 1 or @id = 'd']/@id
+andor-14	edge.xml	/	vb	some $i in //*:item satisfies (xs:decimal($i/@n) > 5 and $i/@id = 'zz')
+andor-15	edge.xml	/	v	string(xs:decimal(//d:item[1]/@id) > 0 and exists(//d:nothing))
+andor-16	edge.xml	/	vb	(xs:decimal(//d:item[1]/@id) > 0 and exists(//d:empty)) and exists(//d:nothing)
+andor-17	edge.xml	/	vb	xs:decimal(//d:item[1]/@id) > 0 and (normalize-space(//d:item) = '' or exists(//d:empty))
+andor-18	edge.xml	//d:item	vb	xs:decimal(@n) > 1 and @id = 'b'
 pred-01	edge.xml	/	vb	(10, 20, 30)[2]
 pred-02	edge.xml	/	v	(10, 20, 30)[position() > 1]
 pred-03	edge.xml	/	vb	(10, 20, 30)[last()]

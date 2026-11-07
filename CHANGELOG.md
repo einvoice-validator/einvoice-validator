@@ -162,6 +162,9 @@ against.
 
 ### Fixed
 
+- `einvoice-xpath-eval` evaluates `and` and `or` as Saxon-HE 12.10 does: when the first operand
+  raises a dynamic error, the second is evaluated, and the error is raised only if the second
+  does not decide the result (an error of the second operand wins) (#3).
 - `einvoice-xsd` declares the licences of the OASIS UBL 2.1 schemas it embeds
   (`MIT AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND
   W3C-19980720 AND LicenseRef-ETSI-XAdES`) instead of MIT alone, and ships their texts in

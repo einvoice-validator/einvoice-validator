@@ -304,6 +304,27 @@ impl<'a> Run<'a> {
         })
     }
 
+    /// `lhs and rhs` (`decisive` false) or `lhs or rhs` (`decisive` true), as Saxon-HE
+    /// 12.10 evaluates them (`AndElaborator`, `OrElaborator`): the first operand first,
+    /// and its value decides when it is `decisive`; when it raises a dynamic error, the
+    /// second operand is evaluated all the same, and the error is raised only if the
+    /// second does not decide the result (an error of the second wins). A refusal or a
+    /// bug of this crate is never set aside.
+    fn and_or(&self, lhs: &Expr, rhs: &Expr, decisive: bool, ctx: &Ctx) -> Result<bool> {
+        match self.ebv(lhs, ctx) {
+            Ok(value) if value == decisive => Ok(decisive),
+            Ok(_) => self.ebv(rhs, ctx),
+            Err(e) if matches!(e.code(), ErrorCode::Unsupported | ErrorCode::Internal) => Err(e),
+            Err(e) => {
+                if self.ebv(rhs, ctx)? == decisive {
+                    Ok(decisive)
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+
     /// The effective boolean value of `expr`.
     pub(crate) fn ebv(&self, expr: &Expr, ctx: &Ctx) -> Result<bool> {
         match expr {
@@ -313,12 +334,12 @@ impl<'a> Run<'a> {
                 rhs,
                 strategy,
             } => self.general_comparison(*op, lhs, rhs, *strategy, ctx),
-            Expr::And(lhs, rhs) => Ok(self.ebv(lhs, ctx)? && self.ebv(rhs, ctx)?),
+            Expr::And(lhs, rhs) => self.and_or(lhs, rhs, false, ctx),
             // As Saxon: the union is not empty when one operand is not, read in turn.
             Expr::Union { lhs, rhs, .. } => {
                 Ok(self.has_node(lhs, ctx, "first")? || self.has_node(rhs, ctx, "second")?)
             }
-            Expr::Or(lhs, rhs) => Ok(self.ebv(lhs, ctx)? || self.ebv(rhs, ctx)?),
+            Expr::Or(lhs, rhs) => self.and_or(lhs, rhs, true, ctx),
             Expr::Quantified {
                 every,
                 sequence,
