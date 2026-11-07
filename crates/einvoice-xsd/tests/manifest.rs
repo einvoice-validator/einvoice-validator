@@ -1,5 +1,7 @@
 //! The vendored OASIS UBL 2.1 schemas match `schemas/oasis-ubl-2.1/SHA256SUMS`, the
-//! list has no file too many or too few, and the embedded copies are these files.
+//! list has no file too many or too few, and the embedded copies are these files. The
+//! licence expression of the crate names exactly the texts in `LICENSES/`, and each
+//! vendored file carries the terms its licence term stands for.
 #![cfg(test)]
 
 use std::collections::BTreeMap;
@@ -96,4 +98,89 @@ fn checksum_of_known_input() {
         sha256_hex(b"abc"),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
+}
+
+fn licences_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("LICENSES")
+}
+
+fn licence_text(id: &str) -> String {
+    std::fs::read_to_string(licences_dir().join(format!("{id}.txt"))).unwrap()
+}
+
+/// The terms of the licence expression of `Cargo.toml`, sorted.
+fn declared_licences() -> Vec<&'static str> {
+    let mut declared: Vec<&str> = env!("CARGO_PKG_LICENSE").split(" AND ").collect();
+    declared.sort_unstable();
+    declared
+}
+
+/// Runs of whitespace collapsed to one space, ends trimmed.
+fn collapse(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The term of the licence expression that covers each vendored file.
+fn licence_of(path: &str) -> &'static str {
+    match path {
+        "xsd/common/CCTS_CCT_SchemaModule-2.1.xsd" => "LicenseRef-UN-CEFACT-Copyright-Notice",
+        "xsd/common/UBL-xmldsig-core-schema-2.1.xsd" => "W3C-19980720",
+        "xsd/common/UBL-XAdESv132-2.1.xsd" | "xsd/common/UBL-XAdESv141-2.1.xsd" => {
+            "LicenseRef-ETSI-XAdES"
+        }
+        _ => "LicenseRef-OASIS-Copyright-Notice",
+    }
+}
+
+#[test]
+fn licence_expression_names_exactly_the_shipped_texts() {
+    let mut shipped = Vec::new();
+    files_under(&licences_dir(), &licences_dir(), &mut shipped);
+    let mut shipped: Vec<String> = shipped
+        .into_iter()
+        .map(|file| file.strip_suffix(".txt").unwrap().to_owned())
+        .collect();
+    shipped.sort();
+    assert_eq!(declared_licences(), shipped);
+}
+
+#[test]
+fn mit_text_is_the_repository_licence() {
+    let repository =
+        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../LICENSE"))
+            .unwrap();
+    assert_eq!(licence_text("MIT"), repository);
+}
+
+#[test]
+fn every_vendored_file_carries_the_terms_of_its_licence() {
+    let mut used = std::collections::BTreeSet::new();
+    for (path, text) in einvoice_xsd::UBL_2_1_FILES {
+        let licence = licence_of(path);
+        used.insert(licence);
+        let text = collapse(text);
+        match licence {
+            "LicenseRef-OASIS-Copyright-Notice" | "LicenseRef-UN-CEFACT-Copyright-Notice" => {
+                // Each paragraph of the licence text is in the file, word for word: the
+                // copyright line at the top and the notice.
+                for paragraph in licence_text(licence).split("\n\n") {
+                    assert!(text.contains(&collapse(paragraph)), "{path}: {paragraph}");
+                }
+            }
+            "W3C-19980720" => assert!(
+                text.contains("This document is governed by the W3C Software License")
+                    && text
+                        .contains("http://www.w3.org/Consortium/Legal/copyright-software-19980720"),
+                "{path}"
+            ),
+            _ => assert!(
+                text.contains("This is a copy of http://uri.etsi.org/01903/")
+                    && !text.contains("Copyright"),
+                "{path}"
+            ),
+        }
+    }
+    let mut declared = declared_licences();
+    declared.retain(|id| *id != "MIT");
+    assert_eq!(used.into_iter().collect::<Vec<_>>(), declared);
 }

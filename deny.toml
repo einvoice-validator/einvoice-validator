@@ -23,6 +23,17 @@ allow = [
 confidence-threshold = 0.8
 # Dev-dependencies are part of the licence check too.
 include-dev = true
+# einvoice-xsd embeds the OASIS UBL 2.1 schemas, which keep the terms in their own
+# headers (crates/einvoice-xsd/schemas/oasis-ubl-2.1/README.md, texts in
+# crates/einvoice-xsd/LICENSES/). Allowed for that crate only, not for the graph.
+exceptions = [
+    { crate = "einvoice-xsd", allow = [
+        "LicenseRef-OASIS-Copyright-Notice",
+        "LicenseRef-UN-CEFACT-Copyright-Notice",
+        "W3C-19980720",
+        "LicenseRef-ETSI-XAdES",
+    ] },
+]
 
 [bans]
 multiple-versions = "deny"

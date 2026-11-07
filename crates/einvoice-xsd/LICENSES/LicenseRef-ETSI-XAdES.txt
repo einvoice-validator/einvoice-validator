@@ -1,0 +1,40 @@
+Terms of xsd/common/UBL-XAdESv132-2.1.xsd and xsd/common/UBL-XAdESv141-2.1.xsd
+
+These two files are the ETSI XAdES schemas of ETSI TS 101 903 (XML Advanced
+Electronic Signatures), namespaces http://uri.etsi.org/01903/v1.3.2# and
+http://uri.etsi.org/01903/v1.4.1#, as modified by OASIS and published in the
+OASIS UBL 2.1 package (UBL 2.1 OASIS Standard, 4 November 2013,
+https://docs.oasis-open.org/ubl/os-UBL-2.1/UBL-2.1.zip). Each file starts with
+the header OASIS added, which states its origin and the change made:
+
+  UBL-XAdESv132-2.1.xsd: "This is a copy of
+  http://uri.etsi.org/01903/v1.3.2/XAdES.xsd modified only to change the
+  importing URI for the XML DSig schema."
+
+  UBL-XAdESv141-2.1.xsd: "This is a copy of
+  http://uri.etsi.org/01903/v1.4.1/XAdESv141.xsd modified only to change the
+  importing URI for the XAdES v1.3.2 schema."
+
+Neither these files nor the schemas ETSI publishes at those addresses carry a
+copyright or licence notice. The UBL 2.1 specification describes each of them
+as "provided only as a convenience for those users who choose to include an
+XAdES extension inside of a digital signature".
+
+The ETSI deliverable the schemas belong to (ETSI TS 101 903 V1.4.2, 2010-12)
+carries this copyright notification:
+
+  Copyright Notification
+  No part may be reproduced except as authorized by written permission.
+  The copyright and the foregoing restriction extend to reproduction in all
+  media.
+  (c) European Telecommunications Standards Institute 2010.
+  All rights reserved.
+
+The UBL 2.1 package as a whole is published under the OASIS notices
+(Copyright (c) OASIS Open 2001-2013), see LicenseRef-OASIS-Copyright-Notice.txt.
+
+The files are redistributed here unmodified, byte for byte as published in the
+UBL 2.1 package, with the OASIS header stating their origin. No licence beyond
+what the publishers grant is given or implied for them.
+
+THESE FILES ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.

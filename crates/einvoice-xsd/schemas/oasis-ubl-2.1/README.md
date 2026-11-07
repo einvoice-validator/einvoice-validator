@@ -16,20 +16,26 @@ are the ones in the published package, relative to its root. `einvoice-xsd` embe
 ## Licence
 
 These files are **not** covered by the MIT licence of this repository. Each keeps the terms
-stated in its own header, which is preserved:
+stated in its own header, which is preserved. The published crate therefore declares the SPDX
+expression `MIT AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice
+AND W3C-19980720 AND LicenseRef-ETSI-XAdES`: `MIT` for its code, one term per set of terms
+below, each with its text in the crate's `LICENSES/` directory.
 
 - the UBL schema modules (`UBL-*-2.1.xsd` other than the three below): copyright OASIS Open
   2013, under the notice at the end of each file, which allows them to be copied and
   distributed in whole provided the copyright notice and that paragraph are kept, and does not
-  allow the documents themselves to be modified;
+  allow the documents themselves to be modified (`LicenseRef-OASIS-Copyright-Notice`);
 - `xsd/common/CCTS_CCT_SchemaModule-2.1.xsd`: copyright UN/CEFACT 2006, under the notice in its
-  header, with the same conditions;
+  header, with the same conditions (`LicenseRef-UN-CEFACT-Copyright-Notice`);
 - `xsd/common/UBL-xmldsig-core-schema-2.1.xsd`: the W3C XML Signature schema (copyright The
   Internet Society and W3C), under the W3C Software License referenced in its header, as
-  modified by OASIS (DOCTYPE identifiers removed) and published in the UBL 2.1 package;
+  modified by OASIS (DOCTYPE identifiers removed) and published in the UBL 2.1 package
+  (`W3C-19980720`, the W3C Software Notice and License of 1998-07-20);
 - `xsd/common/UBL-XAdESv132-2.1.xsd` and `xsd/common/UBL-XAdESv141-2.1.xsd`: the ETSI XAdES
   schemas as modified by OASIS (import locations changed) and published in the UBL 2.1
-  package, with the OASIS header stating their origin.
+  package, with the OASIS header stating their origin. Neither these copies nor the schemas
+  ETSI publishes carry a licence notice; `LicenseRef-ETSI-XAdES` records what the publishers
+  state about them.
 
 This `README.md` and `SHA256SUMS` are not upstream files: they record where the files come
 from and their checksums.
