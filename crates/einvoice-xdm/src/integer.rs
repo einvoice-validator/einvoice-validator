@@ -1,6 +1,6 @@
 //! `xs:integer`: arbitrary precision.
 //!
-//! Saxon-HE 9.9 holds an integer either as a 64-bit `Int64Value` or as a
+//! Saxon-HE 12.10 holds an integer either as a 64-bit `Int64Value` or as a
 //! `BigIntegerValue`, and the two do not always behave alike: integer division
 //! (`div`) and the conversion to `xs:decimal` depend on it (see [`Integer::div`] and
 //! [`Integer::to_decimal`]). Saxon normalises the result of most operations to the
@@ -125,10 +125,12 @@ impl Integer {
         Ok(Self::big(parsed))
     }
 
-    /// The conversion of a double (`IntegerValue.makeIntegerValue(double)`):
-    /// truncation towards zero. Within the `long` range this is Java's saturating
-    /// `(long)` cast, so `2^63` becomes `9223372036854775807`. Beyond it, the value of
-    /// the decimal `Double.toString` writes (shortest digits that round to the double).
+    /// The conversion of a double (Saxon-HE 12.10's `IntegerValue.fromDouble`, used by
+    /// the cast to `xs:integer` and by `idiv` of doubles): truncation towards zero.
+    /// Within the `long` range this is Java's saturating `(long)` cast, so `2^63`
+    /// becomes `9223372036854775807`. Beyond it, where every double is whole, the
+    /// exact value of the double (its mantissa shifted by its exponent), in the big
+    /// representation.
     ///
     /// # Errors
     ///
@@ -147,18 +149,14 @@ impl Integer {
             );
         }
         if value > LONG_LIMIT || value < -LONG_LIMIT {
-            // Saxon uses FormatNumber.adjustToDecimal(value, 2), which starts from
-            // BigDecimal.valueOf(value), i.e. Double.toString. Its adjustments try
-            // shorter decimals and keep them only if they round to the same double;
-            // with the shortest representation of JDK 19+ none ever does. Such a
-            // value is whole, so its decimal has no fractional part.
-            let (digits, exponent) = crate::double::java_shortest(value.abs());
-            let mut magnitude = BigInt::zero();
-            for d in &digits {
-                magnitude = magnitude * 10_u8 + *d;
-            }
-            let zeros = exponent + 1 - i64::try_from(digits.len()).unwrap_or(0);
-            let magnitude = magnitude * crate::decimal::pow10(zeros.unsigned_abs());
+            // Saxon 12.10 (bug 7070) takes the 52 stored bits of the mantissa with
+            // the implicit leading 1 and shifts them by the unbiased exponent, which
+            // is at least 63 here, so the shift is to the left. (Saxon 9.9 went
+            // through the decimal digits of Double.toString instead.)
+            let bits = value.to_bits();
+            let mantissa = (bits & 0x000f_ffff_ffff_ffff) | 0x0010_0000_0000_0000;
+            let exponent = ((bits >> 52) & 0x7ff) - 1023;
+            let magnitude = BigInt::from(mantissa) << (exponent - 52);
             let value = if value < 0.0 { -magnitude } else { magnitude };
             return Ok(Self::big(value));
         }
@@ -184,8 +182,9 @@ impl Integer {
         self.value.to_string().parse::<f64>().unwrap_or(f64::NAN)
     }
 
-    /// The conversion to `xs:decimal` (`Converter.IntegerToDecimal`): a 64-bit value
-    /// keeps scale 0 (`new BigDecimalValue(long)`), a big one is stripped.
+    /// The conversion to `xs:decimal` when the integer's type is only known at run
+    /// time (`Converter.IntegerToDecimal`): a 64-bit value keeps scale 0
+    /// (`new BigDecimalValue(long)`), a big one is stripped.
     #[must_use]
     pub fn to_decimal(&self) -> Decimal {
         if self.big {
@@ -193,6 +192,14 @@ impl Integer {
         } else {
             Decimal::from_parts(self.value.clone(), 0)
         }
+    }
+
+    /// The conversion to `xs:decimal` of an integer statically known to be one
+    /// (Saxon-HE 12.10's `Converter.UpCastingConverter`, `copyAsSubType`): the
+    /// trailing zeros are always stripped, so `300` becomes `3E+2`, of scale -2.
+    #[must_use]
+    pub fn to_decimal_upcast(&self) -> Decimal {
+        Decimal::stripped(self.value.clone(), 0)
     }
 
     /// The decimal operand Saxon uses when an integer meets a decimal in arithmetic
@@ -281,8 +288,8 @@ impl Integer {
 
     /// Negation. A big value stays big; the 64-bit form normalises.
     ///
-    /// Saxon 9.9 recurses without end (stack overflow) when negating the 64-bit
-    /// value `-2^63`; this returns `2^63`.
+    /// Saxon-HE 12.10, like 9.9, recurses without end (stack overflow) when negating
+    /// the 64-bit value `-2^63`; this returns `2^63`.
     #[must_use]
     pub fn neg(&self) -> Self {
         if self.big {
@@ -417,8 +424,13 @@ mod tests {
         );
         assert_eq!(
             Integer::from_f64(1e23).unwrap().to_string(),
-            "100000000000000000000000"
+            "99999999999999991611392"
         );
+        assert_eq!(
+            Integer::from_f64(-2_f64.powi(64)).unwrap().to_string(),
+            "-18446744073709551616"
+        );
+        assert!(Integer::from_f64(1e23).unwrap().is_big_representation());
         assert_eq!(Integer::from_f64(-2.7).unwrap().to_string(), "-2");
     }
 }

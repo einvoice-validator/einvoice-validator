@@ -154,7 +154,10 @@ impl AtomicValue {
     }
 
     /// Casts the value to the target type, with the XPath 2.0 casting rules and
-    /// Saxon's lexical rules.
+    /// Saxon's lexical rules. This is the cast of an operand whose type is only known
+    /// at run time (Saxon's converter for the value's primitive type); see
+    /// [`AtomicValue::upcast`] for an operand statically known to be of a subtype of
+    /// the target.
     ///
     /// # Errors
     ///
@@ -215,6 +218,24 @@ impl AtomicValue {
                 T::DateTime => Ok(self.clone()),
                 _ => not_castable(self, target),
             },
+        }
+    }
+
+    /// The cast of an operand whose static type is known to be a subtype of `target`
+    /// (Saxon-HE 12.10's `CastExpression` then uses `Converter.UpCastingConverter`,
+    /// that is `copyAsSubType`). It differs from [`AtomicValue::cast`] in one case:
+    /// an `xs:integer` cast to `xs:decimal` has its trailing zeros stripped
+    /// ([`Integer::to_decimal_upcast`]), so `xs:decimal(xs:integer('300'))` has scale
+    /// -2 and `1.1 div` it has more digits than `1.1 div 300`. Any other pair is
+    /// [`AtomicValue::cast`].
+    ///
+    /// # Errors
+    ///
+    /// Those of [`AtomicValue::cast`].
+    pub fn upcast(&self, target: AtomicType) -> Result<Self> {
+        match (self, target) {
+            (Self::Integer(i), AtomicType::Decimal) => Ok(Self::Decimal(i.to_decimal_upcast())),
+            _ => self.cast(target),
         }
     }
 

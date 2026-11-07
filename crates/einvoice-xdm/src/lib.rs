@@ -1,6 +1,6 @@
 //! Atomic values of the XPath 2.0 data model, as the official EN 16931 and Peppol
 //! BIS Billing 3.0 validation stylesheets use them, with the behaviour of the
-//! reference engine, Saxon-HE 9.9.1-8.
+//! reference engine, Saxon-HE 12.10.
 //!
 //! * [`Decimal`]: exact, arbitrary precision `xs:decimal`, including Saxon's
 //!   precision for decimal division (at least 18 fractional digits, more when the

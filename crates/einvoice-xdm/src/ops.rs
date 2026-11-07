@@ -1,6 +1,6 @@
 //! Operators and functions on atomic values: arithmetic, comparisons, `fn:number`,
 //! the effective boolean value, `fn:round`, `fn:floor`, `fn:ceiling`, `fn:abs` and
-//! `fn:sum`, with the type promotions of XPath 2.0 as Saxon-HE 9.9 applies them.
+//! `fn:sum`, with the type promotions of XPath 2.0 as Saxon-HE 12.10 applies them.
 
 use std::cmp::Ordering;
 
@@ -296,14 +296,16 @@ pub fn value_compare(
 /// `GeneralComparison.compare` evaluates it:
 ///
 /// * two untyped values compare as strings; an untyped value and a string too;
-/// * an untyped value and a number: see [`untyped_numeric_compare`];
+/// * an untyped value and a number: when the number is NaN, true for `!=` and false
+///   otherwise, without reading the untyped value (Saxon-HE 12.10's
+///   `UntypedNumericComparer.quickCompare`); else see [`untyped_numeric_compare`];
 /// * an untyped value and another type: the untyped value is cast to that type;
 /// * otherwise a value comparison.
 ///
 /// # Errors
 ///
 /// `XPTY0004` when the types are not comparable, `FORG0001` when an untyped value
-/// cannot be cast to the type of the other operand.
+/// cannot be cast to the type of the other operand (but not when it meets a NaN).
 pub fn general_compare(
     a: &AtomicValue,
     op: ComparisonOp,
@@ -328,6 +330,12 @@ fn untyped_against(
 ) -> Result<bool> {
     let op_for_untyped_left = if untyped_is_right { inverse(op) } else { op };
     if other.is_numeric() {
+        // Saxon-HE 12.10 answers before looking at the untyped value, so that even
+        // one that is not a number is not an error. (Saxon 9.9 converted it, and
+        // Java's Double.compare made NaN equal to NaN and greater than any number.)
+        if other.is_nan() {
+            return Ok(op == ComparisonOp::NotEqual);
+        }
         let ordering = untyped_numeric_compare(untyped, other)?;
         return Ok(op_for_untyped_left.holds(ordering));
     }
@@ -364,11 +372,11 @@ const fn inverse(op: ComparisonOp) -> ComparisonOp {
 /// most 15 ASCII digits and the number an `xs:integer` within 64 bits, and as a
 /// double otherwise. Doubles compare with Java's `Double.compare`, in which `-0`
 /// is less than `0` and NaN equals NaN and is greater than everything, unlike the
-/// IEEE comparison used everywhere else.
+/// IEEE comparison used everywhere else ([`general_compare`] settles a numeric NaN
+/// before calling this, so only an untyped `NaN` reaches that case).
 ///
-/// Saxon caches the conversion of an untyped value to double between the
-/// comparisons of one general comparison over sequences; this function is the
-/// uncached comparison of one pair.
+/// Saxon-HE 12.10 converts the untyped value again for every pair it compares (9.9
+/// cached the conversion); this is the comparison of one pair.
 ///
 /// # Errors
 ///
@@ -588,8 +596,9 @@ pub fn abs(value: &AtomicValue) -> Result<AtomicValue> {
 }
 
 /// `fn:sum` with one argument: the integer 0 for no values, otherwise the values
-/// added from left to right, untyped values as doubles. Like Saxon, the values after
-/// a running total that is the double NaN are not read (and so not checked).
+/// added from left to right, untyped values as doubles. Like Saxon-HE 12.10
+/// (`Sum.SumFnElaborator`, which ignores `SumFold.isFinished`), every value is read
+/// and checked, also after a running total that is the double NaN.
 ///
 /// # Errors
 ///
@@ -600,8 +609,8 @@ pub fn sum<'a>(values: impl IntoIterator<Item = &'a AtomicValue>) -> Result<Atom
 }
 
 /// [`sum`] over values that are produced on demand and may fail: the first error of
-/// the input is returned, and, as in [`sum`], nothing is read after a running total
-/// that is the double NaN.
+/// the input, or of the check of a value, is returned. As in [`sum`], every value is
+/// read: a running total that is the double NaN does not stop the reading.
 ///
 /// # Errors
 ///
@@ -625,16 +634,10 @@ pub fn sum_lazily<E: From<XdmError>>(
                 .into());
             }
         };
-        let next = match total {
+        total = Some(match total {
             None => value,
             Some(t) => arithmetic(ArithmeticOp::Add, &t, &value)?,
-        };
-        // Saxon's fold stops reading once the total is a double NaN: the values
-        // after it are not checked.
-        if next.is_nan() {
-            return Ok(next);
-        }
-        total = Some(next);
+        });
     }
     Ok(total.unwrap_or_else(|| AtomicValue::Integer(Integer::from(0))))
 }
@@ -666,8 +669,13 @@ mod tests {
         assert!(general_compare(&untyped("-0"), ComparisonOp::Equal, &zero, 0).unwrap());
         assert!(!general_compare(&untyped("-0"), ComparisonOp::Equal, &dzero, 0).unwrap());
         let nan = AtomicValue::Double(f64::NAN);
-        assert!(general_compare(&untyped("NaN"), ComparisonOp::Equal, &nan, 0).unwrap());
-        assert!(general_compare(&untyped("5"), ComparisonOp::Less, &nan, 0).unwrap());
+        assert!(!general_compare(&untyped("NaN"), ComparisonOp::Equal, &nan, 0).unwrap());
+        assert!(!general_compare(&untyped("5"), ComparisonOp::Less, &nan, 0).unwrap());
+        assert!(!general_compare(&nan, ComparisonOp::Greater, &untyped("5"), 0).unwrap());
+        assert!(!general_compare(&untyped("abc"), ComparisonOp::Equal, &nan, 0).unwrap());
+        assert!(general_compare(&untyped("abc"), ComparisonOp::NotEqual, &nan, 0).unwrap());
+        // An untyped NaN against a number still compares with Double.compare.
+        assert!(general_compare(&untyped("NaN"), ComparisonOp::Greater, &zero, 0).unwrap());
         assert_eq!(
             general_compare(&untyped("abc"), ComparisonOp::Equal, &zero, 0)
                 .unwrap_err()

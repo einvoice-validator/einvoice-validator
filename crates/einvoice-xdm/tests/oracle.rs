@@ -1,4 +1,4 @@
-//! Equivalence with Saxon-HE 9.9.1-8: every case of `tests/oracle/cases.tsv` and
+//! Equivalence with Saxon-HE 12.10: every case of `tests/oracle/cases.tsv` and
 //! `tests/oracle/generated.tsv` is evaluated with this crate and compared with the
 //! result Saxon produced (`tests/oracle/expected.tsv`, written by the
 //! `saxon-oracle` example). Cases whose id starts with `refuse-` must be refused
@@ -23,7 +23,7 @@ fn operand(arg: &format::Arg) -> Result<AtomicValue, XdmError> {
         "string" => Ok(text.clone()),
         "untyped" | "node" => Ok(AtomicValue::UntypedAtomic(arg.lexical.clone())),
         "decimal" => to(AtomicType::Decimal),
-        "idecimal" => to(AtomicType::Integer)?.cast(AtomicType::Decimal),
+        "idecimal" => to(AtomicType::Integer)?.upcast(AtomicType::Decimal),
         "integer" => to(AtomicType::Integer),
         "double" => to(AtomicType::Double),
         "boolean" => to(AtomicType::Boolean),
@@ -264,7 +264,7 @@ fn every_case_matches_saxon() {
         cases.len()
     );
     println!(
-        "{} cases equal to Saxon-HE 9.9.1-8, {refused} refused as unsupported",
+        "{} cases equal to Saxon-HE 12.10, {refused} refused as unsupported",
         cases.len() - refused
     );
 }

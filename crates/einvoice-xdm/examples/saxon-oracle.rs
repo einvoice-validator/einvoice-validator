@@ -8,8 +8,9 @@
 //! cargo run -p einvoice-xdm --example saxon-oracle -- --write    run Saxon, rewrite expected.tsv
 //! ```
 //!
-//! Saxon-HE 9.9.1-8 is taken from `$SAXON_JAR`, else where `scripts/fetch-saxon.sh`
-//! puts it (`target/oracle/saxon/`); its SHA-256 is checked. Java from `$JAVA`, else
+//! Saxon-HE 12.10 is taken from `$SAXON_JAR`, else where `scripts/fetch-saxon.sh`
+//! puts it (`target/oracle/saxon/`), and the two XML Resolver jars it needs from the
+//! same directory; the SHA-256 of each jar is checked. Java from `$JAVA`, else
 //! `java`. Saxon runs with the UTC timezone, the implicit timezone the test uses.
 //! Double-to-string conversion of subnormal numbers and the decimal digits accepted
 //! in long integers come from the JVM: the goldens are produced with Java 21.
@@ -23,8 +24,24 @@ use std::process::{Command, ExitCode};
 
 use sha2::{Digest, Sha256};
 
-const SAXON_SHA256: &str = "504ad5c71b55a3fd04c5609419b5e51d51b419f26628b4b6254c38766487abdf";
-const SAXON_DEFAULT: &str = "target/oracle/saxon/Saxon-HE-9.9.1-8.jar";
+/// The class path of `net.sf.saxon.Transform`, file name and SHA-256 of each jar:
+/// Saxon-HE 12.10, then the XML Resolver 5.3.3 it depends on (plain and `data`), as
+/// `scripts/fetch-saxon.sh` fetches them.
+const SAXON_JARS: [(&str, &str); 3] = [
+    (
+        "Saxon-HE-12.10.jar",
+        "b571af282f25d7301059f788b9a149aab8b5cdc14ef3d212dc5425d3dcbb9a97",
+    ),
+    (
+        "xmlresolver-5.3.3.jar",
+        "1fe4d5b92f708dcdb82dbce12919e0171e6b5ca62c6dca6220483625098feb5f",
+    ),
+    (
+        "xmlresolver-5.3.3-data.jar",
+        "b0c487ad2f3e558be8d829c916d2458d10aca6a5bafa7a4d0524b70845e48a5c",
+    ),
+];
+const SAXON_DEFAULT: &str = "target/oracle/saxon/Saxon-HE-12.10.jar";
 
 fn main() -> ExitCode {
     match run() {
@@ -89,26 +106,7 @@ fn oracle(write_goldens: bool) -> Result<(), String> {
         }
     }
 
-    let jar = std::env::var_os("SAXON_JAR")
-        .map_or_else(|| workspace_root().join(SAXON_DEFAULT), PathBuf::from);
-    let bytes = std::fs::read(&jar).map_err(|e| {
-        format!(
-            "{}: {e} (run scripts/fetch-saxon.sh or set SAXON_JAR)",
-            jar.display()
-        )
-    })?;
-    let hash = Sha256::digest(&bytes)
-        .iter()
-        .fold(String::new(), |mut s, b| {
-            let _ = write!(s, "{b:02x}");
-            s
-        });
-    if hash != SAXON_SHA256 {
-        return Err(format!(
-            "{}: SHA-256 {hash}, expected {SAXON_SHA256}",
-            jar.display()
-        ));
-    }
+    let class_path = saxon_class_path()?;
 
     let work = workspace_root().join("target/oracle/xdm");
     std::fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
@@ -119,8 +117,9 @@ fn oracle(write_goldens: bool) -> Result<(), String> {
     let status = Command::new(&java)
         .env("TZ", "UTC")
         .arg("-Duser.timezone=UTC")
-        .arg("-jar")
-        .arg(&jar)
+        .arg("-cp")
+        .arg(&class_path)
+        .arg("net.sf.saxon.Transform")
         .arg(format!("-xsl:{}", oracle_dir().join("probe.xsl").display()))
         .arg(format!("-s:{}", input.display()))
         .arg(format!("-o:{}", output.display()))
@@ -142,7 +141,7 @@ fn oracle(write_goldens: bool) -> Result<(), String> {
         ));
     }
     let mut golden = String::from(
-        "# Saxon-HE 9.9.1-8 results of probe.xsl on cases.tsv and generated.tsv.\n\
+        "# Saxon-HE 12.10 results of probe.xsl on cases.tsv and generated.tsv.\n\
          # Written by `cargo run -p einvoice-xdm --example saxon-oracle -- --write`; do not edit.\n",
     );
     for ((id, result), case) in results.iter().zip(&cases) {
@@ -180,6 +179,42 @@ fn oracle(write_goldens: bool) -> Result<(), String> {
         problems.len(),
         problems.join("\n  ")
     ))
+}
+
+/// The class path of the oracle ([`SAXON_JARS`]): Saxon's jar from `$SAXON_JAR`, else
+/// [`SAXON_DEFAULT`], and the other jars from its directory, each checked.
+fn saxon_class_path() -> Result<std::ffi::OsString, String> {
+    let saxon = std::env::var_os("SAXON_JAR")
+        .map_or_else(|| workspace_root().join(SAXON_DEFAULT), PathBuf::from);
+    let dir = saxon.parent().unwrap_or_else(|| Path::new(""));
+    let mut jars = Vec::with_capacity(SAXON_JARS.len());
+    for (index, (name, sha256)) in SAXON_JARS.iter().enumerate() {
+        let jar = if index == 0 {
+            saxon.clone()
+        } else {
+            dir.join(name)
+        };
+        let bytes = std::fs::read(&jar).map_err(|e| {
+            format!(
+                "{}: {e} (run scripts/fetch-saxon.sh or set SAXON_JAR)",
+                jar.display()
+            )
+        })?;
+        let hash = Sha256::digest(&bytes)
+            .iter()
+            .fold(String::new(), |mut s, b| {
+                let _ = write!(s, "{b:02x}");
+                s
+            });
+        if hash != *sha256 {
+            return Err(format!(
+                "{}: SHA-256 {hash}, expected {sha256}",
+                jar.display()
+            ));
+        }
+        jars.push(jar);
+    }
+    std::env::join_paths(&jars).map_err(|e| format!("class path: {e}"))
 }
 
 /// Escapes text for XML character data, every non-ASCII or control character as a

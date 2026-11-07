@@ -1,5 +1,5 @@
 //! `xs:date` and `xs:dateTime`: parsing, string conversion and comparison, as
-//! Saxon-HE 9.9 performs them under its default XSD 1.1 rules (year zero allowed,
+//! Saxon-HE 12.10 performs them under its default XSD 1.1 rules (year zero allowed,
 //! years up to `2^31 - 1`). Values without a timezone are compared using an implicit
 //! timezone supplied by the caller. Durations and date arithmetic are not provided.
 

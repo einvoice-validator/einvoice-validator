@@ -1,12 +1,15 @@
 //! `xs:decimal`: arbitrary precision, exact arithmetic.
 //!
 //! A value is an unscaled integer and a scale, `unscaled × 10^-scale`, like the
-//! `java.math.BigDecimal` that Saxon-HE 9.9 uses. The scale is part of the observable
+//! `java.math.BigDecimal` that Saxon-HE 12.10 uses. The scale is part of the observable
 //! behaviour: Saxon computes the precision of a decimal division from the scales of
 //! its operands (see [`Decimal::checked_div`]). Saxon strips the trailing zeros of
-//! every decimal it creates, except when it converts a small `xs:integer` to
-//! `xs:decimal`, which keeps scale 0 (see `Integer::to_decimal`). This type keeps the
-//! same representation; equality and ordering are numeric and ignore it.
+//! every decimal it creates, except when a small `xs:integer` becomes an
+//! `xs:decimal` in arithmetic or in a cast whose operand type is only known at run
+//! time, which keep scale 0 (see `Integer::as_decimal_operand` and
+//! `Integer::to_decimal`); the cast of an operand statically known to be an
+//! `xs:integer` strips them (`Integer::to_decimal_upcast`). This type keeps the same
+//! representation; equality and ordering are numeric and ignore it.
 
 use std::cmp::Ordering;
 use std::fmt;

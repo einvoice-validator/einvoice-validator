@@ -10,7 +10,7 @@
   an integer) and the probe must observe run-time behaviour.
 
   version="2.0" like the official validation stylesheets; xsl:try is accepted by
-  Saxon-HE 9.9 in such a stylesheet.
+  Saxon-HE 12.10 in such a stylesheet.
 -->
 <xsl:stylesheet version="2.0"
     xmlns:xsl="http://www.w3.org/1999/XSL/Transform"

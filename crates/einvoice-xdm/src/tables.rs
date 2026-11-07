@@ -2,8 +2,9 @@
 //! Unicode version of the Rust toolchain. Both are checked against Saxon by the
 //! oracle tests (`tests/oracle/`).
 
-/// Code points matched by the regular expression escape `\d` in Saxon-HE 9.9: the
-/// general category Nd of Unicode 6.2, the version of Saxon's category tables.
+/// Code points matched by the regular expression escape `\d` in Saxon-HE 12.10: the
+/// general category Nd of Unicode 6.2, the version of Saxon's category tables
+/// (`net/sf/saxon/data/categories.xml`, the same data as in Saxon 9.9).
 /// Inclusive ranges.
 pub(crate) const SAXON_ND: &[(u32, u32)] = &[
     (0x0030, 0x0039),

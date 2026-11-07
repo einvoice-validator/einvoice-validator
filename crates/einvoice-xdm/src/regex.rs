@@ -2,7 +2,7 @@
 //!
 //! The XPath 2.0 dialect (XSD regular expressions plus `^`, `$`, reluctant
 //! quantifiers and back-references) is translated into the syntax of the `regex`
-//! crate, with the semantics of Saxon-HE 9.9 made explicit:
+//! crate, with the semantics of Saxon-HE 12.10 made explicit:
 //!
 //! * `.` matches any character except `\n` and `\r`;
 //! * `\s` is `[ \t\n\r]` only, `\d` the decimal digits of Unicode 6.2 (Saxon's

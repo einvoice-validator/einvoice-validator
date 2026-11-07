@@ -1,4 +1,4 @@
-//! `xs:double`: lexical parsing and string conversion as Saxon-HE 9.9 performs them.
+//! `xs:double`: lexical parsing and string conversion as Saxon-HE 12.10 performs them.
 //!
 //! * Parsing follows `StringToDouble11` (the XSD 1.1 rules Saxon applies by default),
 //!   including its hand-written fast path for short strings.

@@ -1,5 +1,5 @@
 # Probe cases of the atomic value layer. Format: tests/oracle/format.rs.
-# Every expected result is produced by Saxon-HE 9.9.1-8 (expected.tsv), never by hand.
+# Every expected result is produced by Saxon-HE 12.10 (expected.tsv), never by hand.
 # Ids starting with "refuse-" are cases this crate refuses on purpose (Unsupported).
 #
 # Operand kinds: string untyped node decimal idecimal (xs:decimal(xs:integer(.)))
@@ -316,6 +316,8 @@ dbl-ar-31	mod	double:-0	integer:3
 refuse-dbl-ar-32	sub	date:2020-01-02	date:2020-01-01
 dbl-ar-33	add	date:2020-01-02	integer:1
 dbl-ar-34	idiv	double:9.3e18	double:1
+dbl-ar-35	idiv	double:1e23	double:1
+dbl-ar-36	idiv	double:-1e23	integer:1
 
 # --- doubles: parsing (fn:number) ----------------------------------------------
 num-01	number	string:. 5
@@ -417,6 +419,9 @@ amt-21	v-eq	decimal:0.30	decimal:0.3
 amt-22	g-eq	node:100	integer:100
 amt-23	g-eq	untyped:1.5	decimal:1.5
 amt-24	sub	untyped:100.10	integer:1
+amt-25	sum	double:NaN	untyped:abc
+amt-26	sum	untyped:NaN	integer:1	boolean:true
+amt-27	sum	double:NaN	integer:1	decimal:2.5
 
 # --- general comparisons ---------------------------------------------------------
 cmp-01	g-eq	untyped:-0	integer:0
@@ -473,6 +478,11 @@ cmp-51	g-eq	decimal:0	untyped:-0
 cmp-52	g-ne	untyped:a	untyped:b
 cmp-53	g-eq	string:a	date:2020-01-01
 cmp-54	g-eq	untyped:5	untyped:5.0
+cmp-55	g-eq	untyped:abc	double:NaN
+cmp-56	g-ne	untyped:abc	double:NaN
+cmp-57	g-gt	double:NaN	untyped:5
+cmp-58	g-ne	double:NaN	node:abc
+cmp-59	g-ge	untyped:NaN	double:INF
 
 # --- value comparisons -------------------------------------------------------------
 vcmp-01	v-eq	untyped:5	integer:5

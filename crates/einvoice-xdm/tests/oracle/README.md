@@ -1,6 +1,6 @@
 # Saxon-HE oracle of `einvoice-xdm`
 
-Every expected result in this directory is produced by Saxon-HE 9.9.1-8, the reference
+Every expected result in this directory is produced by Saxon-HE 12.10, the reference
 engine of the official validation stylesheets, never written by hand.
 
 | file | content |
@@ -16,8 +16,8 @@ The test `tests/oracle.rs` evaluates every case with this crate and compares wit
 valid in Saxon and refused on purpose by this crate (`ErrorCode::Unsupported`).
 
 Regenerating the goldens needs Java 21 (the JVM provides the digits Saxon writes for
-subnormal doubles and the decimal digits it accepts in long integers) and Saxon-HE, fetched
-by `scripts/fetch-saxon.sh`:
+subnormal doubles and the decimal digits it accepts in long integers) and Saxon-HE with the
+two XML Resolver jars it needs, fetched by `scripts/fetch-saxon.sh`:
 
 ```sh
 scripts/fetch-saxon.sh
