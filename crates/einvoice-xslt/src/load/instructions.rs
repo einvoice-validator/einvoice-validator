@@ -8,10 +8,10 @@ use super::{Failed, InScope, Load, Loader, XSL, is_xsl};
 use crate::error::LoadErrorKind;
 use crate::ir::{
     ApplyMode, ApplyTemplates, Attribute, CallTemplate, Choose, Comment, ForEach, If, Instruction,
-    LiteralAttribute, LiteralElement, Mode, NamespaceBinding, NextMatch, Number, NumberLevel,
-    Sequence, Text, TextOrigin, ValueOf, Variable, When,
+    LiteralAttribute, LiteralElement, Mode, NextMatch, Number, NumberLevel, Sequence, Text,
+    TextOrigin, ValueOf, Variable, When,
 };
-use einvoice_xpath::{XML_NAMESPACE, is_xml_whitespace, parse_avt, parse_expr, parse_pattern};
+use einvoice_xpath::{is_xml_whitespace, parse_avt, parse_expr, parse_pattern};
 
 /// XSLT elements that are supported but not as instructions.
 const DECLARATIONS: [&str; 8] = [
@@ -311,6 +311,7 @@ impl<'input> Loader<'_, 'input> {
         Ok(Attribute {
             line: self.line(node),
             name,
+            namespaces: self.in_scope_namespaces(node, false),
             select,
             body,
         })
@@ -398,14 +399,7 @@ impl<'input> Loader<'_, 'input> {
                 }
             }
         }
-        let namespaces = node
-            .namespaces()
-            .filter(|ns| ns.uri() != XSL && ns.uri() != XML_NAMESPACE)
-            .map(|ns| NamespaceBinding {
-                prefix: ns.name().map(str::to_owned),
-                uri: ns.uri().to_owned(),
-            })
-            .collect();
+        let namespaces = self.in_scope_namespaces(node, true);
         let body = self.sequence_constructor(node);
         if failed {
             return Err(Failed);

@@ -23,8 +23,9 @@ against.
   with XSLT match patterns, sequence types and attribute value templates. Constructs outside
   the subset are refused with an error that names them.
 - `einvoice-xslt`: loader for the XSLT 2.0 subset of the official validation stylesheets
-  (templates, modes, priorities, functions, variables and parameters, with source lines). Any
-  other element or attribute is refused with an error that names it and its line.
+  (templates, modes, priorities, functions, variables and parameters, with source lines, and
+  the namespaces in scope of literal result elements and `xsl:attribute`, equal sets shared).
+  Any other element or attribute is refused with an error that names it and its line.
 - `einvoice-xpath-eval`: node model and evaluator of that XPath 2.0 subset, with the behaviour
   of Saxon-HE 9.9.1-8. Unknown functions and variables are refused when an expression is
   compiled. Checked against Saxon-HE on every distinct expression of the CEN 1.3.17 stylesheet,

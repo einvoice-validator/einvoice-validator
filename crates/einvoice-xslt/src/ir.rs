@@ -5,6 +5,7 @@
 //! templates parsed templates; names are resolved [`QName`]s.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use einvoice_xpath::{Avt, Expr, Pattern, PatternAlternative, QName, SequenceType};
 
@@ -402,6 +403,9 @@ pub struct Attribute {
     pub line: u32,
     /// `name`
     pub name: Avt,
+    /// The namespaces in scope on the element, which resolve the prefix of the computed
+    /// name (the implicit `xml` namespace excepted). Equal sets are shared.
+    pub namespaces: Arc<[NamespaceBinding]>,
     /// `select`; without it, the value comes from the body.
     pub select: Option<Expr>,
     /// The body (empty when `select` is present).
@@ -468,7 +472,8 @@ pub struct LiteralElement {
     pub attributes: Vec<LiteralAttribute>,
     /// The namespace nodes copied to the result (XSLT 2.0 section 11.1.3): every namespace
     /// in scope on the element except the XSLT namespace and the implicit `xml` namespace.
-    pub namespaces: Vec<NamespaceBinding>,
+    /// Equal sets are shared.
+    pub namespaces: Arc<[NamespaceBinding]>,
     /// The body.
     pub body: Vec<Instruction>,
 }

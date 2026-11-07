@@ -8,10 +8,12 @@ mod declarations;
 mod instructions;
 mod strip;
 
+use std::sync::Arc;
+
 use roxmltree::{Attribute, Document, Node};
 
 use crate::error::{LoadError, LoadErrorKind, LoadErrors};
-use crate::ir::Stylesheet;
+use crate::ir::{NamespaceBinding, Stylesheet};
 use einvoice_xpath::{Namespaces, QName, XML_NAMESPACE, is_ncname, is_xml_whitespace};
 
 pub(crate) const XSL: &str = "http://www.w3.org/1999/XSL/Transform";
@@ -41,6 +43,8 @@ pub(crate) struct Loader<'a, 'input> {
     doc: &'a Document<'input>,
     line_starts: Vec<usize>,
     errors: Vec<LoadError>,
+    /// The distinct namespace sets seen so far, shared by the elements that have them.
+    namespace_sets: Vec<Arc<[NamespaceBinding]>>,
 }
 
 /// Loads a stylesheet from its text.
@@ -57,6 +61,7 @@ pub(crate) fn load(text: &str) -> Result<Stylesheet, LoadErrors> {
             .chain(text.match_indices('\n').map(|(i, _)| i + 1))
             .collect(),
         errors: Vec::new(),
+        namespace_sets: Vec::new(),
     };
     let result = loader.stylesheet(doc.root_element());
     match result {
@@ -82,6 +87,29 @@ where
 }
 
 impl Loader<'_, '_> {
+    /// The namespaces in scope on `node`, without the implicit `xml` namespace and, when
+    /// `exclude_xslt`, without the XSLT namespace; an equal set seen before is shared.
+    pub(crate) fn in_scope_namespaces(
+        &mut self,
+        node: Node<'_, '_>,
+        exclude_xslt: bool,
+    ) -> Arc<[NamespaceBinding]> {
+        let set: Vec<NamespaceBinding> = node
+            .namespaces()
+            .filter(|ns| ns.uri() != XML_NAMESPACE && !(exclude_xslt && ns.uri() == XSL))
+            .map(|ns| NamespaceBinding {
+                prefix: ns.name().map(str::to_owned),
+                uri: ns.uri().to_owned(),
+            })
+            .collect();
+        if let Some(shared) = self.namespace_sets.iter().find(|s| ***s == *set) {
+            return Arc::clone(shared);
+        }
+        let shared: Arc<[NamespaceBinding]> = set.into();
+        self.namespace_sets.push(Arc::clone(&shared));
+        shared
+    }
+
     /// The 1-based line of a byte offset.
     pub(crate) fn line_at(&self, offset: usize) -> u32 {
         let line = self.line_starts.partition_point(|&start| start <= offset);
