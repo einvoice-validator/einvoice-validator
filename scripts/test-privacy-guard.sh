@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tests of scripts/privacy-guard.sh (every mode) and .githooks/pre-push.
+# Tests of scripts/privacy-guard.sh (every mode), .githooks/pre-push and
+# scripts/claude-hook-privacy.sh.
 #
 #   scripts/test-privacy-guard.sh
 #
@@ -14,6 +15,7 @@ set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=$(cd "$here/.." && pwd)
 guard="$here/privacy-guard.sh"
+hook="$here/claude-hook-privacy.sh"
 prepush="$root/.githooks/pre-push"
 
 if [ "$(id -u)" = 0 ]; then
@@ -280,6 +282,56 @@ expect 1 "push to a remote branch named with a term" \
 expect 0 "nothing to push" in_dir "$pushrepo" with_text '' "$prepush" origin url
 git -C "$pushrepo" commit -q --allow-empty -m "Note for $term"
 expect 1 "push of a history with a term" in_dir "$pushrepo" with_text "refs/heads/main $head refs/heads/main $zero\n" "$prepush" origin url
+
+echo "== Claude Code hook"
+files="$work/files"
+mkdir -p "$files/$term-dir"
+printf 'A clean body.\n' >"$files/clean.md"
+printf 'A clean body.\n' >"$files/$term-dir/clean.md"
+printf 'Body with\n%s inside.\n' "${term^}" >"$files/dirty.md"
+printf 'Body for %s\n%s.\n' "$pair_a" "$pair_b" >"$files/split.md"
+: >"$files/empty.md"
+# hook_json <command>: the hook input of a Bash tool call run in $files.
+hook_json() { jq -n --arg c "$1" --arg d "$files" '{tool_name: "Bash", cwd: $d, tool_input: {command: $c}}'; }
+run_hook() { hook_json "$1" | "$hook"; }
+expect 0 "unrelated command" run_hook "ls -la $files"
+expect 0 "read-only gh" run_hook "gh issue view 13 && cat $files/dirty.md"
+expect 0 "gh api GET" run_hook "gh api repos/o/r/issues/3"
+expect 0 "clean gh issue create" run_hook "gh issue create --title 'Fix the parser' --body-file $files/clean.md"
+expect 2 "body file with a term" run_hook "gh issue create --title 'Fix the parser' --body-file $files/dirty.md"
+expect 2 "body file with a split two-word term" run_hook "gh issue create --title t --body-file $files/split.md"
+expect 2 "relative -F body file with a term" run_hook "gh issue comment 3 -F dirty.md"
+expect 2 "cd, then a relative body file" run_hook "cd $files && gh pr comment 3 --body-file=dirty.md"
+expect 0 "empty body file" run_hook "gh issue comment 3 --body-file $files/empty.md"
+expect 2 "term in the title" run_hook "gh issue create --title 'Support ${term}' --body x"
+expect 2 "home path in the body" run_hook "gh issue create --title t --body 'see $home_linux/x'"
+expect 2 "body file that does not exist yet" run_hook "gh issue create --title t --body-file $files/missing.md"
+expect 2 "body from a pipe" run_hook "cat $files/clean.md | gh issue create --title t -F -"
+expect 0 "body from a redirected clean file" run_hook "gh issue create --title t -F - < $files/clean.md"
+expect 2 "body from a redirected file with a term" run_hook "gh issue create --title t -F - < $files/dirty.md"
+expect 0 "clean heredoc body with HTML" run_hook "$(printf '%s\n' "gh pr create --title t --body-file - <<'EOF'" '<code>ok</code> and cat /x/y' 'EOF')"
+expect 2 "heredoc body with a split two-word term" run_hook "$(printf '%s\n' "gh pr create --title t -F - <<'EOF'" "about $pair_a" "$pair_b here" 'EOF')"
+html_cmd=$(printf '%s\n' "gh pr create --title t --body \"\$(cat <<'EOF'" "<code>$home_linux</code>" "EOF" ")\"")
+expect 2 "heredoc body with a home path in HTML" run_hook "$html_cmd"
+expect 2 "body from cat of a file with a term" run_hook "gh pr create --title t --body \"\$(cat $files/dirty.md)\""
+expect 2 "body from \$(< file) with a term" run_hook "gh pr create --title t --body \"\$(<$files/dirty.md)\""
+expect 0 "path through a directory named with a term" run_hook "gh issue create --title t --body-file $files/$term-dir/clean.md"
+expect 0 "cd into a directory named with a term" run_hook "cd $files/$term-dir && gh issue create --title t -F clean.md"
+expect 2 "gh api field from a file with a term" run_hook "gh api repos/o/r/issues -f title=x -F body=@$files/dirty.md"
+expect 0 "gh api field from a clean file" run_hook "gh api repos/o/r/issues -f title=x -F body=@$files/clean.md"
+expect 2 "gh api literal field with a term" run_hook "gh api -X PATCH repos/o/r/issues/3 -f title='about $term'"
+expect 2 "gh api graphql with a term" run_hook "gh api graphql -f query='mutation { x(body: \"$term\") }'"
+expect 2 "release asset with a term" run_hook "gh release create v1 $files/dirty.md --notes ok"
+expect 0 "clean release asset in a directory named with a term" run_hook "gh release create v1 $files/$term-dir/clean.md --notes-file $files/clean.md"
+expect 2 "release notes file with a term" run_hook "gh release create v1 --notes-file $files/dirty.md"
+expect 2 "gh repo edit description with a term" run_hook "gh repo edit --description 'for $term'"
+expect 2 "git tag message with a term" run_hook "git tag -a v1 -m 'release for $term'"
+expect 2 "git tag message file with a term" run_hook "git tag v1 -F $files/dirty.md"
+expect 2 "git note with a term" run_hook "git -C $files notes add -m 'by $term'"
+expect 0 "clean git note" run_hook "git -C $files notes add -m 'reviewed'"
+expect 2 "no term list: blocked" without_list run_hook "gh issue create --title t --body x"
+expect 2 "hook input that is not JSON" with_text 'not json' "$hook"
+expect 0 "a tool call without a command" with_text '{"tool_name":"Bash","tool_input":{}}' "$hook"
 
 echo
 echo "$passed passed, $failed failed"

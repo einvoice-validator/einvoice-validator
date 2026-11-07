@@ -46,6 +46,6 @@ jobs:
         with:
           persist-credentials: false
       - name: ShellCheck
-        run: shellcheck --version && shellcheck scripts/privacy-guard.sh scripts/test-privacy-guard.sh .githooks/*
+        run: shellcheck --version && shellcheck scripts/privacy-guard.sh scripts/claude-hook-privacy.sh scripts/test-privacy-guard.sh .githooks/*
       - name: Tests (synthetic term list)
         run: scripts/test-privacy-guard.sh
