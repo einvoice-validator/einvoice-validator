@@ -1,3 +1,9 @@
 # LF everywhere, on every platform: the shell scripts and hooks must run
 # unchanged under Git Bash on Windows (core.autocrlf is on there).
 * text=auto eol=lf
+# Vendored upstream files, and the files copied or extracted from them, are
+# kept byte for byte (SHA256SUMS and the corpus check rely on it): no
+# end-of-line conversion. Upstream LICENSE.txt has CRLF line ends.
+artefacts/** -text
+corpus/*/vefa/** -text
+corpus/*/LICENSE.txt -text
