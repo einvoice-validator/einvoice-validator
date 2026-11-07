@@ -1,5 +1,5 @@
-//! The reference oracle: Saxon-HE runs the official compiled XSLT on every
-//! case; its SVRL, in canonical form, is the golden result.
+//! The reference oracle: Saxon-HE runs each compiled XSLT of a rule set on
+//! every case; its SVRL, in canonical form, is the golden result.
 //!
 //! Saxon is not part of the repository: `scripts/fetch-saxon.sh` downloads
 //! it from Maven Central into `target/oracle/saxon/`, with the two jars of the
@@ -10,8 +10,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::corpus::{self, Case, GOLDEN_DIR, GOLDEN_SUFFIX};
-use crate::ruleset::RuleSet;
+use crate::corpus::{self, Case, GOLDEN_SUFFIX};
+use crate::ruleset::{RuleSet, Stylesheet};
 use crate::svrl;
 use crate::util::{self, Error, Result};
 
@@ -50,9 +50,10 @@ pub(crate) struct Options {
     pub(crate) write: bool,
 }
 
-/// What a run found.
+/// What a run of one stylesheet found.
 #[derive(Debug, Default)]
 pub(crate) struct Outcome {
+    pub(crate) stylesheet: &'static str,
     pub(crate) cases: usize,
     pub(crate) failed_asserts: usize,
     pub(crate) successful_reports: usize,
@@ -61,45 +62,72 @@ pub(crate) struct Outcome {
     pub(crate) problems: Vec<String>,
 }
 
-/// Runs Saxon on every case of the rule set, then compares the canonical SVRL
-/// with the goldens (or writes them).
-pub(crate) fn run(root: &Path, rule_set: &RuleSet, options: &Options) -> Result<Outcome> {
+/// Runs Saxon with each stylesheet of the rule set on every case, then
+/// compares the canonical SVRL with the goldens (or writes them). One outcome
+/// per stylesheet.
+pub(crate) fn run(root: &Path, rule_set: &RuleSet, options: &Options) -> Result<Vec<Outcome>> {
     let class_path = saxon_class_path(&options.saxon)?;
-    // The cases come from the committed index, which `corpus::verify` checks
-    // against the vendored files.
+    // The cases come from the index, which `corpus::verify` checks against the
+    // upstream files (or `corpus::write` has just written).
     let cases = corpus::read_index(root, rule_set)?;
+    let base = rule_set.base(root);
 
     let work = util::join(root, &format!("{WORK_DIR}/{}", rule_set.name));
     util::remove_dir(&work)?;
     let input_dir = work.join("in");
-    let output_dir = work.join("out");
-    std::fs::create_dir_all(&output_dir)
-        .map_err(|e| Error::new(format!("cannot create {}: {e}", output_dir.display())))?;
     // Saxon processes a whole directory in one JVM. The cases are copied there
     // under plain names (c00001.xml, ...), so that names with spaces or other
     // special characters never reach the command line or a URI.
     for (index, case) in cases.iter().enumerate() {
-        let bytes = util::read(&util::join(root, &case.input))?;
+        let bytes = util::read(&util::join(&base, &case.input))?;
         util::write(&input_dir.join(staged_name(index)), &bytes)?;
     }
+    let mut outcomes = Vec::new();
+    for stylesheet in rule_set.stylesheets {
+        let output_dir = work.join(format!("out-{}", stylesheet.name));
+        std::fs::create_dir_all(&output_dir)
+            .map_err(|e| Error::new(format!("cannot create {}: {e}", output_dir.display())))?;
+        outcomes.push(run_stylesheet(
+            root,
+            rule_set,
+            stylesheet,
+            &cases,
+            options,
+            &class_path,
+            &work,
+        )?);
+    }
+    Ok(outcomes)
+}
 
-    let xslt = util::join(
-        root,
-        &format!("{}/{}", rule_set.vendored_dir(), rule_set.xslt),
-    );
+/// Runs Saxon with one stylesheet on the cases staged in `work/in`.
+fn run_stylesheet(
+    root: &Path,
+    rule_set: &RuleSet,
+    stylesheet: &Stylesheet,
+    cases: &[Case],
+    options: &Options,
+    class_path: &OsString,
+    work: &Path,
+) -> Result<Outcome> {
+    let base = rule_set.base(root);
+    let input_dir = work.join("in");
+    let output_dir = work.join(format!("out-{}", stylesheet.name));
+    let xslt = util::join(&base, stylesheet.xslt);
     let threads = std::thread::available_parallelism().map_or(1, |n| n.get().min(8));
     let mut command = Command::new(&options.java);
     command
         .arg("-cp")
-        .arg(&class_path)
+        .arg(class_path)
         .arg("net.sf.saxon.Transform")
         .arg(arg("-xsl:", &xslt))
         .arg(arg("-s:", &input_dir))
         .arg(arg("-o:", &output_dir))
         .arg(format!("-threads:{threads}"));
     eprintln!(
-        "oracle: {}: Saxon-HE {SAXON_VERSION} on {} cases ({threads} threads)",
+        "oracle: {} {}: Saxon-HE {SAXON_VERSION} on {} cases ({threads} threads)",
         rule_set.name,
+        stylesheet.name,
         cases.len()
     );
     let output = command
@@ -125,6 +153,7 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet, options: &Options) -> Result<
     }
 
     let mut outcome = Outcome {
+        stylesheet: stylesheet.name,
         cases: cases.len(),
         ..Outcome::default()
     };
@@ -132,8 +161,8 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet, options: &Options) -> Result<
     if options.write {
         // Rewritten from scratch, so that no stale golden survives.
         util::remove_dir(&util::join(
-            root,
-            &format!("{}/{GOLDEN_DIR}", rule_set.corpus_dir()),
+            &base,
+            &format!("{}/{}", rule_set.corpus_dir(), stylesheet.golden_dir),
         ))?;
     }
     for (index, case) in cases.iter().enumerate() {
@@ -149,16 +178,15 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet, options: &Options) -> Result<
         }
         count(&canonical, &mut outcome)?;
         compare_or_write(
-            root,
-            rule_set,
-            case,
+            &base,
+            &case.golden(rule_set, stylesheet),
             &canonical,
             options.write,
             &mut outcome.problems,
         )?;
     }
     if !options.write {
-        stale_goldens(root, rule_set, &cases, &mut outcome.problems)?;
+        stale_goldens(&base, rule_set, stylesheet, cases, &mut outcome.problems)?;
     }
     Ok(outcome)
 }
@@ -233,42 +261,40 @@ fn count(canonical: &str, outcome: &mut Outcome) -> Result<()> {
     Ok(())
 }
 
+/// Writes the golden `path` (relative to `base`), or compares it with `canonical`.
 fn compare_or_write(
-    root: &Path,
-    rule_set: &RuleSet,
-    case: &Case,
+    base: &Path,
+    path: &str,
     canonical: &str,
     write: bool,
     problems: &mut Vec<String>,
 ) -> Result<()> {
-    let golden = util::join(root, &case.golden(rule_set));
+    let golden = util::join(base, path);
     if write {
         return util::write(&golden, canonical.as_bytes());
     }
     if !golden.exists() {
-        problems.push(format!("missing golden: {}", case.golden(rule_set)));
+        problems.push(format!("missing golden: {path}"));
     } else if util::read_string(&golden)? != canonical {
-        problems.push(format!("differs: {}", case.golden(rule_set)));
+        problems.push(format!("differs: {path}"));
     }
     Ok(())
 }
 
 fn stale_goldens(
-    root: &Path,
+    base: &Path,
     rule_set: &RuleSet,
+    stylesheet: &Stylesheet,
     cases: &[Case],
     problems: &mut Vec<String>,
 ) -> Result<()> {
-    let dir = util::join(root, &format!("{}/{GOLDEN_DIR}", rule_set.corpus_dir()));
-    for file in util::list_files(&dir)? {
+    let relative = format!("{}/{}", rule_set.corpus_dir(), stylesheet.golden_dir);
+    for file in util::list_files(&util::join(base, &relative))? {
         let known = file
             .strip_suffix(GOLDEN_SUFFIX)
             .is_some_and(|id| cases.iter().any(|c| c.id == id));
         if !known {
-            problems.push(format!(
-                "stale golden: {}/{GOLDEN_DIR}/{file}",
-                rule_set.corpus_dir()
-            ));
+            problems.push(format!("stale golden: {relative}/{file}"));
         }
     }
     Ok(())

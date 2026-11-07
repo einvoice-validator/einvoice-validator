@@ -74,6 +74,21 @@ against.
 - `einvoice-xdm`: `AtomicValue::upcast` and `Integer::to_decimal_upcast`; `einvoice-xpath-eval`:
   Saxon-style static type inference, so that `xs:decimal` of an argument Saxon knows to be an
   integer strips trailing zeros as Saxon-HE 12.10 does (#8).
+- Peppol BIS Billing 3.0.22 (UBL) test corpus, built locally because the Peppol files carry no
+  licence and are not redistributed: `scripts/fetch-peppol.sh` fetches the pinned release tag
+  and compiles its Peppol and CEN Schematron files to XSLT with ph-schematron-maven-plugin
+  10.3.1 (ISO skeleton), every input and output checked against a pinned checksum, into
+  `target/peppol/`; `cargo xtask peppol` extracts 707 cases (examples, snippets, national
+  examples and the UBL VEFA unit tests), writes the Saxon-HE 12.10 goldens of both stylesheets
+  and cross-checks them with the VEFA expectations (678 of 678 VEFA cases agree) (#4).
+- Peppol equivalence test (`einvoice-xslt-exec`, `tests/peppol_equivalence.rs`): on all 707
+  cases, the canonical SVRL of both stylesheets equals the Saxon-HE golden. Skipped without the
+  corpus, required by `scripts/check.sh peppol` and by the new `peppol` CI workflow, which builds
+  the corpus whenever the engine or the tooling changes (#5).
+- `bench-peppol` and `heap-peppol` examples of `einvoice-xslt-exec`: time and heap of the whole
+  Peppol job (#5).
+- `upstream.toml` pins the Peppol release, ph-schematron-maven-plugin and Apache Maven in the
+  files that use them.
 
 ### Changed
 
@@ -91,6 +106,11 @@ against.
   with an explicit priority is a single template rule, which changes the ambiguity warnings;
   warnings name the node by Saxon's path (`/r/x[2]`, `/r/text()[1]`) and the two rules in
   Saxon's order (#8).
+
+- `scripts/fetch-saxon.sh` exits with status 75 when a download fails, so that
+  `scripts/check.sh peppol` can tell a missing network from a real failure.
+- The xtask tooling handles rule sets with several stylesheets (one golden directory each) and
+  rule sets built outside the tracked tree.
 
 ### Fixed
 

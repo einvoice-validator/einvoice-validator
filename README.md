@@ -10,7 +10,8 @@ artefacts, in pure Rust: no JVM, no C library, no FFI.
 
 **Pre-alpha. Not usable as a validator yet:** there is no release, no public API and no
 command-line tool. The engine already runs the official CEN EN 16931 UBL 1.3.17 stylesheet and
-produces the same SVRL report as Saxon-HE on every case of its test corpus; packaging it as a
+the two stylesheets of Peppol BIS Billing 3.0.22 (its own rules and the CEN rules it embeds), and
+produces the same SVRL report as Saxon-HE on every case of their test corpora; packaging it as a
 library and a tool is the next step.
 
 | Part | State |
@@ -22,7 +23,8 @@ library and a tool is the next step.
 | `einvoice-xpath-eval`: XPath 2.0 evaluator; agrees with Saxon-HE on every distinct expression of the CEN 1.3.17 stylesheet at nodes of corpus documents | done |
 | `einvoice-xslt-exec`: XSLT executor and SVRL output | done |
 | Same results as Saxon-HE on the whole CEN corpus | done: 1179 / 1179 cases identical; own mutation cases to come ([#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
-| Peppol BIS Billing 3.0.22: corpus, then same results as Saxon-HE | planned ([#4](https://github.com/einvoice-validator/einvoice-validator/issues/4), [#5](https://github.com/einvoice-validator/einvoice-validator/issues/5)) |
+| Test corpus of Peppol BIS Billing 3.0.22 (707 cases), built locally from the pinned release with the Saxon-HE results of both stylesheets | done ([#4](https://github.com/einvoice-validator/einvoice-validator/issues/4)) |
+| Same results as Saxon-HE on the whole Peppol corpus | done: 707 / 707 cases identical with each of the two stylesheets ([#5](https://github.com/einvoice-validator/einvoice-validator/issues/5)) |
 | `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1546 cases, every corpus case agrees, the other differences are listed with their cause | done ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6) follow-ups) |
 | Public API and command-line tool | planned ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
 | WebAssembly build | planned ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
@@ -34,9 +36,10 @@ changes are listed in [CHANGELOG.md](CHANGELOG.md).
 ## Design
 
 - **The official artefacts, unchanged.** The rule sets are published by their owners (CEN/TC 434,
-  OpenPeppol) as Schematron compiled to XSLT. The engine is built to execute that compiled
-  XSLT as published: no rule is translated into Rust by hand, so a new rule-set release needs
-  new artefacts and new expected results, not new code.
+  OpenPeppol) as Schematron, compiled to XSLT by CEN; the Peppol Schematron is compiled here
+  with the ISO Schematron skeleton of ph-schematron, the output pinned by checksum. The engine
+  is built to execute that compiled XSLT as is: no rule is translated into Rust by hand, so a
+  new rule-set release needs new artefacts and new expected results, not new code.
 - **Pure Rust.** No JVM, no C library, no FFI; `unsafe` code is forbidden in every crate.
 - **Exact decimals.** `xs:decimal` and `xs:integer` are arbitrary precision, with the division
   precision, rounding and string forms of the reference engine: the amount and total rules
@@ -56,7 +59,7 @@ changes are listed in [CHANGELOG.md](CHANGELOG.md).
 | Rule set or schema | Version | In this repository |
 |---|---|---|
 | CEN EN 16931, UBL syntax | 1.3.17 | Artefacts vendored unmodified in `artefacts/`; test corpus and Saxon-HE results in `corpus/`. Engine in progress. |
-| Peppol BIS Billing 3.0 | 3.0.22 | Planned. The upstream repository publishes no licence, so its files are not vendored: they will be fetched at test time from the pinned tag, with checksums. |
+| Peppol BIS Billing 3.0, UBL syntax | 3.0.22 | Not vendored: the upstream repository publishes no licence. `scripts/fetch-peppol.sh` fetches the pinned tag and compiles its two Schematron files to XSLT (ISO skeleton of ph-schematron) into `target/peppol/`, every input and output checked against a pinned checksum; `scripts/check.sh peppol` builds the corpus and the Saxon-HE results there. |
 | CEN EN 16931 CII, XRechnung, Factur-X / ZUGFeRD | | Planned. |
 | OASIS UBL 2.1 schemas (Invoice, CreditNote) | 2.1 | Vendored unmodified in `crates/einvoice-xsd/schemas/`; `einvoice-xsd` validates against them. |
 
@@ -91,10 +94,12 @@ flowchart LR
 
 **Testing against the reference engine.** The corpus of each rule set holds the official example
 documents, the official test files and one document per test of the official VEFA unit test
-sets. For each case, the committed golden file is the SVRL that Saxon-HE produces, in the
-canonical form of [`corpus/SVRL-CANONICAL.md`](corpus/SVRL-CANONICAL.md). CI re-runs Saxon-HE
-on every case whenever the corpus or its tooling changes and fails if a golden differs, and
-cross-checks the goldens with the expectations written in the VEFA tests. The crates are
+sets. For each case, the golden file is the SVRL that Saxon-HE produces, in the canonical form
+of [`corpus/SVRL-CANONICAL.md`](corpus/SVRL-CANONICAL.md); it is committed for CEN, and built
+in `target/` for Peppol, whose files may not be redistributed. CI re-runs Saxon-HE on every
+case whenever the corpus or its tooling changes and fails if a committed golden differs,
+cross-checks the goldens with the expectations written in the VEFA tests, and builds the Peppol
+corpus whenever the engine changes, to check the engine against it. The crates are
 checked the same way: `einvoice-xdm` against 5068 Saxon-HE results of atomic operations,
 `einvoice-xpath-eval` against Saxon-HE's value of every distinct expression of the CEN
 stylesheet at nodes of corpus documents. `einvoice-xsd` is compared with xmllint (libxml2) on
@@ -105,7 +110,8 @@ the corpus and on mutations of synthetic documents. See [`corpus/README.md`](cor
 Requirements: [rustup](https://rustup.rs/) (the toolchain, Rust 1.99.1, is pinned in
 `rust-toolchain.toml` and installed on first use), `git` and `bash`. Optional: `cargo-deny`,
 `actionlint` and `zizmor` (their checks are skipped when missing), and Java with network access
-for the Saxon-HE oracle (CI uses Java 21, which regenerating the `einvoice-xdm` results needs).
+for the Saxon-HE oracle and the Peppol corpus (CI uses Java 21, which regenerating the
+`einvoice-xdm` results needs).
 Regenerating the `einvoice-xsd` results needs `xmllint`; its tests do not.
 
 ```sh
@@ -127,6 +133,7 @@ cargo test -p einvoice-xsd --test oracle         # einvoice-xsd against the xmll
 | `actionlint` | `actionlint` on the GitHub workflows |
 | `zizmor` | `zizmor --persona=pedantic` on the GitHub workflows |
 | `oracle` | artefact checksums, corpus extraction and VEFA cross-check, then Saxon-HE on every corpus case and on the probes of `einvoice-xdm`, `einvoice-xpath-eval` and `einvoice-xslt-exec`: the goldens must not change (needs Java; skipped locally without it) |
+| `peppol` | the Peppol corpus in `target/peppol/`: fetch and compile the pinned release, extract the cases, Saxon-HE with both stylesheets, VEFA cross-check, then the engine must match every golden (needs Java and network access the first time; skipped locally without them) |
 | `privacy` | the repository's pre-commit checks on staged changes (maintainers; skipped when nothing is staged) |
 
 The corpus and the oracle can also be run step by step:
@@ -137,6 +144,9 @@ cargo xtask corpus           # corpus/*/cases.tsv and the extracted VEFA documen
 cargo xtask crosscheck       # goldens against the VEFA expectations
 scripts/fetch-saxon.sh       # Saxon-HE 12.10 and the XML Resolver 5.3.3 from Maven Central into target/, checksums verified
 cargo xtask oracle           # Saxon-HE on every case; the goldens must not change
+scripts/fetch-peppol.sh      # Peppol BIS Billing release and its compiled stylesheets into target/peppol/, checksums verified
+cargo xtask peppol           # Peppol corpus, Saxon-HE goldens and VEFA cross-check, in target/peppol/
+cargo test -p einvoice-xslt-exec --test peppol_equivalence -- --nocapture   # the engine on the Peppol corpus
 ```
 
 ## Repository layout
@@ -146,7 +156,7 @@ crates/              the library crates (see the table above); einvoice-xsd hold
 xtask/               repository tooling (cargo xtask ...)
 artefacts/           official validation artefacts, unmodified, with SHA256SUMS
 corpus/              test cases and Saxon-HE goldens, one directory per rule set
-scripts/             check.sh, fetch-saxon.sh, freshness.sh, release scripts, git hook helpers
+scripts/             check.sh, fetch-saxon.sh, fetch-peppol.sh, freshness.sh, release scripts, git hook helpers
 .githooks/           pre-commit, commit-msg and pre-push hooks
 .github/workflows/   CI, oracle, upstream freshness, release, repository checks
 upstream.toml        every pinned upstream version and the files that record it
@@ -179,7 +189,10 @@ upstream.toml        every pinned upstream version and the files that record it
 - Saxon-HE 12.10 (MPL-2.0) is the reference engine of the tests only, with the XML Resolver
   5.3.3 (Apache-2.0) it needs at run time. `scripts/fetch-saxon.sh` downloads them from Maven
   Central into `target/`; they are neither part of the repository nor distributed.
-- Peppol BIS Billing 3.0 files will be fetched at test time and not redistributed.
+- Peppol BIS Billing 3.0 files are fetched at test time into `target/peppol/` and not
+  redistributed; nothing derived from them (compiled stylesheets, extracted documents, goldens)
+  is committed. The tools that compile their Schematron, ph-schematron-maven-plugin and Apache
+  Maven (both Apache-2.0), are downloaded there too, for the tests only.
 - `crates/einvoice-xsd/schemas/oasis-ubl-2.1/` holds the fifteen schema documents of the OASIS
   UBL 2.1 Standard reachable from the Invoice and CreditNote schemas, vendored unmodified and
   embedded in `einvoice-xsd`. They are not under the MIT licence: each keeps the terms in its

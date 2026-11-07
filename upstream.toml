@@ -68,7 +68,66 @@ pinned = "3.0.22"
 source = "github-release"
 repository = "OpenPeppol/peppol-bis-invoice-3"
 version-pattern = '^v?(?<v>[0-9]+(?:\.[0-9]+)*)$'
-unused = "no file of the repository uses this release yet"
+
+[[upstream.pin]]
+file = "scripts/fetch-peppol.sh"
+pattern = 'tag=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-peppol.sh"
+pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "scripts/fetch-peppol.sh"
+pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "xtask/src/ruleset.rs"
+pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "xtask/src/ruleset.rs"
+pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xslt-exec/tests/common/peppol.rs"
+pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xslt-exec/tests/common/peppol.rs"
+pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xslt-exec/tests/peppol_equivalence.rs"
+pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xslt-exec/examples/bench-peppol.rs"
+pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xslt-exec/examples/heap-peppol.rs"
+pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = ".github/workflows/peppol.yml"
+pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "corpus/README.md"
+pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "corpus/README.md"
+pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "corpus/peppol-bis-billing-ubl-3.0.22/README.md"
+pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "README.md"
+pattern = 'Peppol BIS Billing (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
 
 [[upstream]]
 name = "OASIS UBL"
@@ -238,6 +297,8 @@ pattern = 'xmlresolver-(?<v>[0-9]+(?:\.[0-9]+)+)'
 file = "README.md"
 pattern = 'XML Resolver (?<v>[0-9]+(?:\.[0-9]+)+)'
 
+# The Schematron compiler of the Peppol stylesheets (scripts/fetch-peppol.sh):
+# the compiled XSLT is pinned by checksum, so a new version needs new checksums.
 [[upstream]]
 name = "ph-schematron"
 severity = "info"
@@ -245,7 +306,41 @@ pinned = "10.3.1"
 source = "maven"
 group = "com.helger.maven"
 artifact = "ph-schematron-maven-plugin"
-unused = "no file of the repository uses this version yet"
+hold = "the SHA-256 of the compiled Peppol stylesheets in scripts/fetch-peppol.sh are those of this version"
+
+[[upstream.pin]]
+file = "scripts/fetch-peppol.sh"
+pattern = 'plugin=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-peppol.sh"
+pattern = 'ph-schematron-maven-plugin (?<v>[0-9]+(?:\.[0-9]+)+)'
+
+[[upstream.pin]]
+file = "corpus/README.md"
+pattern = 'ph-schematron-maven-plugin (?<v>[0-9]+(?:\.[0-9]+)+)'
+
+# Runs ph-schematron-maven-plugin in scripts/fetch-peppol.sh.
+[[upstream]]
+name = "Apache Maven"
+severity = "info"
+pinned = "3.9.16"
+source = "maven"
+group = "org.apache.maven"
+artifact = "apache-maven"
+series = "3"
+
+[[upstream.pin]]
+file = "scripts/fetch-peppol.sh"
+pattern = 'maven=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-peppol.sh"
+pattern = 'Apache Maven (?<v>[0-9]+(?:\.[0-9]+)+)'
+
+[[upstream.pin]]
+file = "corpus/README.md"
+pattern = 'Apache Maven (?<v>[0-9]+(?:\.[0-9]+)+)'
 
 [[upstream]]
 name = "Rust toolchain"

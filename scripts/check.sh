@@ -4,7 +4,7 @@
 # policy, the workflow linters and, when something is staged, the privacy
 # guard.
 #
-#   scripts/check.sh                # every job: fmt clippy doc test deny actionlint zizmor oracle privacy
+#   scripts/check.sh                # every job: fmt clippy doc test deny actionlint zizmor oracle peppol privacy
 #   scripts/check.sh clippy test    # selected jobs
 #   scripts/check.sh toolchain      # only install the pinned toolchain
 #
@@ -14,7 +14,10 @@
 # runs when its tool is installed and prints SKIPPED otherwise. CI installs
 # all three at pinned versions, so nothing is skipped there. The oracle job
 # needs Java (any recent JRE) and network access the first time, to fetch
-# Saxon-HE; without Java it checks what it can and skips the Saxon run.
+# Saxon-HE; without Java it checks what it can and skips the Saxon run. The
+# peppol job needs Java and network access the first time too (Saxon-HE, the
+# Peppol release, Maven and the Schematron compiler); without them it prints
+# SKIPPED, except in CI, where it fails.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -116,6 +119,46 @@ job_oracle() {
     cargo run --locked -p einvoice-xpath-eval --example saxon-oracle || return 1
     cargo run --locked -p einvoice-xslt-exec --example saxon-probes
 }
+# The Peppol BIS Billing 3.0 corpus (corpus/README.md), which is not committed
+# because the Peppol files carry no licence: scripts/fetch-peppol.sh downloads
+# the pinned release and compiles its two stylesheets into target/peppol/
+# (checksums verified), `cargo xtask peppol` extracts the cases, runs Saxon-HE
+# with both stylesheets and cross-checks the goldens with the VEFA
+# expectations, then the engine must give the Saxon-HE result on every case
+# (tests/peppol_equivalence.rs of einvoice-xslt-exec, required to run here).
+# Without Java or without network access (and nothing cached yet), SKIPPED,
+# except in CI, where it fails.
+job_peppol() {
+    need_toolchain || return 1
+    # skipped REASON: SKIPPED locally, a failure in CI.
+    skipped() {
+        if [ -n "${CI:-}" ]; then
+            echo "$1: the Peppol corpus cannot be built" >&2
+            return 1
+        fi
+        echo "SKIPPED: Peppol corpus and equivalence ($1)"
+    }
+    if ! command -v "${JAVA:-java}" >/dev/null 2>&1; then
+        skipped "java is not installed"
+        return
+    fi
+    "${JAVA:-java}" -version 2>&1 | head -n 1
+    local status=0
+    if [ -n "${SAXON_JAR:-}" ]; then
+        echo "using SAXON_JAR=$SAXON_JAR (checksum verified by xtask)"
+    else
+        scripts/fetch-saxon.sh || status=$?
+    fi
+    [ "$status" -eq 0 ] && { scripts/fetch-peppol.sh || status=$?; }
+    if [ "$status" -eq 75 ]; then
+        skipped "a download failed: no network access?"
+        return
+    fi
+    [ "$status" -eq 0 ] || return 1
+    cargo xtask peppol || return 1
+    EINVOICE_PEPPOL_REQUIRED=1 cargo test --locked --all-features -p einvoice-xslt-exec \
+        --test peppol_equivalence -- --nocapture
+}
 # The pre-commit guard on the index; nothing staged, nothing to check.
 job_privacy() {
     if git diff --cached --quiet; then
@@ -125,7 +168,7 @@ job_privacy() {
     scripts/privacy-guard.sh staged && echo "privacy guard: staged content clean"
 }
 
-ALL=(fmt clippy doc test deny actionlint zizmor oracle privacy)
+ALL=(fmt clippy doc test deny actionlint zizmor oracle peppol privacy)
 
 jobs=("$@")
 [ ${#jobs[@]} -eq 0 ] && jobs=("${ALL[@]}")

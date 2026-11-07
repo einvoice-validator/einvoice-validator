@@ -1,0 +1,90 @@
+name: peppol
+
+# The Peppol BIS Billing 3.0 corpus, through `scripts/check.sh peppol`. The
+# Peppol files carry no licence, so neither they nor anything derived from
+# them is committed: the job downloads the pinned release, compiles its two
+# Schematron files to XSLT (scripts/fetch-peppol.sh, every input and output
+# checked against its pinned checksum), extracts the cases, runs Saxon-HE with
+# both stylesheets, cross-checks the goldens with the VEFA expectations
+# (`cargo xtask peppol`), then requires the engine to give the Saxon-HE result
+# on every case (crates/einvoice-xslt-exec/tests/peppol_equivalence.rs).
+# Runs when the engine, the tooling or the pins change.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "xtask/**"
+      - "corpus/peppol-bis-billing-ubl-3.0.22/**"
+      - "scripts/check.sh"
+      - "scripts/fetch-peppol.sh"
+      - "scripts/fetch-saxon.sh"
+      - ".github/workflows/peppol.yml"
+      - ".cargo/**"
+      - ".gitattributes"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "xtask/**"
+      - "corpus/peppol-bis-billing-ubl-3.0.22/**"
+      - "scripts/check.sh"
+      - "scripts/fetch-peppol.sh"
+      - "scripts/fetch-saxon.sh"
+      - ".github/workflows/peppol.yml"
+      - ".cargo/**"
+      - ".gitattributes"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer run on the same ref supersedes the running one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTFLAGS: -D warnings
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  peppol:
+    name: peppol (corpus, Saxon-HE goldens, VEFA cross-check, equivalence)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: scripts/check.sh toolchain
+      # The downloads and the compiled stylesheets, keyed by the pins. A cached
+      # file is never trusted: scripts/fetch-peppol.sh checks every one against
+      # its pinned checksum, and compiles again when a stylesheet does not match.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/peppol/downloads
+            target/peppol/peppol-bis-billing-ubl-3.0.22/xslt
+          key: peppol-${{ hashFiles('scripts/fetch-peppol.sh') }}
+      # Fails, rather than skips, without Java or network access: CI=true on
+      # GitHub runners.
+      - name: peppol
+        run: scripts/check.sh peppol

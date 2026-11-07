@@ -6,18 +6,26 @@
 //! cargo xtask oracle [--write] [--java JAVA] [--saxon JAR]
 //!                                   run Saxon-HE on every case and compare with (or write) the goldens
 //! cargo xtask crosscheck            compare the goldens with the VEFA expectations
+//! cargo xtask peppol [--java JAVA] [--saxon JAR]
+//!                                   build the Peppol corpus and its goldens in the cache
+//!                                   of scripts/fetch-peppol.sh, then cross-check them
 //! ```
 //!
-//! Without `--write` every command only checks, and exits with status 1 on
-//! any difference. `oracle` takes Java from `--java`, else `$JAVA`, else
-//! `java` on the PATH, and the Saxon-HE jar from `--saxon`, else `$SAXON_JAR`,
-//! else where `scripts/fetch-saxon.sh` puts it; the two XML Resolver jars that
+//! `manifest`, `corpus`, `oracle` and `crosscheck` work on the vendored rule
+//! sets, whose corpus is committed. Without `--write` they only check, and
+//! exit with status 1 on any difference. `peppol` always writes, into the
+//! cache under `target/peppol/` (the Peppol files may not be redistributed),
+//! and fails when the cross-check differs from the committed record.
+//! `oracle` and `peppol` take Java from `--java`, else `$JAVA`, else `java` on
+//! the PATH, and the Saxon-HE jar from `--saxon`, else `$SAXON_JAR`, else
+//! where `scripts/fetch-saxon.sh` puts it; the two XML Resolver jars that
 //! Saxon-HE 12.10 needs are taken from the directory of Saxon's jar.
 
 mod corpus;
 mod crosscheck;
 mod manifest;
 mod oracle;
+mod peppol;
 mod ruleset;
 mod svrl;
 mod util;
@@ -29,7 +37,7 @@ use std::process::ExitCode;
 
 use util::{Error, Result};
 
-const USAGE: &str = "usage: cargo xtask (manifest [--write] | corpus [--write] | oracle [--write] [--java JAVA] [--saxon JAR] | crosscheck)";
+const USAGE: &str = "usage: cargo xtask (manifest [--write] | corpus [--write] | oracle [--write] [--java JAVA] [--saxon JAR] | crosscheck | peppol [--java JAVA] [--saxon JAR])";
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -52,7 +60,7 @@ fn dispatch(args: &[OsString]) -> Result<()> {
     while let Some(arg) = rest.next() {
         match arg.to_str() {
             Some("--write") => write = true,
-            Some(flag @ ("--java" | "--saxon")) if command == "oracle" => {
+            Some(flag @ ("--java" | "--saxon")) if command == "oracle" || command == "peppol" => {
                 let value = rest
                     .next()
                     .ok_or_else(|| Error::new(format!("{flag} needs a value\n{USAGE}")))?;
@@ -71,28 +79,27 @@ fn dispatch(args: &[OsString]) -> Result<()> {
         }
     }
     let root = util::repo_root();
+    let options = oracle::Options {
+        java: java
+            .or_else(|| std::env::var_os("JAVA"))
+            .unwrap_or_else(|| OsString::from("java")),
+        saxon: saxon
+            .or_else(|| std::env::var_os("SAXON_JAR").map(PathBuf::from))
+            .unwrap_or_else(|| util::join(&root, oracle::SAXON_DEFAULT)),
+        write,
+    };
     match command {
         "manifest" => run_manifest(&root, write),
         "corpus" => run_corpus(&root, write),
-        "oracle" => {
-            let options = oracle::Options {
-                java: java
-                    .or_else(|| std::env::var_os("JAVA"))
-                    .unwrap_or_else(|| OsString::from("java")),
-                saxon: saxon
-                    .or_else(|| std::env::var_os("SAXON_JAR").map(PathBuf::from))
-                    .unwrap_or_else(|| util::join(&root, oracle::SAXON_DEFAULT)),
-                write,
-            };
-            run_oracle(&root, &options)
-        }
+        "oracle" => run_oracle(&root, &options),
         "crosscheck" if !write => run_crosscheck(&root),
+        "peppol" if !write => run_peppol(&root, &options),
         _ => Err(Error::new(USAGE)),
     }
 }
 
 fn run_manifest(root: &Path, write: bool) -> Result<()> {
-    for rule_set in ruleset::ALL {
+    for rule_set in ruleset::VENDORED {
         let count = if write {
             manifest::write(root, rule_set)?
         } else {
@@ -105,7 +112,7 @@ fn run_manifest(root: &Path, write: bool) -> Result<()> {
 }
 
 fn run_corpus(root: &Path, write: bool) -> Result<()> {
-    for rule_set in ruleset::ALL {
+    for rule_set in ruleset::VENDORED {
         let count = if write {
             corpus::write(root, rule_set)?
         } else {
@@ -119,18 +126,20 @@ fn run_corpus(root: &Path, write: bool) -> Result<()> {
 
 fn run_oracle(root: &Path, options: &oracle::Options) -> Result<()> {
     let mut problems = Vec::new();
-    for rule_set in ruleset::ALL {
-        let outcome = oracle::run(root, rule_set, options)?;
-        println!(
-            "oracle {}: {}: {} cases, {} with findings, {} failed asserts, {} successful reports",
-            if options.write { "written" } else { "checked" },
-            rule_set.name,
-            outcome.cases,
-            outcome.cases_with_findings,
-            outcome.failed_asserts,
-            outcome.successful_reports
-        );
-        problems.extend(outcome.problems);
+    for rule_set in ruleset::VENDORED {
+        for outcome in oracle::run(root, rule_set, options)? {
+            println!(
+                "oracle {}: {} {}: {} cases, {} with findings, {} failed asserts, {} successful reports",
+                if options.write { "written" } else { "checked" },
+                rule_set.name,
+                outcome.stylesheet,
+                outcome.cases,
+                outcome.cases_with_findings,
+                outcome.failed_asserts,
+                outcome.successful_reports
+            );
+            problems.extend(outcome.problems);
+        }
     }
     if problems.is_empty() {
         Ok(())
@@ -145,7 +154,7 @@ fn run_oracle(root: &Path, options: &oracle::Options) -> Result<()> {
 
 fn run_crosscheck(root: &Path) -> Result<()> {
     let mut consistent = true;
-    for rule_set in ruleset::ALL {
+    for rule_set in ruleset::VENDORED {
         let (text, ok) = crosscheck::report(root, rule_set)?;
         print!("{text}");
         consistent &= ok;
@@ -155,6 +164,20 @@ fn run_crosscheck(root: &Path) -> Result<()> {
     } else {
         Err(Error::new(format!(
             "observed disagreements differ from {}",
+            crosscheck::RECORD
+        )))
+    }
+}
+
+fn run_peppol(root: &Path, options: &oracle::Options) -> Result<()> {
+    let (text, consistent) = peppol::run(root, options)?;
+    print!("{text}");
+    if consistent {
+        Ok(())
+    } else {
+        Err(Error::new(format!(
+            "observed disagreements differ from {}/{}",
+            ruleset::PEPPOL_UBL.record_dir(),
             crosscheck::RECORD
         )))
     }

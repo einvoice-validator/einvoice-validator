@@ -26,7 +26,7 @@ fn every_case_matches_the_saxon_golden() {
             Ok(canonical) => different.push(format!(
                 "{}\n{}",
                 case.id,
-                first_difference(&golden, &canonical)
+                common::first_difference(&golden, &canonical)
             )),
             Err(e) => failed.push(format!("{}: {e}", case.id)),
         }
@@ -50,22 +50,4 @@ fn every_case_matches_the_saxon_golden() {
         different.len(),
         failed.len()
     );
-}
-
-/// The first line where two canonical files differ, with both versions.
-fn first_difference(golden: &str, ours: &str) -> String {
-    let (g, o): (Vec<&str>, Vec<&str>) = (golden.lines().collect(), ours.lines().collect());
-    let index = g
-        .iter()
-        .zip(&o)
-        .position(|(a, b)| a != b)
-        .unwrap_or_else(|| g.len().min(o.len()));
-    format!(
-        "  line {}\n  saxon: {}\n  ours:  {}\n  (saxon {} lines, ours {} lines)",
-        index + 1,
-        g.get(index).unwrap_or(&"<end>"),
-        o.get(index).unwrap_or(&"<end>"),
-        g.len(),
-        o.len()
-    )
 }

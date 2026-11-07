@@ -7,6 +7,8 @@
     reason = "shared by the equivalence test and the examples, each using a part"
 )]
 
+pub(crate) mod peppol;
+
 use std::path::{Path, PathBuf};
 
 use einvoice_xslt_exec::Executable;
@@ -72,9 +74,14 @@ pub(crate) fn cases(root: &Path) -> Result<Vec<Case>, String> {
 
 /// The prepared CEN stylesheet.
 pub(crate) fn executable(root: &Path) -> Result<Executable, String> {
-    let text = read(&join(root, XSLT))?;
-    let sheet = einvoice_xslt::load(&text).map_err(|e| e.to_string())?;
-    Executable::new(&sheet).map_err(|e| e.to_string())
+    prepare(&join(root, XSLT))
+}
+
+/// The stylesheet at `path`, loaded and prepared.
+pub(crate) fn prepare(path: &Path) -> Result<Executable, String> {
+    let text = read(path)?;
+    let sheet = einvoice_xslt::load(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    Executable::new(&sheet).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Runs the stylesheet on the document `text` read from `path` (with the `file:` URI
@@ -91,4 +98,22 @@ pub(crate) fn svrl(executable: &Executable, text: &str, path: &str) -> Result<St
 pub(crate) fn canonical(svrl: &str, path: &str) -> Result<String, String> {
     einvoice_svrl::canonicalize(svrl, &|u| einvoice_svrl::is_document_uri(u, path))
         .map_err(|e| format!("{path}: the SVRL cannot be canonicalised: {e}"))
+}
+
+/// The first line where two canonical files differ, with both versions.
+pub(crate) fn first_difference(golden: &str, ours: &str) -> String {
+    let (g, o): (Vec<&str>, Vec<&str>) = (golden.lines().collect(), ours.lines().collect());
+    let index = g
+        .iter()
+        .zip(&o)
+        .position(|(a, b)| a != b)
+        .unwrap_or_else(|| g.len().min(o.len()));
+    format!(
+        "  line {}\n  saxon: {}\n  ours:  {}\n  (saxon {} lines, ours {} lines)",
+        index + 1,
+        g.get(index).unwrap_or(&"<end>"),
+        o.get(index).unwrap_or(&"<end>"),
+        g.len(),
+        o.len()
+    )
 }

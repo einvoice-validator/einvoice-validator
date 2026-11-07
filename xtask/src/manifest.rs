@@ -42,7 +42,7 @@ fn compute(dir: &Path) -> Result<String> {
 /// Checks the vendored files against the committed manifest: same set of
 /// files, same checksums. Returns the number of files verified.
 pub(crate) fn verify(root: &Path, rule_set: &RuleSet) -> Result<usize> {
-    let dir = util::join(root, &rule_set.vendored_dir());
+    let dir = util::join(root, &vendored_dir(rule_set)?);
     let manifest_path = dir.join(FILE_NAME);
     let committed = util::read_string(&manifest_path)?;
     let expected =
@@ -81,10 +81,16 @@ pub(crate) fn verify(root: &Path, rule_set: &RuleSet) -> Result<usize> {
 
 /// Rewrites the manifest from the files on disk. Returns the number of files.
 pub(crate) fn write(root: &Path, rule_set: &RuleSet) -> Result<usize> {
-    let dir = util::join(root, &rule_set.vendored_dir());
+    let dir = util::join(root, &vendored_dir(rule_set)?);
     let manifest = compute(&dir)?;
     util::write(&dir.join(FILE_NAME), manifest.as_bytes())?;
     Ok(manifest.lines().count())
+}
+
+fn vendored_dir(rule_set: &RuleSet) -> Result<String> {
+    rule_set
+        .vendored_dir()
+        .ok_or_else(|| Error::new(format!("{}: not a vendored rule set", rule_set.name)))
 }
 
 fn parse(manifest: &str) -> Result<Vec<(String, String)>> {
@@ -106,13 +112,13 @@ fn parse(manifest: &str) -> Result<Vec<(String, String)>> {
 #[cfg(test)]
 mod tests {
     use super::verify;
-    use crate::ruleset::ALL;
+    use crate::ruleset::VENDORED;
     use crate::util::repo_root;
 
     /// The vendored files are exactly the ones listed, unmodified.
     #[test]
     fn vendored_files_match_their_manifest() {
-        for rule_set in ALL {
+        for rule_set in VENDORED {
             let count = verify(&repo_root(), rule_set).unwrap_or_else(|e| panic!("{e}"));
             assert!(count > 0, "{}", rule_set.name);
         }

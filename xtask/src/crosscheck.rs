@@ -1,9 +1,11 @@
 //! Cross-check of the goldens against the VEFA expectations: for every VEFA
 //! case, the rule ids Saxon reports must be the ones the test set expects.
 //!
+//! The findings of a case are the failed asserts and successful reports, with
+//! their flag, of its goldens: of every stylesheet of the rule set together
+//! (Peppol BIS Billing runs its own rules and the CEN rules on each document).
 //! For a case with scope S and expectations error E, warning W, success U, the
-//! findings of the golden (failed asserts and successful reports, with their
-//! flag) agree when:
+//! findings agree when:
 //!
 //! - every id of E is reported with flag `fatal`;
 //! - every id of W is reported with flag `warning`;
@@ -11,8 +13,9 @@
 //! - every reported id of S is in E or W (nothing unexpected in scope).
 //!
 //! Every disagreement is recorded, with its explanation, in
-//! `corpus/<rule set>/vefa-disagreements.tsv`; the test below fails when the
-//! observed disagreements differ from the recorded ones, either way.
+//! `corpus/<rule set>/vefa-disagreements.tsv` (committed, also for a fetched
+//! rule set); the check fails when the observed disagreements differ from the
+//! recorded ones, either way.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -124,22 +127,27 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet) -> Result<Summary> {
     Ok(summary)
 }
 
-/// (rule id, flag) of every failed assert and successful report of a golden.
+/// (rule id, flag) of every failed assert and successful report of the
+/// goldens of a case, every stylesheet of the rule set together.
 fn findings(root: &Path, rule_set: &RuleSet, case: &Case) -> Result<Vec<(String, String)>> {
-    let path = case.golden(rule_set);
-    let text = util::read_string(&util::join(root, &path))?;
-    let lines = svrl::parse(&text).map_err(|e| Error::new(format!("{path}: {e}")))?;
-    lines
-        .iter()
-        .filter(|l| l.kind == "failed-assert" || l.kind == "successful-report")
-        .map(|l| {
+    let base = rule_set.base(root);
+    let mut found = Vec::new();
+    for stylesheet in rule_set.stylesheets {
+        let path = case.golden(rule_set, stylesheet);
+        let text = util::read_string(&util::join(&base, &path))?;
+        let lines = svrl::parse(&text).map_err(|e| Error::new(format!("{path}: {e}")))?;
+        for l in lines
+            .iter()
+            .filter(|l| l.kind == "failed-assert" || l.kind == "successful-report")
+        {
             let id = l
                 .attribute("id")
                 .ok_or_else(|| Error::new(format!("{path}: {} without id", l.kind)))?;
             let flag = l.attribute("flag").unwrap_or("none");
-            Ok((id.to_owned(), flag.to_owned()))
-        })
-        .collect()
+            found.push((id.to_owned(), flag.to_owned()));
+        }
+    }
+    Ok(found)
 }
 
 fn describe(flags: &BTreeSet<&str>) -> String {
@@ -159,7 +167,7 @@ pub(crate) struct Recorded {
 
 /// Reads the record of known disagreements.
 pub(crate) fn read_record(root: &Path, rule_set: &RuleSet) -> Result<Vec<Recorded>> {
-    let path = format!("{}/{RECORD}", rule_set.corpus_dir());
+    let path = format!("{}/{RECORD}", rule_set.record_dir());
     let text = util::read_string(&util::join(root, &path))?;
     let mut lines = text.lines();
     if lines.next() != Some(RECORD_HEADER) {
@@ -256,7 +264,7 @@ pub(crate) fn report(root: &Path, rule_set: &RuleSet) -> Result<(String, bool)> 
 #[cfg(test)]
 mod tests {
     use super::{Disagreement, report, run};
-    use crate::ruleset::{ALL, RuleSet};
+    use crate::ruleset::{Origin, RuleSet, Stylesheet, VENDORED};
     use crate::util::{self, repo_root};
 
     /// The checker finds each kind of disagreement (a negative control for
@@ -265,10 +273,17 @@ mod tests {
     fn detects_every_kind_of_disagreement() {
         const SET: RuleSet = RuleSet {
             name: "synthetic",
-            licence: "LICENSE",
-            xslt: "x.xslt",
+            origin: Origin::Vendored { licence: "LICENSE" },
+            source: "artefacts/synthetic",
+            stylesheets: &[Stylesheet {
+                name: "x",
+                xslt: "x.xslt",
+                golden_dir: "golden",
+                sha256_pin: None,
+            }],
             document_dirs: &[],
             vefa_dirs: &[],
+            ignored: &[],
         };
         let root = std::env::temp_dir().join(format!("xtask-crosscheck-{}", std::process::id()));
         let index = "case\tinput\tkind\tscope\tsuccess\terror\twarning\tdescription\n\
@@ -331,7 +346,7 @@ mod tests {
     /// and explained disagreements, and every recorded one still occurs.
     #[test]
     fn goldens_agree_with_vefa_except_recorded_disagreements() {
-        for rule_set in ALL {
+        for rule_set in VENDORED {
             let (text, consistent) =
                 report(&repo_root(), rule_set).unwrap_or_else(|e| panic!("{e}"));
             println!("{text}");

@@ -2,20 +2,23 @@
 //! the documents extracted from the VEFA test sets, and `cases.tsv`, the
 //! index of all cases with the VEFA expectations.
 //!
-//! Layout, relative to `corpus/<rule set>/`:
+//! Layout, relative to the corpus directory of the rule set
+//! ([`RuleSet::corpus_dir`]):
 //!
 //! - `cases.tsv`: one line per case, see [`render_index`].
-//! - the upstream licence file, copied unchanged: everything in the directory
-//!   is derived from the vendored files and shares their licence.
+//! - for a vendored rule set, the upstream licence file, copied unchanged:
+//!   everything in the directory is derived from the vendored files and shares
+//!   their licence.
 //! - `vefa/<test set directory>/<test set name>.<NNN>.xml`: the document of
 //!   the NNN-th `<test>` (1-based) of that test set.
-//! - `golden/<case id>.svrl.txt`: the canonical SVRL Saxon-HE produced.
+//! - `<golden dir>/<case id>.svrl.txt`, one golden directory per stylesheet:
+//!   the canonical SVRL Saxon-HE produced.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use crate::ruleset::RuleSet;
+use crate::ruleset::{RuleSet, Stylesheet};
 use crate::util::{self, Error, Result};
 use crate::vefa::{self, Expectation};
 
@@ -23,8 +26,6 @@ use crate::vefa::{self, Expectation};
 pub(crate) const INDEX: &str = "cases.tsv";
 /// Directory of the documents extracted from VEFA test sets.
 pub(crate) const VEFA_DIR: &str = "vefa";
-/// Directory of the golden results.
-pub(crate) const GOLDEN_DIR: &str = "golden";
 /// Suffix of a golden file, appended to the case id.
 pub(crate) const GOLDEN_SUFFIX: &str = ".svrl.txt";
 
@@ -36,18 +37,21 @@ pub(crate) struct Case {
     /// Unique id: `examples/<file>`, `testfiles/<file>` or
     /// `vefa/<set dir>/<set>.<NNN>.xml`. Also names the golden file.
     pub(crate) id: String,
-    /// The document, relative to the repository root.
+    /// The document, relative to the base directory of the rule set (the
+    /// repository root for a vendored rule set).
     pub(crate) input: String,
     /// The VEFA expectation, for cases extracted from a test set.
     pub(crate) expectation: Option<Expectation>,
 }
 
 impl Case {
-    /// The golden file of this case, relative to the repository root.
-    pub(crate) fn golden(&self, rule_set: &RuleSet) -> String {
+    /// The golden file of this case for a stylesheet, relative to the base
+    /// directory of the rule set.
+    pub(crate) fn golden(&self, rule_set: &RuleSet, stylesheet: &Stylesheet) -> String {
         format!(
-            "{}/{GOLDEN_DIR}/{}{GOLDEN_SUFFIX}",
+            "{}/{}/{}{GOLDEN_SUFFIX}",
             rule_set.corpus_dir(),
+            stylesheet.golden_dir,
             self.id
         )
     }
@@ -61,22 +65,37 @@ pub(crate) struct Derived {
     pub(crate) files: BTreeMap<String, Vec<u8>>,
 }
 
-/// Derives the corpus from the vendored files.
+/// Derives the corpus from the upstream files.
 pub(crate) fn derive(root: &Path, rule_set: &RuleSet) -> Result<Derived> {
-    let vendored = rule_set.vendored_dir();
+    let base = rule_set.base(root);
+    let source_dir = rule_set.source;
     let corpus = rule_set.corpus_dir();
     let mut cases = Vec::new();
     let mut files = BTreeMap::new();
+    let mut ignored_seen = Vec::new();
+    // The files of `dir` (relative to the source directory), less the ignored ones.
+    let mut list = |dir: &str| -> Result<Vec<String>> {
+        let mut names = Vec::new();
+        for name in util::list_files(&util::join(&base, &format!("{source_dir}/{dir}")))? {
+            let relative = format!("{dir}/{name}");
+            if rule_set.ignored.contains(&relative.as_str()) {
+                ignored_seen.push(relative);
+            } else {
+                names.push(name);
+            }
+        }
+        Ok(names)
+    };
 
     for (prefix, dir) in rule_set.document_dirs {
-        let names = util::list_files(&util::join(root, &format!("{vendored}/{dir}")))?;
+        let names = list(dir)?;
         if names.is_empty() {
-            return Err(Error::new(format!("{vendored}/{dir}: no documents")));
+            return Err(Error::new(format!("{source_dir}/{dir}: no documents")));
         }
         for name in names {
             cases.push(Case {
                 id: format!("{prefix}/{name}"),
-                input: format!("{vendored}/{dir}/{name}"),
+                input: format!("{source_dir}/{dir}/{name}"),
                 expectation: None,
             });
         }
@@ -84,19 +103,19 @@ pub(crate) fn derive(root: &Path, rule_set: &RuleSet) -> Result<Derived> {
 
     for dir in rule_set.vefa_dirs {
         let set_dir = dir.rsplit('/').next().unwrap_or(dir);
-        let names = util::list_files(&util::join(root, &format!("{vendored}/{dir}")))?;
+        let names = list(dir)?;
         if names.is_empty() {
-            return Err(Error::new(format!("{vendored}/{dir}: no test sets")));
+            return Err(Error::new(format!("{source_dir}/{dir}: no test sets")));
         }
         for name in names {
             let stem = name
                 .strip_suffix(".xml")
                 .filter(|s| !s.contains('/'))
                 .ok_or_else(|| {
-                    Error::new(format!("{vendored}/{dir}/{name}: not a test set file"))
+                    Error::new(format!("{source_dir}/{dir}/{name}: not a test set file"))
                 })?;
-            let source_path = format!("{vendored}/{dir}/{name}");
-            let source = util::read_string(&util::join(root, &source_path))?;
+            let source_path = format!("{source_dir}/{dir}/{name}");
+            let source = util::read_string(&util::join(&base, &source_path))?;
             let tests =
                 vefa::extract(&source).map_err(|e| Error::new(format!("{source_path}: {e}")))?;
             if tests.is_empty() {
@@ -117,6 +136,14 @@ pub(crate) fn derive(root: &Path, rule_set: &RuleSet) -> Result<Derived> {
         }
     }
 
+    for ignored in rule_set.ignored {
+        if !ignored_seen.iter().any(|seen| seen == ignored) {
+            return Err(Error::new(format!(
+                "{source_dir}/{ignored}: listed as ignored, but not found"
+            )));
+        }
+    }
+
     let mut ids: Vec<&str> = cases.iter().map(|c| c.id.as_str()).collect();
     ids.sort_unstable();
     if let Some([id, _]) = ids.windows(2).find(|w| w[0] == w[1]) {
@@ -124,11 +151,10 @@ pub(crate) fn derive(root: &Path, rule_set: &RuleSet) -> Result<Derived> {
     }
 
     files.insert(INDEX.to_owned(), render_index(&cases)?.into_bytes());
-    let licence = util::read(&util::join(
-        root,
-        &format!("{vendored}/{}", rule_set.licence),
-    ))?;
-    files.insert(rule_set.licence.to_owned(), licence);
+    if let Some(licence) = rule_set.licence() {
+        let text = util::read(&util::join(&base, &format!("{source_dir}/{licence}")))?;
+        files.insert(licence.to_owned(), text);
+    }
     Ok(Derived { cases, files })
 }
 
@@ -169,7 +195,7 @@ fn render_index(cases: &[Case]) -> Result<String> {
 /// Reads `cases.tsv` back.
 pub(crate) fn read_index(root: &Path, rule_set: &RuleSet) -> Result<Vec<Case>> {
     let path = format!("{}/{INDEX}", rule_set.corpus_dir());
-    let text = util::read_string(&util::join(root, &path))?;
+    let text = util::read_string(&util::join(&rule_set.base(root), &path))?;
     let mut lines = text.lines();
     if lines.next() != Some(INDEX_HEADER) {
         return Err(Error::new(format!("{path}: unexpected header")));
@@ -207,12 +233,12 @@ pub(crate) fn read_index(root: &Path, rule_set: &RuleSet) -> Result<Vec<Case>> {
 /// Files under the corpus directory that [`derive()`] owns: the index, the
 /// licence copy and the VEFA documents (the goldens belong to the oracle).
 fn derived_on_disk(root: &Path, rule_set: &RuleSet) -> Result<Vec<String>> {
-    let corpus = util::join(root, &rule_set.corpus_dir());
+    let corpus = util::join(&rule_set.base(root), &rule_set.corpus_dir());
     let mut files: Vec<String> = util::list_files(&corpus.join(VEFA_DIR))?
         .into_iter()
         .map(|f| format!("{VEFA_DIR}/{f}"))
         .collect();
-    for own in [INDEX, rule_set.licence] {
+    for own in std::iter::once(INDEX).chain(rule_set.licence()) {
         if corpus.join(own).exists() {
             files.push(own.to_owned());
         }
@@ -225,7 +251,7 @@ fn derived_on_disk(root: &Path, rule_set: &RuleSet) -> Result<Vec<String>> {
 /// cases.
 pub(crate) fn verify(root: &Path, rule_set: &RuleSet) -> Result<usize> {
     let derived = derive(root, rule_set)?;
-    let corpus = util::join(root, &rule_set.corpus_dir());
+    let corpus = util::join(&rule_set.base(root), &rule_set.corpus_dir());
     let mut problems = Vec::new();
     for (path, contents) in &derived.files {
         let on_disk = util::join(&corpus, path);
@@ -254,7 +280,7 @@ pub(crate) fn verify(root: &Path, rule_set: &RuleSet) -> Result<usize> {
 /// Rewrites the derived files. Returns the number of cases.
 pub(crate) fn write(root: &Path, rule_set: &RuleSet) -> Result<usize> {
     let derived = derive(root, rule_set)?;
-    let corpus = util::join(root, &rule_set.corpus_dir());
+    let corpus = util::join(&rule_set.base(root), &rule_set.corpus_dir());
     util::remove_dir(&corpus.join(VEFA_DIR))?;
     for (path, contents) in &derived.files {
         util::write(&util::join(&corpus, path), contents)?;
@@ -265,14 +291,14 @@ pub(crate) fn write(root: &Path, rule_set: &RuleSet) -> Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::{derive, read_index, verify};
-    use crate::ruleset::ALL;
+    use crate::ruleset::VENDORED;
     use crate::util::repo_root;
 
     /// The committed VEFA documents and index are exactly what extraction
     /// produces from the vendored test sets.
     #[test]
     fn derived_files_are_reproducible() {
-        for rule_set in ALL {
+        for rule_set in VENDORED {
             let count = verify(&repo_root(), rule_set).unwrap_or_else(|e| panic!("{e}"));
             assert!(count > 0, "{}", rule_set.name);
         }
@@ -280,7 +306,7 @@ mod tests {
 
     #[test]
     fn index_round_trips() {
-        for rule_set in ALL {
+        for rule_set in VENDORED {
             let derived = derive(&repo_root(), rule_set).unwrap();
             let read = read_index(&repo_root(), rule_set).unwrap();
             assert_eq!(derived.cases, read);

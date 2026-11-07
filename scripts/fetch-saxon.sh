@@ -17,6 +17,7 @@
 #
 # An existing jar is verified, never trusted: a checksum mismatch, of a fresh
 # download or of a cached file, is an error and nothing is overwritten.
+# Exit status: 0 done; 75 a download failed (no network); 1 anything else.
 # Keep the versions and checksums in step with xtask/src/oracle.rs and the
 # saxon-oracle examples of einvoice-xdm and einvoice-xpath-eval. The
 # saxon-probes example of einvoice-xslt-exec reads them from the `jars` array
@@ -67,7 +68,10 @@ fetch() {
     fi
     mkdir -p "$dir"
     tmp=$(mktemp "$dir/.download.XXXXXX")
-    curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$tmp" "$url"
+    if ! curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$tmp" "$url"; then
+        echo "fetch-saxon: cannot download $url" >&2
+        exit 75
+    fi
     actual=$(sha256_of "$tmp")
     if [ "$actual" != "$sha256" ]; then
         echo "fetch-saxon: download from $url has SHA-256 $actual, expected $sha256" >&2
