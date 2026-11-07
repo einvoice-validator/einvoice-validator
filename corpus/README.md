@@ -69,4 +69,6 @@ cargo xtask crosscheck          # goldens against the VEFA expectations
 ```
 
 `--write` regenerates instead of checking (`manifest`, `corpus`, `oracle`). `cargo test`
-runs the manifest, extraction and cross-check checks without Java.
+runs the manifest, extraction and cross-check checks without Java, and the equivalence test
+of `crates/einvoice-xslt-exec` (`tests/cen_equivalence.rs`): the engine runs the vendored
+stylesheet on every case and its canonical SVRL must equal the golden.

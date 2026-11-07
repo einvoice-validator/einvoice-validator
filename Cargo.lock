@@ -161,6 +161,7 @@ dependencies = [
  "einvoice-xpath",
  "einvoice-xpath-eval",
  "einvoice-xslt",
+ "peak_alloc",
  "proptest",
  "roxmltree",
  "sha2",
@@ -237,6 +238,12 @@ checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
 ]
+
+[[package]]
+name = "peak_alloc"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccc90935a8dd139fdf341762773687a1e361d3f54b396a55d9dd1f7001e484bb"
 
 [[package]]
 name = "proptest"

@@ -42,7 +42,8 @@ against.
   sets). Template rules are chosen, and `xsl:next-match` continues, as Saxon does; built-in
   rules, parameters, variables, temporary trees, `as` conversion, `xsl:function`,
   `xsl:number`, simple and complex content and namespace fixup follow XSLT 2.0. Constructs
-  whose result would differ from Saxon's are refused when the stylesheet is prepared. 18
+  whose result would differ from Saxon's are refused when the stylesheet is prepared. On all
+  1179 cases of the CEN 1.3.17 corpus, the canonical SVRL equals the Saxon-HE golden; 18
   synthetic probe stylesheets are checked against Saxon-HE results.
 - `einvoice-svrl`: the canonical, line-oriented form of SVRL reports (`corpus/SVRL-CANONICAL.md`),
   shared by the oracle tooling and the equivalence tests.
