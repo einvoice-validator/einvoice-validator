@@ -18,11 +18,11 @@ the test corpus it will be judged against.
 | `einvoice-xdm`: XPath 2.0 atomic values with exact decimals, checked against Saxon-HE | done |
 | `einvoice-xpath`: parser of the XPath 2.0 subset; parses every expression of the CEN 1.3.17 stylesheet | done |
 | `einvoice-xslt`: loader of the XSLT 2.0 subset; loads the CEN 1.3.17 stylesheet | done |
-| `einvoice-xpath-eval`: XPath 2.0 evaluator; agrees with Saxon-HE on every distinct expression of the CEN 1.3.17 stylesheet at nodes of corpus documents | in progress ([#1](https://github.com/einvoice-validator/einvoice-validator/issues/1)) |
-| XSLT executor and SVRL output | planned ([#2](https://github.com/einvoice-validator/einvoice-validator/issues/2)) |
+| `einvoice-xpath-eval`: XPath 2.0 evaluator; agrees with Saxon-HE on every distinct expression of the CEN 1.3.17 stylesheet at nodes of corpus documents | done |
+| XSLT executor and SVRL output | in progress ([#2](https://github.com/einvoice-validator/einvoice-validator/issues/2)) |
 | Same results as Saxon-HE on the whole CEN corpus | planned ([#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
 | Peppol BIS Billing 3.0.22: corpus, then same results as Saxon-HE | planned ([#4](https://github.com/einvoice-validator/einvoice-validator/issues/4), [#5](https://github.com/einvoice-validator/einvoice-validator/issues/5)) |
-| `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1546 cases, every corpus case agrees, the other differences are listed with their cause | in progress ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6)) |
+| `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1546 cases, every corpus case agrees, the other differences are listed with their cause | done ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6) follow-ups) |
 | Public API and command-line tool | planned ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
 | WebAssembly build | planned ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
 | Other rule sets (CEN CII, XRechnung, Factur-X / ZUGFeRD) | planned ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
