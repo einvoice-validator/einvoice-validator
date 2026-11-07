@@ -5,7 +5,8 @@ rule selection and ties, `xsl:next-match`, modes, built-in rules, simple and com
 variables and parameters, `xsl:function`, `xsl:number`, patterns, namespaces, and dynamic
 errors. Each runs on `input.xml`. Every expected result in `expected/` is produced by Saxon-HE,
 the reference engine, never written by hand (format in `../common/probes.rs`: the result, or
-the error code, and the number of XTDE0540 warnings).
+the error code, and the number of distinct XTDE0540 warnings, as Saxon's error reporter
+prints each distinct warning once).
 
 The test `../probes.rs` runs each probe with this crate and compares the result trees node by
 node (names with prefixes, attributes, namespaces in scope, text, comments); it needs neither

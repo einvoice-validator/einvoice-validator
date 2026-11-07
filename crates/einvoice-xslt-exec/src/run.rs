@@ -65,13 +65,16 @@ pub struct Transformation {
     /// The result document, serialized as `xsl:output` asks.
     pub output: String,
     /// Recoverable conditions reported as warnings, as Saxon reports them (ambiguous
-    /// template rule matches, XTDE0540).
+    /// template rule matches, XTDE0540), each time it reports them: Saxon's standard
+    /// error reporter then prints each distinct message once.
     pub warnings: Vec<String>,
 }
 
 impl Executable {
     /// Runs the stylesheet on a document: `xsl:apply-templates` on its document node in
-    /// the default mode, the result serialized.
+    /// the default mode, the result serialized. `base_uri` is the URI of the document:
+    /// the base URI of its nodes, and the URI under which `document()` loads it again. As
+    /// in Saxon-HE 12.10, it is not its document URI: `document-uri(/)` is empty.
     ///
     /// # Errors
     ///
@@ -80,9 +83,9 @@ impl Executable {
     pub fn transform(
         &self,
         source: &str,
-        document_uri: Option<&str>,
+        base_uri: Option<&str>,
     ) -> std::result::Result<Transformation, TransformError> {
-        self.transform_with(source, document_uri, &TransformOptions::default())
+        self.transform_with(source, base_uri, &TransformOptions::default())
     }
 
     /// [`Executable::transform`] with options.
@@ -93,17 +96,17 @@ impl Executable {
     pub fn transform_with(
         &self,
         source: &str,
-        document_uri: Option<&str>,
+        base_uri: Option<&str>,
         options: &TransformOptions<'_>,
     ) -> std::result::Result<Transformation, TransformError> {
-        let document = Document::parse(source, document_uri)
+        let document = Document::parse(source, base_uri)
             .map_err(|e| TransformError::new("SXXP0003", e.message()))?;
         let root = document.root();
         let runtime = Runtime {
             exe: self,
             source_root: root.clone(),
             source_text: source,
-            source_uri: document_uri,
+            source_uri: base_uri,
             options,
             dc: Cell::new(None),
             globals: (0..self.globals.len())
@@ -867,16 +870,23 @@ impl<'e, 'a> Runtime<'e, 'a> {
 
     fn rule_matches(&self, rank: u32, mode: usize, node: &Node) -> Result<bool> {
         let rule = &self.exe.modes[mode].rules[rank as usize];
-        match self.exe.templates[rule.template]
-            .pattern
-            .get(rule.alternative)
-        {
-            Some(alternative) => Matcher { dc: self.dc()? }.matches(alternative, node),
-            None => Ok(false),
+        let pattern = &self.exe.templates[rule.template].pattern;
+        let matcher = Matcher { dc: self.dc()? };
+        // A union pattern with an explicit priority is one rule: its alternatives in
+        // order.
+        let alternatives = match rule.alternative {
+            Some(index) => pattern.get(index..=index).unwrap_or_default(),
+            None => pattern.as_slice(),
+        };
+        for alternative in alternatives {
+            if matcher.matches(alternative, node)? {
+                return Ok(true);
+            }
         }
+        Ok(false)
     }
 
-    /// The rule for `node` in `mode`, chosen exactly as Saxon-HE 9.9 chooses it
+    /// The rule for `node` in `mode`, chosen exactly as Saxon-HE 12.10 chooses it
     /// (`SimpleMode.getRule` and `searchRuleChain`): the chains of the node's name, of
     /// its kind, then the generic chain, each in rank order; a rule of higher priority
     /// replaces the best so far; on a tie the later declared rule wins and the ambiguity
@@ -943,6 +953,8 @@ impl<'e, 'a> Runtime<'e, 'a> {
         Ok(best)
     }
 
+    /// Reports a tie between `a`, the best rule so far, and `b`, as Saxon's
+    /// `reportAmbiguity` does, naming them in that order.
     fn ambiguity(
         &self,
         node: &Node,
@@ -954,17 +966,13 @@ impl<'e, 'a> Runtime<'e, 'a> {
             &self.exe.templates[a.template],
             &self.exe.templates[b.template],
         );
-        let (later, earlier) = if a.sequence > b.sequence {
-            (ta, tb)
-        } else {
-            (tb, ta)
-        };
+        let later = if a.sequence > b.sequence { ta } else { tb };
         self.warnings.borrow_mut().push(format!(
             "XTDE0540: Ambiguous rule match for {} in mode {}: matches the template rules on line {} and line {}; the one on line {} is used",
             describe(node),
             mode.name,
-            earlier.line,
-            later.line,
+            ta.line,
+            tb.line,
             later.line
         ));
     }
@@ -1131,8 +1139,8 @@ impl<'e, 'a> Runtime<'e, 'a> {
         if let Some((_, node)) = self.documents.borrow().iter().find(|(u, _)| *u == absolute) {
             return Ok(node.clone());
         }
-        // As Saxon: the source document, asked for by its URI, is parsed again and is a
-        // different tree.
+        // As Saxon: the source document, asked for by its base URI, is parsed again and
+        // is a different tree.
         let text = if self.source_uri == Some(absolute.as_str()) {
             self.source_text.to_owned()
         } else {
@@ -1146,7 +1154,8 @@ impl<'e, 'a> Runtime<'e, 'a> {
                     )
                 })?
         };
-        let node = Document::parse(&text, Some(&absolute))
+        // A loaded document has a document URI, as one in Saxon's document pool.
+        let node = Document::parse_loaded(&text, &absolute)
             .map_err(|e| TransformError::new("FODC0002", format!("{absolute}: {}", e.message())))?
             .root();
         self.documents.borrow_mut().push((absolute, node.clone()));
@@ -1154,31 +1163,48 @@ impl<'e, 'a> Runtime<'e, 'a> {
     }
 }
 
-/// A node, for messages: its path from the root.
+/// A node, for messages: its path from the root, written as Saxon-HE 12.10 writes it
+/// (`Navigator.getPath`): `/r/x[2]/@a`, `/r/text()[1]`, the outermost element without
+/// position. Saxon's error reporter prints each distinct warning once, so the path tells
+/// apart exactly the nodes Saxon's tells apart.
 fn describe(node: &Node) -> String {
-    let mut parts = Vec::new();
-    for n in node.axis(NodeAxis::AncestorOrSelf) {
-        match n.kind() {
-            NodeKind::Document => {}
-            NodeKind::Attribute => parts.push(format!(
-                "@{}",
-                n.name().map(ToString::to_string).unwrap_or_default()
-            )),
-            NodeKind::Element => {
-                let name = n.name().map(ToString::to_string).unwrap_or_default();
-                let index = 1 + n
-                    .axis(NodeAxis::PrecedingSibling)
-                    .filter(|s| s.kind() == NodeKind::Element && s.name() == n.name())
-                    .count();
-                parts.push(format!("{name}[{index}]"));
-            }
-            NodeKind::Text => parts.push("text()".to_owned()),
-            NodeKind::Comment => parts.push("comment()".to_owned()),
-            NodeKind::ProcessingInstruction => parts.push("processing-instruction()".to_owned()),
+    let name = |n: &Node| n.name().map(ToString::to_string).unwrap_or_default();
+    // The position among the preceding siblings of the same kind and, for a node with a
+    // name, the same name (`Navigator.getNumberSimple`).
+    let number = |n: &Node| {
+        1 + n
+            .axis(NodeAxis::PrecedingSibling)
+            .filter(|s| {
+                s.kind() == n.kind()
+                    && match (s.name(), n.name()) {
+                        (Some(a), Some(b)) => a.same_expanded_name(b),
+                        (None, None) => true,
+                        _ => false,
+                    }
+            })
+            .count()
+    };
+    let parent = node.parent();
+    let parent_path = || parent.as_ref().map(describe).unwrap_or_default();
+    // A step under the parent, which is "/" for the document node.
+    let under_parent = |step: String| {
+        let path = parent_path();
+        format!("{}/{step}", if path == "/" { "" } else { path.as_str() })
+    };
+    match node.kind() {
+        NodeKind::Document => "/".to_owned(),
+        NodeKind::Element => match &parent {
+            None => name(node),
+            Some(p) if p.kind() == NodeKind::Document => format!("/{}", name(node)),
+            Some(_) => format!("{}/{}[{}]", parent_path(), name(node), number(node)),
+        },
+        NodeKind::Attribute => format!("{}/@{}", parent_path(), name(node)),
+        NodeKind::Text => under_parent(format!("text()[{}]", number(node))),
+        NodeKind::Comment => under_parent(format!("comment()[{}]", number(node))),
+        NodeKind::ProcessingInstruction => {
+            under_parent(format!("processing-instruction()[{}]", number(node)))
         }
     }
-    parts.reverse();
-    format!("/{}", parts.join("/"))
 }
 
 impl Host for Runtime<'_, '_> {
@@ -1199,7 +1225,7 @@ impl Host for Runtime<'_, '_> {
     }
 
     fn system_property(&self, name: &QName) -> String {
-        // Saxon-HE 9.9.1-8's values.
+        // Saxon-HE 12.10's values.
         if name.namespace.as_deref() != Some(einvoice_xslt::XSLT_NAMESPACE) {
             return String::new();
         }
@@ -1208,7 +1234,7 @@ impl Host for Runtime<'_, '_> {
             "vendor" => "Saxonica",
             "vendor-url" => "http://www.saxonica.com/",
             "product-name" => "SAXON",
-            "product-version" => "HE 9.9.1.8",
+            "product-version" => "HE 12.10",
             _ => "",
         }
         .to_owned()

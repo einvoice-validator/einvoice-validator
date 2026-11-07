@@ -1,4 +1,4 @@
 result
 warnings 0
 ---
-<?xml version="1.0" encoding="UTF-8"?><out><atomics>3:1:3;b:2:3;1.5:3:3;</atomics><nested>;1;12;</nested><attributes>a=1;b=two;p:c=3;</attributes><choose>one,two,other</choose><empty/><document>2 3 1</document></out>
+<?xml version="1.0" encoding="UTF-8"?><out><atomics>3:1:3;b:2:3;1.5:3:3;</atomics><nested>;1;12;</nested><attributes>a=1;b=two;p:c=3;</attributes><choose>one,two,other</choose><empty/><document>1 0 0</document><loaded>0 2 3 1 true true</loaded></out>

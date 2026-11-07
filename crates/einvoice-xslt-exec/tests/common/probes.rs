@@ -3,7 +3,8 @@
 //!
 //! ```text
 //! result                  or: error <CODE>
-//! warnings <N>            the number of XTDE0540 (ambiguous rule match) warnings
+//! warnings <N>            the number of XTDE0540 (ambiguous rule match) warnings, each
+//!                         distinct warning once, as Saxon's error reporter prints them
 //! ---
 //! <the serialized result, exactly as Saxon wrote it; empty after an error>
 //! ```

@@ -78,7 +78,7 @@ pub(crate) fn executable(root: &Path) -> Result<Executable, String> {
 }
 
 /// Runs the stylesheet on the document `text` read from `path` (with the `file:` URI
-/// Saxon gives it) and returns the SVRL.
+/// Saxon gives it, as its base URI) and returns the SVRL.
 pub(crate) fn svrl(executable: &Executable, text: &str, path: &str) -> Result<String, String> {
     let uri = einvoice_xpath_eval::file_uri(Path::new(path));
     executable

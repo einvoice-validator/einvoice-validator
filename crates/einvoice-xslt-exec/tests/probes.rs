@@ -1,6 +1,6 @@
 //! Every probe of `tests/probes/` gives the result Saxon-HE gave (`expected/`, written by
 //! the `saxon-probes` example): the same result tree, or the same error code, and the
-//! same number of ambiguous-rule warnings. No Java is needed.
+//! same number of distinct ambiguous-rule warnings. No Java is needed.
 //!
 //! Result trees are compared node by node, not as text: the serializations of two
 //! engines may differ (attribute order, quoting, where namespaces are declared) without
@@ -125,10 +125,13 @@ fn every_probe_gives_the_saxon_result() {
                         ours.output
                     ));
                 }
-                if ours.warnings.len() != expected.warnings {
+                // Saxon-HE 12.10's standard error reporter prints each distinct warning
+                // once.
+                let distinct: std::collections::BTreeSet<&String> = ours.warnings.iter().collect();
+                if distinct.len() != expected.warnings {
                     failures.push(format!(
-                        "{name}: {} warnings, Saxon {}: {:?}",
-                        ours.warnings.len(),
+                        "{name}: {} distinct warnings, Saxon {}: {:?}",
+                        distinct.len(),
                         expected.warnings,
                         ours.warnings
                     ));

@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- xsl:for-each over nodes and atomic values, position and size, current(),
-     xsl:if and xsl:choose. -->
+     xsl:if and xsl:choose; document() of the source document: its document-uri()
+     is empty, and loaded by its base URI it is another tree, whose document-uri()
+     is that URI. -->
 <xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
   <xsl:output indent="no"/>
   <xsl:template match="/">
@@ -11,6 +13,7 @@
       <choose><xsl:for-each select="/r/x"><xsl:choose><xsl:when test="@n = '1'">one</xsl:when><xsl:when test="@n = '2'">two</xsl:when><xsl:otherwise>other</xsl:otherwise></xsl:choose><xsl:if test="position() != last()">,</xsl:if></xsl:for-each></choose>
       <empty><xsl:for-each select="()">never</xsl:for-each></empty>
       <document><xsl:value-of select="count(document(document-uri(/)) | /), count(document(document-uri(/))//x), count(document(document-uri(/)) | document(document-uri(/)))"/></document>
+      <loaded><xsl:value-of select="count(document-uri(/)), count(document(base-uri(/)) | /), count(document(base-uri(/))//x), count(document(base-uri(/)) | document(base-uri(/))), document-uri(document(base-uri(/))) = base-uri(/), base-uri(document(base-uri(/))) = base-uri(/)"/></loaded>
     </out>
   </xsl:template>
 </xsl:stylesheet>

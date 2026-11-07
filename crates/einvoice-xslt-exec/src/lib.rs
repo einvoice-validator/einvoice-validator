@@ -1,6 +1,6 @@
 //! Executor of the XSLT 2.0 subset that the official e-invoicing validation stylesheets
 //! use (Schematron compiled to XSLT), with the behaviour of the reference engine,
-//! Saxon-HE 9.9.1-8: same template rules chosen, same result.
+//! Saxon-HE 12.10: same template rules chosen, same result.
 //!
 //! A stylesheet loaded by [`einvoice_xslt::load`] is prepared once into an
 //! [`Executable`], which then runs on any number of documents with
@@ -16,7 +16,8 @@
 //! - template rules: match patterns (`/`, `root()`, path patterns with predicates, `//`,
 //!   the XSLT 3.0 `(A | B)[p]` form), modes (named, `#default`, `#all`, `#current`),
 //!   explicit and default priorities (each alternative of a pattern without explicit
-//!   priority is a rule of its own), the rule chosen, and the next one for
+//!   priority is a rule of its own, a pattern with one is a single rule), the rule
+//!   chosen, and the next one for
 //!   `xsl:next-match`, exactly as Saxon chooses them (its rule chains, ties going to
 //!   the last declared rule with an XTDE0540 warning), the built-in rules for every node
 //!   kind, and for atomic values, which Saxon, an XSLT 3.0 processor, lets
@@ -32,7 +33,9 @@
 //!   and complex content construction as XSLT 2.0 section 5.7 defines them;
 //! - `document()` through a [`DocumentResolver`] (the engine reads no file), relative
 //!   URIs resolved against the base URI given by [`Executable::with_base_uri`], and the
-//!   source document by its own URI, parsed again as Saxon does.
+//!   source document by its own URI, parsed again as Saxon does; a loaded document has
+//!   that URI as document URI, the source document none (`document-uri(/)` is empty, as
+//!   in Saxon-HE 12.10).
 //!
 //! One known difference: Saxon simplifies constant predicates before computing the
 //! default priority of a pattern (`x[true()]` gets the priority of `x`, 0, where XSLT

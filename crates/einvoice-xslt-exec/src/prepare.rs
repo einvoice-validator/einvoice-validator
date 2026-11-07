@@ -188,22 +188,21 @@ pub(crate) enum Inst {
     },
 }
 
-/// A template rule as Saxon-HE registers it: one per alternative of the match pattern
-/// (`A | B` is split into rules, and so is `node()`, which Saxon reads as
-/// `element() | text() | comment() | processing-instruction()`).
+/// A template rule as Saxon-HE 12.10 registers it: one per alternative of a match
+/// pattern without explicit priority (`A | B` is split into rules, XSLT 2.0 section
+/// 6.4), one for the whole pattern with an explicit priority.
 #[derive(Debug)]
 pub(crate) struct Rule {
     pub(crate) template: usize,
-    /// The alternative of the template's pattern.
-    pub(crate) alternative: usize,
+    /// The alternative of the template's pattern; `None` for the whole pattern.
+    pub(crate) alternative: Option<usize>,
     /// The priority, compared as Saxon compares it: as a double.
     pub(crate) priority: f64,
     /// Declaration order: the template's position.
     pub(crate) sequence: usize,
     /// The position of the alternative among the rules split from the same template
-    /// without explicit priority; 0 for every alternative with an explicit priority
-    /// (XSLT 2.0 section 6.4; Saxon's `part`, which keeps `xsl:next-match` from running
-    /// the same template twice in that case only).
+    /// without explicit priority; 0 for a pattern with an explicit priority (Saxon's
+    /// `part`, which keeps `xsl:next-match` from running the same template twice).
     pub(crate) part: usize,
 }
 
@@ -1049,14 +1048,20 @@ fn rank_rules(sheet: &Stylesheet, templates: &[CompiledTemplate], mode: &Mode) -
         if !in_mode {
             continue;
         }
+        // Saxon-HE 12.10 keeps a union pattern with an explicit priority as one rule
+        // (Saxon-HE 9.9 split it like a pattern without one).
+        let whole = template.rules.len() > 1 && template.rules.iter().all(|r| !r.is_default);
         for rule in &template.rules {
             rules.push(Rule {
                 template: index,
-                alternative: rule.alternative,
+                alternative: (!whole).then_some(rule.alternative),
                 priority: as_double(rule.priority),
                 sequence: index,
                 part: if rule.is_default { rule.alternative } else { 0 },
             });
+            if whole {
+                break;
+            }
         }
     }
     rules.sort_by(|a, b| {
@@ -1074,9 +1079,19 @@ fn rank_rules(sheet: &Stylesheet, templates: &[CompiledTemplate], mode: &Mode) -
     };
     for (rank, rule) in rules.iter().enumerate() {
         let rank = u32::try_from(rank).unwrap_or(u32::MAX);
-        if let Some(alternative) = templates[rule.template].pattern.get(rule.alternative) {
-            for key in alternative.chain_keys() {
-                compiled.index(rank, &key);
+        let pattern = &templates[rule.template].pattern;
+        match rule.alternative {
+            Some(alternative) => {
+                if let Some(alternative) = pattern.get(alternative) {
+                    for key in alternative.chain_keys() {
+                        compiled.index(rank, &key);
+                    }
+                }
+            }
+            None => {
+                if let Some(key) = pattern::union_chain_key(pattern) {
+                    compiled.index(rank, &key);
+                }
             }
         }
     }

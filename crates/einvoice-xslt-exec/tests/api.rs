@@ -192,7 +192,7 @@ fn ambiguous_matches_are_warnings() {
     let result = executable.transform("<a><b/></a>", None).unwrap();
     assert_eq!(result.output, format!("<r{NS}>3</r>"));
     assert_eq!(result.warnings.len(), 1, "{:?}", result.warnings);
-    assert!(result.warnings[0].starts_with("XTDE0540: Ambiguous rule match for /a[1]/b[1]"));
+    assert!(result.warnings[0].starts_with("XTDE0540: Ambiguous rule match for /a/b[1]"));
 }
 
 #[test]

@@ -276,6 +276,51 @@ impl Alternative {
     }
 }
 
+/// The one rule chain of Saxon-HE 12.10 that holds a rule for a whole union pattern
+/// (`SimpleMode.addRule`, by the node kinds the union can match): the chain of that kind
+/// when there is only one (for elements and attributes, the chain of any name), else
+/// the generic chain. `None` when no alternative can match a node.
+pub(crate) fn union_chain_key(alternatives: &[Alternative]) -> Option<Key> {
+    const ELEMENT: u8 = 1;
+    const ATTRIBUTE: u8 = 2;
+    const DOCUMENT: u8 = 4;
+    const TEXT: u8 = 8;
+    const COMMENT: u8 = 16;
+    const PROCESSING_INSTRUCTION: u8 = 32;
+    const ANY: u8 = u8::MAX;
+    let mut kinds = 0;
+    for alternative in alternatives {
+        if matches!(alternative, Alternative::RootFunction) {
+            kinds |= ANY;
+            continue;
+        }
+        let mut keys = Vec::new();
+        alternative.keys(&mut keys);
+        for key in &keys {
+            kinds |= match key {
+                Key::Element(..) | Key::AnyElement => ELEMENT,
+                Key::Attribute(..) | Key::AnyAttribute => ATTRIBUTE,
+                Key::Document => DOCUMENT,
+                Key::Text => TEXT,
+                Key::Comment => COMMENT,
+                Key::ProcessingInstruction => PROCESSING_INSTRUCTION,
+                Key::AnyChild => ELEMENT | TEXT | COMMENT | PROCESSING_INSTRUCTION,
+                Key::Generic => ANY,
+            };
+        }
+    }
+    match kinds {
+        0 => None,
+        ELEMENT => Some(Key::AnyElement),
+        ATTRIBUTE => Some(Key::AnyAttribute),
+        DOCUMENT => Some(Key::Document),
+        TEXT => Some(Key::Text),
+        COMMENT => Some(Key::Comment),
+        PROCESSING_INSTRUCTION => Some(Key::ProcessingInstruction),
+        _ => Some(Key::Generic),
+    }
+}
+
 /// Whether the value of a predicate can depend on the position of the node: it calls
 /// `position()` or `last()`, or its value may be a number. Conservative: `true` unless
 /// the expression's form proves otherwise.
