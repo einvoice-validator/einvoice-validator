@@ -137,6 +137,17 @@ against.
 - The oracle workflow installs xmllint and runs on Ubuntu 24.04, whose libxml2 (2.9.14) produced
   the `einvoice-xsd` results; it also runs when the schemas or the oracle files of
   `einvoice-xsd` change (#6).
+- `einvoice-xpath-eval`: `DynamicContext::new` takes a `Clock` (implicit timezone and current
+  date and time), built with `Clock::new`, `Clock::from_unix_millis` or `Clock::system` (the
+  last not on `wasm32-unknown-unknown`); `with_implicit_timezone` and `with_current_date_time`
+  are removed. The evaluator reads no clock and runs on `wasm32-unknown-unknown` (#9).
+- `einvoice-xpath-eval`: `Document::parse` and `parse_loaded` accept `&str` or `String`; given a
+  `String`, the tree keeps it and refers to the texts written verbatim, and its arenas are sized
+  exactly. Parsing the largest corpus document peaks at 3.2 MiB from `&str` or 53 KiB from a
+  `String` instead of 9.4 MiB; the whole CEN job's peak heap drops by 37 % (#18).
+- `einvoice-xslt-exec`: without a system clock (`wasm32-unknown-unknown`),
+  `TransformOptions::current_date_time` is required; a current date and time without a timezone
+  is refused (#9).
 
 ### Fixed
 
