@@ -1,0 +1,2 @@
+# The vendored schemas are stored byte for byte (SHA256SUMS relies on it).
+schemas/** -text
