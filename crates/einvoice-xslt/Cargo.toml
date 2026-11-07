@@ -1,0 +1,15 @@
+[package]
+name = "einvoice-xslt"
+description = "Loader for the XSLT 2.0 subset used by the official e-invoicing validation stylesheets"
+keywords = ["xslt", "schematron", "svrl", "einvoice", "peppol"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+einvoice-xpath = { path = "../einvoice-xpath", version = "0.0.0" }
+roxmltree = "0.21.2"
+
+[lints]
+workspace = true

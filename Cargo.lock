@@ -94,6 +94,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "einvoice-xslt"
+version = "0.0.0"
+dependencies = [
+ "einvoice-xpath",
+ "roxmltree",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
