@@ -47,5 +47,7 @@ against.
 - Release process: `RELEASING.md`, `scripts/release.sh` (version bump, changelog section,
   signed commit and tag, with a dry run) and a workflow that publishes the GitHub release of a
   pushed tag after checking that the tag, the workspace version and the changelog agree.
+- README with the project status, design, build and test instructions, and licences;
+  `SECURITY.md` for private vulnerability reports.
 
 [Unreleased]: https://github.com/einvoice-validator/einvoice-validator/commits/main
