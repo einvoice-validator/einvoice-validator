@@ -12,6 +12,7 @@
 //! several items is evaluated when first referenced; any other is evaluated where it is
 //! declared.
 
+use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::rc::{Rc, Weak};
 
@@ -78,13 +79,20 @@ impl Executable {
     /// the base URI of its nodes, and the URI under which `document()` loads it again. As
     /// in Saxon-HE 12.10, it is not its document URI: `document-uri(/)` is empty.
     ///
+    /// The source text can be borrowed (`&str`, `&String`) or given (`String`), as for
+    /// [`Document::parse`]: borrowed, the texts of its nodes are copied into the tree;
+    /// given, the tree keeps the text and refers to it, so that the document is in memory
+    /// once. A given text is kept as a copy only for a stylesheet that calls
+    /// `document()` and a document with a `base_uri`, where `document()` may load the
+    /// document again from its text.
+    ///
     /// # Errors
     ///
     /// The document is not well-formed (or has a document type declaration), or the
     /// transformation raised a dynamic error.
-    pub fn transform(
+    pub fn transform<'s>(
         &self,
-        source: &str,
+        source: impl Into<Cow<'s, str>>,
         base_uri: Option<&str>,
     ) -> std::result::Result<Transformation, TransformError> {
         self.transform_with(source, base_uri, &TransformOptions::default())
@@ -96,19 +104,28 @@ impl Executable {
     ///
     /// As [`Executable::transform`], and an invalid timezone or current date and time
     /// (or none given on a target without a system clock).
-    pub fn transform_with(
+    pub fn transform_with<'s>(
         &self,
-        source: &str,
+        source: impl Into<Cow<'s, str>>,
         base_uri: Option<&str>,
         options: &TransformOptions<'_>,
     ) -> std::result::Result<Transformation, TransformError> {
+        let source = source.into();
+        // The text `document()` parses again when asked for the source document.
+        let source_text = match &source {
+            Cow::Borrowed(text) => Some(Cow::Borrowed(*text)),
+            Cow::Owned(text) if self.calls_document && base_uri.is_some() => {
+                Some(Cow::Owned(text.clone()))
+            }
+            Cow::Owned(_) => None,
+        };
         let document = Document::parse(source, base_uri)
             .map_err(|e| TransformError::new("SXXP0003", e.message()))?;
         let root = document.root();
         let runtime = Runtime {
             exe: self,
             source_root: root.clone(),
-            source_text: source,
+            source_text: RefCell::new(source_text),
             source_uri: base_uri,
             options,
             dc: Cell::new(None),
@@ -202,7 +219,9 @@ type Params<'e> = Vec<(&'e QName, Slot<'e>)>;
 struct Runtime<'e, 'a> {
     exe: &'e Executable,
     source_root: Node,
-    source_text: &'a str,
+    /// The text of the source document, until `document()` loads it again (absent when
+    /// the stylesheet never calls `document()` and the text was given to the tree).
+    source_text: RefCell<Option<Cow<'a, str>>>,
     source_uri: Option<&'a str>,
     options: &'a TransformOptions<'a>,
     dc: Cell<Option<&'a DynamicContext<'a>>>,
@@ -1158,22 +1177,30 @@ impl<'e, 'a> Runtime<'e, 'a> {
             return Ok(node.clone());
         }
         // As Saxon: the source document, asked for by its base URI, is parsed again and
-        // is a different tree.
-        let text = if self.source_uri == Some(absolute.as_str()) {
-            self.source_text.to_owned()
+        // is a different tree. Loaded once: the tree is kept under its URI above.
+        let text: Cow<'_, str> = if self.source_uri == Some(absolute.as_str()) {
+            self.source_text.take().ok_or_else(|| {
+                TransformError::new(
+                    "INTERNAL",
+                    "document() loads the source document, whose text was not kept",
+                )
+            })?
         } else {
-            self.options
-                .resolver
-                .and_then(|r| r.resolve(&absolute))
-                .ok_or_else(|| {
-                    TransformError::new(
-                        "FODC0002",
-                        format!("cannot retrieve the document at {absolute}"),
-                    )
-                })?
+            // The resolver's text is given to the tree, not copied.
+            Cow::Owned(
+                self.options
+                    .resolver
+                    .and_then(|r| r.resolve(&absolute))
+                    .ok_or_else(|| {
+                        TransformError::new(
+                            "FODC0002",
+                            format!("cannot retrieve the document at {absolute}"),
+                        )
+                    })?,
+            )
         };
         // A loaded document has a document URI, as one in Saxon's document pool.
-        let node = Document::parse_loaded(&text, &absolute)
+        let node = Document::parse_loaded(text, &absolute)
             .map_err(|e| TransformError::new("FODC0002", format!("{absolute}: {}", e.message())))?
             .root();
         self.documents.borrow_mut().push((absolute, node.clone()));

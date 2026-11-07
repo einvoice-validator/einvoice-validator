@@ -106,10 +106,16 @@ fn every_probe_gives_the_saxon_result() {
                 continue;
             }
         };
-        match (
-            executable.transform(&input, uri.as_deref()),
-            &expected.error,
-        ) {
+        let result = executable.transform(&input, uri.as_deref());
+        // The source given as an owned String (kept by the tree, and as a copy only when
+        // document() may load it again) gives the same result.
+        let from_owned = executable.transform(input.clone(), uri.as_deref());
+        if from_owned != result {
+            failures.push(format!(
+                "{name}: from an owned String: {from_owned:?}\n  from a &str: {result:?}"
+            ));
+        }
+        match (result, &expected.error) {
             (Ok(ours), None) => {
                 let (a, b) = (tree(&expected.output).unwrap(), tree(&ours.output).unwrap());
                 if a != b {

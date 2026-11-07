@@ -37,6 +37,10 @@ pub struct Executable {
     /// The static base URI, against which `document()` resolves relative URIs given as
     /// strings.
     pub(crate) base_uri: Option<String>,
+    /// Whether some expression calls `document()`, which may load the source document
+    /// again from its text: a transformation given its source as an owned `String` then
+    /// keeps the text (see [`Executable::transform`](crate::Executable::transform)).
+    pub(crate) calls_document: bool,
 }
 
 /// A global variable or parameter.
@@ -364,6 +368,59 @@ impl StaticContext for Scope<'_> {
     }
 }
 
+/// Whether an expression calls `fn:document` anywhere.
+fn calls_document(expr: &Expr) -> bool {
+    let any = |exprs: &[Expr]| exprs.iter().any(calls_document);
+    let bindings = |bindings: &[ast::Binding]| bindings.iter().any(|b| calls_document(&b.sequence));
+    match expr {
+        Expr::FunctionCall { name, args } => {
+            (name.namespace.as_deref() == Some(ast::FN_NAMESPACE) && name.local == "document")
+                || any(args)
+        }
+        Expr::Literal(_) | Expr::VarRef(_) | Expr::ContextItem => false,
+        Expr::Sequence(items) => any(items),
+        Expr::Filter { base, predicates } => calls_document(base) || any(predicates),
+        Expr::Path(path) => path.steps.iter().any(|step| match step {
+            ast::Step::Axis(axis_step) => any(&axis_step.predicates),
+            ast::Step::Expr(e) => calls_document(e),
+        }),
+        Expr::Negate(e)
+        | Expr::Castable { operand: e, .. }
+        | Expr::InstanceOf { operand: e, .. } => calls_document(e),
+        Expr::Union(lhs, rhs)
+        | Expr::Range(lhs, rhs)
+        | Expr::And(lhs, rhs)
+        | Expr::Or(lhs, rhs)
+        | Expr::Arithmetic { lhs, rhs, .. }
+        | Expr::Comparison { lhs, rhs, .. } => calls_document(lhs) || calls_document(rhs),
+        Expr::If {
+            condition,
+            then,
+            otherwise,
+        } => calls_document(condition) || calls_document(then) || calls_document(otherwise),
+        Expr::For { bindings: b, body } => bindings(b) || calls_document(body),
+        Expr::Quantified {
+            bindings: b,
+            satisfies,
+            ..
+        } => bindings(b) || calls_document(satisfies),
+    }
+}
+
+/// Whether the predicates of a pattern alternative call `fn:document` anywhere.
+fn pattern_calls_document(alternative: &ast::PatternAlternative) -> bool {
+    let any = |exprs: &[Expr]| exprs.iter().any(calls_document);
+    match alternative {
+        ast::PatternAlternative::DocumentRoot | ast::PatternAlternative::RootFunction => false,
+        ast::PatternAlternative::Path(path) => {
+            any(&path.first.predicates) || path.rest.iter().any(|(_, step)| any(&step.predicates))
+        }
+        ast::PatternAlternative::Parenthesized { inner, predicates } => {
+            inner.alternatives.iter().any(pattern_calls_document) || any(predicates)
+        }
+    }
+}
+
 fn cardinality_of(occurrence: Occurrence) -> Cardinality {
     match occurrence {
         Occurrence::One | Occurrence::ZeroOrOne => Cardinality::AtMostOne,
@@ -390,6 +447,8 @@ struct Compiler<'s> {
     globals: Vec<(QName, VariableInfo)>,
     functions: Vec<(QName, usize)>,
     modes: Vec<Mode>,
+    /// Whether some expression compiled so far calls `document()`.
+    calls_document: bool,
 }
 
 /// Collects the modes named by templates and by `xsl:apply-templates`.
@@ -464,6 +523,7 @@ impl Compiler<'_> {
     }
 
     fn expr(&mut self, line: u32, expr: &Expr, frame: Option<&Frame>) -> Option<Box<CompiledExpr>> {
+        self.calls_document |= calls_document(expr);
         let scope = self.scope(frame);
         match compile(expr, &scope) {
             Ok(compiled) => Some(Box::new(compiled)),
@@ -811,6 +871,7 @@ impl Compiler<'_> {
     fn pattern(&mut self, line: u32, pattern: &ast::Pattern) -> Option<Vec<Alternative>> {
         let mut out = Vec::with_capacity(pattern.alternatives.len());
         for alternative in &pattern.alternatives {
+            self.calls_document |= pattern_calls_document(alternative);
             let scope = self.scope(None);
             match pattern::compile_alternative(alternative, &scope) {
                 Ok(a) => out.push(a),
@@ -905,6 +966,7 @@ impl Executable {
                 .map(|f| (f.name.clone(), f.params.len()))
                 .collect(),
             modes: modes.into_iter().collect(),
+            calls_document: false,
         };
         let globals = compiler.globals(sheet);
         let templates: Vec<CompiledTemplate> = sheet
@@ -958,6 +1020,7 @@ impl Executable {
             default_mode,
             serialization,
             base_uri: None,
+            calls_document: compiler.calls_document,
         })
     }
 

@@ -8,6 +8,9 @@
 //! - the peak of the whole process over the whole corpus, documents processed one after
 //!   the other.
 //!
+//! Measured twice: with the text read as a `String` and given to the transformation (the
+//! tree keeps it), then with the text borrowed (the tree copies the texts of its nodes).
+//!
 //! ```text
 //! cargo run --release -p einvoice-xslt-exec --example heap-cen
 //! ```
@@ -58,19 +61,48 @@ fn run() -> Result<(), String> {
         kib(with_ir - prepared)
     );
 
+    for owned in [true, false] {
+        println!(
+            "{}:",
+            if owned {
+                "text given (String)"
+            } else {
+                "text borrowed (&str)"
+            }
+        );
+        pass(&executable, &cases, owned, prepared)?;
+    }
+    Ok(())
+}
+
+/// Both passes over the corpus, the text given to the transformation or borrowed.
+fn pass(
+    executable: &einvoice_xslt_exec::Executable,
+    cases: &[common::Case],
+    owned: bool,
+    prepared: usize,
+) -> Result<(), String> {
     let mut worst = (0, String::new());
     let mut largest = (0, 0, String::new());
     let mut after_pass = Vec::new();
+    let mut process_peak = 0;
     // Two passes: memory still in use after the first one must not grow in the second.
-    for case in cases.iter().chain(&cases) {
+    for case in cases.iter().chain(cases) {
         let base = ALLOCATOR.current_usage();
         ALLOCATOR.reset_peak_usage();
         let text = common::read(std::path::Path::new(&case.input))?;
-        let svrl = common::svrl(&executable, &text, &case.input)?;
-        let peak = ALLOCATOR.peak_usage() - base;
         let size = text.len();
+        let svrl = if owned {
+            common::svrl(executable, text, &case.input)?
+        } else {
+            let svrl = common::svrl(executable, &text, &case.input)?;
+            drop(text);
+            svrl
+        };
+        let peak = ALLOCATOR.peak_usage();
+        process_peak = process_peak.max(peak);
+        let peak = peak - base;
         drop(svrl);
-        drop(text);
         if peak > worst.0 {
             worst = (peak, case.id.clone());
         }
@@ -82,16 +114,16 @@ fn run() -> Result<(), String> {
         }
     }
     println!(
-        "largest document: {} ({} bytes): peak {} above the prepared stylesheet",
+        "  largest document: {} ({} bytes): peak {} above the prepared stylesheet",
         largest.2,
         largest.1,
         kib(largest.0)
     );
-    println!("worst document: {}: peak {}", worst.1, kib(worst.0));
+    println!("  worst document: {}: peak {}", worst.1, kib(worst.0));
     println!(
-        "whole corpus ({} documents, one at a time, twice): process peak {} (stylesheet included); in use after each pass: {}",
+        "  whole corpus ({} documents, one at a time, twice): process peak {} (stylesheet included); in use after each pass: {}",
         cases.len(),
-        kib(ALLOCATOR.peak_usage().max(worst.0 + prepared)),
+        kib(process_peak.max(worst.0 + prepared)),
         after_pass
             .iter()
             .map(|&b| kib(b))

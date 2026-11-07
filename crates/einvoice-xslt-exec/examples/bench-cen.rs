@@ -7,7 +7,10 @@
 //! cargo run --release -p einvoice-xslt-exec --example bench-cen [-- --repeat N] [FILE...]
 //! ```
 //!
-//! `--repeat N` runs the job N times and reports the best run.
+//! `--repeat N` runs the job N times and reports the best run. Each run is made twice:
+//! the texts given to the transformations as `String`s (copies made before the clock
+//! starts), whose trees keep them, then borrowed, the trees copying the texts of their
+//! nodes; the details are those of the first.
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -62,10 +65,12 @@ fn run() -> Result<(), String> {
     );
 
     let mut best: Option<(Duration, Vec<Duration>)> = None;
+    let mut best_borrowed: Option<Duration> = None;
     for _ in 0..repeat {
+        let given: Vec<String> = texts.iter().map(|(_, t)| t.clone()).collect();
         let mut times = Vec::with_capacity(texts.len());
         let job = Instant::now();
-        for (path, text) in &texts {
+        for ((path, _), text) in texts.iter().zip(given) {
             let t = Instant::now();
             let svrl = common::svrl(&executable, text, path)?;
             times.push(t.elapsed());
@@ -75,17 +80,26 @@ fn run() -> Result<(), String> {
         if best.as_ref().is_none_or(|(b, _)| total < *b) {
             best = Some((total, times));
         }
+        let job = Instant::now();
+        for (path, text) in &texts {
+            std::hint::black_box(common::svrl(&executable, text, path)?);
+        }
+        let total = job.elapsed();
+        if best_borrowed.is_none_or(|b| total < b) {
+            best_borrowed = Some(total);
+        }
     }
-    let Some((total, times)) = best else {
+    let (Some((total, times)), Some(borrowed)) = (best, best_borrowed) else {
         return Err("nothing run".to_owned());
     };
     let bytes: usize = texts.iter().map(|(_, t)| t.len()).sum();
     let count = u32::try_from(times.len()).map_err(|e| e.to_string())?;
     println!(
-        "{} documents ({:.1} MB): total {total:.2?}, mean {:.2?} per document",
+        "{} documents ({:.1} MB): total {total:.2?}, mean {:.2?} per document (texts given); total {borrowed:.2?}, mean {:.2?} (texts borrowed)",
         times.len(),
         f64::from(u32::try_from(bytes).unwrap_or(u32::MAX)) / 1e6,
-        total / count.max(1)
+        total / count.max(1),
+        borrowed / count.max(1)
     );
     let mut order: Vec<usize> = (0..times.len()).collect();
     order.sort_by(|&a, &b| times[b].cmp(&times[a]));

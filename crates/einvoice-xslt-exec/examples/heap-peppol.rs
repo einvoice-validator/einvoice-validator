@@ -8,6 +8,10 @@
 //! - the peak while validating the whole corpus, documents processed one after the
 //!   other, and the peak of the whole process, loading the stylesheets included.
 //!
+//! Measured twice: with the text read as a `String`, borrowed by the first stylesheet and
+//! given to the last one (whose tree keeps it), then with the text borrowed by both
+//! (each tree copies the texts of its nodes).
+//!
 //! Needs the cache built by `scripts/check.sh peppol`.
 //!
 //! ```text
@@ -70,35 +74,67 @@ fn run() -> Result<(), String> {
         kib(loading_peak - before)
     );
 
+    for owned in [true, false] {
+        println!(
+            "{}:",
+            if owned {
+                "text given (String) to the last stylesheet"
+            } else {
+                "text borrowed (&str)"
+            }
+        );
+        pass(&executables, &corpus.cases, owned, prepared, loading_peak)?;
+    }
+    Ok(())
+}
+
+/// Both passes over the corpus, the text given to the last stylesheet or borrowed.
+fn pass(
+    executables: &[einvoice_xslt_exec::Executable],
+    cases: &[peppol::Case],
+    owned: bool,
+    prepared: usize,
+    loading_peak: usize,
+) -> Result<(), String> {
     let mut worst = (0, String::new());
     let mut after_pass = Vec::new();
+    let mut running_peak = 0;
     // Two passes: memory still in use after the first one must not grow in the second.
-    for case in corpus.cases.iter().chain(&corpus.cases) {
+    for case in cases.iter().chain(cases) {
         let base = ALLOCATOR.current_usage();
         ALLOCATOR.reset_peak_usage();
         let text = common::read(std::path::Path::new(&case.input))?;
-        for executable in &executables {
-            let svrl = common::svrl(executable, &text, &case.input)?;
-            drop(svrl);
+        let Some((last, others)) = executables.split_last() else {
+            return Err("no stylesheet".to_owned());
+        };
+        for executable in others {
+            drop(common::svrl(executable, &text, &case.input)?);
         }
-        let peak = ALLOCATOR.peak_usage() - base;
-        drop(text);
+        if owned {
+            drop(common::svrl(last, text, &case.input)?);
+        } else {
+            drop(common::svrl(last, &text, &case.input)?);
+            drop(text);
+        }
+        let peak = ALLOCATOR.peak_usage();
+        running_peak = running_peak.max(peak);
+        let peak = peak - base;
         if peak > worst.0 {
             worst = (peak, case.id.clone());
         }
-        if std::ptr::eq(case, corpus.cases.last().unwrap_or(case)) {
+        if std::ptr::eq(case, cases.last().unwrap_or(case)) {
             after_pass.push(ALLOCATOR.current_usage());
         }
     }
     println!(
-        "worst document: {}: peak {} above the prepared stylesheets",
+        "  worst document: {}: peak {} above the prepared stylesheets",
         worst.1,
         kib(worst.0)
     );
-    let running_peak = ALLOCATOR.peak_usage().max(worst.0 + prepared);
+    let running_peak = running_peak.max(worst.0 + prepared);
     println!(
-        "whole corpus ({} documents, one at a time, twice): peak while validating {} (stylesheets included), process peak {} (loading included); in use after each pass: {}",
-        corpus.cases.len(),
+        "  whole corpus ({} documents, one at a time, twice): peak while validating {} (stylesheets included), process peak {} (loading included); in use after each pass: {}",
+        cases.len(),
         kib(running_peak),
         kib(running_peak.max(loading_peak)),
         after_pass
