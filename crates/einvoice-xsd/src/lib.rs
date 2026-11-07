@@ -59,6 +59,13 @@
 //! `24:00:00` as end of day), `anyURI` is checked as XML Schema 1.0 defines it
 //! (escaping per `XLink` 1.0 section 5.4, then RFC 2396 as amended by RFC 2732).
 //!
+//! # Comparison with xmllint
+//!
+//! The test suite compares every verdict with xmllint (libxml2 2.9.14) on the CEN
+//! EN 16931 UBL test corpus and on synthetic mutations covering each construct
+//! (`tests/oracle/`). The cases where xmllint departs from XML Schema 1.0 and this
+//! crate does not are listed with their cause in `tests/oracle/disagreements.tsv`.
+//!
 //! # Inventory of the UBL 2.1 schemas
 //!
 //! Counted over the fifteen vendored documents by the `inventory` test, which fails

@@ -1,0 +1,1549 @@
+# Written by `cargo run -p einvoice-xsd --example xmllint-oracle -- --write`: xmllint's
+# verdict and errors (line:category, sorted) for every case. Do not edit by hand.
+case	verdict	errors
+corpus/examples/BIS3_Invoice_negativ.XML	valid	
+corpus/examples/BIS3_Invoice_positive.XML	valid	
+corpus/examples/FT G2G_TD01 con Allegato, Bonifico e Split Payment.xml	valid	
+corpus/examples/guide-example1.xml	valid	
+corpus/examples/guide-example2.xml	valid	
+corpus/examples/guide-example3.xml	valid	
+corpus/examples/issue116.xml	valid	
+corpus/examples/sample-discount-price.xml	valid	
+corpus/examples/ubl-tc434-creditnote1.xml	valid	
+corpus/examples/ubl-tc434-example1.xml	valid	
+corpus/examples/ubl-tc434-example10.xml	valid	
+corpus/examples/ubl-tc434-example2.xml	valid	
+corpus/examples/ubl-tc434-example3.xml	valid	
+corpus/examples/ubl-tc434-example4.xml	valid	
+corpus/examples/ubl-tc434-example5.xml	valid	
+corpus/examples/ubl-tc434-example6.xml	valid	
+corpus/examples/ubl-tc434-example7.xml	valid	
+corpus/examples/ubl-tc434-example8.xml	valid	
+corpus/examples/ubl-tc434-example9.xml	valid	
+corpus/testfiles/BIS_Billing_30-DataIT.xml	valid	
+corpus/testfiles/BIS_Billing_30-Elhandel.xml	valid	
+corpus/testfiles/BIS_Billing_30-Elnat.xml	valid	
+corpus/testfiles/BIS_Billing_30-Factoring.xml	valid	
+corpus/testfiles/BIS_Billing_30-Forskott_(ej moms).xml	valid	
+corpus/testfiles/BIS_Billing_30-Forskott_slutreglering.xml	valid	
+corpus/testfiles/BIS_Billing_30-Hyrbil.xml	valid	
+corpus/testfiles/BIS_Billing_30-Inkopskort.xml	valid	
+corpus/testfiles/BIS_Billing_30-InomstatligFakturering.xml	valid	
+corpus/testfiles/BIS_Billing_30-Kreditering_(urspr_faktura).xml	valid	
+corpus/testfiles/BIS_Billing_30-Kreditering_med_kreditnota.xml	valid	
+corpus/testfiles/BIS_Billing_30-Kreditering_med_negativ_faktura.xml	valid	
+corpus/testfiles/BIS_Billing_30-OmvandSkattskyldighet.xml	valid	
+corpus/testfiles/BIS_Billing_30-Rabatter_och_avgifter.xml	valid	
+corpus/testfiles/BIS_Billing_30-Rantefaktura_Enkel.xml	valid	
+corpus/testfiles/BIS_Billing_30-Rantefaktura_Saml.xml	valid	
+corpus/testfiles/BIS_Billing_30-Resor_Bokning.xml	valid	
+corpus/testfiles/BIS_Billing_30-Resor_Taxi.xml	valid	
+corpus/testfiles/BIS_Billing_30-Telefoni.xml	valid	
+corpus/testfiles/BIS_Billing_30-Tjanster_Bevakning.xml	valid	
+corpus/testfiles/BIS_Billing_30-Tjanster_Kopiering.xml	valid	
+corpus/testfiles/BIS_Billing_30-Valutor i faktura.xml	valid	
+corpus/testfiles/CreditNote-Max_content.xml	valid	
+corpus/testfiles/CreditNote-Min_content_with_VAT.xml	valid	
+corpus/testfiles/CreditNote-Min_content_without_VAT.xml	valid	
+corpus/testfiles/Invoice-Max_content.xml	valid	
+corpus/testfiles/Invoice-Min_content_with_VAT.xml	valid	
+corpus/testfiles/Invoice-Min_content_without_VAT.xml	valid	
+corpus/testfiles/ubl-tc434-test-1.xml	valid	
+corpus/vefa/Invoice-unit-UBL/BR-01.001.xml	invalid	4:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-01.002.xml	invalid	4:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-02.001.xml	invalid	4:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-02.002.xml	invalid	4:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-03.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-03.002.xml	invalid	4:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-04.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-04.002.xml	invalid	4:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-05.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-05.002.xml	invalid	4:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-06.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-06.002.xml	invalid	5:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-06.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-06.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-06.005.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-07.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-07.002.xml	invalid	5:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-07.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-07.004.xml	invalid	8:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-07.005.xml	invalid	8:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-08.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-08.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-08.003.xml	invalid	5:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-08.004.xml	invalid	8:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-08.005.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-09.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-09.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-09.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-10.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-10.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-10.003.xml	invalid	5:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-10.004.xml	invalid	8:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-10.005.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-11.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-11.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-11.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-12.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-12.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-13.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-13.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-14.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-14.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-15.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-15.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-16.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-16.002.xml	invalid	5:missing-element
+corpus/vefa/Invoice-unit-UBL/BR-17.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-17.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-18.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-18.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-19.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-19.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-19.003.xml	invalid	8:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-20.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-20.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-20.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-21.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-21.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-22.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-22.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-23.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-23.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-24.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-24.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-25.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-25.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-26.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-26.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-27.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-27.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-27.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-28.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-28.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-28.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-29.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-29.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-29.003.xml	invalid	8:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-30.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-30.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-30.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-31.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-31.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-32.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-32.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-32.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-33.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-33.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-33.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-36.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-36.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-37.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-37.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-37.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-38.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-38.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-38.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-41.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-41.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-42.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-42.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-42.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-43.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-43.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-44.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-44.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-44.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-45.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-45.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-46.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-46.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-47.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-47.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-47.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-48.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-48.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-48.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-49.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-49.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-50.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-50.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-50.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-50.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-50.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-51.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-51.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-52.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-52.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-53.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-53.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-54.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-54.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-54.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-54.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-55.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-55.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-55.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-56.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-56.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-56.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-57.001.xml	invalid	5:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-57.002.xml	invalid	5:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-57.003.xml	invalid	5:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-61.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-61.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-61.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-61.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-61.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-62.001.xml	invalid	5:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-62.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-63.001.xml	invalid	5:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-63.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-64.001.xml	invalid	5:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-64.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-65.001.xml	invalid	5:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-65.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-01.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-01.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-01.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-01.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-01.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-01.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-01.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-01.008.xml	invalid	17:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-01.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-01.010.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.010.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.011.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.012.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.013.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-02.014.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.010.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.011.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.012.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.013.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-03.014.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.010.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.011.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.012.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.013.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-04.014.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-05.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-05.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-05.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-06.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-06.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-06.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-07.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-07.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-07.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-08.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-08.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-08.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-08.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-08.005.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-08.006.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-08.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-08.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-08.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-08.010.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-08.011.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-09.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-09.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-09.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-10.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-10.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-10.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-AE-10.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-01.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-01.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-03.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-03.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-04.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-04.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-05.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-05.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-06.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-06.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-07.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-07.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-07.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-07.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-07.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-07.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-10.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-10.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-11.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-11.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-13.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-13.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-14.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-14.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-15.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-15.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-16.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-16.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-17.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-17.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-18.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-18.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-19.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-19.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-20.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-20.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-21.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-21.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-23.001.xml	invalid	9:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-23.002.xml	invalid	8:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-24.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CL-24.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-03.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-03.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-03.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-03.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-04.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-04.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-04.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-09.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-09.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-09.003.xml	invalid	8:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-09.004.xml	invalid	8:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-10.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-10.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-10.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-10.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-10.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-10.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-10.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-10.008.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-10.009.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-11.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-11.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-11.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-11.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-11.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-11.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-12.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-12.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-12.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-12.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-12.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-12.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.010.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.011.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.012.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.013.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.014.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-13.015.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-14.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-14.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-14.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-14.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-14.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-14.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-14.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-15-2.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-15-2.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-15-2.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-15.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-15.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-15.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-15.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-15.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-15.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-15.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-15.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.010.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.011.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.012.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-16.013.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.010.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.011.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-17.012.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-18.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-18.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-18.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-19.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-19.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-19.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-19.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-19.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-19.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-20.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-20.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-20.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-20.004.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-21.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-21.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-21.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-21.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-22.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-22.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-22.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-22.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-23.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-23.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-23.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-23.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-24.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-24.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-24.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-24.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-26.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-26.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-26.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-26.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-CO-26.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-01.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-01.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-01.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-01.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-01.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-01.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-01.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-01.008.xml	invalid	17:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-01.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-02.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-02.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-02.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-02.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-02.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-02.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-02.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-02.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-03.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-03.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-03.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-03.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-03.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-03.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-03.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-04.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-04.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-04.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-04.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-04.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-04.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-04.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-04.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-05.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-05.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-05.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-06.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-06.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-06.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-07.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-07.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-07.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-08.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-08.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-08.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-08.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-08.005.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-08.006.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-08.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-08.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-08.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-08.010.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-08.011.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-09.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-09.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-09.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-10.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-10.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-10.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-E-10.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-01.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-01.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-01.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-01.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-01.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-01.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-01.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-01.008.xml	invalid	17:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-01.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-02.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-02.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-02.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-02.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-02.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-02.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-02.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-03.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-03.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-03.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-03.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-03.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-03.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-04.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-04.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-04.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-04.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-04.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-04.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-05.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-05.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-05.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-06.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-06.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-06.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-07.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-07.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-07.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-08.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-08.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-08.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-08.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-08.005.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-08.006.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-08.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-08.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-08.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-08.010.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-08.011.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-09.001.xml	invalid	8:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-09.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-09.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-10.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-10.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-10.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-G-10.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-01.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-01.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-01.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-01.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-01.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-01.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-01.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-01.008.xml	invalid	14:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-01.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-02.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-02.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-02.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-02.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-02.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-02.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-02.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-02.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-03.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-03.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-03.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-03.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-03.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-03.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-03.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-03.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-04.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-04.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-04.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-04.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-04.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-04.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-04.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-04.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-05.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-05.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-05.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-06.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-06.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-06.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-07.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-07.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-07.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-08.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-08.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-08.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-08.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-08.005.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-08.006.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-08.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-08.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-08.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-08.010.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-08.011.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-09.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-09.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-09.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-11.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-11.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-11.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-11.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-11.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-11.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-12.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-12.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-12.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-12.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-12.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-12.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-12.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IC-12.008.xml	invalid	16:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-01.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-01.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-01.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-01.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-01.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-01.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-01.007.xml	invalid	14:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-01.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-02.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-02.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-02.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-02.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-02.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-02.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-02.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-02.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-02.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-03.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-03.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-03.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-03.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-03.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-03.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-03.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-03.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-03.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-04.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-04.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-04.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-04.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-04.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-04.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-04.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-04.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-04.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-05.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-05.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-05.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-06.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-06.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-06.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-07.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-07.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-07.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-1.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-1.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-1.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-1.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-1.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-1.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-2.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-2.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-2.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-2.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-2.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-3.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-3.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-3.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-3.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-08-3.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-09.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-09.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-09.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-09.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-10.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-10.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-10.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IG-10.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-01.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-01.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-01.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-01.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-01.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-01.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-01.007.xml	invalid	14:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-01.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-02.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-02.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-02.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-02.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-02.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-02.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-02.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-03.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-03.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-03.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-03.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-03.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-03.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-04.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-04.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-04.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-04.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-04.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-04.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-05.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-05.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-05.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-06.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-06.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-06.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-07.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-07.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-07.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-1.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-1.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-1.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-1.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-1.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-1.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-2.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-2.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-2.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-2.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-2.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-3.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-3.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-3.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-3.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-08-3.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-09.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-09.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-09.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-09.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-10.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-10.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-10.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-IP-10.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-01.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-01.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-01.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-01.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-01.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-01.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-01.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-01.008.xml	invalid	14:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-01.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-02.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-02.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-02.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-02.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-03.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-03.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-03.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-03.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-04.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-04.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-04.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-04.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-05.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-05.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-06.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-06.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-07.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-07.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-08.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-08.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-08.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-08.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-08.005.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-08.006.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-08.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-08.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-08.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-08.010.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-08.011.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-09.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-09.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-09.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-10.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-10.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-10.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-10.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-11.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-11.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-12.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-12.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-12.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-13.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-13.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-13.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-14.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-14.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-O-14.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-01.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-01.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-01.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-01.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-01.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-01.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-01.007.xml	invalid	14:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-01.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-02.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-02.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-02.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-02.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-02.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-02.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-02.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-02.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-02.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-03.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-03.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-03.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-03.004.xml	invalid	13:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-03.005.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-03.006.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-03.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-03.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-04.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-04.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-04.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-04.004.xml	invalid	16:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-04.005.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-04.006.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-04.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-04.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-05.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-05.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-05.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-06.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-06.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-06.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-07.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-07.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-07.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-1.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-1.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-1.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-1.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-1.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-1.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-2.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-2.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-2.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-2.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-2.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-3.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-3.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-3.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-3.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-08-3.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-09.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-09.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-09.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-09.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-09.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-09.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-10.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-10.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-10.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-S-10.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-01.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-01.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-01.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-01.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-01.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-01.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-01.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-01.008.xml	invalid	14:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-01.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-02.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-02.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-02.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-02.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-02.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-02.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-02.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-03.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-03.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-03.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-03.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-03.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-03.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-03.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-03.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-04.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-04.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-04.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-04.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-04.005.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-04.006.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-04.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-04.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-05.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-05.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-05.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-06.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-06.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-06.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-07.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-07.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-07.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-08.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-08.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-08.003.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-08.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-08.005.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-08.006.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-08.007.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-08.008.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-08.009.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-08.010.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-08.011.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-09.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-09.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-09.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-10.001.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-10.002.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-10.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/BR-Z-10.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-DT-01.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-DT-01.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-DT-06.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-DT-06.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-DT-07.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-DT-07.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-12.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-12.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-18.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-18.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-42.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-42.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-44.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-44.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-44.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-44.004.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-47.001.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-47.002.xml	invalid	7:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-47.003.xml	invalid	6:unexpected-element
+corpus/vefa/Invoice-unit-UBL/UBL-SR-47.004.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-01.001.xml	invalid	4:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-01.002.xml	invalid	4:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-02.001.xml	invalid	4:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-02.002.xml	invalid	4:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-03.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-03.002.xml	invalid	4:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-04.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-04.002.xml	invalid	4:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-05.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-05.002.xml	invalid	4:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-06.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-06.002.xml	invalid	5:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-06.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-06.004.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-06.005.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-07.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-07.002.xml	invalid	5:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-07.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-07.004.xml	invalid	8:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-07.005.xml	invalid	8:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-08.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-08.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-08.003.xml	invalid	5:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-08.004.xml	invalid	8:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-08.005.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-09.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-09.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-09.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-10.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-10.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-10.003.xml	invalid	5:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-10.004.xml	invalid	8:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-10.005.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-11.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-11.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-11.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-12.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-12.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-13.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-13.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-14.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-14.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-15.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-15.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-16.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-16.002.xml	invalid	5:missing-element
+corpus/vefa/CreditNote-unit-UBL/BR-17.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-17.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-18.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-18.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-19.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-19.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-19.003.xml	invalid	8:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-20.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-20.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-20.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-21.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-21.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-22.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-22.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-23.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-23.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-24.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-24.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-25.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-25.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-26.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-26.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-27.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-27.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-27.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-28.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-28.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-28.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-29.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-29.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-29.003.xml	invalid	8:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-30.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-30.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-30.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-31.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-31.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-32.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-32.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-32.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-33.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-33.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-33.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-36.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-36.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-37.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-37.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-37.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-38.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-38.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-38.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-41.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-41.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-42.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-42.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-42.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-43.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-43.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-44.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-44.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-44.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-45.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-45.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-46.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-46.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-47.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-47.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-47.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-48.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-48.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-48.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-49.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-49.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-50.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-50.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-50.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-50.004.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-50.005.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-51.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-51.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-52.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-52.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-53.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-53.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-54.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-54.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-54.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-54.004.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-55.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-55.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-55.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-56.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-56.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-56.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-57.001.xml	invalid	5:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-57.002.xml	invalid	5:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-57.003.xml	invalid	5:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-61.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-61.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-61.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-61.004.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-61.005.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-62.001.xml	invalid	5:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-62.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-63.001.xml	invalid	5:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-63.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-64.001.xml	invalid	5:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-64.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-65.001.xml	invalid	5:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-65.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CL-16.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CL-16.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CL-18.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CL-18.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CL-24.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CL-24.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.004.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.005.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.006.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.007.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.008.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.009.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.010.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.011.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.012.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-13.013.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-15-2.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-15-2.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-15-2.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-15.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-15.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-15.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-15.004.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-15.005.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-15.006.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-15.007.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-15.008.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-25.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-25.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-25.003.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-25.004.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-25.005.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-CO-25.006.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-E-01.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-E-01.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-E-01.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-E-01.004.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-E-01.005.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-E-01.006.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-E-01.007.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-E-01.008.xml	invalid	14:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-E-01.009.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-S-09.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-S-09.002.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-S-09.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/BR-S-09.004.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-42.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-42.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-43.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-43.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-44.001.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-44.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-44.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-44.004.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-47.001.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-47.002.xml	invalid	7:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-47.003.xml	invalid	6:unexpected-element
+corpus/vefa/CreditNote-unit-UBL/UBL-SR-47.004.xml	invalid	6:unexpected-element
+document/creditnote-min	valid	
+document/invoice-full	valid	
+document/root-global-element	valid	
+document/root-other-document	invalid	3:root
+mutation/structure-missing-id	invalid	131:unexpected-element
+mutation/structure-wrong-order	invalid	134:unexpected-element
+mutation/structure-duplicate-single	invalid	136:unexpected-element
+mutation/structure-unknown-element	invalid	146:unexpected-element
+mutation/structure-foreign-element	invalid	146:unexpected-element
+mutation/structure-wrong-namespace-child	invalid	151:unexpected-element
+mutation/structure-unqualified-child	invalid	151:unexpected-element
+mutation/structure-default-namespace-child	invalid	151:unexpected-element
+mutation/structure-unexpected-last	invalid	266:unexpected-element
+mutation/structure-missing-children-at-end	invalid	3:missing-element
+mutation/structure-missing-first-required	invalid	5:unexpected-element
+mutation/structure-repeated-max-one	invalid	153:unexpected-element
+mutation/structure-two-errors-in-siblings	invalid	172:unexpected-element
+mutation/structure-errors-in-two-elements	invalid	151:unexpected-element
+mutation/structure-invoice-line-in-credit-note	invalid	11:unexpected-element
+mutation/structure-credit-note-line-missing-id	invalid	11:missing-element
+mutation/structure-choice-both	invalid	77:unexpected-element
+mutation/root-wrong-namespace	invalid	3:root
+mutation/root-unqualified	invalid	3:root
+mutation/root-wrong-name	invalid	3:root
+mutation/text-in-element-only	invalid	150:text-not-allowed
+mutation/text-whitespace-entities-in-element-only	valid	
+mutation/text-cdata-in-element-only	invalid	150:text-not-allowed
+mutation/text-cdata-whitespace-in-element-only	invalid	150:text-not-allowed
+mutation/text-comment-pi-in-element-only	valid	
+mutation/text-nbsp-in-element-only	invalid	150:text-not-allowed
+mutation/simple-content-child-element	invalid	139:element-in-simple-content
+mutation/simple-content-foreign-child	invalid	139:element-in-simple-content
+mutation/simple-content-comment	valid	
+mutation/simple-content-cdata	valid	
+mutation/simple-content-char-ref	valid	
+mutation/simple-type-child-element	invalid	86:element-in-simple-content
+mutation/empty-content-text	invalid	93:content-not-empty
+mutation/empty-content-child	invalid	93:content-not-empty
+mutation/empty-content-whitespace	invalid	93:content-not-empty 93:content-not-empty
+mutation/empty-content-missing-attribute	invalid	93:attribute-missing 93:attribute-value
+mutation/date-feb-30	invalid	134:element-value
+mutation/date-feb-29-non-leap	invalid	134:element-value
+mutation/date-feb-29-1900	invalid	134:element-value
+mutation/date-feb-29-2000	valid	
+mutation/date-apr-31	invalid	134:element-value
+mutation/date-month-13	invalid	134:element-value
+mutation/date-month-00	invalid	134:element-value
+mutation/date-day-00	invalid	134:element-value
+mutation/date-two-digit-year	invalid	134:element-value
+mutation/date-single-digits	invalid	134:element-value
+mutation/date-with-time	invalid	134:element-value
+mutation/date-year-zero	invalid	134:element-value
+mutation/date-year-leading-zero-five-digits	invalid	134:element-value
+mutation/date-year-five-digits	valid	
+mutation/date-year-negative	valid	
+mutation/date-year-negative-feb-29-minus-1	invalid	134:element-value
+mutation/date-year-negative-feb-29-minus-4	valid	
+mutation/date-year-negative-feb-29-minus-5	invalid	134:element-value
+mutation/date-year-plus-sign	invalid	134:element-value
+mutation/date-whitespace	invalid	134:element-value
+mutation/date-inner-space	invalid	134:element-value
+mutation/date-tz-z	valid	
+mutation/date-tz-plus-14	valid	
+mutation/date-tz-minus-14	valid	
+mutation/date-tz-plus-14-01	invalid	134:element-value
+mutation/date-tz-plus-13-59	valid	
+mutation/date-tz-plus-15	invalid	134:element-value
+mutation/date-tz-minute-60	invalid	134:element-value
+mutation/date-tz-no-colon	invalid	134:element-value
+mutation/date-tz-lowercase-z	invalid	134:element-value
+mutation/date-empty	invalid	134:element-value
+mutation/date-fullwidth-digits	invalid	134:element-value
+mutation/date-in-extension-lax	invalid	123:element-value
+mutation/time-24-00	valid	
+mutation/time-24-00-fraction	valid	
+mutation/time-24-00-01	invalid	135:element-value
+mutation/time-24-01	invalid	135:element-value
+mutation/time-25	invalid	135:element-value
+mutation/time-minute-60	invalid	135:element-value
+mutation/time-second-60	invalid	135:element-value
+mutation/time-no-seconds	invalid	135:element-value
+mutation/time-dot-no-digits	invalid	135:element-value
+mutation/time-fraction-tz	valid	
+mutation/time-long-fraction	invalid	135:element-value
+mutation/time-one-digit-hour	invalid	135:element-value
+mutation/time-tz-24	invalid	135:element-value
+mutation/time-comma-fraction	invalid	135:element-value
+mutation/time-24-00-tz	valid	
+mutation/datetime-space	invalid	62:element-value
+mutation/datetime-no-tz	valid	
+mutation/datetime-lowercase-t	invalid	62:element-value
+mutation/datetime-date-only	invalid	62:element-value
+mutation/datetime-24-00	valid	
+mutation/datetime-feb-29-non-leap	invalid	62:element-value
+mutation/datetime-no-seconds	invalid	62:element-value
+mutation/datetime-trailing-garbage	invalid	62:element-value
+mutation/decimal-comma	invalid	282:element-value
+mutation/decimal-exponent	invalid	282:element-value
+mutation/decimal-dot-only	invalid	282:element-value
+mutation/decimal-sign-only	invalid	282:element-value
+mutation/decimal-plus-dot	invalid	282:element-value
+mutation/decimal-two-dots	invalid	282:element-value
+mutation/decimal-double-sign	invalid	282:element-value
+mutation/decimal-fullwidth	invalid	282:element-value
+mutation/decimal-nan	invalid	282:element-value
+mutation/decimal-inf	invalid	282:element-value
+mutation/decimal-hex	invalid	282:element-value
+mutation/decimal-empty	invalid	282:element-value
+mutation/decimal-whitespace-only	invalid	282:element-value
+mutation/decimal-inner-space	invalid	282:element-value
+mutation/decimal-trailing-dot	valid	
+mutation/decimal-leading-dot	valid	
+mutation/decimal-zeros-dot	valid	
+mutation/decimal-24-digits	valid	
+mutation/decimal-25-digits	invalid	282:element-value
+mutation/decimal-25-digits-fraction	invalid	282:element-value
+mutation/decimal-many-leading-zeros	valid	
+mutation/decimal-tab-padding	valid	
+mutation/decimal-in-attribute-position	invalid	251:element-value
+mutation/integer-fraction	invalid	71:element-value
+mutation/integer-plus	valid	
+mutation/integer-minus-zero	valid	
+mutation/integer-25-digits	invalid	71:element-value
+mutation/integer-empty	invalid	71:element-value
+mutation/integer-restriction-hmac	invalid	27:element-value
+mutation/integer-restriction-hmac-valid	invalid	27:strict-wildcard-element
+mutation/integer-restriction-hmac-own-ns-wildcard	invalid	27:unexpected-element
+mutation/boolean-capital	invalid	132:element-value
+mutation/boolean-upper	invalid	132:element-value
+mutation/boolean-yes	invalid	132:element-value
+mutation/boolean-padded	valid	
+mutation/boolean-zero	valid	
+mutation/boolean-two	invalid	132:element-value
+mutation/boolean-empty	invalid	132:element-value
+mutation/base64-length-3	invalid	157:element-value
+mutation/base64-pad-two	valid	
+mutation/base64-pad-two-bad-bits	invalid	157:element-value
+mutation/base64-pad-one	valid	
+mutation/base64-pad-one-bad-bits	invalid	157:element-value
+mutation/base64-pad-three	invalid	157:element-value
+mutation/base64-pad-only	invalid	157:element-value
+mutation/base64-pad-short	invalid	157:element-value
+mutation/base64-pad-middle	invalid	157:element-value
+mutation/base64-spaces	valid	
+mutation/base64-lines	valid	
+mutation/base64-bang	valid	
+mutation/base64-dash	valid	
+mutation/base64-url-alphabet	valid	
+mutation/base64-empty	valid	
+mutation/base64-data-after-pad-space	invalid	157:element-value
+mutation/base64-element-type	invalid	36:element-value
+mutation/uri-space	valid	
+mutation/uri-bad-percent	invalid	137:attribute-value
+mutation/uri-percent-end	invalid	137:attribute-value
+mutation/uri-good-percent	valid	
+mutation/uri-ipv6	valid	
+mutation/uri-digit-scheme	invalid	137:attribute-value
+mutation/uri-colon-only	invalid	137:attribute-value
+mutation/uri-colon-first-segment	valid	
+mutation/uri-relative-colon	valid	
+mutation/uri-urn	valid	
+mutation/uri-fragment-brackets	valid	
+mutation/uri-fragment-hash	invalid	137:attribute-value
+mutation/uri-query-brackets	invalid	137:attribute-value
+mutation/uri-path-brackets	invalid	137:attribute-value
+mutation/uri-non-ascii	valid	
+mutation/uri-backslash	valid	
+mutation/uri-port-letters	invalid	137:attribute-value
+mutation/uri-empty-port	invalid	137:attribute-value
+mutation/uri-userinfo	valid	
+mutation/uri-two-at	invalid	137:attribute-value
+mutation/uri-empty	valid	
+mutation/uri-whitespace	valid	
+mutation/uri-mailto	valid	
+mutation/uri-scheme-only	valid	
+mutation/uri-triple-slash	valid	
+mutation/uri-percent-in-host	invalid	137:attribute-value
+mutation/uri-ipv4	valid	
+mutation/uri-bracket-in-host	invalid	137:attribute-value
+mutation/uri-unterminated-ipv6	invalid	137:attribute-value
+mutation/uri-caret-pipe	valid	
+mutation/uri-element-content	valid	
+mutation/language-underscore	invalid	138:attribute-value
+mutation/language-digits	invalid	138:attribute-value
+mutation/language-digit-first-part	invalid	138:attribute-value
+mutation/language-long-subtag	invalid	138:attribute-value
+mutation/language-long-primary	invalid	138:attribute-value
+mutation/language-eight	valid	
+mutation/language-empty	invalid	138:attribute-value
+mutation/language-padded	valid	
+mutation/language-trailing-dash	invalid	138:attribute-value
+mutation/language-private	valid	
+mutation/language-double-dash	invalid	138:attribute-value
+mutation/id-invalid-ncname	invalid	24:attribute-value
+mutation/id-colon	invalid	24:attribute-value
+mutation/id-padded	valid	
+mutation/id-empty	invalid	24:attribute-value
+mutation/id-duplicate	invalid	28:attribute-value
+mutation/id-duplicate-padded	invalid	28:attribute-value
+mutation/id-duplicate-three	invalid	92:attribute-value
+mutation/id-non-ascii	valid	
+mutation/id-duplicate-xml-id	invalid	24:attribute-value
+mutation/normalized-string-tab	valid	
+mutation/enumeration-valid	valid	
+mutation/enumeration-wrong-case	invalid	86:attribute-value
+mutation/enumeration-padded	invalid	86:attribute-value
+mutation/enumeration-uri-content	invalid	86:element-value 86:element-value
+mutation/attribute-missing-required	invalid	263:attribute-missing
+mutation/attribute-missing-required-unit	valid	
+mutation/attribute-missing-required-mime	invalid	157:attribute-missing
+mutation/attribute-missing-required-algorithm	invalid	26:attribute-missing
+mutation/attribute-unknown	invalid	151:attribute-not-allowed
+mutation/attribute-unknown-two	invalid	151:attribute-not-allowed 151:attribute-not-allowed
+mutation/attribute-foreign-namespace	invalid	151:attribute-not-allowed
+mutation/attribute-qualified-known-name	invalid	151:attribute-not-allowed
+mutation/attribute-xml-lang	invalid	139:attribute-not-allowed
+mutation/attribute-xml-space	invalid	150:attribute-not-allowed
+mutation/attribute-on-element-only	invalid	150:attribute-not-allowed
+mutation/attribute-and-content-errors	invalid	282:attribute-missing 282:attribute-not-allowed 282:element-value
+mutation/attribute-strict-wildcard	invalid	80:strict-wildcard-attribute
+mutation/attribute-strict-wildcard-foreign	invalid	80:strict-wildcard-attribute
+mutation/attribute-strict-wildcard-xsi	valid	
+mutation/attribute-anytype-lax	valid	
+mutation/attribute-anytype-lax-invalid-known	invalid	76:element-value
+mutation/xsi-schema-location	valid	
+mutation/xsi-schema-location-odd	valid	
+mutation/xsi-schema-location-bad-uri	valid	
+mutation/xsi-unknown-attribute	invalid	4:attribute-not-allowed
+mutation/xsi-nil-true	invalid	4:not-nillable
+mutation/xsi-nil-false	invalid	4:not-nillable
+mutation/xsi-nil-invalid	invalid	4:attribute-value
+mutation/xsi-type-same	valid	
+mutation/xsi-type-base	invalid	4:xsi-type
+mutation/xsi-type-unrelated	invalid	4:xsi-type
+mutation/xsi-type-unknown	invalid	4:xsi-type
+mutation/xsi-type-undeclared-prefix	invalid	4:xsi-type
+mutation/xsi-type-not-qname	invalid	4:xsi-type
+mutation/xsi-type-builtin-on-complex	invalid	4:xsi-type
+mutation/xsi-type-on-anytype	invalid	76:element-value
+mutation/xsi-type-on-anytype-valid	valid	
+mutation/xsi-type-in-lax-content	invalid	121:attribute-not-allowed 121:element-value
+mutation/xsi-type-derived-string	valid	
+mutation/xsi-type-derived-string-bad	invalid	86:element-value
+mutation/xsi-type-derived-string-not-derived	invalid	86:xsi-type
+mutation/xsi-type-abstract	invalid	92:xsi-type
+mutation/xsi-type-restriction-of-abstract	valid	
+mutation/xsi-type-sibling-restriction	invalid	92:xsi-type
+mutation/xsi-type-anytype	valid	
+mutation/xsi-type-complex-on-anytype	valid	
+mutation/xsi-type-complex-on-anytype-bad	invalid	76:attribute-missing
+mutation/extension-content-empty	invalid	118:missing-element
+mutation/extension-content-two-children	invalid	125:unexpected-element
+mutation/extension-content-unqualified	invalid	129:unexpected-element
+mutation/extension-content-own-namespace	invalid	129:unexpected-element
+mutation/extension-content-known-invalid	invalid	129:element-value
+mutation/extension-content-known-valid	valid	
+mutation/extension-content-known-bad-structure	invalid	129:unexpected-element
+mutation/extension-content-invoice-root	invalid	129:missing-element
+mutation/extension-content-text	invalid	118:text-not-allowed
+mutation/extension-lax-nested-unknown-attribute	invalid	122:attribute-not-allowed
+mutation/extension-lax-nested-bad-structure	invalid	121:unexpected-element
+mutation/extension-lax-deep-known	invalid	121:element-value
+mutation/extension-missing-content	invalid	118:unexpected-element
+mutation/extension-wrong-order	invalid	112:unexpected-element
+mutation/extensions-empty	invalid	15:missing-element 16:unexpected-element
+mutation/signature-missing-signature-value	invalid	44:unexpected-element
+mutation/signature-bad-signature-value	invalid	43:element-value
+mutation/signature-transforms-empty	valid	
+mutation/signature-transform-own-namespace-other	invalid	33:unexpected-element
+mutation/signature-signed-info-text	invalid	25:text-not-allowed
+mutation/signature-key-info-foreign	valid	
+mutation/signature-key-info-empty	invalid	47:missing-element
+mutation/signature-x509-data-empty	invalid	49:missing-element
+mutation/signature-key-value-rsa	valid	
+mutation/signature-key-value-two	invalid	48:unexpected-element
+mutation/signature-dsa-partial	invalid	48:unexpected-element
+mutation/signature-dsa-full	valid	
+mutation/signature-dsa-y-only	invalid	48:missing-element
+mutation/signature-pgp-first	valid	
+mutation/signature-pgp-second	valid	
+mutation/signature-pgp-empty	invalid	48:missing-element
+mutation/signature-spki	valid	
+mutation/signature-spki-two-foreign	invalid	48:unexpected-element
+mutation/signature-object-any	valid	
+mutation/signature-object-any-known-invalid	invalid	58:missing-element
+mutation/signature-retrieval-method	valid	
+mutation/signature-manifest-in-object	valid	
+mutation/signature-properties-in-object	invalid	58:missing-element
+mutation/signature-properties-own-ns	invalid	58:unexpected-element
+mutation/signature-strict-wildcard-unknown	invalid	92:strict-wildcard-element
+mutation/signature-strict-wildcard-known	valid	
+mutation/signature-strict-wildcard-known-invalid	invalid	92:element-value
+mutation/signature-strict-wildcard-unqualified	invalid	92:unexpected-element
+mutation/signature-xades141-element	valid	
+mutation/signature-timestamp-missing-choice	invalid	92:missing-element
+mutation/signature-timestamp-include-after-c14n	invalid	94:unexpected-element
+mutation/signature-timestamp-xml	valid	
+mutation/signature-timestamp-reference-info	invalid	94:unexpected-element
+mutation/signature-counter-signature	valid	
+mutation/signature-revocation	valid	
+mutation/signature-revocation-bad-number	invalid	92:element-value 92:element-value
+mutation/signature-policy-id	invalid	76:element-value
+mutation/signature-commitment	invalid	85:unexpected-element
+mutation/signature-commitment-both-choices	invalid	85:unexpected-element 85:unexpected-element
+mutation/signature-wrong-order-in-object	invalid	60:unexpected-element
+mutation/signature-information-twice	valid	
+mutation/signature-documents-empty	invalid	20:missing-element 20:unexpected-element
+mutation/malformed-unclosed	malformed	
+mutation/malformed-undeclared-prefix	malformed	
+mutation/uri-query-only	valid	
+mutation/uri-opaque-bracket	invalid	137:attribute-value
+mutation/uri-net-path	valid	
+mutation/uri-ipv6-full	valid	
+mutation/uri-ipv6-v4	valid	
+mutation/uri-ipv6-bad	valid	
+mutation/uri-ipv6-userinfo	valid	
+mutation/uri-ipv6-zone	valid	
+mutation/uri-fragment-only	valid	
+mutation/uri-reg-name-dash	valid	
+mutation/uri-reg-name-chars	valid	
+mutation/uri-path-param	valid	
+mutation/uri-query-two-hash	invalid	137:attribute-value
+mutation/uri-opaque-percent	valid	
+mutation/uri-relative-dotdot	valid	
+mutation/uri-empty-host-port	valid	
+mutation/uri-query-slash-question	valid	
+mutation/uri-scheme-plus	valid	
+mutation/uri-scheme-underscore	invalid	137:attribute-value
+mutation/uri-delete-char	valid	
+mutation/uri-tab	valid	
+mutation/uri-path-percent-bad-in-fragment	invalid	137:attribute-value
+mutation/simple-content-child-and-value	invalid	282:element-in-simple-content 282:element-value
+mutation/xsi-type-whitespace	invalid	86:xsi-type
+mutation/xsi-type-unsupported-builtin	valid	
+mutation/xsi-type-any-simple-type	invalid	76:element-in-simple-content
+mutation/xsi-type-token	valid	
+mutation/xsi-type-fail-then-attribute	invalid	151:attribute-not-allowed 151:xsi-type
+mutation/xsi-type-fail-then-child	invalid	151:element-in-simple-content 151:xsi-type
+mutation/xsi-type-not-derived-then-attributes	invalid	151:attribute-not-allowed 151:attribute-not-allowed 151:xsi-type
+mutation/xsi-type-abstract-on-anytype	invalid	76:abstract-type
+mutation/xsi-type-abstract-in-lax	invalid	121:abstract-type
+mutation/xsi-type-unknown-in-lax	invalid	121:xsi-type
+mutation/xsi-type-not-qname-in-lax	invalid	121:xsi-type
+mutation/xsi-nil-and-type	invalid	151:not-nillable 151:xsi-type
+mutation/xsi-nil-then-content	invalid	151:attribute-not-allowed 151:element-in-simple-content 151:not-nillable
+mutation/xsi-nil-on-anytype	invalid	76:not-nillable
+mutation/xsi-nil-in-lax	valid	
+mutation/text-three-nodes	invalid	150:text-not-allowed 150:text-not-allowed 150:text-not-allowed
+mutation/text-then-unexpected	invalid	150:text-not-allowed 151:unexpected-element
+mutation/text-after-unexpected	invalid	151:unexpected-element
+mutation/text-cdata-mixed-whitespace	invalid	150:text-not-allowed
+mutation/empty-content-text-and-children	invalid	93:content-not-empty 93:content-not-empty
+mutation/empty-content-child-subtree	invalid	93:content-not-empty
+mutation/strict-wildcard-subtree	invalid	92:strict-wildcard-element
+mutation/strict-wildcard-then-sibling	invalid	92:strict-wildcard-element 92:unexpected-element
+mutation/unexpected-subtree	invalid	151:unexpected-element
+mutation/attribute-error-and-missing-child	invalid	150:attribute-not-allowed 150:missing-element
+mutation/id-duplicate-in-lax-unknown	valid	
+mutation/id-duplicate-in-lax-known	invalid	121:attribute-value
+mutation/id-duplicate-in-object	invalid	58:attribute-value
+mutation/date-lead-space	invalid	134:element-value
+mutation/time-padded	invalid	135:element-value
+mutation/datetime-padded	invalid	62:element-value
+mutation/date-year-twenty-digits	invalid	134:element-value
+mutation/xsi-type-complex-derived-from-declared-simple	valid	
+mutation/dtd-internal-entity	valid	
+mutation/dtd-attribute-default	invalid	10:attribute-missing

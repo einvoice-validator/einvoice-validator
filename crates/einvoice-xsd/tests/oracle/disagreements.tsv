@@ -1,0 +1,33 @@
+# Cases where this crate and xmllint (libxml2 2.9.14) disagree, each with its cause. The test
+# tests/oracle.rs fails on any difference not listed here and on any listed one that no longer
+# occurs. kind: verdict (validity differs), errors (same verdict, different errors), unsupported
+# (this crate refuses the document as unsupported). Spec references are to XML Schema 1.0
+# Second Edition (Part 1: Structures, Part 2: Datatypes).
+case	kind	explanation
+mutation/text-cdata-whitespace-in-element-only	verdict	Whitespace written as a CDATA section in element-only content. Part 1 cvc-complex-type.2.3 allows character information items that are whitespace; CDATA section boundaries are not part of the infoset. libxml2 reports any CDATA node in element-only content.
+mutation/text-cdata-mixed-whitespace	verdict	Same as text-cdata-whitespace-in-element-only, with plain whitespace around the CDATA section.
+mutation/date-whitespace	verdict	xs:date has whiteSpace collapse (fixed), Part 2 3.2.9: leading and trailing whitespace is removed before the lexical check. libxml2 2.9.14 does not remove it for the date and time types (it does for the other types).
+mutation/date-lead-space	verdict	As date-whitespace: one leading space before an xs:date value.
+mutation/time-padded	verdict	As date-whitespace, for xs:time (Part 2 3.2.8, whiteSpace collapse).
+mutation/datetime-padded	verdict	As date-whitespace, for xs:dateTime (Part 2 3.2.7, whiteSpace collapse).
+mutation/time-long-fraction	verdict	10:15:59.99999999999999999999 is a valid xs:time (seconds below 60, any number of fractional digits, Part 2 3.2.7). libxml2 accumulates the seconds in a double, which rounds to 60, and then rejects them.
+mutation/date-year-twenty-digits	verdict	Part 2 3.2.7 puts no limit on the number of year digits. libxml2 rejects years that overflow a C long.
+mutation/decimal-25-digits	verdict	The value space of xs:decimal has no digit limit (Part 2 3.2.3; minimally conforming processors must support at least 18 digits). libxml2 rejects decimals with more than 24 significant digits, an implementation limit it does not document. This crate checks the lexical space without limit.
+mutation/decimal-25-digits-fraction	verdict	As decimal-25-digits: trailing fractional zeros count towards the libxml2 limit of 24 digits.
+mutation/integer-25-digits	verdict	As decimal-25-digits, for xs:integer (here ds:X509SerialNumber, which in practice holds X.509 serial numbers of up to 49 digits).
+mutation/base64-bang	verdict	The lexical space of xs:base64Binary (Part 2 3.2.16) admits only the base64 alphabet, padding and single spaces. libxml2 skips every character outside the alphabet, so QU!JD passes there.
+mutation/base64-dash	verdict	As base64-bang, with - and _ (not in the base64 alphabet).
+mutation/base64-url-alphabet	verdict	As base64-bang: -_-_ (the URL-safe alphabet) is not base64Binary; libxml2 skips all four characters and accepts the empty value.
+mutation/uri-query-brackets	verdict	xs:anyURI is defined by RFC 2396 as amended by RFC 2732 (Part 2 3.2.17), which adds [ and ] to the reserved characters, allowed in a query. libxml2 checks RFC 3986, which does not allow them there.
+mutation/uri-opaque-bracket	verdict	As uri-query-brackets: a:b[c is an absolute URI with an opaque part made of uric characters, [ included (RFC 2396 with RFC 2732).
+mutation/uri-port-letters	verdict	http://host:port/ is a valid RFC 2396 URI: the authority is a registry-based name (reg_name allows :), which RFC 2396 offers besides server-based authorities. libxml2 (RFC 3986) requires a numeric port.
+mutation/uri-two-at	verdict	As uri-port-letters: a@b@c is a valid RFC 2396 reg_name (@ is allowed there).
+mutation/uri-empty-port	verdict	http://host:/ has an empty port, allowed by RFC 2396 (port = *digit) and by RFC 3986 alike; libxml2 rejects it.
+mutation/uri-scheme-only	verdict	http: is not an RFC 2396 URI: an absolute URI needs a hierarchical part or a non-empty opaque part. RFC 3986, which libxml2 checks, allows an empty path.
+mutation/uri-query-only	verdict	?q is not an RFC 2396 URI reference: a relative URI needs a path before the query. RFC 3986, which libxml2 checks, allows it.
+mutation/uri-ipv6-bad	verdict	[:::1] is not an IPv6 address (RFC 2732 requires one inside the brackets). libxml2 accepts any characters between [ and ].
+mutation/uri-ipv6-zone	verdict	As uri-ipv6-bad: RFC 2732 has no zone identifiers (they were added to RFC 3986 URIs by RFC 6874), so [fe80::1%25eth0] is not a valid host.
+mutation/id-duplicate-xml-id	verdict	The document reuses as ds:Signature/@Id a value that an xml:id attribute in lax extension content also carries. For XML Schema only attributes and elements validated as xs:ID take part in ID uniqueness (Part 1 cvc-id); the xml:id attribute has no declaration and is not one. libxml2 registers xml:id values while parsing and then reports the schema ID as a duplicate.
+mutation/xsi-type-whitespace	verdict	xsi:type=" xs:token ": Part 1 cvc-elt.4.1 validates the normalized value of xsi:type as an xs:QName, whose whitespace is collapsed. libxml2 resolves the prefix with the spaces kept and fails.
+mutation/simple-content-child-and-value	errors	After a child element in simple content (reported by both), libxml2 also validates the value as the empty string and reports it as an invalid xs:decimal. This crate does not check the value of content already reported as invalid. Same verdict.
+mutation/xsi-type-unsupported-builtin	unsupported	xsi:type names xs:float, a built-in type the UBL 2.1 schemas do not use and this crate does not implement. The document is refused as unsupported (DocumentError::Unsupported) rather than given a verdict that might be wrong.

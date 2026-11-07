@@ -1,0 +1,368 @@
+# Mutations of the synthetic documents in documents/: id, base document (file stem), then one
+# or more pairs of columns: text to find (must occur exactly once in the document being
+# edited, edits applied left to right) and its replacement. Escapes in the find and replacement columns:
+# \n newline, \t tab, \r carriage return, \\ backslash; \e alone is the empty string.
+id	base	find	replace	(find	replace)...
+structure-missing-id	invoice-full	<cbc:ID>INV-2024-0001</cbc:ID>\n	\e
+structure-wrong-order	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>10:15:30</cbc:IssueTime>\n  <cbc:DueDate>2024-03-31</cbc:DueDate>	<cbc:DueDate>2024-03-31</cbc:DueDate>\n  <cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>10:15:30</cbc:IssueTime>
+structure-duplicate-single	invoice-full	<cbc:IssueTime>10:15:30</cbc:IssueTime>	<cbc:IssueTime>10:15:30</cbc:IssueTime>\n  <cbc:IssueTime>10:15:31</cbc:IssueTime>
+structure-unknown-element	invoice-full	<cbc:BuyerReference>BUYER-REF-1</cbc:BuyerReference>	<cbc:BuyerReference>BUYER-REF-1</cbc:BuyerReference>\n  <cbc:Unknown>x</cbc:Unknown>
+structure-foreign-element	invoice-full	<cbc:BuyerReference>BUYER-REF-1</cbc:BuyerReference>	<cbc:BuyerReference>BUYER-REF-1</cbc:BuyerReference>\n  <ex:Foreign/>
+structure-wrong-namespace-child	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cac:ID>PO-77</cac:ID>
+structure-unqualified-child	invoice-full	<cbc:ID>PO-77</cbc:ID>	<ID xmlns="">PO-77</ID>
+structure-default-namespace-child	invoice-full	<cbc:ID>PO-77</cbc:ID>	<ID>PO-77</ID>
+structure-unexpected-last	invoice-full	<cac:InvoiceLine>\n    <cbc:ID>1</cbc:ID>	<cac:Unexpected>\n    <cbc:ID>1</cbc:ID>	</cac:InvoiceLine>\n  <cac:InvoiceLine>	</cac:Unexpected>\n  <cac:InvoiceLine>
+structure-missing-children-at-end	creditnote-min	  <cac:CreditNoteLine>\n    <cbc:ID>1</cbc:ID>\n  </cac:CreditNoteLine>\n	\e
+structure-missing-first-required	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<!-- nothing -->
+structure-repeated-max-one	invoice-full	<cac:OrderReference>\n    <cbc:ID>PO-77</cbc:ID>\n  </cac:OrderReference>	<cac:OrderReference>\n    <cbc:ID>PO-77</cbc:ID>\n  </cac:OrderReference>\n  <cac:OrderReference>\n    <cbc:ID>PO-78</cbc:ID>\n  </cac:OrderReference>
+structure-two-errors-in-siblings	invoice-full	<cbc:Name>Example Supplier</cbc:Name>	<cbc:Name>Example Supplier</cbc:Name><cbc:Bad/>
+structure-errors-in-two-elements	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:Wrong>PO-77</cbc:Wrong>
+structure-invoice-line-in-credit-note	creditnote-min	<cac:CreditNoteLine>\n    <cbc:ID>1</cbc:ID>\n  </cac:CreditNoteLine>	<cac:InvoiceLine>\n    <cbc:ID>1</cbc:ID>\n  </cac:InvoiceLine>
+structure-credit-note-line-missing-id	creditnote-min	    <cbc:ID>1</cbc:ID>\n	\e
+structure-choice-both	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied/>\n<xades:SignaturePolicyImplied/>
+root-wrong-namespace	creditnote-min	<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"	<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+root-unqualified	creditnote-min	<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"	<CreditNote
+root-wrong-name	creditnote-min	<CreditNote xmlns=	<Invoice xmlns=	</CreditNote>	</Invoice>
+text-in-element-only	invoice-full	<cbc:ID>PO-77</cbc:ID>	stray text <cbc:ID>PO-77</cbc:ID>
+text-whitespace-entities-in-element-only	invoice-full	<cbc:ID>PO-77</cbc:ID>	&#32;&#9;&#10;<cbc:ID>PO-77</cbc:ID>
+text-cdata-in-element-only	invoice-full	<cbc:ID>PO-77</cbc:ID>	<![CDATA[x]]><cbc:ID>PO-77</cbc:ID>
+text-cdata-whitespace-in-element-only	invoice-full	<cbc:ID>PO-77</cbc:ID>	<![CDATA[  ]]><cbc:ID>PO-77</cbc:ID>
+text-comment-pi-in-element-only	invoice-full	<cbc:ID>PO-77</cbc:ID>	<!-- c --><?pi data?><cbc:ID>PO-77</cbc:ID>
+text-nbsp-in-element-only	invoice-full	<cbc:ID>PO-77</cbc:ID>	&#160;<cbc:ID>PO-77</cbc:ID>
+simple-content-child-element	invoice-full	<cbc:Note>Second note,	<cbc:Note><cbc:ID>x</cbc:ID>Second note,
+simple-content-foreign-child	invoice-full	<cbc:Note>Second note,	<cbc:Note><ex:B>bold</ex:B>Second note,
+simple-content-comment	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">1<!-- c -->0<?pi x?></cbc:PriceAmount>
+simple-content-cdata	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR"><![CDATA[ 10.5 ]]></cbc:PriceAmount>
+simple-content-char-ref	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">&#x31;&#48;</cbc:PriceAmount>
+simple-type-child-element	invoice-full	<xades:MimeType>text/xml</xades:MimeType>	<xades:MimeType>text/<ex:x/>xml</xades:MimeType>
+empty-content-text	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:SignatureTimeStamp Id="timestamp-1">\n<xades:Include URI="#signed-properties-1">text</xades:Include>
+empty-content-child	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:SignatureTimeStamp Id="timestamp-1">\n<xades:Include URI="#signed-properties-1"><ex:x/></xades:Include>
+empty-content-whitespace	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:SignatureTimeStamp Id="timestamp-1">\n<xades:Include URI="#signed-properties-1" referencedData=" true "> <!-- c --> </xades:Include>
+empty-content-missing-attribute	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:SignatureTimeStamp Id="timestamp-1">\n<xades:Include referencedData="yes"/>
+date-feb-30	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-02-30</cbc:IssueDate>\n  <cbc:IssueTime>
+date-feb-29-non-leap	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2023-02-29</cbc:IssueDate>\n  <cbc:IssueTime>
+date-feb-29-1900	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>1900-02-29</cbc:IssueDate>\n  <cbc:IssueTime>
+date-feb-29-2000	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2000-02-29</cbc:IssueDate>\n  <cbc:IssueTime>
+date-apr-31	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-04-31</cbc:IssueDate>\n  <cbc:IssueTime>
+date-month-13	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-13-01</cbc:IssueDate>\n  <cbc:IssueTime>
+date-month-00	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-00-10</cbc:IssueDate>\n  <cbc:IssueTime>
+date-day-00	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-00</cbc:IssueDate>\n  <cbc:IssueTime>
+date-two-digit-year	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>24-03-01</cbc:IssueDate>\n  <cbc:IssueTime>
+date-single-digits	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-3-1</cbc:IssueDate>\n  <cbc:IssueTime>
+date-with-time	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-01T00:00:00</cbc:IssueDate>\n  <cbc:IssueTime>
+date-year-zero	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>0000-01-01</cbc:IssueDate>\n  <cbc:IssueTime>
+date-year-leading-zero-five-digits	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>02024-01-01</cbc:IssueDate>\n  <cbc:IssueTime>
+date-year-five-digits	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>12024-01-01</cbc:IssueDate>\n  <cbc:IssueTime>
+date-year-negative	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>-0001-01-01</cbc:IssueDate>\n  <cbc:IssueTime>
+date-year-negative-feb-29-minus-1	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>-0001-02-29</cbc:IssueDate>\n  <cbc:IssueTime>
+date-year-negative-feb-29-minus-4	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>-0004-02-29</cbc:IssueDate>\n  <cbc:IssueTime>
+date-year-negative-feb-29-minus-5	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>-0005-02-29</cbc:IssueDate>\n  <cbc:IssueTime>
+date-year-plus-sign	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>+2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>
+date-whitespace	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>\n\t 2024-03-01 \n</cbc:IssueDate>\n  <cbc:IssueTime>
+date-inner-space	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-01 Z</cbc:IssueDate>\n  <cbc:IssueTime>
+date-tz-z	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-01Z</cbc:IssueDate>\n  <cbc:IssueTime>
+date-tz-plus-14	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-01+14:00</cbc:IssueDate>\n  <cbc:IssueTime>
+date-tz-minus-14	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-01-14:00</cbc:IssueDate>\n  <cbc:IssueTime>
+date-tz-plus-14-01	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-01+14:01</cbc:IssueDate>\n  <cbc:IssueTime>
+date-tz-plus-13-59	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-01+13:59</cbc:IssueDate>\n  <cbc:IssueTime>
+date-tz-plus-15	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-01+15:00</cbc:IssueDate>\n  <cbc:IssueTime>
+date-tz-minute-60	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-01+01:60</cbc:IssueDate>\n  <cbc:IssueTime>
+date-tz-no-colon	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-01+0100</cbc:IssueDate>\n  <cbc:IssueTime>
+date-tz-lowercase-z	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>2024-03-01z</cbc:IssueDate>\n  <cbc:IssueTime>
+date-empty	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate/>\n  <cbc:IssueTime>
+date-fullwidth-digits	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>２０２４-03-01</cbc:IssueDate>\n  <cbc:IssueTime>
+date-in-extension-lax	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n        </ex:Data>	<cbc:IssueDate>2024-02-30</cbc:IssueDate>\n        </ex:Data>
+time-24-00	invoice-full	>10:15:30</cbc:IssueTime>	>24:00:00</cbc:IssueTime>
+time-24-00-fraction	invoice-full	>10:15:30</cbc:IssueTime>	>24:00:00.000</cbc:IssueTime>
+time-24-00-01	invoice-full	>10:15:30</cbc:IssueTime>	>24:00:01</cbc:IssueTime>
+time-24-01	invoice-full	>10:15:30</cbc:IssueTime>	>24:01:00</cbc:IssueTime>
+time-25	invoice-full	>10:15:30</cbc:IssueTime>	>25:00:00</cbc:IssueTime>
+time-minute-60	invoice-full	>10:15:30</cbc:IssueTime>	>23:60:00</cbc:IssueTime>
+time-second-60	invoice-full	>10:15:30</cbc:IssueTime>	>23:59:60</cbc:IssueTime>
+time-no-seconds	invoice-full	>10:15:30</cbc:IssueTime>	>10:15</cbc:IssueTime>
+time-dot-no-digits	invoice-full	>10:15:30</cbc:IssueTime>	>10:15:30.</cbc:IssueTime>
+time-fraction-tz	invoice-full	>10:15:30</cbc:IssueTime>	>10:15:30.123456789012Z</cbc:IssueTime>
+time-long-fraction	invoice-full	>10:15:30</cbc:IssueTime>	>10:15:59.99999999999999999999</cbc:IssueTime>
+time-one-digit-hour	invoice-full	>10:15:30</cbc:IssueTime>	>1:15:30</cbc:IssueTime>
+time-tz-24	invoice-full	>10:15:30</cbc:IssueTime>	>10:15:30+24:00</cbc:IssueTime>
+time-comma-fraction	invoice-full	>10:15:30</cbc:IssueTime>	>10:15:30,5</cbc:IssueTime>
+time-24-00-tz	invoice-full	>10:15:30</cbc:IssueTime>	>24:00:00+01:00</cbc:IssueTime>
+datetime-space	invoice-full	>2024-03-01T10:15:30.250+01:00<	>2024-03-01 10:15:30<
+datetime-no-tz	invoice-full	>2024-03-01T10:15:30.250+01:00<	>2024-03-01T10:15:30<
+datetime-lowercase-t	invoice-full	>2024-03-01T10:15:30.250+01:00<	>2024-03-01t10:15:30<
+datetime-date-only	invoice-full	>2024-03-01T10:15:30.250+01:00<	>2024-03-01<
+datetime-24-00	invoice-full	>2024-03-01T10:15:30.250+01:00<	>2024-12-31T24:00:00Z<
+datetime-feb-29-non-leap	invoice-full	>2024-03-01T10:15:30.250+01:00<	>2023-02-29T10:00:00<
+datetime-no-seconds	invoice-full	>2024-03-01T10:15:30.250+01:00<	>2024-03-01T10:15Z<
+datetime-trailing-garbage	invoice-full	>2024-03-01T10:15:30.250+01:00<	>2024-03-01T10:15:30Zx<
+decimal-comma	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">1,5</cbc:PriceAmount>
+decimal-exponent	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">1e3</cbc:PriceAmount>
+decimal-dot-only	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">.</cbc:PriceAmount>
+decimal-sign-only	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">-</cbc:PriceAmount>
+decimal-plus-dot	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">+.</cbc:PriceAmount>
+decimal-two-dots	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">1.2.3</cbc:PriceAmount>
+decimal-double-sign	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">--1</cbc:PriceAmount>
+decimal-fullwidth	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">１０</cbc:PriceAmount>
+decimal-nan	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">NaN</cbc:PriceAmount>
+decimal-inf	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">INF</cbc:PriceAmount>
+decimal-hex	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">0x10</cbc:PriceAmount>
+decimal-empty	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR"/>
+decimal-whitespace-only	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR"> \n\t </cbc:PriceAmount>
+decimal-inner-space	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">1 0</cbc:PriceAmount>
+decimal-trailing-dot	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">10.</cbc:PriceAmount>
+decimal-leading-dot	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">-.5</cbc:PriceAmount>
+decimal-zeros-dot	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">00.</cbc:PriceAmount>
+decimal-24-digits	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">123456789012345678901234</cbc:PriceAmount>
+decimal-25-digits	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">1234567890123456789012345</cbc:PriceAmount>
+decimal-25-digits-fraction	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">1.000000000000000000000000</cbc:PriceAmount>
+decimal-many-leading-zeros	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">000000000000000000000000000000001.5</cbc:PriceAmount>
+decimal-tab-padding	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR">\t-0.0\t</cbc:PriceAmount>
+decimal-in-attribute-position	invoice-full	<cbc:Percent>21.0</cbc:Percent>	<cbc:Percent>21.0%</cbc:Percent>
+integer-fraction	invoice-full	>42</ds:X509SerialNumber>	>42.0</ds:X509SerialNumber>
+integer-plus	invoice-full	>42</ds:X509SerialNumber>	> +42 </ds:X509SerialNumber>
+integer-minus-zero	invoice-full	>42</ds:X509SerialNumber>	>-0</ds:X509SerialNumber>
+integer-25-digits	invoice-full	>42</ds:X509SerialNumber>	>1234567890123456789012345</ds:X509SerialNumber>
+integer-empty	invoice-full	>42</ds:X509SerialNumber>	></ds:X509SerialNumber>
+integer-restriction-hmac	invoice-full	<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>	<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"><ds:HMACOutputLength>abc</ds:HMACOutputLength></ds:SignatureMethod>
+integer-restriction-hmac-valid	invoice-full	<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>	<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256">text<ds:HMACOutputLength>128</ds:HMACOutputLength><ex:param/>more</ds:SignatureMethod>
+integer-restriction-hmac-own-ns-wildcard	invoice-full	<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>	<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"><ds:KeyName>k</ds:KeyName></ds:SignatureMethod>
+boolean-capital	invoice-full	>false</cbc:CopyIndicator>	>False</cbc:CopyIndicator>
+boolean-upper	invoice-full	>false</cbc:CopyIndicator>	>TRUE</cbc:CopyIndicator>
+boolean-yes	invoice-full	>false</cbc:CopyIndicator>	>yes</cbc:CopyIndicator>
+boolean-padded	invoice-full	>false</cbc:CopyIndicator>	> true\n</cbc:CopyIndicator>
+boolean-zero	invoice-full	>false</cbc:CopyIndicator>	>0</cbc:CopyIndicator>
+boolean-two	invoice-full	>false</cbc:CopyIndicator>	>2</cbc:CopyIndicator>
+boolean-empty	invoice-full	>false</cbc:CopyIndicator>	></cbc:CopyIndicator>
+base64-length-3	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	abc
+base64-pad-two	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	QQ==
+base64-pad-two-bad-bits	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	QR==
+base64-pad-one	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	QUI=
+base64-pad-one-bad-bits	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	QUJ=
+base64-pad-three	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	Q===
+base64-pad-only	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	====
+base64-pad-short	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	QQ=
+base64-pad-middle	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	QQ==QUJD
+base64-spaces	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	Q U J D\n Q Q = =
+base64-lines	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	QUJD\nQUJD\r\nQUI=
+base64-bang	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	QU!JD
+base64-dash	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	QU-J_D
+base64-url-alphabet	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	-_-_
+base64-empty	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	\e
+base64-data-after-pad-space	invoice-full	ZGF0ZSxob3VycwoyMDI0LTAyLTAxLDgKMjAyNC0wMi0wMiw3LjUK	QQ== QQ==
+base64-element-type	invoice-full	<ds:DigestValue>3q2+7w==</ds:DigestValue>	<ds:DigestValue>3q2+7w=</ds:DigestValue>
+uri-space	invoice-full	listURI="https://example.org/codes/1001"	listURI="https://example.org/a b"
+uri-bad-percent	invoice-full	listURI="https://example.org/codes/1001"	listURI="https://example.org/%zz"
+uri-percent-end	invoice-full	listURI="https://example.org/codes/1001"	listURI="https://example.org/%4"
+uri-good-percent	invoice-full	listURI="https://example.org/codes/1001"	listURI="https://example.org/%4a%4B"
+uri-ipv6	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://[::1]:8080/x"
+uri-digit-scheme	invoice-full	listURI="https://example.org/codes/1001"	listURI="1http://x"
+uri-colon-only	invoice-full	listURI="https://example.org/codes/1001"	listURI=":"
+uri-colon-first-segment	invoice-full	listURI="https://example.org/codes/1001"	listURI="a/b:c"
+uri-relative-colon	invoice-full	listURI="https://example.org/codes/1001"	listURI="./a:b"
+uri-urn	invoice-full	listURI="https://example.org/codes/1001"	listURI="urn:a:b:c"
+uri-fragment-brackets	invoice-full	listURI="https://example.org/codes/1001"	listURI="#frag[1]"
+uri-fragment-hash	invoice-full	listURI="https://example.org/codes/1001"	listURI="#a#b"
+uri-query-brackets	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://x/?a[1]=2"
+uri-path-brackets	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://x/a[1]"
+uri-non-ascii	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://example.org/é"
+uri-backslash	invoice-full	listURI="https://example.org/codes/1001"	listURI="\\\\server\\share"
+uri-port-letters	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://host:port/"
+uri-empty-port	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://host:/"
+uri-userinfo	invoice-full	listURI="https://example.org/codes/1001"	listURI="ftp://user:pw@host/"
+uri-two-at	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://a@b@c/"
+uri-empty	invoice-full	listURI="https://example.org/codes/1001"	listURI=""
+uri-whitespace	invoice-full	listURI="https://example.org/codes/1001"	listURI="  urn:x  "
+uri-mailto	invoice-full	listURI="https://example.org/codes/1001"	listURI="mailto:a@b.c"
+uri-scheme-only	invoice-full	listURI="https://example.org/codes/1001"	listURI="http:"
+uri-triple-slash	invoice-full	listURI="https://example.org/codes/1001"	listURI="file:///tmp/x"
+uri-percent-in-host	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://exa%mple/"
+uri-ipv4	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://192.168.0.1:80"
+uri-bracket-in-host	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://a]b/"
+uri-unterminated-ipv6	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://[::1/"
+uri-caret-pipe	invoice-full	listURI="https://example.org/codes/1001"	listURI="a^b|c{d}"
+uri-element-content	invoice-full	<cbc:URI>https://example.org/invoices/INV-2024-0001.pdf</cbc:URI>	<cbc:URI>http://x/%G0</cbc:URI>
+language-underscore	invoice-full	languageID="en-GB"	languageID="en_GB"
+language-digits	invoice-full	languageID="en-GB"	languageID="123"
+language-digit-first-part	invoice-full	languageID="en-GB"	languageID="e1"
+language-long-subtag	invoice-full	languageID="en-GB"	languageID="en-123456789"
+language-long-primary	invoice-full	languageID="en-GB"	languageID="englishxx"
+language-eight	invoice-full	languageID="en-GB"	languageID="englishx-language"
+language-empty	invoice-full	languageID="en-GB"	languageID=""
+language-padded	invoice-full	languageID="en-GB"	languageID=" en "
+language-trailing-dash	invoice-full	languageID="en-GB"	languageID="en-"
+language-private	invoice-full	languageID="en-GB"	languageID="x-a1-B2"
+language-double-dash	invoice-full	languageID="en-GB"	languageID="en--GB"
+id-invalid-ncname	invoice-full	Id="signature-1"	Id="1signature"
+id-colon	invoice-full	Id="signature-1"	Id="a:b"
+id-padded	invoice-full	Id="signature-1"	Id=" signature-1 "
+id-empty	invoice-full	Id="signature-1"	Id=""
+id-duplicate	invoice-full	Id="reference-1" URI=""	Id="signature-1" URI=""
+id-duplicate-padded	invoice-full	Id="reference-1" URI=""	Id=" signature-1" URI=""
+id-duplicate-three	invoice-full	<ds:SignatureValue Id="signature-value-1">	<ds:SignatureValue Id="timestamp-1">
+id-non-ascii	invoice-full	Id="signature-1"	Id="sïgnature-1"
+id-duplicate-xml-id	invoice-full	<ex:Data ex:version="2"	<ex:Data xml:id="signature-1" ex:version="2"
+normalized-string-tab	invoice-full	<cbc:PayableAmount currencyID="EUR">	<cbc:PayableAmount currencyID="&#9;EUR&#10;">
+enumeration-valid	invoice-full	<xades:MimeType>text/xml</xades:MimeType>	<xades:ObjectIdentifier><xades:Identifier Qualifier="OIDAsURN">urn:oid:1.2.3</xades:Identifier></xades:ObjectIdentifier>\n<xades:MimeType>text/xml</xades:MimeType>
+enumeration-wrong-case	invoice-full	<xades:MimeType>text/xml</xades:MimeType>	<xades:ObjectIdentifier><xades:Identifier Qualifier="OIDasURN">urn:oid:1.2.3</xades:Identifier></xades:ObjectIdentifier>\n<xades:MimeType>text/xml</xades:MimeType>
+enumeration-padded	invoice-full	<xades:MimeType>text/xml</xades:MimeType>	<xades:ObjectIdentifier><xades:Identifier Qualifier=" OIDAsURN">urn:oid:1.2.3</xades:Identifier></xades:ObjectIdentifier>\n<xades:MimeType>text/xml</xades:MimeType>
+enumeration-uri-content	invoice-full	<xades:MimeType>text/xml</xades:MimeType>	<xades:ObjectIdentifier><xades:Identifier>%%</xades:Identifier><xades:DocumentationReferences><xades:DocumentationReference>http://a</xades:DocumentationReference><xades:DocumentationReference>%</xades:DocumentationReference></xades:DocumentationReferences></xades:ObjectIdentifier>\n<xades:MimeType>text/xml</xades:MimeType>
+attribute-missing-required	invoice-full	<cbc:PayableAmount currencyID="EUR">	<cbc:PayableAmount>
+attribute-missing-required-unit	invoice-full	<cbc:BaseQuantity unitCode="HUR">	<cbc:BaseQuantity>
+attribute-missing-required-mime	invoice-full	<cbc:EmbeddedDocumentBinaryObject mimeCode="text/csv" filename	<cbc:EmbeddedDocumentBinaryObject filename
+attribute-missing-required-algorithm	invoice-full	<ds:CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>	<ds:CanonicalizationMethod/>
+attribute-unknown	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:ID foo="bar">PO-77</cbc:ID>
+attribute-unknown-two	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:ID foo="bar" baz="qux" schemeID="x">PO-77</cbc:ID>
+attribute-foreign-namespace	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:ID ex:foo="bar">PO-77</cbc:ID>
+attribute-qualified-known-name	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:ID cbc:schemeID="bar">PO-77</cbc:ID>
+attribute-xml-lang	invoice-full	<cbc:Note>Second note,	<cbc:Note xml:lang="en">Second note,
+attribute-xml-space	invoice-full	<cac:OrderReference>	<cac:OrderReference xml:space="preserve">
+attribute-on-element-only	invoice-full	<cac:OrderReference>	<cac:OrderReference id="x">
+attribute-and-content-errors	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount foo="1">ten</cbc:PriceAmount>
+attribute-strict-wildcard	invoice-full	<xades:ClaimedRole>Supplier	<xades:ClaimedRole foo="x">Supplier
+attribute-strict-wildcard-foreign	invoice-full	<xades:ClaimedRole>Supplier	<xades:ClaimedRole ex:foo="x">Supplier
+attribute-strict-wildcard-xsi	invoice-full	<xades:ClaimedRole>Supplier	<xades:ClaimedRole xsi:schemaLocation="a b">Supplier
+attribute-anytype-lax	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied foo="x" ex:bar="y">text<ex:child z="1"/><cbc:Note>n</cbc:Note></xades:SignaturePolicyImplied>
+attribute-anytype-lax-invalid-known	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied><cbc:IssueDate>x</cbc:IssueDate></xades:SignaturePolicyImplied>
+xsi-schema-location	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:x x.xsd" xsi:noNamespaceSchemaLocation="y.xsd">CN-1</cbc:ID>
+xsi-schema-location-odd	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:x">CN-1</cbc:ID>
+xsi-schema-location-bad-uri	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="%zz y" xsi:noNamespaceSchemaLocation="%zz">CN-1</cbc:ID>
+xsi-unknown-attribute	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:foo="1">CN-1</cbc:ID>
+xsi-nil-true	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true"/>
+xsi-nil-false	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="false">CN-1</cbc:ID>
+xsi-nil-invalid	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="maybe">CN-1</cbc:ID>
+xsi-type-same	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="cbc:IDType">CN-1</cbc:ID>
+xsi-type-base	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:udt="urn:oasis:names:specification:ubl:schema:xsd:UnqualifiedDataTypes-2" xsi:type="udt:IdentifierType">CN-1</cbc:ID>
+xsi-type-unrelated	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="cbc:NameType">CN-1</cbc:ID>
+xsi-type-unknown	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="cbc:NoSuchType">CN-1</cbc:ID>
+xsi-type-undeclared-prefix	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="nope:IDType">CN-1</cbc:ID>
+xsi-type-not-qname	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="1x">CN-1</cbc:ID>
+xsi-type-builtin-on-complex	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<cbc:ID xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:string">CN-1</cbc:ID>
+xsi-type-on-anytype	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:date">2024-02-30</xades:SignaturePolicyImplied>
+xsi-type-on-anytype-valid	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:date">2024-02-29</xades:SignaturePolicyImplied>
+xsi-type-in-lax-content	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item code="B" xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:boolean">maybe</ex:Item>
+xsi-type-derived-string	invoice-full	<xades:MimeType>text/xml</xades:MimeType>	<xades:MimeType xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:normalizedString">text/xml</xades:MimeType>
+xsi-type-derived-string-bad	invoice-full	<xades:MimeType>text/xml</xades:MimeType>	<xades:MimeType xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:language">text/xml</xades:MimeType>
+xsi-type-derived-string-not-derived	invoice-full	<xades:MimeType>text/xml</xades:MimeType>	<xades:MimeType xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:decimal">1</xades:MimeType>
+xsi-type-abstract	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:SignatureTimeStamp Id="timestamp-1" xsi:type="xades:GenericTimeStampType">
+xsi-type-restriction-of-abstract	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:SignatureTimeStamp Id="timestamp-1" xsi:type="xades:XAdESTimeStampType">
+xsi-type-sibling-restriction	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:SignatureTimeStamp Id="timestamp-1" xsi:type="xades:OtherTimeStampType">
+xsi-type-anytype	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:anyType"><x/></xades:SignaturePolicyImplied>
+xsi-type-complex-on-anytype	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied xsi:type="xades:IncludeType" URI="#x"/>
+xsi-type-complex-on-anytype-bad	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied xsi:type="xades:IncludeType"/>
+extension-content-empty	invoice-full	<ex:Data ex:version="2" plain="attribute">\n          <ex:Item code="A">first <!-- comment --> item</ex:Item>\n          <ex:Item code="B"><ex:Nested/></ex:Item>\n          <cbc:Note languageID="fr">Une note dans une extension</cbc:Note>\n          <cbc:IssueDate>2024-03-01</cbc:IssueDate>\n        </ex:Data>	\e
+extension-content-two-children	invoice-full	</ex:Data>	</ex:Data>\n        <ex:Second/>
+extension-content-unqualified	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>\n          <cbc:Note languageID="fr">Une note dans une extension</cbc:Note>\n          <cbc:IssueDate>2024-03-01</cbc:IssueDate>\n        </ex:Data>	<ex:Item code="B"><ex:Nested/></ex:Item>\n          <cbc:Note languageID="fr">Une note dans une extension</cbc:Note>\n          <cbc:IssueDate>2024-03-01</cbc:IssueDate>\n        </ex:Data>\n      </ext:ExtensionContent>\n    </ext:UBLExtension>\n    <ext:UBLExtension>\n      <ext:ExtensionContent>\n        <Data xmlns=""><Child/></Data>
+extension-content-own-namespace	invoice-full	</ex:Data>	</ex:Data>\n      </ext:ExtensionContent>\n    </ext:UBLExtension>\n    <ext:UBLExtension>\n      <ext:ExtensionContent>\n        <ext:UBLExtensions/>
+extension-content-known-invalid	invoice-full	</ex:Data>	</ex:Data>\n      </ext:ExtensionContent>\n    </ext:UBLExtension>\n    <ext:UBLExtension>\n      <ext:ExtensionContent>\n        <cbc:IssueDate>01/03/2024</cbc:IssueDate>
+extension-content-known-valid	invoice-full	</ex:Data>	</ex:Data>\n      </ext:ExtensionContent>\n    </ext:UBLExtension>\n    <ext:UBLExtension>\n      <ext:ExtensionContent>\n        <cac:OrderReference><cbc:ID>x</cbc:ID></cac:OrderReference>
+extension-content-known-bad-structure	invoice-full	</ex:Data>	</ex:Data>\n      </ext:ExtensionContent>\n    </ext:UBLExtension>\n    <ext:UBLExtension>\n      <ext:ExtensionContent>\n        <cac:OrderReference><cbc:Unknown>x</cbc:Unknown></cac:OrderReference>
+extension-content-invoice-root	invoice-full	</ex:Data>	</ex:Data>\n      </ext:ExtensionContent>\n    </ext:UBLExtension>\n    <ext:UBLExtension>\n      <ext:ExtensionContent>\n        <inv:Invoice xmlns:inv="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"><cbc:ID>x</cbc:ID></inv:Invoice>
+extension-content-text	invoice-full	<ex:Data ex:version="2"	text <ex:Data ex:version="2"
+extension-lax-nested-unknown-attribute	invoice-full	<cbc:Note languageID="fr">Une note	<cbc:Note languageID="fr" bad="1">Une note
+extension-lax-nested-bad-structure	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item code="B"><cac:Country><cbc:Bad/></cac:Country></ex:Item>
+extension-lax-deep-known	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item code="B"><ex:Nested><ex:Deeper><cbc:ChargeIndicator>maybe</cbc:ChargeIndicator></ex:Deeper></ex:Nested></ex:Item>
+extension-missing-content	invoice-full	<ext:ExtensionReason>Synthetic extension content, validated laxly</ext:ExtensionReason>\n      <ext:ExtensionContent>\n        <ex:Data	<ext:ExtensionReason>Synthetic extension content, validated laxly</ext:ExtensionReason>\n      <ext:ExtensionContentX>\n        <ex:Data	</ex:Data>\n      </ext:ExtensionContent>	</ex:Data>\n      </ext:ExtensionContentX>
+extension-wrong-order	invoice-full	<ext:ExtensionAgencyID>EX</ext:ExtensionAgencyID>\n      <ext:ExtensionAgencyName languageID="en">Example agency</ext:ExtensionAgencyName>	<ext:ExtensionAgencyName languageID="en">Example agency</ext:ExtensionAgencyName>\n      <ext:ExtensionAgencyID>EX</ext:ExtensionAgencyID>
+extensions-empty	invoice-full	<ext:UBLExtensions>\n    <ext:UBLExtension>\n      <cbc:ID>sig-ext</cbc:ID>	<ext:UBLExtensions/>\n  <ext:Removed>\n    <ext:UBLExtension>\n      <cbc:ID>sig-ext</cbc:ID>	</ext:UBLExtensions>	</ext:Removed>
+signature-missing-signature-value	invoice-full	<ds:SignatureValue Id="signature-value-1">\n                U2lnbmF0dXJlIHZhbHVlIG9mIGEgc3ludGhldGljIHRlc3QgZG9jdW1lbnQu\n                VGhpcyBpcyBub3QgYSByZWFsIHNpZ25hdHVyZS4=\n              </ds:SignatureValue>	\e
+signature-bad-signature-value	invoice-full	VGhpcyBpcyBub3QgYSByZWFsIHNpZ25hdHVyZS4=	VGhpcyBpcyBub3QgYSByZWFsIHNpZ25hdHVyZS4
+signature-transforms-empty	invoice-full	<ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>	<ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature">text<ex:any/>text<ds:XPath>a</ds:XPath><ds:XPath>b</ds:XPath></ds:Transform>
+signature-transform-own-namespace-other	invoice-full	<ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>	<ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"><ds:KeyName>x</ds:KeyName></ds:Transform>
+signature-signed-info-text	invoice-full	<ds:SignedInfo>	<ds:SignedInfo>x
+signature-key-info-foreign	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:KeyName>synthetic key</ds:KeyName><ex:Key a="b"><cbc:Note>n</cbc:Note></ex:Key>text
+signature-key-info-empty	invoice-full	<ds:KeyInfo>\n                <ds:KeyName>synthetic key</ds:KeyName>\n                <ds:X509Data>\n                  <ds:X509SubjectName>CN=Synthetic Test Signer</ds:X509SubjectName>\n                  <ds:X509IssuerSerial>\n                    <ds:X509IssuerName>CN=Synthetic Test CA</ds:X509IssuerName>\n                    <ds:X509SerialNumber>123456789012345678901234</ds:X509SerialNumber>\n                  </ds:X509IssuerSerial>\n                  <ds:X509Certificate>TUlJQ2VydGlmaWNhdGU=</ds:X509Certificate>\n                </ds:X509Data>\n              </ds:KeyInfo>	<ds:KeyInfo> </ds:KeyInfo>
+signature-x509-data-empty	invoice-full	<ds:X509SubjectName>CN=Synthetic Test Signer</ds:X509SubjectName>\n                  <ds:X509IssuerSerial>\n                    <ds:X509IssuerName>CN=Synthetic Test CA</ds:X509IssuerName>\n                    <ds:X509SerialNumber>123456789012345678901234</ds:X509SerialNumber>\n                  </ds:X509IssuerSerial>\n                  <ds:X509Certificate>TUlJQ2VydGlmaWNhdGU=</ds:X509Certificate>	\e
+signature-key-value-rsa	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:KeyValue><ds:RSAKeyValue><ds:Modulus>AQAB</ds:Modulus><ds:Exponent>AQAB</ds:Exponent></ds:RSAKeyValue></ds:KeyValue>
+signature-key-value-two	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:KeyValue><ds:RSAKeyValue><ds:Modulus>AQAB</ds:Modulus><ds:Exponent>AQAB</ds:Exponent></ds:RSAKeyValue><ex:other/></ds:KeyValue>
+signature-dsa-partial	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:KeyValue><ds:DSAKeyValue><ds:P>AQAB</ds:P><ds:Y>AQAB</ds:Y></ds:DSAKeyValue></ds:KeyValue>
+signature-dsa-full	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:KeyValue><ds:DSAKeyValue><ds:P>AQAB</ds:P><ds:Q>AQAB</ds:Q><ds:G>AQAB</ds:G><ds:Y>AQAB</ds:Y><ds:J>AQAB</ds:J><ds:Seed>AQAB</ds:Seed><ds:PgenCounter>AQAB</ds:PgenCounter></ds:DSAKeyValue></ds:KeyValue>
+signature-dsa-y-only	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:KeyValue><ds:DSAKeyValue><ds:Y>AQAB</ds:Y><ds:Seed>AQAB</ds:Seed></ds:DSAKeyValue></ds:KeyValue>
+signature-pgp-first	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:PGPData><ds:PGPKeyID>AQAB</ds:PGPKeyID><ds:PGPKeyPacket>AQAB</ds:PGPKeyPacket><ex:x/><ex:y/></ds:PGPData>
+signature-pgp-second	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:PGPData><ds:PGPKeyPacket>AQAB</ds:PGPKeyPacket><ex:x/></ds:PGPData>
+signature-pgp-empty	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:PGPData/>
+signature-spki	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:SPKIData><ds:SPKISexp>AQAB</ds:SPKISexp><ex:x/><ds:SPKISexp>AQAB</ds:SPKISexp></ds:SPKIData>
+signature-spki-two-foreign	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:SPKIData><ds:SPKISexp>AQAB</ds:SPKISexp><ex:x/><ex:y/></ds:SPKIData>
+signature-object-any	invoice-full	<ds:Object>	<ds:Object Id="object-1" MimeType="text/plain" Encoding="urn:x">text<ds:KeyName>k</ds:KeyName><ex:x/><cbc:Note>n</cbc:Note>
+signature-object-any-known-invalid	invoice-full	<ds:Object>	<ds:Object><ds:KeyValue/>
+signature-retrieval-method	invoice-full	<ds:KeyName>synthetic key</ds:KeyName>	<ds:RetrievalMethod URI="#x" Type="urn:t"><ds:Transforms><ds:Transform Algorithm="urn:a"/></ds:Transforms></ds:RetrievalMethod>
+signature-manifest-in-object	invoice-full	<ds:Object>	<ds:Object><ds:Manifest><ds:Reference><ds:DigestMethod Algorithm="urn:d"/><ds:DigestValue>AA==</ds:DigestValue></ds:Reference></ds:Manifest>
+signature-properties-in-object	invoice-full	<ds:Object>	<ds:Object><ds:SignatureProperties><ds:SignatureProperty Target="#s">text</ds:SignatureProperty></ds:SignatureProperties>
+signature-properties-own-ns	invoice-full	<ds:Object>	<ds:Object><ds:SignatureProperties><ds:SignatureProperty Target="#s"><ex:a/><ds:KeyName>x</ds:KeyName></ds:SignatureProperty></ds:SignatureProperties>
+signature-strict-wildcard-unknown	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<ex:Unknown/>\n<xades:SignatureTimeStamp Id="timestamp-1">
+signature-strict-wildcard-known	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<cbc:Note>declared globally</cbc:Note>\n<xades:SignatureTimeStamp Id="timestamp-1">
+signature-strict-wildcard-known-invalid	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<cbc:IssueDate>bad</cbc:IssueDate>\n<xades:SignatureTimeStamp Id="timestamp-1">
+signature-strict-wildcard-unqualified	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<Unknown xmlns=""/>\n<xades:SignatureTimeStamp Id="timestamp-1">
+signature-xades141-element	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades141:ArchiveTimeStampV2><xades:EncapsulatedTimeStamp>AA==</xades:EncapsulatedTimeStamp></xades141:ArchiveTimeStampV2>\n<xades:SignatureTimeStamp Id="timestamp-1">
+signature-timestamp-missing-choice	invoice-full	<xades:EncapsulatedTimeStamp>VGltZXN0YW1w</xades:EncapsulatedTimeStamp>	\e
+signature-timestamp-include-after-c14n	invoice-full	<xades:EncapsulatedTimeStamp>VGltZXN0YW1w</xades:EncapsulatedTimeStamp>	<xades:Include URI="#a"/><xades:EncapsulatedTimeStamp>VGltZXN0YW1w</xades:EncapsulatedTimeStamp>
+signature-timestamp-xml	invoice-full	<xades:EncapsulatedTimeStamp>VGltZXN0YW1w</xades:EncapsulatedTimeStamp>	<xades:XMLTimeStamp>any <b/> thing</xades:XMLTimeStamp><xades:EncapsulatedTimeStamp Id="ts-2" Encoding="urn:e">AA==</xades:EncapsulatedTimeStamp>
+signature-timestamp-reference-info	invoice-full	<xades:EncapsulatedTimeStamp>VGltZXN0YW1w</xades:EncapsulatedTimeStamp>	<xades:EncapsulatedTimeStamp>VGltZXN0YW1w</xades:EncapsulatedTimeStamp><xades:ReferenceInfo><ds:DigestMethod Algorithm="urn:d"/><ds:DigestValue>AA==</ds:DigestValue></xades:ReferenceInfo>
+signature-counter-signature	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:CounterSignature><ds:Signature><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="urn:c"/><ds:SignatureMethod Algorithm="urn:s"/><ds:Reference><ds:DigestMethod Algorithm="urn:d"/><ds:DigestValue/></ds:Reference></ds:SignedInfo><ds:SignatureValue/></ds:Signature></xades:CounterSignature>\n<xades:SignatureTimeStamp Id="timestamp-1">
+signature-revocation	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:CompleteRevocationRefs><xades:CRLRefs><xades:CRLRef><xades:DigestAlgAndValue><ds:DigestMethod Algorithm="urn:d"/><ds:DigestValue>AA==</ds:DigestValue></xades:DigestAlgAndValue><xades:CRLIdentifier URI="urn:x"><xades:Issuer>CA</xades:Issuer><xades:IssueTime>2024-01-01T00:00:00Z</xades:IssueTime><xades:Number>007</xades:Number></xades:CRLIdentifier></xades:CRLRef></xades:CRLRefs><xades:OCSPRefs><xades:OCSPRef><xades:OCSPIdentifier><xades:ResponderID><xades:ByKey>AA==</xades:ByKey></xades:ResponderID><xades:ProducedAt>2024-01-01T00:00:00Z</xades:ProducedAt></xades:OCSPIdentifier></xades:OCSPRef></xades:OCSPRefs></xades:CompleteRevocationRefs>\n<xades:SignatureTimeStamp Id="timestamp-1">
+signature-revocation-bad-number	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:CompleteRevocationRefs><xades:CRLRefs><xades:CRLRef><xades:DigestAlgAndValue><ds:DigestMethod Algorithm="urn:d"/><ds:DigestValue>AA==</ds:DigestValue></xades:DigestAlgAndValue><xades:CRLIdentifier><xades:Issuer>CA</xades:Issuer><xades:IssueTime>2024-01-01</xades:IssueTime><xades:Number>x</xades:Number></xades:CRLIdentifier></xades:CRLRef></xades:CRLRefs></xades:CompleteRevocationRefs>\n<xades:SignatureTimeStamp Id="timestamp-1">
+signature-policy-id	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyId><xades:SigPolicyId><xades:Identifier Qualifier="OIDAsURI">urn:oid:1.2</xades:Identifier><xades:Description>d</xades:Description><xades:DocumentationReferences><xades:DocumentationReference>http://x</xades:DocumentationReference></xades:DocumentationReferences></xades:SigPolicyId><xades:SigPolicyHash><ds:DigestMethod Algorithm="urn:d"/><ds:DigestValue>AA==</ds:DigestValue></xades:SigPolicyHash><xades:SigPolicyQualifiers><xades:SigPolicyQualifier><xades:SPURI>http://x</xades:SPURI></xades:SigPolicyQualifier><xades:SigPolicyQualifier><xades:SPUserNotice><xades:NoticeRef><xades:Organization>o</xades:Organization><xades:NoticeNumbers><xades:int>1</xades:int><xades:int>x</xades:int></xades:NoticeNumbers></xades:NoticeRef></xades:SPUserNotice></xades:SigPolicyQualifier></xades:SigPolicyQualifiers></xades:SignaturePolicyId>
+signature-commitment	invoice-full	<xades:DataObjectFormat ObjectReference="#reference-1">	<xades:DataObjectFormat ObjectReference="#reference-1"><xades:Description>d</xades:Description></xades:DataObjectFormat><xades:CommitmentTypeIndication><xades:CommitmentTypeId><xades:Identifier>urn:c</xades:Identifier></xades:CommitmentTypeId><xades:AllSignedDataObjects/><xades:CommitmentTypeQualifiers/></xades:CommitmentTypeIndication><xades:DataObjectFormat ObjectReference="#r">
+signature-commitment-both-choices	invoice-full	<xades:DataObjectFormat ObjectReference="#reference-1">	<xades:DataObjectFormat ObjectReference="#reference-1"><xades:Description>d</xades:Description></xades:DataObjectFormat><xades:CommitmentTypeIndication><xades:CommitmentTypeId><xades:Identifier>urn:c</xades:Identifier></xades:CommitmentTypeId><xades:ObjectReference>#a</xades:ObjectReference><xades:ObjectReference>#b</xades:ObjectReference><xades:AllSignedDataObjects/></xades:CommitmentTypeIndication><xades:DataObjectFormat ObjectReference="#r">
+signature-wrong-order-in-object	invoice-full	<xades:SignedProperties Id="signed-properties-1">	<xades:UnsignedProperties/><xades:SignedProperties Id="signed-properties-1">
+signature-information-twice	invoice-full	</sac:SignatureInformation>	</sac:SignatureInformation>\n<sac:SignatureInformation/>
+signature-documents-empty	invoice-full	<sig:UBLDocumentSignatures>\n          <sac:SignatureInformation>	<sig:UBLDocumentSignatures/><sig:X>\n          <sac:SignatureInformation>	</sig:UBLDocumentSignatures>	</sig:X>
+malformed-unclosed	creditnote-min	</cac:CreditNoteLine>	</cac:CreditNoteLineX>
+malformed-undeclared-prefix	creditnote-min	<cbc:ID>CN-1</cbc:ID>	<zz:ID>CN-1</zz:ID>
+uri-query-only	invoice-full	listURI="https://example.org/codes/1001"	listURI="?q"
+uri-opaque-bracket	invoice-full	listURI="https://example.org/codes/1001"	listURI="a:b[c"
+uri-net-path	invoice-full	listURI="https://example.org/codes/1001"	listURI="//host/x"
+uri-ipv6-full	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://[1:2:3:4:5:6:7:8]/"
+uri-ipv6-v4	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://[::ffff:1.2.3.4]/"
+uri-ipv6-bad	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://[:::1]/"
+uri-ipv6-userinfo	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://u@[::1]:80/"
+uri-ipv6-zone	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://[fe80::1%25eth0]/"
+uri-fragment-only	invoice-full	listURI="https://example.org/codes/1001"	listURI="#"
+uri-reg-name-dash	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://-a.com/"
+uri-reg-name-chars	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://a$b,c;d/"
+uri-path-param	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://x/a;p=1/b"
+uri-query-two-hash	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://x/?a#b#c"
+uri-opaque-percent	invoice-full	listURI="https://example.org/codes/1001"	listURI="a:%41"
+uri-relative-dotdot	invoice-full	listURI="https://example.org/codes/1001"	listURI="../x?y#z"
+uri-empty-host-port	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://:80/"
+uri-query-slash-question	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://x/p?a/b?c"
+uri-scheme-plus	invoice-full	listURI="https://example.org/codes/1001"	listURI="svn+ssh://host/x"
+uri-scheme-underscore	invoice-full	listURI="https://example.org/codes/1001"	listURI="a_b:c"
+uri-delete-char	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://x/&#x7F;"
+uri-tab	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://x/&#9;y"
+uri-path-percent-bad-in-fragment	invoice-full	listURI="https://example.org/codes/1001"	listURI="http://x/#%G1"
+simple-content-child-and-value	invoice-full	<cbc:PriceAmount currencyID="EUR">10</cbc:PriceAmount>	<cbc:PriceAmount currencyID="EUR"><ex:x/>10</cbc:PriceAmount>
+xsi-type-whitespace	invoice-full	<xades:MimeType>text/xml</xades:MimeType>	<xades:MimeType xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type=" xs:token ">text/xml</xades:MimeType>
+xsi-type-unsupported-builtin	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:float">1.5</xades:SignaturePolicyImplied>
+xsi-type-any-simple-type	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:anySimpleType">x<a/></xades:SignaturePolicyImplied>
+xsi-type-token	invoice-full	<xades:MimeType>text/xml</xades:MimeType>	<xades:MimeType xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:token">text/xml</xades:MimeType>
+xsi-type-fail-then-attribute	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:ID xsi:type="cbc:NoSuchType" foo="x">PO-77</cbc:ID>
+xsi-type-fail-then-child	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:ID xsi:type="cbc:NoSuchType"><x/>PO-77</cbc:ID>
+xsi-type-not-derived-then-attributes	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:ID xsi:type="cbc:NameType" foo="x" languageID="!!">PO-77</cbc:ID>
+xsi-type-abstract-on-anytype	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied xsi:type="xades:GenericTimeStampType"/>
+xsi-type-abstract-in-lax	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xsi:type="xades:GenericTimeStampType"><cbc:Bad/></ex:Item>
+xsi-type-unknown-in-lax	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item code="B" xsi:type="ex:Nope"><ex:Nested/></ex:Item>
+xsi-type-not-qname-in-lax	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item code="B" xsi:type="1"><ex:Nested/></ex:Item>
+xsi-nil-and-type	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:ID xsi:nil="true" xsi:type="cbc:NoSuch">PO-77</cbc:ID>
+xsi-nil-then-content	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:ID xsi:nil="true" foo="1"><x/></cbc:ID>
+xsi-nil-on-anytype	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied xsi:nil="true"/>
+xsi-nil-in-lax	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item code="B" xsi:nil="true"><ex:Nested/></ex:Item>
+text-three-nodes	invoice-full	<cbc:ID>PO-77</cbc:ID>	a<!-- c -->b<cbc:ID>PO-77</cbc:ID>c
+text-then-unexpected	invoice-full	<cbc:ID>PO-77</cbc:ID>	a<cbc:ID>PO-77</cbc:ID><cbc:Bad/>
+text-after-unexpected	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:Bad/>text<cbc:ID>PO-77</cbc:ID>
+text-cdata-mixed-whitespace	invoice-full	<cbc:ID>PO-77</cbc:ID>	 <![CDATA[ ]]> <cbc:ID>PO-77</cbc:ID>
+empty-content-text-and-children	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:SignatureTimeStamp Id="timestamp-1">\n<xades:Include URI="#x">t<a/>u<b/></xades:Include>
+empty-content-child-subtree	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<xades:SignatureTimeStamp Id="timestamp-1">\n<xades:Include URI="#x"><cbc:IssueDate>bad</cbc:IssueDate></xades:Include>
+strict-wildcard-subtree	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<ex:Unknown><cbc:IssueDate>bad</cbc:IssueDate></ex:Unknown>\n<xades:SignatureTimeStamp Id="timestamp-1">
+strict-wildcard-then-sibling	invoice-full	<xades:SignatureTimeStamp Id="timestamp-1">	<ex:Unknown/><xades:Bad/>\n<xades:SignatureTimeStamp Id="timestamp-1">
+unexpected-subtree	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:ID>PO-77</cbc:ID><cbc:Bad><cbc:IssueDate>x</cbc:IssueDate></cbc:Bad>
+attribute-error-and-missing-child	invoice-full	<cac:OrderReference>\n    <cbc:ID>PO-77</cbc:ID>\n  </cac:OrderReference>	<cac:OrderReference foo="1"/>
+id-duplicate-in-lax-unknown	invoice-full	<ex:Data ex:version="2"	<ex:Data Id="signature-1" ex:version="2"
+id-duplicate-in-lax-known	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ds:Object Id="signature-1"/>
+id-duplicate-in-object	invoice-full	<ds:Object>	<ds:Object Id="signature-1">
+date-lead-space	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate> 2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>
+time-padded	invoice-full	>10:15:30</cbc:IssueTime>	> 10:15:30 </cbc:IssueTime>
+datetime-padded	invoice-full	>2024-03-01T10:15:30.250+01:00<	>\n 2024-03-01T10:15:30Z \n<
+date-year-twenty-digits	invoice-full	<cbc:IssueDate>2024-03-01</cbc:IssueDate>\n  <cbc:IssueTime>	<cbc:IssueDate>12345678901234567890-03-01</cbc:IssueDate>\n  <cbc:IssueTime>
+xsi-type-complex-derived-from-declared-simple	invoice-full	<xades:MimeType>text/xml</xades:MimeType>	<xades:MimeType xmlns:udt="urn:oasis:names:specification:ubl:schema:xsd:UnqualifiedDataTypes-2" xsi:type="udt:TextType" languageID="en">text/xml</xades:MimeType>
+dtd-internal-entity	creditnote-min	<?xml version="1.0" encoding="UTF-8"?>\n	<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE CreditNote [<!ENTITY currency "EUR">]>\n	<cbc:PayableAmount currencyID="EUR">	<cbc:PayableAmount currencyID="&currency;">
+dtd-attribute-default	creditnote-min	<?xml version="1.0" encoding="UTF-8"?>\n	<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE CreditNote [<!ATTLIST cbc:PayableAmount currencyID CDATA "EUR">]>\n	<cbc:PayableAmount currencyID="EUR">	<cbc:PayableAmount>
