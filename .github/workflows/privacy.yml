@@ -12,10 +12,18 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same ref supersedes the running scan: it scans the
+# whole history again, which contains everything the older run would have.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   privacy-guard:
+    name: privacy guard (whole history)
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

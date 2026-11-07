@@ -1,0 +1,156 @@
+name: ci
+
+# Every check runs through scripts/check.sh, so CI and a local run execute the
+# same commands. Jobs:
+#   rust       fmt, cargo-deny, clippy, doc, test on Linux (one build)
+#   test       tests on macOS and Windows, pull requests and manual runs only,
+#              after the Linux job has passed
+#   workflows  actionlint and zizmor on .github/workflows
+#   ci-ok      fails unless every job above passed: the single status check
+#              to require for branch protection
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore: ["**.md", "LICENSE"]
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "LICENSE"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer run on the same ref supersedes the running one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  rust:
+    name: rust (fmt, deny, clippy, doc, test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # https://github.com/EmbarkStudios/cargo-deny/releases/tag/0.20.2
+      CARGO_DENY_VERSION: 0.20.2
+      CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: scripts/check.sh toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: fmt
+        run: scripts/check.sh fmt
+      - name: Install cargo-deny (pinned version and checksum)
+        if: ${{ !cancelled() }}
+        run: |
+          name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/$name.tar.gz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/$name.tar.gz"
+          echo "${CARGO_DENY_SHA256}  $RUNNER_TEMP/$name.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/$name.tar.gz" -C "$RUNNER_TEMP/bin" --strip-components=1 "$name/cargo-deny"
+      - name: deny
+        if: ${{ !cancelled() }}
+        run: PATH="$RUNNER_TEMP/bin:$PATH" scripts/check.sh deny
+      - name: clippy
+        if: ${{ !cancelled() }}
+        run: scripts/check.sh clippy
+      - name: doc
+        if: ${{ !cancelled() }}
+        run: scripts/check.sh doc
+      - name: test
+        if: ${{ !cancelled() }}
+        run: scripts/check.sh test
+
+  test:
+    name: test (${{ matrix.os }})
+    needs: rust
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: scripts/check.sh toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: test
+        run: scripts/check.sh test
+
+  workflows:
+    name: workflows (actionlint, zizmor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # https://github.com/rhysd/actionlint/releases/tag/v1.7.12
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint (pinned version and checksum)
+        run: |
+          name="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/$name" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$name"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/$name" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/$name" -C "$RUNNER_TEMP/bin" actionlint
+      - name: actionlint
+        run: PATH="$RUNNER_TEMP/bin:$PATH" scripts/check.sh actionlint
+      # Same audit as `scripts/check.sh zizmor`; the action installs zizmor
+      # from wheels pinned by hash in its own tree.
+      - name: zizmor
+        if: ${{ !cancelled() }}
+        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          version: 1.32.0
+          inputs: .github/workflows
+          persona: pedantic
+          advanced-security: false
+          annotations: true
+
+  ci-ok:
+    name: ci-ok
+    needs: [rust, test, workflows]
+    # Runs even when a needed job failed or was cancelled, so that this check
+    # fails instead of being skipped (a skipped required check counts as passed).
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed
+        env:
+          RUST: ${{ needs.rust.result }}
+          TEST: ${{ needs.test.result }}
+          WORKFLOWS: ${{ needs.workflows.result }}
+        run: |
+          echo "rust=$RUST test=$TEST workflows=$WORKFLOWS"
+          [ "$RUST" = success ] || exit 1
+          [ "$WORKFLOWS" = success ] || exit 1
+          # The macOS/Windows tests are skipped on pushes to main.
+          case "$TEST" in success | skipped) ;; *) exit 1 ;; esac

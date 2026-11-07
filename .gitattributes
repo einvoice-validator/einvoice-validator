@@ -1,0 +1,3 @@
+# LF everywhere, on every platform: the shell scripts and hooks must run
+# unchanged under Git Bash on Windows (core.autocrlf is on there).
+* text=auto eol=lf
