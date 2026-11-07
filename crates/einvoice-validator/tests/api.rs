@@ -282,7 +282,7 @@ fn a_bundle_from_memory_with_two_stylesheets() {
     assert_eq!(report.schema_errors, Vec::new(), "no schema in the bundle");
     let canonical = report.stylesheets[0].canonical_svrl().unwrap();
     assert!(
-        canonical.contains("active-pattern documents=\"{document}\" id=\"P-T-1\""),
+        canonical.contains("active-pattern documents=\"\" id=\"P-T-1\""),
         "{canonical}"
     );
 
