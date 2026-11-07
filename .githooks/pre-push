@@ -1,3 +1,13 @@
 #!/usr/bin/env bash
-# Last check before anything leaves the machine: the whole history.
-exec "$(git rev-parse --show-toplevel)/scripts/privacy-guard.sh" history
+# Last check before anything leaves the machine: the whole history (content,
+# file names, messages, identities, tags, notes, ref names), then the names
+# of the refs being pushed, since `git push origin local:other-name` creates
+# a remote ref that exists nowhere locally.
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+# One line per ref: <local ref> <local oid> <remote ref> <remote oid>.
+updates=$(cat)
+"$root/scripts/privacy-guard.sh" history
+if [ -n "$updates" ]; then
+    printf '%s\n' "$updates" | awk '{ print $1; print $3 }' | "$root/scripts/privacy-guard.sh" text
+fi

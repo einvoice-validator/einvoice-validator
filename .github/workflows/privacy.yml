@@ -2,8 +2,11 @@ name: privacy
 
 # This repository is public. The private term list is the PRIVATE_TERMS
 # repository secret (never in the tree); see scripts/privacy-guard.sh.
-# Pull requests from forks get no secrets, so the job only runs where the
-# secret exists: pushes, and pull requests from branches of this repository.
+# Pull requests from forks get no secrets, so the history scan only runs
+# where the secret exists: pushes, and pull requests from branches of this
+# repository. The guard's own tests use a synthetic list and run everywhere.
+# Text published on GitHub (issues, comments, ...) is scanned by
+# privacy-text.yml.
 
 on:
   push:
@@ -33,3 +36,16 @@ jobs:
         env:
           PRIVATE_TERMS: ${{ secrets.PRIVATE_TERMS }}
         run: scripts/privacy-guard.sh history
+
+  guard-tests:
+    name: privacy guard tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: ShellCheck
+        run: shellcheck --version && shellcheck scripts/privacy-guard.sh scripts/test-privacy-guard.sh .githooks/*
+      - name: Tests (synthetic term list)
+        run: scripts/test-privacy-guard.sh
