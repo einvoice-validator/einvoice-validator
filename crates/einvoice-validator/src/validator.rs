@@ -1,5 +1,6 @@
 //! Loading a rule set once, then validating documents with it.
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use einvoice_xslt::LoadErrorKind;
@@ -159,6 +160,34 @@ impl Validator {
         self.validate_with(document, &ValidateOptions::new())
     }
 
+    /// Validates a document given as a buffer, with the default options (no document
+    /// URI).
+    ///
+    /// # Errors
+    ///
+    /// As [`Validator::validate_with`].
+    pub fn validate_owned(&self, document: Vec<u8>) -> Result<Report, Error> {
+        self.validate_owned_with(document, &ValidateOptions::new())
+    }
+
+    /// [`Validator::validate_with`] on a document given as a buffer, which the
+    /// validation keeps instead of copying: the buffer becomes the text without a copy,
+    /// and the tree of the last stylesheet refers to it, so that while that stylesheet
+    /// runs the document is in memory once rather than twice. Same report as
+    /// [`Validator::validate_with`]; for a caller that has no further use for the bytes
+    /// (a file just read).
+    ///
+    /// # Errors
+    ///
+    /// As [`Validator::validate_with`].
+    pub fn validate_owned_with(
+        &self,
+        document: Vec<u8>,
+        options: &ValidateOptions<'_>,
+    ) -> Result<Report, Error> {
+        self.validate_text(Cow::Owned(decode_owned(document)?), options)
+    }
+
     /// Validates a document: checks that it is well-formed XML, validates it against
     /// the rule set's schema, then runs every stylesheet of the rule set on it. The
     /// stylesheets run even when the schema reports errors, so that the report is
@@ -182,13 +211,22 @@ impl Validator {
         document: &[u8],
         options: &ValidateOptions<'_>,
     ) -> Result<Report, Error> {
-        let text = decode(document)?;
-        check_well_formed(text)?;
+        self.validate_text(Cow::Borrowed(decode(document)?), options)
+    }
+
+    /// The validation of a decoded document: borrowed by the schema and every stylesheet
+    /// but the last, which is given it when it is owned.
+    fn validate_text(
+        &self,
+        text: Cow<'_, str>,
+        options: &ValidateOptions<'_>,
+    ) -> Result<Report, Error> {
+        check_well_formed(&text)?;
         let schema_errors = match &self.schema {
             None => Vec::new(),
             Some(schema) => {
                 schema
-                    .validate(text)
+                    .validate(&text)
                     .map_err(|e| match e {
                         einvoice_xsd::DocumentError::Malformed {
                             line,
@@ -212,8 +250,24 @@ impl Validator {
         };
         let transform_options = TransformOptions::default();
         let mut stylesheets = Vec::with_capacity(self.stylesheets.len());
-        for (entry, executable) in self.rule_set.stylesheets().iter().zip(&self.stylesheets) {
-            let result = executable.transform_with(text, options.document_uri, &transform_options);
+        let count = self.stylesheets.len();
+        // The text, until the last stylesheet is given it.
+        let mut text = Some(text);
+        for (index, (entry, executable)) in self
+            .rule_set
+            .stylesheets()
+            .iter()
+            .zip(&self.stylesheets)
+            .enumerate()
+        {
+            let source = if index + 1 == count {
+                text.take()
+            } else {
+                text.as_deref().map(Cow::Borrowed)
+            }
+            .ok_or_else(|| Error::internal("the document text was given away early"))?;
+            let result =
+                executable.transform_with(source, options.document_uri, &transform_options);
             let report = match result {
                 Ok(result) => StylesheetReport::new(
                     entry,
@@ -355,15 +409,67 @@ fn transform_error(entry: &StylesheetEntry, e: &TransformError) -> Error {
     }
 }
 
+/// The UTF-8 byte order mark.
+const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
+
 /// The text of a document given as bytes: UTF-8, with or without a byte order mark,
 /// and an XML declaration, if any, naming UTF-8 or US-ASCII.
 fn decode(bytes: &[u8]) -> Result<&str, Error> {
+    refuse_utf16(bytes)?;
+    let bytes = bytes.strip_prefix(BOM).unwrap_or(bytes);
+    check_encoding(bytes)?;
+    std::str::from_utf8(bytes).map_err(|e| not_utf8(bytes, &e))
+}
+
+/// [`decode`] on a buffer, which becomes the text without being copied (the byte order
+/// mark, if any, is removed in place).
+fn decode_owned(mut bytes: Vec<u8>) -> Result<String, Error> {
+    refuse_utf16(&bytes)?;
+    if bytes.starts_with(BOM) {
+        bytes.drain(..BOM.len());
+    }
+    check_encoding(&bytes)?;
+    String::from_utf8(bytes).map_err(|e| not_utf8(e.as_bytes(), &e.utf8_error()))
+}
+
+/// The error for bytes (after the byte order mark) that are not UTF-8.
+fn not_utf8(bytes: &[u8], e: &std::str::Utf8Error) -> Error {
+    bad_at(bytes, e.valid_up_to(), format!("not UTF-8: {e}"))
+}
+
+/// A [`Error::NotXml`] at the byte `valid_up_to` of `bytes` (after the byte order mark).
+fn bad_at(bytes: &[u8], valid_up_to: usize, message: String) -> Error {
+    let before = &bytes[..valid_up_to];
+    let line_start = before
+        .iter()
+        .rposition(|&b| b == b'\n')
+        .map_or(0, |i| i + 1);
+    let line = before.split(|&b| b == b'\n').count();
+    let column = String::from_utf8_lossy(&before[line_start..])
+        .chars()
+        .count()
+        + 1;
+    Error::NotXml {
+        line: u32::try_from(line).unwrap_or(u32::MAX),
+        column: u32::try_from(column).unwrap_or(u32::MAX),
+        message,
+    }
+}
+
+/// Refuses a document that starts with a UTF-16 byte order mark.
+fn refuse_utf16(bytes: &[u8]) -> Result<(), Error> {
     if bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xFF, 0xFE]) {
         return Err(Error::unsupported(
             "a UTF-16 document: only UTF-8 is supported",
         ));
     }
-    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    Ok(())
+}
+
+/// Checks the XML declaration of a document given as bytes (after the byte order mark,
+/// if any): its encoding, if any, must be UTF-8 or US-ASCII, and with US-ASCII every
+/// byte must be ASCII. Whether the bytes are UTF-8 is checked by the caller.
+fn check_encoding(bytes: &[u8]) -> Result<(), Error> {
     let ascii = match declared_encoding(bytes) {
         None => false,
         Some(e) if e.eq_ignore_ascii_case("utf-8") || e.eq_ignore_ascii_case("utf8") => false,
@@ -374,30 +480,14 @@ fn decode(bytes: &[u8]) -> Result<&str, Error> {
             )));
         }
     };
-    let bad_at = |valid_up_to: usize, message: String| {
-        let before = &bytes[..valid_up_to];
-        let line_start = before
-            .iter()
-            .rposition(|&b| b == b'\n')
-            .map_or(0, |i| i + 1);
-        let line = before.split(|&b| b == b'\n').count();
-        let column = String::from_utf8_lossy(&before[line_start..])
-            .chars()
-            .count()
-            + 1;
-        Error::NotXml {
-            line: u32::try_from(line).unwrap_or(u32::MAX),
-            column: u32::try_from(column).unwrap_or(u32::MAX),
-            message,
-        }
-    };
     if ascii && let Some(i) = bytes.iter().position(|b| !b.is_ascii()) {
         return Err(bad_at(
+            bytes,
             i,
             "a byte outside US-ASCII, the encoding the XML declaration names".to_owned(),
         ));
     }
-    std::str::from_utf8(bytes).map_err(|e| bad_at(e.valid_up_to(), format!("not UTF-8: {e}")))
+    Ok(())
 }
 
 /// The `encoding` pseudo-attribute of the XML declaration, if any.
@@ -439,6 +529,27 @@ fn check_well_formed(text: &str) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decoding_a_buffer_gives_the_same_result() {
+        for bytes in [
+            &b"<a/>"[..],
+            b"\xEF\xBB\xBF<a>\xC3\xA9</a>",
+            b"<?xml version='1.0' encoding='UTF-8'?><a/>",
+            b"\xFF\xFE<\0a\0/\0>\0",
+            b"\xFE\xFF\0<\0a\0/\0>",
+            b"<?xml version='1.0' encoding='ISO-8859-1'?><a/>",
+            b"<a>\n  \xC3\xA9\xFF</a>",
+            b"\xEF\xBB\xBF<a>\n\xFF</a>",
+            b"<?xml version=\"1.0\" encoding=\"US-ASCII\"?>\n<a>\xC3\xA9</a>",
+            b"\xEF\xBB\xBF",
+            b"",
+        ] {
+            let borrowed = decode(bytes).map(str::to_owned).map_err(|e| e.to_string());
+            let owned = decode_owned(bytes.to_vec()).map_err(|e| e.to_string());
+            assert_eq!(owned, borrowed, "{bytes:?}");
+        }
+    }
 
     #[test]
     fn decoding() {

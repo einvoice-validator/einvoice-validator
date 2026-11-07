@@ -116,6 +116,7 @@ dependencies = [
  "einvoice-xsd",
  "einvoice-xslt",
  "einvoice-xslt-exec",
+ "peak_alloc",
  "proptest",
  "roxmltree",
  "sha2",

@@ -261,7 +261,8 @@ fn validate(
                     let options = uri.as_deref().map_or_else(ValidateOptions::new, |u| {
                         ValidateOptions::new().document_uri(u)
                     });
-                    validator.validate_with(&bytes, &options)
+                    // The validation keeps the buffer rather than copying its text.
+                    validator.validate_owned_with(bytes, &options)
                 });
             Outcome { name, result }
         }

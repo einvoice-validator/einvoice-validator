@@ -239,7 +239,55 @@ fn a_byte_order_mark_is_accepted() {
     let case = common::case("examples/ubl-tc434-example1.xml");
     let mut bytes = b"\xEF\xBB\xBF".to_vec();
     bytes.extend(std::fs::read(case.path()).unwrap());
-    assert!(cen().validate(&bytes).unwrap().is_valid());
+    let report = cen().validate(&bytes).unwrap();
+    assert!(report.is_valid());
+    assert_eq!(cen().validate_owned(bytes).unwrap(), report);
+}
+
+#[test]
+fn a_document_given_as_a_buffer() {
+    // Two stylesheets: the first borrows the text, the last is given it; same reports as
+    // from borrowed bytes, errors included.
+    let first = svrl_stylesheet("T-1", "fatal");
+    let second = svrl_stylesheet("T-2", "warning");
+    let validator = Validator::from_bundle(
+        &manifest(
+            None,
+            &[
+                ("first", "first.xsl", first.as_bytes()),
+                ("second", "second.xsl", second.as_bytes()),
+            ],
+        ),
+        &[
+            ("first.xsl", first.as_bytes()),
+            ("second.xsl", second.as_bytes()),
+        ],
+    )
+    .unwrap();
+    let options = ValidateOptions::new().document_uri("file:/x/doc.xml");
+    for document in [
+        &b"<doc/>"[..],
+        b"\xEF\xBB\xBF<doc ok='1'/>",
+        b"<doc>",
+        b"\xFF\xFE<\0d\0/\0>\0",
+        b"<doc>\xFF</doc>",
+        b"<!DOCTYPE doc><doc/>",
+    ] {
+        let borrowed = validator.validate_with(document, &options);
+        let owned = validator.validate_owned_with(document.to_vec(), &options);
+        match (&borrowed, &owned) {
+            (Ok(a), Ok(b)) => assert_eq!(a, b, "{document:?}"),
+            (Err(a), Err(b)) => assert_eq!(format!("{a:?}"), format!("{b:?}"), "{document:?}"),
+            _ => panic!("{document:?}: {borrowed:?} / {owned:?}"),
+        }
+        assert_eq!(
+            validator.validate(document).map_err(|e| format!("{e:?}")),
+            validator
+                .validate_owned(document.to_vec())
+                .map_err(|e| format!("{e:?}")),
+            "{document:?}"
+        );
+    }
 }
 
 #[test]

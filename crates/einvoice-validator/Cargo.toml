@@ -23,10 +23,15 @@ roxmltree = "0.21.2"
 sha2 = "0.11.1"
 
 [dev-dependencies]
+peak_alloc = "0.3.0"
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 
 [[example]]
 name = "bench"
+required-features = ["cen-ubl"]
+
+[[example]]
+name = "heap"
 required-features = ["cen-ubl"]
 
 [lints]

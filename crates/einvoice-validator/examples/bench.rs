@@ -1,5 +1,7 @@
 //! Time to load the built-in `cen-ubl` rule set, and time per document on the whole
-//! CEN EN 16931 UBL 1.3.17 corpus, single-threaded, with the share of each stage.
+//! CEN EN 16931 UBL 1.3.17 corpus, single-threaded, with the share of each stage; then
+//! the whole corpus again with each document given as a buffer
+//! ([`Validator::validate_owned_with`], copies made before the clock starts).
 //!
 //! ```sh
 //! cargo run --release -p einvoice-validator --example bench
@@ -66,6 +68,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::hint::black_box(executable.transform(text, Some(uri))?);
         transform += start.elapsed();
     }
+    let buffers: Vec<Vec<u8>> = documents.iter().map(|(bytes, _)| bytes.clone()).collect();
+    let start = Instant::now();
+    for ((_, uri), bytes) in documents.iter().zip(buffers) {
+        std::hint::black_box(
+            validator.validate_owned_with(bytes, &ValidateOptions::new().document_uri(uri))?,
+        );
+    }
+    let owned_total = start.elapsed();
     let n = u32::try_from(documents.len())?;
     let share = |d: Duration| 100.0 * d.as_secs_f64() / total.as_secs_f64();
     println!(
@@ -76,6 +86,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         total / n,
         max.0,
         max.1
+    );
+    println!(
+        "given as buffers: {owned_total:.1?} in total, {:.1?} per document on average",
+        owned_total / n
     );
     println!(
         "stages on their own: well-formedness parse {:.1}%, schema {:.1}%, stylesheet {:.1}% of the validation time",

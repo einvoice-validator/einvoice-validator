@@ -1,8 +1,8 @@
 //! The public API on every case of the CEN EN 16931 UBL 1.3.17 corpus: the findings
 //! (kind, id, flag, location, in order) and the Schematron verdict agree with the
 //! Saxon-HE golden, the canonical SVRL equals it, and the overall verdict is invalid
-//! exactly when there is a schema error or a fatal finding. The documents are spread
-//! over threads sharing one `Validator`.
+//! exactly when there is a schema error or a fatal finding, the document given as a
+//! buffer or borrowed. The documents are spread over threads sharing one `Validator`.
 
 #![cfg(test)]
 #![cfg(feature = "cen-ubl")]
@@ -76,9 +76,17 @@ fn check(validator: &Validator, case: &common::Case) -> Result<(bool, Verdict), 
     let uri = file_uri(&path).ok_or("no file URI")?;
     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
     let golden = std::fs::read_to_string(case.golden()).map_err(|e| e.to_string())?;
+    let options = ValidateOptions::new().document_uri(&uri);
     let report = validator
-        .validate_with(&bytes, &ValidateOptions::new().document_uri(&uri))
+        .validate_with(&bytes, &options)
         .map_err(|e| format!("error: {e}"))?;
+    // The buffer given to the validation instead of borrowed: the same report.
+    let from_buffer = validator
+        .validate_owned_with(bytes, &options)
+        .map_err(|e| format!("error from a buffer: {e}"))?;
+    if from_buffer != report {
+        return Err("the report from a buffer differs".to_owned());
+    }
     let expected = common::expected_findings(&golden);
     let ours: Vec<common::Expected> = report
         .findings()
