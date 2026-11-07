@@ -1,4 +1,4 @@
-# Saxon-HE 9.9.1-8 results of the edge cases (tests/oracle/cases.tsv).
+# Saxon-HE 12.10 results of the edge cases (tests/oracle/cases.tsv).
 # Written by `cargo run -p einvoice-xpath-eval --example saxon-oracle -- --write`; do not edit.
 # document	context	position	size	key	v|b	result...
 edge.xml	/	1	1	axes-01	v	element:/3/2	element:/3/4	element:/3/8
@@ -951,8 +951,8 @@ edge.xml	/	1	1	cmp-28	v	xs:boolean:true
 edge.xml	/	1	1	cmp-28	b	xs:boolean:true
 edge.xml	/	1	1	cmp-29	v	xs:boolean:true
 edge.xml	/	1	1	cmp-29	b	xs:boolean:true
-edge.xml	/	1	1	cmp-30	v	xs:boolean:true
-edge.xml	/	1	1	cmp-30	b	xs:boolean:true
+edge.xml	/	1	1	cmp-30	v	xs:boolean:false
+edge.xml	/	1	1	cmp-30	b	xs:boolean:false
 edge.xml	/	1	1	cmp-31	v	xs:boolean:true
 edge.xml	/	1	1	cmp-31	b	xs:boolean:true
 edge.xml	/	1	1	cmp-32	v	xs:boolean:true
@@ -1129,8 +1129,8 @@ edge.xml	/	1	1	types-11	v	xs:boolean:false
 edge.xml	/	1	1	types-11	b	xs:boolean:false
 edge.xml	/	1	1	types-12	v	xs:boolean:true
 edge.xml	/	1	1	types-12	b	xs:boolean:true
-edge.xml	/	1	1	types-13	v	xs:boolean:true
-edge.xml	/	1	1	types-13	b	xs:boolean:true
+edge.xml	/	1	1	types-13	v	xs:boolean:false
+edge.xml	/	1	1	types-13	b	xs:boolean:false
 edge.xml	/	1	1	types-14	v	xs:boolean:false
 edge.xml	/	1	1	types-14	b	xs:boolean:false
 edge.xml	/	1	1	types-15	v	xs:boolean:true
@@ -1213,10 +1213,10 @@ edge.xml	/	1	1	err-10	v	error:XPTY0004
 edge.xml	/	1	1	err-10	b	xs:boolean:true
 edge.xml	/	1	1	err-11	v	element:/3/35/1/1/1	element:/3/35/1/2/1
 edge.xml	/	1	1	err-11	b	xs:boolean:true
-edge.xml	/	1	1	uri-01	v	xs:anyURI:{dir}/edge%20doc%20é%23%25,;%5B1%5D.xml
-edge.xml	/	1	1	uri-01	b	xs:boolean:true
-edge.xml	/	1	1	uri-02	v	xs:anyURI:{dir}/edge%20doc%20é%23%25,;%5B1%5D.xml
-edge.xml	/	1	1	uri-02	b	xs:boolean:true
+edge.xml	/	1	1	uri-01	v	empty
+edge.xml	/	1	1	uri-01	b	xs:boolean:false
+edge.xml	/	1	1	uri-02	v	empty
+edge.xml	/	1	1	uri-02	b	xs:boolean:false
 edge.xml	/	1	1	uri-03	v	xs:anyURI:{dir}/edge%20doc%20é%23%25,;%5B1%5D.xml
 edge.xml	/	1	1	uri-03	b	xs:boolean:true
 edge.xml	/	1	1	uri-04	v	xs:anyURI:{dir}/edge%20doc%20é%23%25,;%5B1%5D.xml
@@ -1229,7 +1229,7 @@ edge.xml	/	1	1	uri-07	v	error:XPTY0004
 edge.xml	/	1	1	uri-07	b	xs:boolean:true
 edge.xml	/	1	1	uri-08	v	error:XPTY0004
 edge.xml	/	1	1	uri-08	b	error:XPTY0004
-edge.xml	/	1	1	uri-09	v	xs:integer:2
+edge.xml	/	1	1	uri-09	v	xs:integer:1
 edge.xml	/	1	1	uri-09	b	xs:boolean:true
 edge.xml	/	1	1	uri-10	v	xs:string:3.0
 edge.xml	/	1	1	uri-10	b	xs:boolean:true
@@ -1237,7 +1237,7 @@ edge.xml	/	1	1	uri-11	v	xs:string:Saxonica
 edge.xml	/	1	1	uri-11	b	xs:boolean:true
 edge.xml	/	1	1	uri-12	v	xs:string:SAXON
 edge.xml	/	1	1	uri-12	b	xs:boolean:true
-edge.xml	/	1	1	uri-13	v	xs:string:HE 9.9.1.8
+edge.xml	/	1	1	uri-13	v	xs:string:HE 12.10
 edge.xml	/	1	1	uri-13	b	xs:boolean:true
 edge.xml	/	1	1	uri-14	v	xs:string:
 edge.xml	/	1	1	uri-14	b	xs:boolean:false
@@ -1251,6 +1251,12 @@ edge.xml	/	1	1	uri-18	v	empty
 edge.xml	/	1	1	uri-18	b	xs:boolean:false
 edge.xml	/	1	1	uri-19	v	empty
 edge.xml	/	1	1	uri-19	b	xs:boolean:false
+edge.xml	/	1	1	uri-20	v	xs:anyURI:{dir}/edge%20doc%20é%23%25,;%5B1%5D.xml
+edge.xml	/	1	1	uri-20	b	xs:boolean:true
+edge.xml	/	1	1	uri-21	v	xs:integer:2
+edge.xml	/	1	1	uri-21	b	xs:boolean:true
+edge.xml	/	1	1	uri-22	v	xs:boolean:true
+edge.xml	/	1	1	uri-22	b	xs:boolean:true
 edge.xml	/2	1	2	cenpi-01	v	xs:string:.processing-instruction-1-
 edge.xml	/2	1	2	cenpi-01	b	xs:boolean:true
 edge.xml	/3/33	2	2	cenpi-01	v	xs:string:.processing-instruction-1-
@@ -1315,8 +1321,8 @@ edge.xml	/	1	1	order-27	v	error:FORG0001
 edge.xml	/	1	1	order-27	b	error:FORG0006
 edge.xml	/	1	1	order-28	v	xs:integer:1
 edge.xml	/	1	1	order-28	b	xs:boolean:true
-edge.xml	/	1	1	order-29	v	xs:double:NaN
-edge.xml	/	1	1	order-29	b	xs:boolean:false
+edge.xml	/	1	1	order-29	v	error:FORG0006
+edge.xml	/	1	1	order-29	b	error:FORG0006
 edge.xml	/	1	1	order-30	v	error:FORG0006
 edge.xml	/	1	1	order-30	b	error:FORG0006
 edge.xml	/	1	1	order-31	v	xs:boolean:true
@@ -1331,6 +1337,10 @@ edge.xml	/	1	1	order-35	v	xs:string:yes
 edge.xml	/	1	1	order-35	b	xs:boolean:true
 edge.xml	/	1	1	order-36	v	error:FORG0001
 edge.xml	/	1	1	order-36	b	error:FORG0001
+edge.xml	/	1	1	order-37	v	error:FOAR0001
+edge.xml	/	1	1	order-37	b	error:FOAR0001
+edge.xml	/	1	1	order-38	v	xs:double:NaN
+edge.xml	/	1	1	order-38	b	xs:boolean:false
 amounts.xml	/	1	1	amt-01	v	error:FORG0001
 amounts.xml	/	1	1	amt-01	b	error:FORG0001
 amounts.xml	/	1	1	amt-02	v	xs:double:204.5

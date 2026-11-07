@@ -22,7 +22,7 @@ upstream licence. The rest of the repository is MIT.
   with its explanation (none for this release).
 - `xpath/`: the expression oracle of `crates/einvoice-xpath-eval` (see
   `crates/einvoice-xpath-eval/tests/oracle/README.md`): `documents.tsv`, the cases whose
-  documents are used, and `expected.tsv`, Saxon-HE 9.9.1-8's value of every distinct XPath
+  documents are used, and `expected.tsv`, Saxon-HE 12.10's value of every distinct XPath
   expression of `ubl/xslt/EN16931-UBL-validation.xslt` at nodes its template matches in those
   documents.
 

@@ -1,4 +1,4 @@
-//! Equivalence with Saxon-HE 9.9.1-8, expression by expression: every golden line of
+//! Equivalence with Saxon-HE 12.10, expression by expression: every golden line of
 //! `corpus/cen-en16931-ubl-1.3.17/xpath/expected.tsv` (the expressions of the CEN
 //! stylesheet at nodes their templates match) and of `tests/oracle/expected.tsv` (edge
 //! cases) is evaluated with this crate at the same context and compared. Written by the
@@ -67,7 +67,7 @@ impl Host for TestHost {
             .texts
             .get(uri)
             .unwrap_or_else(|| panic!("document({uri})"));
-        let node = Document::parse(text, Some(uri)).unwrap().root();
+        let node = Document::parse_loaded(text, uri).unwrap().root();
         self.loaded
             .borrow_mut()
             .insert(uri.to_owned(), node.clone());
@@ -75,7 +75,7 @@ impl Host for TestHost {
     }
 
     fn system_property(&self, name: &QName) -> String {
-        // Saxon-HE 9.9.1-8's values (see the edge cases uri-10 to uri-14).
+        // Saxon-HE 12.10's values (see the edge cases uri-10 to uri-14).
         if name.namespace.as_deref() != Some("http://www.w3.org/1999/XSL/Transform") {
             return String::new();
         }
@@ -83,7 +83,7 @@ impl Host for TestHost {
             "version" => "3.0",
             "vendor" => "Saxonica",
             "product-name" => "SAXON",
-            "product-version" => "HE 9.9.1.8",
+            "product-version" => "HE 12.10",
             _ => "",
         }
         .to_owned()

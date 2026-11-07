@@ -1,4 +1,4 @@
-# Saxon-HE 9.9.1-8 results of the expressions of ubl/xslt/EN16931-UBL-validation.xslt
+# Saxon-HE 12.10 results of the expressions of ubl/xslt/EN16931-UBL-validation.xslt
 # at nodes their templates match in the documents of documents.tsv.
 # Written by `cargo run -p einvoice-xpath-eval --example saxon-oracle -- --write`; do not edit.
 # document	context	position	size	key	v|b	result...
@@ -164,12 +164,12 @@ examples/FT G2G_TD01 con Allegato, Bonifico e Split Payment.xml	/	1	296	L00167:s
 examples/sample-discount-price.xml	/	1	266	L00167:select	v	xs:string:
 testfiles/BIS_Billing_30-Inkopskort.xml	/	1	529	L00167:select	v	xs:string:
 vefa/Invoice-unit-UBL/UBL-DT-01.002.xml	/	1	78	L00167:select	v	xs:string:
-examples/ubl-tc434-example1.xml	/	1	1180	L00179:select	v	xs:anyURI:{dir}/ubl-tc434-example1.xml
-examples/ubl-tc434-creditnote1.xml	/	1	292	L00179:select	v	xs:anyURI:{dir}/ubl-tc434-creditnote1.xml
-examples/FT G2G_TD01 con Allegato, Bonifico e Split Payment.xml	/	1	296	L00179:select	v	xs:anyURI:{dir}/FT%20G2G_TD01%20con%20Allegato,%20Bonifico%20e%20Split%20Payment.xml
-examples/sample-discount-price.xml	/	1	266	L00179:select	v	xs:anyURI:{dir}/sample-discount-price.xml
-testfiles/BIS_Billing_30-Inkopskort.xml	/	1	529	L00179:select	v	xs:anyURI:{dir}/BIS_Billing_30-Inkopskort.xml
-vefa/Invoice-unit-UBL/UBL-DT-01.002.xml	/	1	78	L00179:select	v	xs:anyURI:{dir}/UBL-DT-01.002.xml
+examples/ubl-tc434-example1.xml	/	1	1180	L00179:select	v	empty
+examples/ubl-tc434-creditnote1.xml	/	1	292	L00179:select	v	empty
+examples/FT G2G_TD01 con Allegato, Bonifico e Split Payment.xml	/	1	296	L00179:select	v	empty
+examples/sample-discount-price.xml	/	1	266	L00179:select	v	empty
+testfiles/BIS_Billing_30-Inkopskort.xml	/	1	529	L00179:select	v	empty
+vefa/Invoice-unit-UBL/UBL-DT-01.002.xml	/	1	78	L00179:select	v	empty
 examples/ubl-tc434-example1.xml	/	1	1180	L00184:select	v	document:/
 examples/ubl-tc434-creditnote1.xml	/	1	292	L00184:select	v	document:/
 examples/FT G2G_TD01 con Allegato, Bonifico e Split Payment.xml	/	1	296	L00184:select	v	document:/

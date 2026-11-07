@@ -1,6 +1,6 @@
 # Saxon-HE oracle of `einvoice-xpath-eval`
 
-Every expected result here is produced by Saxon-HE 9.9.1-8, the reference engine of the
+Every expected result here is produced by Saxon-HE 12.10, the reference engine of the
 official validation stylesheets, never written by hand.
 
 Two sets of probes, in the same format (described in `common.rs`):
@@ -26,7 +26,8 @@ The test `tests/oracle.rs` replays every golden line with this crate and needs n
 nor Saxon. A line that disagrees fails the test unless it is listed, with its reason, in
 `KNOWN_DIFFERENCES` there.
 
-Regenerating the goldens needs Java 21 and Saxon-HE, fetched by `scripts/fetch-saxon.sh`:
+Regenerating the goldens needs Java 21 and Saxon-HE with the two XML Resolver jars it needs,
+fetched by `scripts/fetch-saxon.sh`:
 
 ```sh
 scripts/fetch-saxon.sh
@@ -34,6 +35,12 @@ cargo run -p einvoice-xpath-eval --example saxon-oracle -- select-documents  # r
 cargo run -p einvoice-xpath-eval --example saxon-oracle -- --write           # rewrite the goldens
 cargo run -p einvoice-xpath-eval --example saxon-oracle                      # check the goldens against Saxon
 ```
+
+The probe stylesheet names each output after `base-uri(/)` of its document: Saxon-HE 12.10
+leaves `document-uri(/)` empty for a document given to the transformation (see
+`Document::parse`). Saxon-HE 12.10 prints a compile-time warning for some edge cases written on
+purpose (the literal predicate `[0]`); the example accepts exactly those, listed in
+`EXPECTED_WARNINGS`, and fails on any other output.
 
 Saxon refuses statically some expressions that are only dynamic errors here (its type
 inference sees them); such edge cases pass their operand through `p:any`, an identity

@@ -18,8 +18,9 @@
 //! documents greedily (a fixed starting set first) until every group of expressions that
 //! some document reaches is reached, and writes the list to `documents.tsv`.
 //!
-//! Saxon-HE 9.9.1-8 is taken from `$SAXON_JAR`, else where `scripts/fetch-saxon.sh` puts
-//! it; its SHA-256 is checked. Java from `$JAVA`, else `java`. Saxon runs with the UTC
+//! Saxon-HE 12.10 is taken from `$SAXON_JAR`, else where `scripts/fetch-saxon.sh` puts
+//! it, and the two XML Resolver jars it needs from the same directory; the SHA-256 of
+//! each jar is checked. Java from `$JAVA`, else `java`. Saxon runs with the UTC
 //! timezone, the implicit timezone the test uses.
 
 #[path = "../tests/oracle/common.rs"]
@@ -33,8 +34,24 @@ use std::process::{Command, ExitCode};
 use common::{EdgeCase, Inventory, Record};
 use sha2::{Digest, Sha256};
 
-const SAXON_SHA256: &str = "504ad5c71b55a3fd04c5609419b5e51d51b419f26628b4b6254c38766487abdf";
-const SAXON_DEFAULT: &str = "target/oracle/saxon/Saxon-HE-9.9.1-8.jar";
+/// The class path of `net.sf.saxon.Transform`, file name and SHA-256 of each jar:
+/// Saxon-HE 12.10, then the XML Resolver 5.3.3 it depends on (plain and `data`), as
+/// `scripts/fetch-saxon.sh` fetches them.
+const SAXON_JARS: [(&str, &str); 3] = [
+    (
+        "Saxon-HE-12.10.jar",
+        "b571af282f25d7301059f788b9a149aab8b5cdc14ef3d212dc5425d3dcbb9a97",
+    ),
+    (
+        "xmlresolver-5.3.3.jar",
+        "1fe4d5b92f708dcdb82dbce12919e0171e6b5ca62c6dca6220483625098feb5f",
+    ),
+    (
+        "xmlresolver-5.3.3-data.jar",
+        "b0c487ad2f3e558be8d829c916d2458d10aca6a5bafa7a4d0524b70845e48a5c",
+    ),
+];
+const SAXON_DEFAULT: &str = "target/oracle/saxon/Saxon-HE-12.10.jar";
 const WORK_DIR: &str = "target/oracle/xpath";
 /// Contexts kept per CEN expression.
 const CONTEXTS_PER_EXPRESSION: usize = 6;
@@ -81,56 +98,100 @@ fn write(path: &Path, text: &str) -> Result<(), String> {
     std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-fn saxon_jar() -> Result<PathBuf, String> {
-    let jar = std::env::var_os("SAXON_JAR").map_or_else(
+/// The class path of the oracle ([`SAXON_JARS`]): Saxon's jar from `$SAXON_JAR`, else
+/// [`SAXON_DEFAULT`], and the other jars from its directory, each checked.
+fn saxon_class_path() -> Result<std::ffi::OsString, String> {
+    let saxon = std::env::var_os("SAXON_JAR").map_or_else(
         || common::workspace_root().join(SAXON_DEFAULT),
         PathBuf::from,
     );
-    let bytes = std::fs::read(&jar).map_err(|e| {
-        format!(
-            "{}: {e} (run scripts/fetch-saxon.sh or set SAXON_JAR)",
-            jar.display()
-        )
-    })?;
-    let hash = Sha256::digest(&bytes)
-        .iter()
-        .fold(String::new(), |mut s, b| {
-            let _ = write!(s, "{b:02x}");
-            s
-        });
-    if hash != SAXON_SHA256 {
-        return Err(format!(
-            "{}: SHA-256 {hash}, expected {SAXON_SHA256}",
-            jar.display()
-        ));
+    let dir = saxon.parent().unwrap_or_else(|| Path::new(""));
+    let mut jars = Vec::with_capacity(SAXON_JARS.len());
+    for (index, (name, sha256)) in SAXON_JARS.iter().enumerate() {
+        let jar = if index == 0 {
+            saxon.clone()
+        } else {
+            dir.join(name)
+        };
+        let bytes = std::fs::read(&jar).map_err(|e| {
+            format!(
+                "{}: {e} (run scripts/fetch-saxon.sh or set SAXON_JAR)",
+                jar.display()
+            )
+        })?;
+        let hash = Sha256::digest(&bytes)
+            .iter()
+            .fold(String::new(), |mut s, b| {
+                let _ = write!(s, "{b:02x}");
+                s
+            });
+        if hash != *sha256 {
+            return Err(format!(
+                "{}: SHA-256 {hash}, expected {sha256}",
+                jar.display()
+            ));
+        }
+        jars.push(jar);
     }
-    Ok(jar)
+    std::env::join_paths(&jars).map_err(|e| format!("class path: {e}"))
 }
 
 /// Runs Saxon on every file of `input` with `stylesheet`, into `output`.
 fn run_saxon(stylesheet: &Path, input: &Path, output: &Path) -> Result<(), String> {
-    let jar = saxon_jar()?;
+    let class_path = saxon_class_path()?;
     let java = std::env::var_os("JAVA").unwrap_or_else(|| "java".into());
     let threads = std::thread::available_parallelism().map_or(1, |n| n.get().min(8));
     let result = Command::new(&java)
         .env("TZ", "UTC")
         .arg("-Duser.timezone=UTC")
-        .arg("-jar")
-        .arg(&jar)
+        .arg("-cp")
+        .arg(&class_path)
+        .arg("net.sf.saxon.Transform")
         .arg(format!("-xsl:{}", stylesheet.display()))
         .arg(format!("-s:{}", input.display()))
         .arg(format!("-o:{}", output.display()))
         .arg(format!("-threads:{threads}"))
         .output()
         .map_err(|e| format!("cannot run {}: {e}", java.display()))?;
-    if !result.status.success() || !result.stderr.is_empty() {
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    if !result.status.success() || !only_expected_warnings(&stderr) {
         return Err(format!(
-            "Saxon failed ({}); a clean run prints nothing:\n{}",
+            "Saxon failed ({}); a clean run prints nothing but the warnings of \
+             EXPECTED_WARNINGS:\n{stderr}",
             result.status,
-            String::from_utf8_lossy(&result.stderr)
         ));
     }
     Ok(())
+}
+
+/// Compile-time warnings Saxon-HE 12.10 prints for expressions that the edge cases
+/// write on purpose: the warning code and the expression it quotes.
+const EXPECTED_WARNINGS: &[(&str, &str)] = &[
+    // pred-12 probes a literal [0] predicate ("Positions are numbered from one").
+    ("SXWN9046", "(10, 20, 30)[0]"),
+];
+
+/// Whether Saxon's standard error holds nothing but warnings of [`EXPECTED_WARNINGS`],
+/// each printed as a `Warning at ...` line, a line `<code>  in {<expression>}:` and
+/// indented lines of explanation.
+fn only_expected_warnings(stderr: &str) -> bool {
+    let mut lines = stderr.lines().peekable();
+    while let Some(line) = lines.next() {
+        if !line.starts_with("Warning at ") {
+            return false;
+        }
+        let Some(detail) = lines.next() else {
+            return false;
+        };
+        let expected = EXPECTED_WARNINGS.iter().any(|(code, expression)| {
+            detail.trim_start() == format!("{code}  in {{{expression}}}:")
+        });
+        if !expected {
+            return false;
+        }
+        while lines.next_if(|l| l.starts_with("    ")).is_some() {}
+    }
+    true
 }
 
 fn xml_attr(text: &str) -> String {
@@ -241,7 +302,7 @@ fn probe(
     for param in &inventory.params {
         let _ = writeln!(out, "<xsl:param name=\"{param}\"/>");
     }
-    out.push_str("<xsl:template match=\"/\">\n<xsl:variable name=\"p:name\" select=\"replace(string(document-uri(/)), '^.*/', '')\"/>\n<results name=\"{$p:name}\">\n");
+    out.push_str("<xsl:template match=\"/\">\n<xsl:variable name=\"p:name\" select=\"replace(string(base-uri(/)), '^.*/', '')\"/>\n<results name=\"{$p:name}\">\n");
     let names: Vec<String> = cen_names
         .iter()
         .map(|n| format!("'{}'", n.replace('\'', "''")))
@@ -488,7 +549,7 @@ fn collect(staged: &Staged, output: &Path) -> Result<Collected, String> {
             }
         } else {
             return Err(format!(
-                "Saxon named a document {saxon_name:?}, which is none of the staged names: the document URI differs from file_uri()"
+                "Saxon named a document {saxon_name:?}, which is none of the staged names: the base URI differs from file_uri()"
             ));
         }
     }
@@ -570,11 +631,11 @@ fn oracle(write_goldens: bool) -> Result<(), String> {
     let (edge_records, cen_candidates) = collect(&staged, &output)?;
     let cen_records = select_contexts(&inventory, &documents, &cen_candidates)?;
     let edge_text = golden_text(
-        "Saxon-HE 9.9.1-8 results of the edge cases (tests/oracle/cases.tsv).",
+        "Saxon-HE 12.10 results of the edge cases (tests/oracle/cases.tsv).",
         &edge_records,
     );
     let cen_text = golden_text(
-        "Saxon-HE 9.9.1-8 results of the expressions of ubl/xslt/EN16931-UBL-validation.xslt\n\
+        "Saxon-HE 12.10 results of the expressions of ubl/xslt/EN16931-UBL-validation.xslt\n\
          # at nodes their templates match in the documents of documents.tsv.",
         &cen_records,
     );

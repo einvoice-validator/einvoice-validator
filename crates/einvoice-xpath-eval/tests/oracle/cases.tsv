@@ -1,7 +1,7 @@
 # Edge cases of the expression oracle: id, document (in docs/), context nodes (an XPath
 # expression Saxon evaluates on the document), what is probed (`v` the value, `vb` also
 # the effective boolean value, as xsl:when computes it), expression. Expected results come from
-# Saxon-HE 9.9.1-8 only (expected.tsv). Escapes: \t \n \r \\ \u{HEX}.
+# Saxon-HE 12.10 only (expected.tsv). Escapes: \t \n \r \\ \u{HEX}.
 axes-01	edge.xml	/	vb	/t:root/d:item
 axes-02	edge.xml	/	vb	//d:item/@id
 axes-03	edge.xml	/	vb	//d:item[2]/preceding-sibling::node()
@@ -423,6 +423,9 @@ uri-16	edge.xml	/	vb	current-dateTime() = current-dateTime()
 uri-17	edge.xml	/	vb	current()
 uri-18	edge.xml	/	vb	base-uri(())
 uri-19	edge.xml	/	vb	document-uri(())
+uri-20	edge.xml	/	vb	document-uri(document(base-uri(/)))
+uri-21	edge.xml	/	vb	count(document(base-uri(/)) | /)
+uri-22	edge.xml	/	vb	document-uri(document(base-uri(/))) = base-uri(/)
 amt-01	amounts.xml	/	vb	xs:decimal(//cac:LegalMonetaryTotal/cbc:LineExtensionAmount) = xs:decimal(round(sum(//cac:InvoiceLine/xs:decimal(cbc:LineExtensionAmount)) * 10 * 10) div 100)
 amt-02	amounts.xml	/	vb	sum(//cac:InvoiceLine/cbc:LineExtensionAmount)
 amt-03	amounts.xml	/	vb	sum(//cac:InvoiceLine/xs:decimal(cbc:LineExtensionAmount))
@@ -503,3 +506,5 @@ order-33	edge.xml	/	vb	(//*[@n = 1] | //d:nothing)[1]
 order-34	edge.xml	/	vb	exists(//d:nothing | //*[@n = 1])
 order-35	edge.xml	/	vb	if (count(//*[@n = 1] | //d:nothing)) then 'yes' else 'no'
 order-36	edge.xml	/	vb	(//*[@n = 1] | //d:nothing)[@n = 1]
+order-37	edge.xml	/	vb	sum((0e0 div 0, 1 idiv 0))
+order-38	edge.xml	/	vb	sum((0e0 div 0, //d:num[5], p:any(2)))

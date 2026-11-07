@@ -151,7 +151,9 @@ pub trait Host {
 
     /// `document()`: the document node of the resource at `uri`, resolved against `base`
     /// (the base URI of the node the URI came from, `None` for the static base URI). The
-    /// same URI must give the same document node.
+    /// same URI must give the same document node, parsed with
+    /// [`Document::parse_loaded`](crate::Document::parse_loaded)
+    /// so that `fn:document-uri` gives its absolute URI, as in Saxon.
     ///
     /// # Errors
     ///

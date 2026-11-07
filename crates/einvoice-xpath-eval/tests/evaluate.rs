@@ -182,7 +182,7 @@ fn host_variables_functions_and_documents() {
     context.declare_function(function, 1);
     let host = TestHost {
         calls: Cell::new(0),
-        other: Document::parse("<o><x>1</x><x>2</x></o>", Some("urn:other")).unwrap(),
+        other: Document::parse_loaded("<o><x>1</x><x>2</x></o>", "urn:other").unwrap(),
     };
     let dc = DynamicContext::new(&host).unwrap();
     let eval = |text: &str| {
@@ -258,9 +258,10 @@ fn xml_base_is_refused_not_ignored() {
         eval_at("base-uri(//a)", &doc.root()),
         Err(ErrorCode::Unsupported)
     );
+    // Saxon-HE 12.10: a document that was not loaded by document() has no document URI.
     assert_eq!(
         eval_at("document-uri(/)", &doc.root()).unwrap(),
-        ["file:/d.xml"]
+        Vec::<String>::new()
     );
 }
 

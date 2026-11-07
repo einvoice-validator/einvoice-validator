@@ -162,14 +162,39 @@ impl fmt::Debug for Document {
 impl Document {
     /// Parses XML text. Every text node is kept, whitespace-only ones included; a document
     /// type declaration is refused (its default attributes and entities would change the
-    /// tree without notice). The document URI, if given, is also the base URI of every
-    /// node.
+    /// tree without notice). `base_uri`, if given, is the base URI of every node (the
+    /// location the text was read from, Saxon's system id).
+    ///
+    /// The document has no document URI: in Saxon-HE 12.10, `fn:document-uri` only knows
+    /// the documents of its document pool, those that `fn:document` or `fn:doc` loaded,
+    /// and is empty for a document given to the transformation, such as the one being
+    /// validated. (Saxon 9.9 fell back to the system id.) A document loaded by
+    /// `fn:document` is parsed with [`Document::parse_loaded`].
     ///
     /// # Errors
     ///
     /// XML that is not well-formed or not namespace-well-formed, or that has a document
     /// type declaration.
-    pub fn parse(text: &str, document_uri: Option<&str>) -> Result<Rc<Self>, DocumentError> {
+    pub fn parse(text: &str, base_uri: Option<&str>) -> Result<Rc<Self>, DocumentError> {
+        Self::parse_with_uris(text, None, base_uri)
+    }
+
+    /// Parses XML text as [`Document::parse`] does, for a document that `fn:document`
+    /// loaded from `uri` (the absolute URI it resolved): `uri` is both its document URI
+    /// and the base URI of its nodes, as for a document in Saxon's document pool.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Document::parse`].
+    pub fn parse_loaded(text: &str, uri: &str) -> Result<Rc<Self>, DocumentError> {
+        Self::parse_with_uris(text, Some(uri), Some(uri))
+    }
+
+    fn parse_with_uris(
+        text: &str,
+        document_uri: Option<&str>,
+        base_uri: Option<&str>,
+    ) -> Result<Rc<Self>, DocumentError> {
         let options = roxmltree::ParsingOptions {
             allow_dtd: false,
             nodes_limit: u32::MAX,
@@ -215,8 +240,7 @@ impl Document {
         for _ in open {
             builder.end_element()?;
         }
-        let uri = document_uri.map(str::to_owned);
-        builder.finish(uri.clone(), uri)
+        builder.finish(document_uri.map(str::to_owned), base_uri.map(str::to_owned))
     }
 
     /// The document node.
@@ -228,7 +252,8 @@ impl Document {
         }
     }
 
-    /// The document URI (`fn:document-uri`), if any.
+    /// The document URI (`fn:document-uri`), if any: only a document loaded by
+    /// `fn:document` has one (see [`Document::parse`]).
     #[must_use]
     pub fn document_uri(&self) -> Option<&str> {
         self.uri.as_deref()
@@ -1058,7 +1083,11 @@ mod tests {
         assert!(matches!(prefixed.typed_value(), AtomicValue::UntypedAtomic(s) if s == "2"));
         let comment = tree.root().children().next().unwrap();
         assert!(matches!(comment.typed_value(), AtomicValue::String(s) if s == "c0"));
-        assert_eq!(tree.document_uri(), Some("file:/t.xml"));
+        assert_eq!(tree.document_uri(), None);
+        assert_eq!(tree.base_uri(), Some("file:/t.xml"));
+        let loaded = Document::parse_loaded("<a/>", "file:/t.xml").unwrap();
+        assert_eq!(loaded.document_uri(), Some("file:/t.xml"));
+        assert_eq!(loaded.base_uri(), Some("file:/t.xml"));
         assert_eq!(z.root(), tree.root());
         assert_ne!(z, top);
     }

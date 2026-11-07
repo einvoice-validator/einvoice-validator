@@ -1,6 +1,6 @@
 //! Node model and evaluator of the XPath 2.0 subset that the official e-invoicing
 //! validation stylesheets use, with the behaviour of the reference engine, Saxon-HE
-//! 9.9.1-8.
+//! 12.10.
 //!
 //! * [`tree`]: immutable XML trees ([`Document`], [`Node`]), parsed from text with every
 //!   whitespace text node kept, or built with a [`TreeBuilder`].
