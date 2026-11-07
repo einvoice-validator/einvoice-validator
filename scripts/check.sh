@@ -88,8 +88,9 @@ job_zizmor() {
 # The test corpus and its reference oracle (corpus/README.md): the vendored
 # artefacts against their SHA256SUMS, the extracted corpus against the vendored
 # test sets, the goldens against the VEFA expectations, then Saxon-HE (fetched
-# from Maven Central, checksum verified) re-run on every case: the goldens must
-# not change. Without Java the Saxon run is SKIPPED, except in CI, where it fails.
+# from Maven Central, checksum verified) re-run on every case, on the atomic
+# value probes of einvoice-xdm and on the expression probes of
+# einvoice-xpath-eval: the goldens must not change. Without Java the Saxon run is SKIPPED, except in CI, where it fails.
 job_oracle() {
     need_toolchain || return 1
     cargo xtask manifest || return 1
@@ -110,7 +111,8 @@ job_oracle() {
         scripts/fetch-saxon.sh || return 1
     fi
     cargo xtask oracle || return 1
-    cargo run --locked -p einvoice-xdm --example saxon-oracle
+    cargo run --locked -p einvoice-xdm --example saxon-oracle || return 1
+    cargo run --locked -p einvoice-xpath-eval --example saxon-oracle
 }
 # The pre-commit guard on the index; nothing staged, nothing to check.
 job_privacy() {

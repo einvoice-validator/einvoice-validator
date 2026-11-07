@@ -4,7 +4,8 @@ name: oracle
 # vendored artefacts against their SHA256SUMS and the extracted corpus against
 # the vendored test sets, runs Saxon-HE on every corpus case and fails if the
 # committed goldens differ, then cross-checks the goldens with the VEFA
-# expectations. Only runs when one of those inputs or the tooling changes.
+# expectations; then the Saxon goldens of einvoice-xdm and einvoice-xpath-eval.
+# Only runs when one of those inputs or the tooling changes.
 
 on:
   pull_request:
@@ -15,6 +16,8 @@ on:
       - "xtask/**"
       - "crates/einvoice-xdm/tests/oracle/**"
       - "crates/einvoice-xdm/examples/**"
+      - "crates/einvoice-xpath-eval/tests/oracle/**"
+      - "crates/einvoice-xpath-eval/examples/saxon-oracle.rs"
       - "scripts/check.sh"
       - "scripts/fetch-saxon.sh"
       - ".github/workflows/oracle.yml"
@@ -31,6 +34,8 @@ on:
       - "xtask/**"
       - "crates/einvoice-xdm/tests/oracle/**"
       - "crates/einvoice-xdm/examples/**"
+      - "crates/einvoice-xpath-eval/tests/oracle/**"
+      - "crates/einvoice-xpath-eval/examples/saxon-oracle.rs"
       - "scripts/check.sh"
       - "scripts/fetch-saxon.sh"
       - ".github/workflows/oracle.yml"
