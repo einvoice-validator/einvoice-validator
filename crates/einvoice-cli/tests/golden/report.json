@@ -1,0 +1,385 @@
+{
+  "format": "einvoice-validate",
+  "format_version": 1,
+  "tool": {
+    "name": "einvoice-validate",
+    "version": "@VERSION@"
+  },
+  "rule_set": {
+    "name": "cen-ubl",
+    "title": "CEN EN 16931 UBL",
+    "version": "1.3.17",
+    "schema": "ubl-2.1",
+    "stylesheets": [
+      {
+        "name": "EN16931-UBL",
+        "version": "1.3.17",
+        "path": "ubl/xslt/EN16931-UBL-validation.xslt",
+        "sha256": "fc4e6cfa8596bba0c2abd19038a98960c6ee9fc1f44566787c115efd4f4aca7c"
+      }
+    ]
+  },
+  "documents": [
+    {
+      "path": "artefacts/cen-en16931-ubl-1.3.17/ubl/examples/ubl-tc434-example1.xml",
+      "status": "valid",
+      "error": null,
+      "counts": {
+        "schema_errors": 0,
+        "fatal": 0,
+        "warning": 0,
+        "other": 0,
+        "stylesheet_errors": 0
+      },
+      "schema_errors": [],
+      "findings": [],
+      "stylesheet_errors": [],
+      "warnings": []
+    },
+    {
+      "path": "corpus/cen-en16931-ubl-1.3.17/vefa/Invoice-unit-UBL/BR-02.002.xml",
+      "status": "invalid",
+      "error": null,
+      "counts": {
+        "schema_errors": 1,
+        "fatal": 11,
+        "warning": 0,
+        "other": 0,
+        "stylesheet_errors": 0
+      },
+      "schema_errors": [
+        {
+          "kind": "missing-element",
+          "line": 2,
+          "column": 1,
+          "element": "{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice",
+          "attribute": null,
+          "message": "content incomplete; expected: {urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2}UBLExtensions, {urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}UBLVersionID, {urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}CustomizationID, {urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ProfileID, {urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ProfileExecutionID, {urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ID"
+        }
+      ],
+      "findings": [
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-01",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cbc:CustomizationID) != ''",
+          "text": "[BR-01]-An Invoice shall have a Specification identifier (BT-24).   "
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-02",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cbc:ID) != ''",
+          "text": "[BR-02]-An Invoice shall have an Invoice number (BT-1)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-03",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cbc:IssueDate) != ''",
+          "text": "[BR-03]-An Invoice shall have an Invoice issue date (BT-2)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-04",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cbc:InvoiceTypeCode) != '' or normalize-space(cbc:CreditNoteTypeCode) !=''",
+          "text": "[BR-04]-An Invoice shall have an Invoice type code (BT-3)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-05",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cbc:DocumentCurrencyCode) != ''",
+          "text": "[BR-05]-An Invoice shall have an Invoice currency code (BT-5)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-06",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName) != ''",
+          "text": "[BR-06]-An Invoice shall contain the Seller name (BT-27)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-07",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName) != ''",
+          "text": "[BR-07]-An Invoice shall contain the Buyer name (BT-44)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-08",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "exists(cac:AccountingSupplierParty/cac:Party/cac:PostalAddress)",
+          "text": "[BR-08]-An Invoice shall contain the Seller postal address."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-10",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "exists(cac:AccountingCustomerParty/cac:Party/cac:PostalAddress)",
+          "text": "[BR-10]-An Invoice shall contain the Buyer postal address (BG-8)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-16",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "exists(cac:InvoiceLine) or exists(cac:CreditNoteLine)",
+          "text": "[BR-16]-An Invoice shall have at least one Invoice line (BG-25)"
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-CO-18",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:Invoice[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "exists(cac:TaxTotal/cac:TaxSubtotal)",
+          "text": "[BR-CO-18]-An Invoice shall at least have one VAT breakdown group (BG-23)."
+        }
+      ],
+      "stylesheet_errors": [],
+      "warnings": []
+    },
+    {
+      "path": "corpus/cen-en16931-ubl-1.3.17/vefa/CreditNote-unit-UBL/BR-10.001.xml",
+      "status": "invalid",
+      "error": null,
+      "counts": {
+        "schema_errors": 1,
+        "fatal": 10,
+        "warning": 1,
+        "other": 0,
+        "stylesheet_errors": 0
+      },
+      "schema_errors": [
+        {
+          "kind": "unexpected-element",
+          "line": 7,
+          "column": 4,
+          "element": "{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AccountingCustomerParty",
+          "attribute": null,
+          "message": "not expected; expected: {urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2}UBLExtensions, {urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}UBLVersionID, {urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}CustomizationID, {urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ProfileID, {urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ProfileExecutionID, {urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ID"
+        }
+      ],
+      "findings": [
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-01",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:CreditNote[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cbc:CustomizationID) != ''",
+          "text": "[BR-01]-An Invoice shall have a Specification identifier (BT-24).   "
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-02",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:CreditNote[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cbc:ID) != ''",
+          "text": "[BR-02]-An Invoice shall have an Invoice number (BT-1)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-03",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:CreditNote[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cbc:IssueDate) != ''",
+          "text": "[BR-03]-An Invoice shall have an Invoice issue date (BT-2)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-04",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:CreditNote[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cbc:InvoiceTypeCode) != '' or normalize-space(cbc:CreditNoteTypeCode) !=''",
+          "text": "[BR-04]-An Invoice shall have an Invoice type code (BT-3)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-05",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:CreditNote[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cbc:DocumentCurrencyCode) != ''",
+          "text": "[BR-05]-An Invoice shall have an Invoice currency code (BT-5)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-06",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:CreditNote[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName) != ''",
+          "text": "[BR-06]-An Invoice shall contain the Seller name (BT-27)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-07",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:CreditNote[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "normalize-space(cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName) != ''",
+          "text": "[BR-07]-An Invoice shall contain the Buyer name (BT-44)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-08",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:CreditNote[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "exists(cac:AccountingSupplierParty/cac:Party/cac:PostalAddress)",
+          "text": "[BR-08]-An Invoice shall contain the Seller postal address."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-16",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:CreditNote[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "exists(cac:InvoiceLine) or exists(cac:CreditNoteLine)",
+          "text": "[BR-16]-An Invoice shall have at least one Invoice line (BG-25)"
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "BR-CO-18",
+          "flag": "fatal",
+          "severity": "fatal",
+          "role": null,
+          "location": "/*:CreditNote[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-model",
+          "test": "exists(cac:TaxTotal/cac:TaxSubtotal)",
+          "text": "[BR-CO-18]-An Invoice shall at least have one VAT breakdown group (BG-23)."
+        },
+        {
+          "stylesheet": "EN16931-UBL",
+          "kind": "failed-assert",
+          "id": "UBL-CR-660",
+          "flag": "warning",
+          "severity": "warning",
+          "role": null,
+          "location": "/*:CreditNote[namespace-uri()='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'][1]",
+          "context": "/ubl:Invoice | /cn:CreditNote",
+          "pattern": "UBL-syntax",
+          "test": "not(//cac:Country/cbc:IdentificationCode/@listID)",
+          "text": "[UBL-CR-660]-A UBL invoice should not include the Country Identification code listID"
+        }
+      ],
+      "stylesheet_errors": [],
+      "warnings": []
+    }
+  ],
+  "summary": {
+    "documents": 3,
+    "valid": 1,
+    "invalid": 2,
+    "errors": 0
+  },
+  "exit_code": 1
+}

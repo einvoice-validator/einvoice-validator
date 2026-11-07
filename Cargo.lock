@@ -91,6 +91,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "einvoice-cli"
+version = "0.0.0"
+dependencies = [
+ "einvoice-svrl",
+ "einvoice-validator",
+ "proptest",
+ "sha2",
+]
+
+[[package]]
 name = "einvoice-svrl"
 version = "0.0.0"
 dependencies = [
