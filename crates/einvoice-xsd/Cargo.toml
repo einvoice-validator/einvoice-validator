@@ -5,6 +5,9 @@ keywords = ["xsd", "ubl", "einvoice", "peppol", "en16931"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/einvoice-xsd"
 # The code is MIT; the embedded OASIS UBL 2.1 schemas (schemas/oasis-ubl-2.1/) keep the
 # terms stated in their own headers. Texts in LICENSES/, file by file in
 # schemas/oasis-ubl-2.1/README.md.

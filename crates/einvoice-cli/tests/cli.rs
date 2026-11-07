@@ -386,7 +386,7 @@ fn external_bundles() {
     let xslt = std::fs::read(common::join(&root, common::XSLT)).unwrap();
     let manifest = std::fs::read_to_string(common::join(
         &root,
-        "crates/einvoice-validator/bundles/cen-ubl.toml",
+        "crates/einvoice-validator/bundles/cen-ubl/bundle.toml",
     ))
     .unwrap();
     let dir = common::temp_dir("bundle");

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # The checks, run the same way locally and in CI (.github/workflows/ci.yml,
 # oracle.yml and peppol.yml call the jobs below): formatting, lints, docs,
-# tests, the crates without their default features, the WebAssembly build,
-# the dependency policy, the workflow linters, the upstream pins, the shell
+# tests, the crates without their default features, the WebAssembly build and
+# examples, the packages of the publishable crates, the dependency policy, the workflow linters, the upstream pins, the shell
 # scripts and their tests, the reference oracles and, when something is
 # staged, the privacy guard.
 #
-#   scripts/check.sh                # every job: fmt clippy doc test features wasm deny actionlint zizmor pins guards oracle peppol privacy
+#   scripts/check.sh                # every job: fmt clippy doc test features wasm package deny actionlint zizmor pins guards oracle peppol privacy
 #   scripts/check.sh clippy test    # selected jobs
 #   scripts/check.sh toolchain      # only install the pinned toolchain
 #
@@ -158,6 +158,44 @@ job_wasm() {
             status=1
         fi
     done
+    return "$status"
+}
+# The publishable crates (every member whose publish is not false), packaged
+# as crates.io would receive them, then each built from its own package
+# (cargo package, with the workspace's packages standing in for crates.io);
+# and every term of each crate's licence expression has its text,
+# LICENSES/<term>.txt, in the package, LICENSES/MIT.txt being the repository's
+# LICENSE. Needs jq.
+job_package() {
+    need_toolchain || return 1
+    if ! command -v jq >/dev/null 2>&1; then
+        missing "package (jq is not installed)"
+        return
+    fi
+    local status=0 name dir license term list packages=()
+    while IFS=$'\t' read -r name dir license; do
+        packages+=(-p "$name")
+        list=$(cargo package --locked --allow-dirty --no-verify --list -p "$name") || {
+            status=1
+            continue
+        }
+        for term in ${license// AND / }; do
+            if [[ ! $term =~ ^[A-Za-z0-9.+-]+$ ]]; then
+                echo "$name: licence expression \"$license\": only terms joined by AND are checked" >&2
+                status=1
+            elif ! grep -qxF "LICENSES/$term.txt" <<<"$list"; then
+                echo "$name: LICENSES/$term.txt is not in the package (licence $license)" >&2
+                status=1
+            elif [ "$term" = MIT ] && ! cmp -s LICENSE "$dir/LICENSES/MIT.txt"; then
+                echo "$name: LICENSES/MIT.txt differs from LICENSE" >&2
+                status=1
+            fi
+        done
+        echo "$name: $license, $(wc -l <<<"$list") files"
+    done < <(cargo metadata --locked --no-deps --format-version 1 |
+        jq -r '.packages[] | select(.publish != []) | [.name, (.manifest_path | rtrimstr("/Cargo.toml")), .license] | @tsv')
+    [ ${#packages[@]} -gt 0 ] || { echo "no publishable crate" >&2; return 1; }
+    cargo package --locked --allow-dirty "${packages[@]}" || status=1
     return "$status"
 }
 job_deny() {
@@ -313,7 +351,7 @@ job_privacy() {
     scripts/privacy-guard.sh staged && echo "privacy guard: staged content clean"
 }
 
-ALL=(fmt clippy doc test features wasm deny actionlint zizmor pins guards oracle peppol privacy)
+ALL=(fmt clippy doc test features wasm package deny actionlint zizmor pins guards oracle peppol privacy)
 
 jobs=("$@")
 [ ${#jobs[@]} -eq 0 ] && jobs=("${ALL[@]}")

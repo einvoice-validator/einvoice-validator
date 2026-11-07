@@ -5,6 +5,9 @@ keywords = ["svrl", "schematron", "einvoice", "peppol", "en16931"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/einvoice-svrl"
 license.workspace = true
 
 [dependencies]

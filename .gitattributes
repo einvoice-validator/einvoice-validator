@@ -7,3 +7,5 @@
 artefacts/** -text
 corpus/*/vefa/** -text
 corpus/*/LICENSE.txt -text
+crates/einvoice-validator/bundles/cen-ubl/ubl/** -text
+crates/*/LICENSES/EUPL-1.2.txt -text

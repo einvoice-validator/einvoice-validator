@@ -577,16 +577,8 @@ fn bundle_dir(name: &str, manifest: &str, files: &[(&str, &[u8])]) -> std::path:
 #[cfg(feature = "cen-ubl")]
 #[test]
 fn the_cen_bundle_from_a_directory() {
-    let root = common::workspace_root();
-    let xslt = std::fs::read(common::join(
-        &root,
-        &format!("{}/{}", common::ARTEFACTS, common::XSLT),
-    ))
-    .unwrap();
-    let manifest =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("bundles/cen-ubl.toml"))
-            .unwrap();
-    let dir = bundle_dir("cen", &manifest, &[(common::XSLT, &xslt)]);
+    // The vendored files of the built-in rule set are a bundle directory.
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("bundles/cen-ubl");
     let validator = Validator::from_bundle_dir(&dir).unwrap();
     assert_eq!(validator.rule_set(), cen().rule_set());
     let case = common::case("vefa/Invoice-unit-UBL/BR-02.002.xml");
@@ -595,7 +587,6 @@ fn the_cen_bundle_from_a_directory() {
         validator.validate(&bytes).unwrap(),
         cen().validate(&bytes).unwrap()
     );
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]

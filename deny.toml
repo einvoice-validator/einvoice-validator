@@ -26,7 +26,12 @@ include-dev = true
 # einvoice-xsd embeds the OASIS UBL 2.1 schemas, which keep the terms in their own
 # headers (crates/einvoice-xsd/schemas/oasis-ubl-2.1/README.md, texts in
 # crates/einvoice-xsd/LICENSES/). Allowed for that crate only, not for the graph.
+# einvoice-validator vendors the CEN EN 16931 stylesheet (EUPL-1.2), embedded by its
+# default feature `cen-ubl` (crates/einvoice-validator/bundles/cen-ubl/README.md), and
+# einvoice-cli's binary embeds it. Allowed for those two crates only.
 exceptions = [
+    { crate = "einvoice-validator", allow = ["EUPL-1.2"] },
+    { crate = "einvoice-cli", allow = ["EUPL-1.2"] },
     { crate = "einvoice-xsd", allow = [
         "LicenseRef-OASIS-Copyright-Notice",
         "LicenseRef-UN-CEFACT-Copyright-Notice",

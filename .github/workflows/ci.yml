@@ -4,8 +4,10 @@ name: ci
 # same commands. Jobs:
 #   rust       fmt, cargo-deny, clippy, doc, test on Linux (one build), then
 #              einvoice-validator without its default features and built for
-#              wasm32-unknown-unknown, and the wasm examples of
-#              einvoice-xpath-eval and einvoice-validator run under wasmtime
+#              wasm32-unknown-unknown, the wasm examples of
+#              einvoice-xpath-eval and einvoice-validator run under wasmtime,
+#              and the publishable crates packaged and built from their
+#              packages
 #   test       tests on macOS and Windows, pull requests and manual runs only,
 #              after the Linux job has passed
 #   workflows  actionlint, and zizmor on .github/workflows and
@@ -46,7 +48,7 @@ defaults:
 
 jobs:
   rust:
-    name: rust (fmt, deny, clippy, doc, test, features, wasm)
+    name: rust (fmt, deny, clippy, doc, test, features, wasm, package)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -107,6 +109,9 @@ jobs:
       - name: wasm
         if: ${{ !cancelled() }}
         run: PATH="$RUNNER_TEMP/bin:$PATH" scripts/check.sh wasm
+      - name: package
+        if: ${{ !cancelled() }}
+        run: scripts/check.sh package
 
   test:
     name: test (${{ matrix.os }})

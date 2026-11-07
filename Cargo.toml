@@ -7,7 +7,12 @@ version = "0.0.0"
 edition = "2024"
 # Keep in step with the channel pinned in rust-toolchain.toml.
 rust-version = "1.99"
+# The code is MIT; a crate that also ships files under other terms declares its own
+# expression, with the texts in its LICENSES/ directory. Every published crate ships
+# LICENSES/MIT.txt, a copy of LICENSE.
 license = "MIT"
+repository = "https://github.com/einvoice-validator/einvoice-validator"
+homepage = "https://einvoice-validator.github.io/"
 
 [workspace.lints.rust]
 # Every warning is an error, locally and in CI: a plain `cargo build` / `cargo clippy` fails.

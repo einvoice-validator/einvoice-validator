@@ -5,7 +5,13 @@ keywords = ["peppol", "en16931", "einvoice", "ubl", "schematron"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/einvoice-validator"
+# The code is MIT; the CEN EN 16931 stylesheet vendored in bundles/cen-ubl/ and embedded
+# by the default feature `cen-ubl` is EUPL-1.2 (bundles/cen-ubl/README.md). Texts in
+# LICENSES/.
+license = "MIT AND EUPL-1.2"
 
 [features]
 default = ["cen-ubl"]

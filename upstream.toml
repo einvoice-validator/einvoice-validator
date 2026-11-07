@@ -62,8 +62,16 @@ file = "xtask/src/ruleset.rs"
 pattern = 'cen-en16931-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 
 [[upstream.pin]]
-file = "crates/einvoice-validator/bundles/cen-ubl.toml"
+file = "crates/einvoice-validator/bundles/cen-ubl/bundle.toml"
 pattern = 'version = "(?<v>[0-9]+(?:\.[0-9]+)*)"'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/bundles/cen-ubl/README.md"
+pattern = 'validation-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/bundles/cen-ubl/README.md"
+pattern = 'en16931-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 
 [[upstream.pin]]
 file = "crates/einvoice-validator/src/builtin.rs"
@@ -169,6 +177,10 @@ pattern = "cbc:UBLVersionID = '(?<v>[0-9.]+)'"
 
 [[upstream.pin]]
 file = "artefacts/cen-en16931-ubl-1.3.17/ubl/xslt/EN16931-UBL-validation.xslt"
+pattern = "cbc:UBLVersionID = '(?<v>[0-9.]+)'"
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/bundles/cen-ubl/ubl/xslt/EN16931-UBL-validation.xslt"
 pattern = "cbc:UBLVersionID = '(?<v>[0-9.]+)'"
 
 [[upstream]]

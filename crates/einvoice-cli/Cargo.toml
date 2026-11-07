@@ -6,7 +6,13 @@ categories = ["command-line-utilities"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/einvoice-cli"
+# The code is MIT; built with the default features, the binary embeds the CEN EN 16931
+# stylesheet of einvoice-validator's built-in rule set, which is EUPL-1.2. Texts in
+# LICENSES/.
+license = "MIT AND EUPL-1.2"
 
 [[bin]]
 name = "einvoice-validate"

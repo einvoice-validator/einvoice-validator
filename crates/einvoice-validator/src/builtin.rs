@@ -16,13 +16,13 @@ pub(crate) type Files = &'static [(&'static str, &'static [u8])];
 pub(crate) fn get(name: &str) -> Result<(&'static str, Files), Error> {
     match name {
         #[cfg(feature = "cen-ubl")]
+        // Vendored in the crate (bundles/cen-ubl/README.md), from
+        // cen-en16931-ubl-1.3.17.
         "cen-ubl" => Ok((
-            include_str!("../bundles/cen-ubl.toml"),
+            include_str!("../bundles/cen-ubl/bundle.toml"),
             &[(
                 "ubl/xslt/EN16931-UBL-validation.xslt",
-                include_bytes!(
-                    "../../../artefacts/cen-en16931-ubl-1.3.17/ubl/xslt/EN16931-UBL-validation.xslt"
-                ),
+                include_bytes!("../bundles/cen-ubl/ubl/xslt/EN16931-UBL-validation.xslt"),
             )],
         )),
         _ => Err(Error::bundle(format!(

@@ -5,6 +5,9 @@ keywords = ["xpath", "xsd", "decimal", "einvoice", "peppol"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/einvoice-xdm"
 license.workspace = true
 
 [dependencies]

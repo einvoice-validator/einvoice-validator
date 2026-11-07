@@ -533,7 +533,7 @@ sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
     #[test]
     fn the_embedded_manifest_parses() {
-        let rule_set = RuleSet::parse(include_str!("../bundles/cen-ubl.toml")).unwrap();
+        let rule_set = RuleSet::parse(include_str!("../bundles/cen-ubl/bundle.toml")).unwrap();
         assert_eq!(rule_set.name(), "cen-ubl");
     }
 
