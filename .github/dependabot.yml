@@ -1,0 +1,33 @@
+# Weekly version updates, one grouped pull request per ecosystem. Security
+# updates are not delayed by the cooldown. Pins outside these ecosystems
+# (official rule sets, Saxon-HE, the toolchain, CI tools) are checked by
+# .github/workflows/freshness.yml against upstream.toml.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    groups:
+      github-actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    groups:
+      cargo:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
