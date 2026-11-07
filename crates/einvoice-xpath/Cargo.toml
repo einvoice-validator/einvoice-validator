@@ -1,0 +1,15 @@
+[package]
+name = "einvoice-xpath"
+description = "Parser and syntax tree for the XPath 2.0 subset used by the official e-invoicing validation stylesheets"
+keywords = ["xpath", "xslt", "schematron", "parser", "einvoice"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+roxmltree = "0.21.2"
+
+[lints]
+workspace = true
