@@ -47,6 +47,10 @@ against.
 - `upstream.toml` and `scripts/freshness.sh`: every pinned upstream (rule sets, Saxon-HE,
   toolchain, CI tools) with the files that record it, and a weekly workflow that reports newer
   upstream versions in a tracking issue. Dependabot for GitHub Actions and Cargo.
+- `scripts/freshness.sh` also checks every direct Cargo dependency on crates.io (read from the
+  manifests and `Cargo.lock`, yanked and pre-release versions ignored): a major update, which
+  Dependabot leaves to manual migration, keeps the tracking issue open; `scripts/freshness.sh
+  crates` runs this check alone.
 - Pre-commit, commit-message and pre-push checks in `.githooks/`, also run in CI.
 - This changelog, and a check on pull requests that the Unreleased section is updated (label
   `no-changelog` to opt out).

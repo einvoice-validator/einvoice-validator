@@ -1,31 +1,50 @@
 #!/usr/bin/env bash
 # Freshness of every upstream the repository pins (upstream.toml): official
-# rule sets, standards and tools. Needs bash, curl and jq.
+# rule sets, standards and tools; and of the Cargo dependencies, whose
+# semver-incompatible ("major") updates Dependabot does not propose. Needs
+# bash, curl and jq (no Rust toolchain).
 #
 #   scripts/freshness.sh pins                  offline: check every pin of upstream.toml
 #                                              against the files that record it
 #   scripts/freshness.sh                       the pins check, then query every upstream
-#                                              and print pinned / latest / status
+#                                              and every Cargo dependency, and print
+#                                              pinned / latest / status
+#   scripts/freshness.sh crates                query the Cargo dependencies only
 #   scripts/freshness.sh --json FILE --markdown FILE
 #                                              also write the results as JSON and as a
 #                                              Markdown table
 #
-# Statuses: "current"; "OUTDATED" (severity high: an official rule set has a
-# newer release); "newer exists" (severity info); "pinned, newer exists"
-# (severity info, held on purpose: `hold` in upstream.toml); "ERROR".
+# Statuses of upstream.toml entries: "current"; "OUTDATED" (severity high: an
+# official rule set has a newer release); "newer exists" (severity info);
+# "pinned, newer exists" (severity info, held on purpose: `hold` in
+# upstream.toml); "ERROR".
+#
+# Cargo dependencies: every direct dependency, dev-dependency and
+# build-dependency on crates.io of every workspace member, read from the
+# manifests and Cargo.lock (a strict TOML subset; anything else is refused),
+# then looked up on crates.io, yanked and pre-release versions ignored. One row
+# per crate and locked version, severity info, note "locked L, newest compatible
+# C, newest N". Statuses: "current"; "compatible update" (within the version
+# requirement: Dependabot proposes it, so it opens no issue); "major update"
+# (outside the requirement: Dependabot does not propose it, it is migrated by
+# hand, so it opens the tracking issue); "locked version yanked" (also opens
+# it); "ERROR". crates.io is queried at most once per second, with a
+# User-Agent that names this repository (crates.io crawler policy).
 #
 # Exit status of a query run:
 #   0  nothing with severity high is outdated (info items are printed, never fail)
 #   1  an upstream with severity high has a newer release
 #   2  error: invalid upstream.toml, a pin that does not match the repository,
-#      a network or API failure, an unexpected response, a pinned version that
-#      upstream does not publish. An upstream that cannot be queried is never
-#      reported as current.
+#      a manifest or Cargo.lock outside the subset read here or out of date,
+#      a network or API failure, an unexpected response, a pinned or locked
+#      version that upstream does not publish. Nothing that cannot be queried
+#      is ever reported as current.
 # The pins check exits 0 when every pin matches, 2 otherwise.
 #
 # GitHub is queried through its REST API, with GITHUB_TOKEN (else GH_TOKEN)
 # when set: without a token the limit is 60 requests per hour, enough for one
-# run. Maven Central is read from its maven-metadata.xml files.
+# run. Maven Central is read from its maven-metadata.xml files, crates.io from
+# its API (https://crates.io/api/v1/crates/NAME).
 set -euo pipefail
 
 # FRESHNESS_PINFILE replaces upstream.toml (tests: scripts/freshness-test.sh);
@@ -35,6 +54,15 @@ if [ -n "${FRESHNESS_PINFILE:-}" ]; then
     case $FRESHNESS_PINFILE in
     /*) pinfile=$FRESHNESS_PINFILE ;;
     *) pinfile=$PWD/$FRESHNESS_PINFILE ;;
+    esac
+fi
+# FRESHNESS_WORKSPACE replaces the repository root as the Cargo workspace
+# whose dependencies are checked (tests).
+workspace=.
+if [ -n "${FRESHNESS_WORKSPACE:-}" ]; then
+    case $FRESHNESS_WORKSPACE in
+    /*) workspace=$FRESHNESS_WORKSPACE ;;
+    *) workspace=$PWD/$FRESHNESS_WORKSPACE ;;
     esac
 fi
 
@@ -52,6 +80,7 @@ mode=query json_out='' md_out=''
 while [ $# -gt 0 ]; do
     case $1 in
     pins) mode=pins ;;
+    crates) mode=crates ;;
     --json | --markdown)
         [ $# -ge 2 ] || die "$1 needs a file name"
         if [ "$1" = --json ]; then json_out=$2; else md_out=$2; fi
@@ -177,10 +206,17 @@ def default_pattern($source):
 | if ($dups | length) > 0 then error("\($file):\($dups[0].line): duplicate name \($dups[0].name)") else . end
 JQ
 
+# jq's error messages without their "jq: error (at ...): " prefix.
+jq_error() { sed 's/^jq: error (at [^)]*): //' "$1"; }
+
 entries=$tmp/entries.json
-[ -f "$pinfile" ] || die "$pinfile not found"
-jq -nR --arg file "$pinfile" "$parse_jq" "$pinfile" >"$entries" 2>"$tmp/parse.err" ||
-    die "$(sed 's/^jq: error (at [^)]*): //' "$tmp/parse.err")"
+if [ "$mode" = crates ]; then
+    echo '[]' >"$entries"
+else
+    [ -f "$pinfile" ] || die "$pinfile not found"
+    jq -nR --arg file "$pinfile" "$parse_jq" "$pinfile" >"$entries" 2>"$tmp/parse.err" ||
+        die "$(jq_error "$tmp/parse.err")"
+fi
 count=$(jq length "$entries")
 
 # --- the pins against the repository ------------------------------------------
@@ -242,11 +278,313 @@ if [ "$mode" = pins ]; then
     check_pins verbose || exit 2
     exit 0
 fi
-check_pins || exit 2
+[ "$mode" = crates ] || check_pins || exit 2
+
+# --- the Cargo workspace ------------------------------------------------------
+
+# A Cargo.toml, read as a strict TOML subset: the [package] name, the
+# [workspace] members, and every line of [dependencies], [dev-dependencies] and
+# [build-dependencies] (`name = "requirement"` or a one-line inline table).
+# Other tables are only checked to be `key = value` lines; what could change
+# the dependencies without being read (target-specific or workspace dependency
+# tables, dotted keys such as `x.workspace = true`, [patch], git or other
+# registries, multi-line strings) is refused.
+read -r -d '' manifest_jq <<'JQ' || true
+def fail($n; $msg): error("\($file):\($n): \($msg)");
+def key_re: "(?:[A-Za-z0-9_-]+|\"[^\"\\\\]*\"|'[^']*')";
+def str_re: "(?:\"[^\"\\\\]*\"|'[^']*')";
+def unquote: if startswith("\"") or startswith("'") then .[1:-1] else . end;
+def known($list): . as $x | any($list[]; . == $x);
+def dep_tables: ["dependencies", "dev-dependencies", "build-dependencies", "dev_dependencies",
+  "build_dependencies"];
+# "a.'b c'.d" -> ["a", "b c", "d"]
+def dotted($n):
+  . as $h
+  | [match("\\s*(" + key_re + ")\\s*(\\.|$)"; "g")] as $m
+  | if ($m | length) == 0 or ($m | map(.string) | add) != $h or $m[-1].captures[1].string != "" then
+      fail($n; "unsupported key or table name \($h)")
+    else $m | map(.captures[0].string | unquote) end;
+# The strings of a one-line array body: "\"a\", 'b'" -> ["a", "b"]
+def strings($n; $body):
+  ($body | sub("^\\s+"; "") | sub("\\s+$"; "")) as $b
+  | [$b | match("(" + str_re + ")\\s*(?:,\\s*|$)"; "g")] as $m
+  | if $b == "" then []
+    elif ($m | map(.string) | add) != $b then fail($n; "unsupported array [\($b)]: strings only")
+    else $m | map(.captures[0].string | unquote) end;
+# A one-line inline table of a dependency: {version, path, package}.
+def inline($n; $body):
+  ($body | sub("^\\s+"; "") | sub("\\s+$"; "")) as $b
+  | [$b | match("(?<k>[A-Za-z0-9_-]+)\\s*=\\s*(?<v>" + str_re + "|true|false|\\[[^\\[\\]]*\\])\\s*(?:,\\s*|$)"; "g")]
+    as $m
+  | ($m | map({k: .captures[0].string, v: .captures[1].string})) as $items
+  | if $b == "" or ($m | map(.string) | add) != $b then fail($n; "unsupported inline table { \($b) }")
+    elif ($items | map(.k) | unique | length) != ($items | length) then fail($n; "duplicate key in { \($b) }")
+    else
+      ($items | map(.k | select(known(["version", "path", "package", "features", "default-features",
+        "default_features", "optional"]) | not))) as $unknown
+      | if ($unknown | length) > 0 then
+          fail($n; "unsupported dependency key \($unknown | join(", ")): crates.io and path dependencies only")
+        else
+          reduce $items[] as $i ({};
+            if ($i.k | known(["version", "path", "package"])) then
+              if ($i.v | test("^" + str_re + "$")) then .[$i.k] = ($i.v | unquote)
+              else fail($n; "\($i.k) must be a string") end
+            elif ($i.k | known(["default-features", "default_features", "optional"])) then
+              if ($i.v | known(["true", "false"])) then . else fail($n; "\($i.k) must be true or false") end
+            elif ($i.v | startswith("[")) and (strings($n; $i.v[1:-1]) | length) >= 0 then .
+            else fail($n; "features must be an array of strings") end)
+        end
+    end;
+
+reduce inputs as $raw ({n: 0, table: null, kind: null, array: null,
+                         package: null, workspace: null, deps: []};
+  .n += 1
+  | .n as $n
+  | ($raw | sub("^[ \t]+"; "") | sub("[ \t\r]+$"; "")) as $t
+  | if ($t | contains("\"\"\"") or contains("'''")) then fail($n; "multi-line strings are not supported")
+    elif .array != null then
+      if $t == "" or ($t | startswith("#")) then .
+      elif ($t | test("^\\](\\s*#.*)?$")) then
+        (if .table == ["workspace"] and (.array.key | known(["members", "exclude"])) then
+           .workspace[.array.key] = .array.items
+         else . end)
+        | .array = null
+      else
+        ($t | [capture("^(?<b>" + str_re + "(?:\\s*,\\s*" + str_re + ")*)\\s*,?\\s*(?:#.*)?$")] | first) as $c
+        | if $c == null then
+            fail($n; "unsupported line in a multi-line array: strings only, and ] on its own line")
+          else .array.items += strings($n; $c.b) end
+      end
+    elif $t == "" or ($t | startswith("#")) then .
+    elif ($t | startswith("[")) then
+      ($t | [capture("^(?<o>\\[\\[?)(?<h>[^\\[\\]]*)(?<c>\\]\\]?)\\s*(?:#.*)?$")] | first) as $m
+      | if $m == null or ($m.o | length) != ($m.c | length) then fail($n; "unsupported table header \($t)")
+        else
+          ($m.h | dotted($n)) as $keys
+          | if $m.o == "[" and ($keys | length) == 1 and ($keys[0] | known(dep_tables[0:3])) then
+              .table = $keys
+              | .kind = {"dependencies": "normal", "dev-dependencies": "dev", "build-dependencies": "build"}[$keys[0]]
+            elif any($keys[]; known(dep_tables)) then
+              fail($n; "unsupported table \($t): only [dependencies], [dev-dependencies] and [build-dependencies] are read")
+            elif $keys[0] == "patch" or $keys == ["replace"] then
+              fail($n; "unsupported table \($t): it changes what Cargo.lock records")
+            elif $m.o == "[[" then .table = null | .kind = null
+            elif $keys == ["workspace"] then
+              .table = $keys | .kind = null | .workspace = (.workspace // {members: null, exclude: null})
+            else .table = $keys | .kind = null end
+        end
+    else
+      ($t | [capture("^(?<k>[^=]*?)\\s*=\\s*(?<v>.*)$")] | first) as $kv
+      | if $kv == null then fail($n; "unsupported line: \($t)") else . end
+      | ($kv.k | dotted($n)) as $keys
+      | $kv.v as $v
+      | if ($v | startswith("{")) and ($v | contains("}") | not) then
+          fail($n; "multi-line inline tables are not supported")
+        elif .kind != null then
+          if ($keys | length) > 1 then
+            fail($n; "dotted key \($kv.k) is not supported (nor is workspace = true inheritance)")
+          else
+            (if ($v | test("^" + str_re + "\\s*(#.*)?$")) then
+               {version: ($v | capture("^(?<s>" + str_re + ")").s | unquote)}
+             elif ($v | test("^\\{[^{}]*\\}\\s*(#.*)?$")) then
+               inline($n; $v | capture("^\\{(?<b>[^{}]*)\\}").b)
+             else fail($n; "unsupported dependency value \($v): a string or a one-line inline table") end) as $d
+            | ($d.package // $keys[0]) as $crate
+            | if $d.version == null and $d.path == null then fail($n; "dependency \($keys[0]) has no version")
+              elif ($crate | test("^[A-Za-z0-9_-]+$") | not) then fail($n; "invalid crate name \($crate)")
+              else .deps += [{key: $keys[0], crate: $crate, kind: .kind, req: $d.version, path: $d.path,
+                               line: $n}] end
+          end
+        elif ($v | startswith("[")) and ($v | sub("\\s*#[^\"'\\]]*$"; "") | endswith("]") | not) then
+          if ($v | sub("\\s*#.*$"; "")) != "[" then
+            fail($n; "unsupported value \($v): a multi-line array opens with [ alone on its line")
+          else .array = {key: $keys[0], items: []} end
+        elif .table == ["package"] and $keys[0] == "name" then
+          if ($keys | length) > 1 or .package != null then fail($n; "unsupported or duplicate package name")
+          elif ($v | test("^\"[A-Za-z0-9_-]+\"\\s*(#.*)?$") | not) then fail($n; "unsupported package name \($v)")
+          else .package = ($v | capture("^\"(?<s>[^\"]*)\"").s) end
+        elif .table == ["workspace"] and ($keys[0] | known(["members", "exclude"])) then
+          if ($keys | length) > 1 or ($v | test("^\\[[^\\[\\]]*\\]\\s*(#.*)?$") | not) then
+            fail($n; "unsupported \($kv.k) = \($v)")
+          else .workspace[$keys[0]] = strings($n; $v | capture("^\\[(?<b>[^\\[\\]]*)\\]").b) end
+        else . end
+    end)
+| if .array != null then fail(.n; "unterminated multi-line array \(.array.key)") else . end
+| {file: $file, package, workspace, deps}
+JQ
+
+# Cargo.lock (format 3 or 4): every [[package]] with its name, version, source
+# and dependencies ("name", "name version" or "name version (source)").
+read -r -d '' lock_jq <<'JQ' || true
+def fail($n; $msg): error("\($file):\($n): \($msg)");
+def str_re: "\"[^\"\\\\]*\"";
+reduce inputs as $raw ({n: 0, version: null, array: false, packages: []};
+  .n += 1
+  | .n as $n
+  | ($raw | sub("^[ \t]+"; "") | sub("[ \t\r]+$"; "")) as $t
+  | (.packages | length - 1) as $p
+  | if .array then
+      if $t == "]" then .array = false
+      elif ($t | test("^" + str_re + ",?$")) then .packages[$p].dependencies += [$t | sub(",$"; "") | .[1:-1]]
+      else fail($n; "unsupported line in dependencies: \($t)") end
+    elif $t == "" or ($t | startswith("#")) then .
+    elif $t == "[[package]]" then
+      .packages += [{line: $n, name: null, version: null, source: null, dependencies: []}]
+    elif ($t | startswith("[")) then fail($n; "unsupported table \($t)")
+    elif $p < 0 then
+      if ($t | test("^version = [0-9]+$")) and .version == null then .version = ($t | ltrimstr("version = ") | tonumber)
+      else fail($n; "unsupported line: \($t)") end
+    else
+      ($t | [capture("^(?<k>[a-z]+) = (?<v>.*)$")] | first) as $kv
+      | if $kv == null then fail($n; "unsupported line: \($t)")
+        elif ($kv.k | IN("name", "version", "source", "checksum")) then
+          if ($kv.v | test("^" + str_re + "$") | not) then fail($n; "\($kv.k) must be a string")
+          elif .packages[$p][$kv.k] != null then fail($n; "duplicate key \($kv.k)")
+          else .packages[$p][$kv.k] = ($kv.v | .[1:-1]) end
+        elif $kv.k == "dependencies" then
+          if $kv.v == "[" then .array = true
+          elif ($kv.v | test("^\\[(" + str_re + "(, " + str_re + ")*)?\\]$")) then
+            .packages[$p].dependencies = [$kv.v | match(str_re; "g") | .string | .[1:-1]]
+          else fail($n; "unsupported dependencies \($kv.v)") end
+        else fail($n; "unsupported key \($kv.k)") end
+    end)
+| if .array then fail(.n; "unterminated dependencies array") else . end
+| if .version != 3 and .version != 4 then fail(1; "unsupported Cargo.lock format \(.version // "none") (3 or 4)")
+  else . end
+| (.packages | map(select(.name == null or .version == null)) | first) as $bad
+| if $bad != null then fail($bad.line; "[[package]] without name or version") else . end
+| .packages | map(del(.checksum, .line))
+JQ
+
+# Semantic versions and Cargo's default (caret) requirements.
+read -r -d '' semver_jq <<'JQ' || true
+def semver:
+  [capture("^(?<ma>0|[1-9][0-9]*)\\.(?<mi>0|[1-9][0-9]*)\\.(?<pa>0|[1-9][0-9]*)(?:-(?<pre>[0-9A-Za-z.-]+))?(?:\\+[0-9A-Za-z.-]+)?$")]
+  | first // null
+  | if . == null then null else {ma: (.ma | tonumber), mi: (.mi | tonumber), pa: (.pa | tonumber), pre} end;
+# Sort key of a valid version string; a pre-release sorts before its release.
+def vkey: semver | [.ma, .mi, .pa, (if .pre == null then 1 else 0 end)];
+def req:
+  [capture("^\\^?\\s*(?<ma>[0-9]+)(?:\\.(?<mi>[0-9]+)(?:\\.(?<pa>[0-9]+))?)?$")] | first // null
+  | if . == null then null
+    else {ma: (.ma | tonumber), mi: (.mi | if . == null then null else tonumber end),
+          pa: (.pa | if . == null then null else tonumber end)} end;
+# Does the version string . satisfy the caret requirement $r? (Pre-releases never do.)
+def satisfies($r):
+  semver as $v
+  | $v != null and $v.pre == null
+    and ([$v.ma, $v.mi, $v.pa] >= [$r.ma, ($r.mi // 0), ($r.pa // 0)])
+    and (if $r.ma > 0 or $r.mi == null then $v.ma == $r.ma
+         elif $r.mi > 0 or $r.pa == null then $v.ma == 0 and $v.mi == $r.mi
+         else $v.ma == 0 and $v.mi == 0 and $v.pa == $r.pa end);
+JQ
+
+# The crates.io dependencies of the workspace, one per crate and locked
+# version: {crate, locked, reqs, uses}. Every requirement must be a caret
+# requirement, satisfied by exactly one crates.io version in Cargo.lock.
+read -r -d '' deps_jq <<'JQ' || true
+def registry: "registry+https://github.com/rust-lang/crates.io-index";
+($manifests | map(.package) | sort) as $members
+| ($lock | map(select(.source == null) | .name) | sort) as $locked_members
+| if ($members | unique | length) != ($members | length) then
+    error("two workspace members have the same name: \($members | group_by(.) | map(select(length > 1) | .[0]) | join(", "))")
+  elif $members != $locked_members then
+    error("\($lockfile) does not match the workspace: members \($members | join(", ")); local packages in \($lockfile) \($locked_members | join(", "))")
+  else . end
+| [$manifests[] as $m
+   | ($lock | map(select(.source == null and .name == $m.package)) | first) as $lp
+   | $m.deps[] | select(.path == null)
+   | . as $d
+   | ($d.req | req) as $r
+   | if $r == null then
+       error("\($m.file):\($d.line): unsupported version requirement \"\($d.req)\" of \($d.key): only caret requirements (\"1.2.3\", \"^1.2\") are read")
+     else . end
+   | [$lp.dependencies[]
+      | capture("^(?<n>[^ ]+)(?: (?<v>[^ ]+))?(?: \\((?<s>.+)\\))?$")
+      | select(.n == $d.crate)
+      | . as $e
+      | $lock[] | select(.name == $e.n and ($e.v == null or .version == $e.v) and ($e.s == null or .source == $e.s))]
+     as $candidates
+   | if any($candidates[]; .source != registry) then
+       error("\($m.file):\($d.line): \($d.crate) is locked from \([$candidates[] | .source // "a local path"] | unique | join(", ")), not crates.io")
+     else . end
+   | [$candidates[] | select(.version | satisfies($r))] as $ok
+   | if ($ok | length) == 0 then
+       error("\($m.file):\($d.line): \($lockfile) has no version of \($d.crate) that satisfies \"\($d.req)\" for \($m.package) (found: \([$candidates[].version] | join(", ") | if . == "" then "none" else . end)); run cargo update")
+     elif ($ok | length) > 1 then
+       error("\($m.file):\($d.line): \($lockfile) has several versions of \($d.crate) that satisfy \"\($d.req)\": \([$ok[].version] | join(", "))")
+     else {crate: $d.crate, locked: $ok[0].version, req: $r,
+           use: ($m.package + (if $d.kind == "normal" then "" else " (\($d.kind))" end))} end]
+| group_by([.crate, .locked])
+| map({crate: .[0].crate, locked: .[0].locked, reqs: (map(.req) | unique), uses: (map(.use) | unique)})
+JQ
+
+crates=$tmp/crates.json
+echo '[]' >"$crates"
+if [ "$mode" = query ] || [ "$mode" = crates ]; then
+    for file in Cargo.toml Cargo.lock; do
+        [ -f "$workspace/$file" ] || die "$workspace/$file not found"
+    done
+    # parse_manifest PATH OUT: PATH relative to the workspace root.
+    parse_manifest() {
+        jq -nR --arg file "$1" "$manifest_jq" "$workspace/$1" >"$2" 2>"$tmp/parse.err" ||
+            die "$(jq_error "$tmp/parse.err")"
+    }
+    parse_manifest Cargo.toml "$tmp/manifest-root.json"
+    jq -e '.workspace.members != null' "$tmp/manifest-root.json" >/dev/null ||
+        die "Cargo.toml: no [workspace] members"
+    jq -e '(.workspace.exclude // []) == []' "$tmp/manifest-root.json" >/dev/null ||
+        die "Cargo.toml: [workspace] exclude is not supported"
+    member_dirs=()
+    if jq -e '.package != null' "$tmp/manifest-root.json" >/dev/null; then
+        member_dirs+=(.)
+    fi
+    while IFS= read -r pattern; do
+        case $pattern in
+        '' | /* | *..* | *[!A-Za-z0-9_./*-]*) die "Cargo.toml: unsupported workspace member \"$pattern\"" ;;
+        *'*'*)
+            dir=${pattern%/\*}
+            case $dir in *'*'* | "$pattern") die "Cargo.toml: unsupported glob \"$pattern\" (only DIR/*)" ;; esac
+            found=0
+            for d in "$workspace/$dir"/*/; do
+                [ -d "$d" ] || continue
+                d=${d%/}
+                found=1
+                member_dirs+=("$dir/${d##*/}")
+            done
+            [ "$found" -eq 1 ] || die "Cargo.toml: workspace member \"$pattern\" matches no directory"
+            ;;
+        *) member_dirs+=("${pattern%/}") ;;
+        esac
+    done < <(jq -r '.workspace.members[]' "$tmp/manifest-root.json")
+    : >"$tmp/manifests.jsonl"
+    k=0
+    while IFS= read -r d; do
+        if [ "$d" = . ]; then
+            cat "$tmp/manifest-root.json" >>"$tmp/manifests.jsonl"
+            continue
+        fi
+        [ -f "$workspace/$d/Cargo.toml" ] || die "workspace member $d has no Cargo.toml"
+        k=$((k + 1))
+        parse_manifest "$d/Cargo.toml" "$tmp/manifest-$k.json"
+        jq -e '.package != null' "$tmp/manifest-$k.json" >/dev/null || die "$d/Cargo.toml: no [package] name"
+        jq -e '.workspace == null' "$tmp/manifest-$k.json" >/dev/null || die "$d/Cargo.toml: nested [workspace]"
+        cat "$tmp/manifest-$k.json" >>"$tmp/manifests.jsonl"
+    done < <(printf '%s\n' "${member_dirs[@]}" | sort -u)
+    jq -nR --arg file Cargo.lock "$lock_jq" "$workspace/Cargo.lock" >"$tmp/lock.json" 2>"$tmp/parse.err" ||
+        die "$(jq_error "$tmp/parse.err")"
+    jq -n --slurpfile manifests "$tmp/manifests.jsonl" --slurpfile lock "$tmp/lock.json" --arg lockfile Cargo.lock \
+        "$semver_jq"' $manifests as $manifests | $lock[0] as $lock | '"$deps_jq" >"$crates" 2>"$tmp/parse.err" ||
+        die "$(jq_error "$tmp/parse.err")"
+    printf 'crates: %d crates.io dependencies (normal, dev and build) of %d workspace members, from the manifests and Cargo.lock\n' \
+        "$(jq length "$crates")" "$(jq -s length "$tmp/manifests.jsonl")"
+fi
 
 # --- querying the upstreams ---------------------------------------------------
 
 token=${GITHUB_TOKEN:-${GH_TOKEN:-}}
+# Names the tool and where to reach its maintainers (crates.io crawler policy).
+user_agent='einvoice-validator-freshness (+https://github.com/einvoice-validator/einvoice-validator)'
 
 # The content of a message file on one line.
 oneline() { tr -s '\n' ' ' <"$1" | sed 's/ *$//'; }
@@ -257,7 +595,7 @@ fetch() {
     local url=$1
     local -a args=(--proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error
         --location --retry 3 --connect-timeout 10 --max-time 60
-        --user-agent einvoice-validator-freshness)
+        --user-agent "$user_agent")
     case $url in
     https://api.github.com/*)
         args+=(--header 'Accept: application/vnd.github+json' --header 'X-GitHub-Api-Version: 2022-11-28')
@@ -382,6 +720,96 @@ for ((i = 0; i < count; i++)); do
         --arg error "$error" '$entries[0] as $entries | $versions[0] as $versions | '"$assess_jq" >>"$rows"
 done
 
+# --- querying crates.io -------------------------------------------------------
+
+# The version list of one crate from its crates.io record, as a JSON array of
+# {num, yanked}; refuses anything that is not a complete record of that crate.
+read -r -d '' crate_record_jq <<'JQ' || true
+if type != "object" or (.crate | type) != "object" or (.versions | type) != "array" then
+  error("not a crates.io crate record")
+elif .crate.name != $crate then error("the record of \(.crate.name), not of \($crate)")
+elif any(.versions[]; (.num | type) != "string" or (.yanked | type) != "boolean") then
+  error("a version without num or yanked")
+elif (.versions | length) != .crate.num_versions then
+  error("\(.versions | length) versions listed of \(.crate.num_versions)")
+else [.versions[] | {num, yanked}] end
+JQ
+
+# One result row from a dependency and the versions crates.io publishes (or an error).
+read -r -d '' crate_assess_jq <<'JQ' || true
+def all_reqs($reqs): . as $v | all($reqs[]; . as $r | $v | satisfies($r));
+$dep.crate as $crate | $dep.locked as $locked | $dep.reqs as $reqs
+| {name: "crate \($crate)", severity: "info", pinned: $locked, hold: null,
+   link: "https://crates.io/crates/\($crate)/versions"}
+| ("used by \($dep.uses | join(", "))") as $uses
+| if $error != "" then . + {latest: "?", status: "ERROR", note: $error, actionable: false}
+  else
+    ($versions | map(select(.num | semver == null)) | map(.num)) as $bad
+    | ($versions | map(select(.num == $locked)) | first) as $lv
+    | ($versions | map(select((.yanked | not) and (.num | semver.pre == null)))) as $stable
+    | ($stable | max_by(.num | vkey) | .num) as $newest
+    | ($stable | map(select(.num | all_reqs($reqs))) | max_by(.num | vkey) | .num) as $compatible
+    | if ($bad | length) > 0 then
+        . + {latest: "?", status: "ERROR", actionable: false,
+             note: "crates.io lists versions that are not semantic versions: \($bad | join(", "))"}
+      elif $lv == null then
+        . + {latest: ($newest // "?"), status: "ERROR", actionable: false,
+             note: "locked \($locked) is not among the \($versions | length) versions crates.io publishes"}
+      else
+        ($newest != null and ($newest | all_reqs($reqs) | not)
+         and ($newest | vkey) > ($compatible // $locked | vkey)) as $major
+        | ($compatible != null and ($compatible | vkey) > ($locked | vkey)) as $update
+        | . + {latest: ($newest // "none")}
+        | . + (if $major then {status: "major update", actionable: true}
+               elif $lv.yanked then {status: "locked version yanked", actionable: true}
+               elif $update then {status: "compatible update", actionable: false}
+               else {status: "current", actionable: false} end)
+        | .note = ("locked \($locked), newest compatible \($compatible // "none"), newest \($newest // "none")"
+                   + (if $major then " (major, manual migration)"
+                      elif $update then " (proposed by Dependabot)" else "" end)
+                   + (if $lv.yanked then "; locked version yanked" else "" end)
+                   + "; \($uses)")
+      end
+  end
+JQ
+
+versions_crate() {
+    local crate=$1 out=$2 url
+    url=https://crates.io/api/v1/crates/$crate
+    if ! fetch "$url" >"$tmp/crate.json" 2>"$tmp/curl.err"; then
+        echo "cannot fetch $url: $(oneline "$tmp/curl.err")"
+        return 1
+    fi
+    if ! jq --arg crate "$crate" "$crate_record_jq" "$tmp/crate.json" >"$out" 2>"$tmp/jq.err"; then
+        echo "unexpected response from $url: $(oneline "$tmp/jq.err")"
+        return 1
+    fi
+}
+
+# crates.io crawler policy: at most one request per second. Requests are
+# sequential, so a one-second pause before each one but the first is enough
+# (curl's own retries wait at least one second too).
+crates_requests=0
+ncrates=$(jq length "$crates")
+for ((i = 0; i < ncrates; i++)); do
+    crate=$(jq -r --argjson i "$i" '.[$i].crate' "$crates")
+    versions=$tmp/versions.json
+    echo '[]' >"$versions"
+    error=
+    # Each crate is fetched once, even when it is locked at several versions.
+    if [ -f "$tmp/crate-$crate.json" ]; then
+        cp "$tmp/crate-$crate.json" "$versions"
+    else
+        if [ "$crates_requests" -gt 0 ]; then sleep 1; fi
+        crates_requests=$((crates_requests + 1))
+        if error=$(versions_crate "$crate" "$versions"); then
+            cp "$versions" "$tmp/crate-$crate.json"
+        fi
+    fi
+    jq -nc --slurpfile crates "$crates" --argjson i "$i" --slurpfile versions "$versions" --arg error "$error" \
+        "$semver_jq"' $crates[0][$i] as $dep | $versions[0] as $versions | '"$crate_assess_jq" >>"$rows"
+done
+
 results=$tmp/results.json
 jq -s . "$rows" >"$results"
 
@@ -415,13 +843,16 @@ fi
 errors=$(jq '[.[] | select(.status == "ERROR")] | length' "$results")
 outdated=$(jq '[.[] | select(.status == "OUTDATED")] | length' "$results")
 newer=$(jq '[.[] | select(.status == "newer exists" or .status == "pinned, newer exists")] | length' "$results")
+major=$(jq '[.[] | select(.status == "major update" or .status == "locked version yanked")] | length' "$results")
+compatible=$(jq '[.[] | select(.status == "compatible update")] | length' "$results")
+summary="$newer tool(s) or standard(s) with a newer version; $major Cargo dependenc(ies) with a major update or a yanked lock (manual migration); $compatible with a compatible update (Dependabot)"
 echo
 if [ "$errors" -gt 0 ]; then
-    echo "freshness: $errors upstream(s) could not be checked (ERROR above): nothing is known about them" >&2
+    echo "freshness: $errors upstream(s) or crate(s) could not be checked (ERROR above): nothing is known about them" >&2
     exit 2
 fi
 if [ "$outdated" -gt 0 ]; then
-    echo "freshness: $outdated official rule set(s) OUTDATED; $newer tool(s) or standard(s) with a newer version"
+    echo "freshness: $outdated official rule set(s) OUTDATED; $summary"
     exit 1
 fi
-echo "freshness: no official rule set outdated; $newer tool(s) or standard(s) with a newer version (info)"
+echo "freshness: no official rule set outdated; $summary (info)"

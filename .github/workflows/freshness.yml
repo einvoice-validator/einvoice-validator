@@ -1,14 +1,19 @@
 name: freshness
 
-# Weekly check that every upstream pinned in upstream.toml is current
-# (scripts/freshness.sh). Jobs:
+# Weekly check that every upstream pinned in upstream.toml is current, and
+# that no Cargo dependency has a major update that Dependabot leaves to manual
+# migration (scripts/freshness.sh; Cargo.lock and the manifests are read
+# directly, no toolchain). Jobs:
 #   check  checks the pins against the repository, then queries every upstream
+#          and crates.io
 #   issue  keeps ONE tracking issue, "Upstream updates available", opened by
 #          this workflow: updated while something has a newer version (status
-#          OUTDATED or "newer exists"), closed once everything is current or
-#          held on purpose; then fails the run if an official rule set is
-#          OUTDATED. Skipped when the check errs (network, API): nothing is
-#          known then, so the issue is left as it is.
+#          OUTDATED, "newer exists", or for a Cargo dependency "major update"
+#          or "locked version yanked"), closed once everything is current, held
+#          on purpose or left to Dependabot ("compatible update"); then fails
+#          the run if an official rule set is OUTDATED. Skipped when the check
+#          errs (network, API): nothing is known then, so the issue is left as
+#          it is.
 
 on:
   schedule:
@@ -29,7 +34,7 @@ defaults:
 
 jobs:
   check:
-    name: check (query the upstreams)
+    name: check (query the upstreams and crates.io)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -97,8 +102,10 @@ jobs:
               echo
               printf '%s\n' "$REPORT"
               echo
-              echo "Every pin is listed in \`upstream.toml\`; run \`scripts/freshness.sh\` to check locally."
-              echo "This issue is updated by each weekly run and closed once every upstream is current."
+              echo "Every pin is listed in \`upstream.toml\`; Cargo dependencies are read from the manifests and"
+              echo "\`Cargo.lock\`: Dependabot proposes compatible updates, major ones are migrated by hand."
+              echo "Run \`scripts/freshness.sh\` to check locally."
+              echo "This issue is updated by each weekly run and closed once nothing is left to act on."
             } >"$body"
             if [ -n "$number" ]; then
               gh issue edit "$number" --body-file "$body"
@@ -107,10 +114,10 @@ jobs:
               gh issue create --title "$title" --body-file "$body"
             fi
           elif [ -n "$number" ]; then
-            gh issue close "$number" --comment "Every pinned upstream is current or held on purpose: $RUN_URL"
+            gh issue close "$number" --comment "Every pinned upstream and Cargo dependency is current, held on purpose or left to Dependabot: $RUN_URL"
             echo "closed issue #$number"
           else
-            echo "every pinned upstream is current or held on purpose; no open issue"
+            echo "every pinned upstream and Cargo dependency is current, held on purpose or left to Dependabot; no open issue"
           fi
       - name: Fail if an official rule set is outdated
         env:
