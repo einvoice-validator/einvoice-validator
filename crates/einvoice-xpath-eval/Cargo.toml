@@ -1,0 +1,20 @@
+[package]
+name = "einvoice-xpath-eval"
+description = "Node model and evaluator of the XPath 2.0 subset used by the official e-invoicing validation stylesheets, with the behaviour of Saxon-HE 9.9"
+keywords = ["xpath", "xslt", "schematron", "einvoice", "peppol"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+einvoice-xdm = { path = "../einvoice-xdm", version = "0.0.0" }
+einvoice-xpath = { path = "../einvoice-xpath", version = "0.0.0" }
+roxmltree = "0.21.2"
+
+[dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+sha2 = "0.11.1"
+
+[lints]
+workspace = true

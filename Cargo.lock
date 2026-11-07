@@ -117,6 +117,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "einvoice-xpath-eval"
+version = "0.0.0"
+dependencies = [
+ "einvoice-xdm",
+ "einvoice-xpath",
+ "proptest",
+ "roxmltree",
+ "sha2",
+]
+
+[[package]]
 name = "einvoice-xslt"
 version = "0.0.0"
 dependencies = [
