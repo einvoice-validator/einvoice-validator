@@ -10,9 +10,10 @@ name: ci
 #              to require for branch protection
 
 on:
+  # No path filter on pull requests: ci-ok must always report, since it is
+  # the required check.
   pull_request:
     branches: [main]
-    paths-ignore: ["**.md", "LICENSE"]
   push:
     branches: [main]
     paths-ignore: ["**.md", "LICENSE"]

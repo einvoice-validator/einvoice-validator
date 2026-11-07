@@ -1,0 +1,75 @@
+name: oracle
+
+# Re-runs the reference oracle through `scripts/check.sh oracle`: checks the
+# vendored artefacts against their SHA256SUMS and the extracted corpus against
+# the vendored test sets, runs Saxon-HE on every corpus case and fails if the
+# committed goldens differ, then cross-checks the goldens with the VEFA
+# expectations. Only runs when one of those inputs or the tooling changes.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "artefacts/**"
+      - "corpus/**"
+      - "xtask/**"
+      - "scripts/check.sh"
+      - "scripts/fetch-saxon.sh"
+      - ".github/workflows/oracle.yml"
+      - ".cargo/**"
+      - ".gitattributes"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+  push:
+    branches: [main]
+    paths:
+      - "artefacts/**"
+      - "corpus/**"
+      - "xtask/**"
+      - "scripts/check.sh"
+      - "scripts/fetch-saxon.sh"
+      - ".github/workflows/oracle.yml"
+      - ".cargo/**"
+      - ".gitattributes"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer run on the same ref supersedes the running one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTFLAGS: -D warnings
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  oracle:
+    name: oracle (Saxon-HE goldens, VEFA cross-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: scripts/check.sh toolchain
+      # Fetches Saxon-HE from Maven Central (checksum verified) and fails,
+      # rather than skips, if Java is missing: CI=true on GitHub runners.
+      - name: oracle
+        run: scripts/check.sh oracle

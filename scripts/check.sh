@@ -4,7 +4,7 @@
 # policy, the workflow linters and, when something is staged, the privacy
 # guard.
 #
-#   scripts/check.sh                # every job: fmt clippy doc test deny actionlint zizmor privacy
+#   scripts/check.sh                # every job: fmt clippy doc test deny actionlint zizmor oracle privacy
 #   scripts/check.sh clippy test    # selected jobs
 #   scripts/check.sh toolchain      # only install the pinned toolchain
 #
@@ -12,7 +12,9 @@
 # with rustup when missing), so the lint set only moves with a reviewed bump.
 # cargo-deny, actionlint and zizmor are not part of the toolchain: each job
 # runs when its tool is installed and prints SKIPPED otherwise. CI installs
-# all three at pinned versions, so nothing is skipped there.
+# all three at pinned versions, so nothing is skipped there. The oracle job
+# needs Java (any recent JRE) and network access the first time, to fetch
+# Saxon-HE; without Java it checks what it can and skips the Saxon run.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -83,6 +85,32 @@ job_zizmor() {
         zizmor --persona=pedantic --offline .github/workflows
     fi
 }
+# The test corpus and its reference oracle (corpus/README.md): the vendored
+# artefacts against their SHA256SUMS, the extracted corpus against the vendored
+# test sets, the goldens against the VEFA expectations, then Saxon-HE (fetched
+# from Maven Central, checksum verified) re-run on every case: the goldens must
+# not change. Without Java the Saxon run is SKIPPED, except in CI, where it fails.
+job_oracle() {
+    need_toolchain || return 1
+    cargo xtask manifest || return 1
+    cargo xtask corpus || return 1
+    cargo xtask crosscheck || return 1
+    if ! command -v "${JAVA:-java}" >/dev/null 2>&1; then
+        if [ -n "${CI:-}" ]; then
+            echo "java is not installed: the oracle cannot run" >&2
+            return 1
+        fi
+        echo "SKIPPED: Saxon-HE run (java is not installed); manifest, corpus and cross-check done"
+        return 0
+    fi
+    "${JAVA:-java}" -version 2>&1 | head -n 1
+    if [ -n "${SAXON_JAR:-}" ]; then
+        echo "using SAXON_JAR=$SAXON_JAR (checksum verified by the oracle)"
+    else
+        scripts/fetch-saxon.sh || return 1
+    fi
+    cargo xtask oracle
+}
 # The pre-commit guard on the index; nothing staged, nothing to check.
 job_privacy() {
     if git diff --cached --quiet; then
@@ -92,7 +120,7 @@ job_privacy() {
     scripts/privacy-guard.sh staged && echo "privacy guard: staged content clean"
 }
 
-ALL=(fmt clippy doc test deny actionlint zizmor privacy)
+ALL=(fmt clippy doc test deny actionlint zizmor oracle privacy)
 
 jobs=("$@")
 [ ${#jobs[@]} -eq 0 ] && jobs=("${ALL[@]}")
