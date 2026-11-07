@@ -129,8 +129,12 @@ pub(crate) fn run(root: &Path, options: &oracle::Options) -> Result<(String, boo
     }
 
     let mut out = String::new();
-    let cases = corpus::write(root, rule_set)?;
-    let _ = writeln!(out, "corpus written: {}: {cases} cases", rule_set.name);
+    let counts = corpus::write(root, rule_set)?;
+    let _ = writeln!(
+        out,
+        "corpus written: {}: {} cases, {} mutation cases",
+        rule_set.name, counts.cases, counts.mutations
+    );
 
     let options = oracle::Options {
         java: options.java.clone(),
@@ -140,17 +144,24 @@ pub(crate) fn run(root: &Path, options: &oracle::Options) -> Result<(String, boo
     for outcome in oracle::run(root, rule_set, &options)? {
         let _ = writeln!(
             out,
-            "oracle written: {} {}: {} cases, {} with findings, {} failed asserts, {} successful reports",
+            "oracle written: {} {}: {} cases, {} with findings, {} failed asserts, {} successful reports, {} stopped by an error, {} with pattern warnings",
             rule_set.name,
             outcome.stylesheet,
             outcome.cases,
             outcome.cases_with_findings,
             outcome.failed_asserts,
-            outcome.successful_reports
+            outcome.successful_reports,
+            outcome.errors,
+            outcome.warned
         );
     }
 
-    let mut record = format!("cases {cases}\nsaxon {}\n", oracle::SAXON_VERSION);
+    let mut record = format!(
+        "cases {}\nmutations {}\nsaxon {}\n",
+        counts.cases,
+        counts.mutations,
+        oracle::SAXON_VERSION
+    );
     for (name, sha256) in &stylesheets {
         let _ = writeln!(record, "stylesheet {name} {sha256}");
     }

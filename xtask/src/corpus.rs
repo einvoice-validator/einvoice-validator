@@ -11,25 +11,37 @@
 //!   their licence.
 //! - `vefa/<test set directory>/<test set name>.<NNN>.xml`: the document of
 //!   the NNN-th `<test>` (1-based) of that test set.
+//! - `mutations.tsv`: the mutation cases, see [`render_mutation_index`].
+//! - `mutations/<mutation id>.xml`: the documents of the mutation catalogue
+//!   (`corpus/mutations.toml`, see [`crate::mutation`]) applied to the base
+//!   cases of the rule set.
 //! - `<golden dir>/<case id>.svrl.txt`, one golden directory per stylesheet:
-//!   the canonical SVRL Saxon-HE produced.
+//!   the canonical SVRL Saxon-HE produced; for a mutation case on which
+//!   Saxon-HE stops with a dynamic error, `<golden dir>/<case id>.error.txt`
+//!   instead.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
+use crate::mutation;
 use crate::ruleset::{RuleSet, Stylesheet};
 use crate::util::{self, Error, Result};
 use crate::vefa::{self, Expectation};
 
 /// The index file of a corpus.
 pub(crate) const INDEX: &str = "cases.tsv";
+/// The index of the mutation cases.
+pub(crate) const MUTATION_INDEX: &str = "mutations.tsv";
 /// Directory of the documents extracted from VEFA test sets.
 pub(crate) const VEFA_DIR: &str = "vefa";
 /// Suffix of a golden file, appended to the case id.
 pub(crate) const GOLDEN_SUFFIX: &str = ".svrl.txt";
+/// Suffix of the golden of a case on which Saxon-HE stops with an error.
+pub(crate) const ERROR_SUFFIX: &str = ".error.txt";
 
 const INDEX_HEADER: &str = "case\tinput\tkind\tscope\tsuccess\terror\twarning\tdescription";
+const MUTATION_INDEX_HEADER: &str = "case\tinput\tbase\treason";
 
 /// One document to validate.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,18 +54,53 @@ pub(crate) struct Case {
     pub(crate) input: String,
     /// The VEFA expectation, for cases extracted from a test set.
     pub(crate) expectation: Option<Expectation>,
+    /// Whether the case is a mutation case (`mutations.tsv`): Saxon-HE may
+    /// stop on it with an error, which its golden then records.
+    pub(crate) mutation: bool,
 }
 
 impl Case {
     /// The golden file of this case for a stylesheet, relative to the base
     /// directory of the rule set.
     pub(crate) fn golden(&self, rule_set: &RuleSet, stylesheet: &Stylesheet) -> String {
+        self.golden_with(rule_set, stylesheet, GOLDEN_SUFFIX)
+    }
+
+    /// The error golden of this case for a stylesheet (mutation cases only).
+    pub(crate) fn error_golden(&self, rule_set: &RuleSet, stylesheet: &Stylesheet) -> String {
+        self.golden_with(rule_set, stylesheet, ERROR_SUFFIX)
+    }
+
+    fn golden_with(&self, rule_set: &RuleSet, stylesheet: &Stylesheet, suffix: &str) -> String {
         format!(
-            "{}/{}/{}{GOLDEN_SUFFIX}",
+            "{}/{}/{}{suffix}",
             rule_set.corpus_dir(),
             stylesheet.golden_dir,
             self.id
         )
+    }
+}
+
+/// One case of `mutations.tsv`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MutationCase {
+    /// `mutations/<mutation id>.xml`.
+    pub(crate) id: String,
+    /// The document, relative to the base directory of the rule set.
+    pub(crate) input: String,
+    /// The id of the base case.
+    pub(crate) base: String,
+    pub(crate) reason: String,
+}
+
+impl MutationCase {
+    pub(crate) fn case(&self) -> Case {
+        Case {
+            id: self.id.clone(),
+            input: self.input.clone(),
+            expectation: None,
+            mutation: true,
+        }
     }
 }
 
@@ -62,6 +109,7 @@ impl Case {
 #[derive(Debug)]
 pub(crate) struct Derived {
     pub(crate) cases: Vec<Case>,
+    pub(crate) mutations: Vec<MutationCase>,
     pub(crate) files: BTreeMap<String, Vec<u8>>,
 }
 
@@ -97,6 +145,7 @@ pub(crate) fn derive(root: &Path, rule_set: &RuleSet) -> Result<Derived> {
                 id: format!("{prefix}/{name}"),
                 input: format!("{source_dir}/{dir}/{name}"),
                 expectation: None,
+                mutation: false,
             });
         }
     }
@@ -131,6 +180,7 @@ pub(crate) fn derive(root: &Path, rule_set: &RuleSet) -> Result<Derived> {
                     input: format!("{corpus}/{id}"),
                     id,
                     expectation: Some(test.expectation),
+                    mutation: false,
                 });
             }
         }
@@ -155,7 +205,149 @@ pub(crate) fn derive(root: &Path, rule_set: &RuleSet) -> Result<Derived> {
         let text = util::read(&util::join(&base, &format!("{source_dir}/{licence}")))?;
         files.insert(licence.to_owned(), text);
     }
-    Ok(Derived { cases, files })
+    let mutations = derive_mutations(root, rule_set, &cases, &mut files)?;
+    files.insert(
+        MUTATION_INDEX.to_owned(),
+        render_mutation_index(&mutations)?.into_bytes(),
+    );
+    Ok(Derived {
+        cases,
+        mutations,
+        files,
+    })
+}
+
+/// Applies the mutation catalogue to the base cases of the rule set; adds the
+/// documents to `files`.
+fn derive_mutations(
+    root: &Path,
+    rule_set: &RuleSet,
+    cases: &[Case],
+    files: &mut BTreeMap<String, Vec<u8>>,
+) -> Result<Vec<MutationCase>> {
+    let base_dir = rule_set.base(root);
+    let corpus = rule_set.corpus_dir();
+    let mut bases = BTreeMap::new();
+    for (name, id) in rule_set.mutation_bases {
+        let case = cases
+            .iter()
+            .find(|c| c.id == *id && c.expectation.is_none())
+            .ok_or_else(|| {
+                Error::new(format!(
+                    "{}: mutation base {name}: no whole-document case {id}",
+                    rule_set.name
+                ))
+            })?;
+        let text = util::read_string(&util::join(&base_dir, &case.input))?;
+        bases.insert(*name, (*id, text));
+    }
+    let mut mutations = Vec::new();
+    // Every mutation that cannot be applied is reported, not only the first.
+    let mut failures = Vec::new();
+    for m in mutation::catalogue(root)? {
+        if let Some(only) = &m.only
+            && let Some(unknown) = only
+                .iter()
+                .find(|o| !crate::ruleset::ALL.iter().any(|r| r.name == o.as_str()))
+        {
+            return Err(Error::new(format!(
+                "{}: {}: unknown rule set {unknown} in `only`",
+                mutation::CATALOGUE,
+                m.id
+            )));
+        }
+        let (base_id, base_text) = bases.get(m.base.as_str()).ok_or_else(|| {
+            Error::new(format!(
+                "{}: {}: unknown base {}",
+                mutation::CATALOGUE,
+                m.id,
+                m.base
+            ))
+        })?;
+        if !m.applies_to(rule_set.name) {
+            continue;
+        }
+        let id = m.case_id();
+        let text = match mutation::apply(base_text, &m.edits, &format!("{}: {id}", rule_set.name)) {
+            Ok(text) => text,
+            Err(e) => {
+                failures.push(e.to_string());
+                continue;
+            }
+        };
+        files.insert(id.clone(), text.into_bytes());
+        mutations.push(MutationCase {
+            input: format!("{corpus}/{id}"),
+            id,
+            base: (*base_id).to_owned(),
+            reason: m.reason.clone(),
+        });
+    }
+    if failures.is_empty() {
+        Ok(mutations)
+    } else {
+        Err(Error::new(format!(
+            "{} mutations of {} cannot be applied:\n  {}",
+            failures.len(),
+            mutation::CATALOGUE,
+            failures.join("\n  ")
+        )))
+    }
+}
+
+/// `mutations.tsv`: a header line, then one line per mutation case with
+/// tab-separated columns `case`, `input`, `base` (the id of the base case)
+/// and `reason`.
+fn render_mutation_index(mutations: &[MutationCase]) -> Result<String> {
+    let mut out = String::new();
+    out.push_str(MUTATION_INDEX_HEADER);
+    out.push('\n');
+    for m in mutations {
+        let fields = [&m.id, &m.input, &m.base, &m.reason];
+        if let Some(bad) = fields.iter().find(|f| f.contains(['\t', '\n', '\r'])) {
+            return Err(Error::new(format!(
+                "{}: tab or line break in {bad:?}",
+                m.id
+            )));
+        }
+        let _ = writeln!(out, "{}\t{}\t{}\t{}", m.id, m.input, m.base, m.reason);
+    }
+    Ok(out)
+}
+
+/// Reads `mutations.tsv` back.
+pub(crate) fn read_mutation_index(root: &Path, rule_set: &RuleSet) -> Result<Vec<MutationCase>> {
+    let path = format!("{}/{MUTATION_INDEX}", rule_set.corpus_dir());
+    let text = util::read_string(&util::join(&rule_set.base(root), &path))?;
+    let mut lines = text.lines();
+    if lines.next() != Some(MUTATION_INDEX_HEADER) {
+        return Err(Error::new(format!("{path}: unexpected header")));
+    }
+    lines
+        .enumerate()
+        .map(
+            |(index, line)| match line.split('\t').collect::<Vec<_>>()[..] {
+                [id, input, base, reason] => Ok(MutationCase {
+                    id: id.to_owned(),
+                    input: input.to_owned(),
+                    base: base.to_owned(),
+                    reason: reason.to_owned(),
+                }),
+                _ => Err(Error::new(format!("{path}: line {}: malformed", index + 2))),
+            },
+        )
+        .collect()
+}
+
+/// Every case the oracle runs: those of `cases.tsv`, then the mutation cases.
+pub(crate) fn read_all(root: &Path, rule_set: &RuleSet) -> Result<Vec<Case>> {
+    let mut cases = read_index(root, rule_set)?;
+    cases.extend(
+        read_mutation_index(root, rule_set)?
+            .iter()
+            .map(MutationCase::case),
+    );
+    Ok(cases)
 }
 
 /// `cases.tsv`: a header line, then one line per case with tab-separated
@@ -225,20 +417,29 @@ pub(crate) fn read_index(root: &Path, rule_set: &RuleSet) -> Result<Vec<Case>> {
                 id: fields[0].to_owned(),
                 input: fields[1].to_owned(),
                 expectation,
+                mutation: false,
             })
         })
         .collect()
 }
 
-/// Files under the corpus directory that [`derive()`] owns: the index, the
-/// licence copy and the VEFA documents (the goldens belong to the oracle).
+/// Files under the corpus directory that [`derive()`] owns: the indexes, the
+/// licence copy, the VEFA and the mutated documents (the goldens belong to the
+/// oracle).
 fn derived_on_disk(root: &Path, rule_set: &RuleSet) -> Result<Vec<String>> {
     let corpus = util::join(&rule_set.base(root), &rule_set.corpus_dir());
-    let mut files: Vec<String> = util::list_files(&corpus.join(VEFA_DIR))?
+    let mut files = Vec::new();
+    for dir in [VEFA_DIR, mutation::DIR] {
+        files.extend(
+            util::list_files(&corpus.join(dir))?
+                .into_iter()
+                .map(|f| format!("{dir}/{f}")),
+        );
+    }
+    for own in [INDEX, MUTATION_INDEX]
         .into_iter()
-        .map(|f| format!("{VEFA_DIR}/{f}"))
-        .collect();
-    for own in std::iter::once(INDEX).chain(rule_set.licence()) {
+        .chain(rule_set.licence())
+    {
         if corpus.join(own).exists() {
             files.push(own.to_owned());
         }
@@ -247,9 +448,16 @@ fn derived_on_disk(root: &Path, rule_set: &RuleSet) -> Result<Vec<String>> {
     Ok(files)
 }
 
+/// The number of cases of `cases.tsv` and of `mutations.tsv`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Counts {
+    pub(crate) cases: usize,
+    pub(crate) mutations: usize,
+}
+
 /// Compares the derived files with the committed ones. Returns the number of
 /// cases.
-pub(crate) fn verify(root: &Path, rule_set: &RuleSet) -> Result<usize> {
+pub(crate) fn verify(root: &Path, rule_set: &RuleSet) -> Result<Counts> {
     let derived = derive(root, rule_set)?;
     let corpus = util::join(&rule_set.base(root), &rule_set.corpus_dir());
     let mut problems = Vec::new();
@@ -267,7 +475,7 @@ pub(crate) fn verify(root: &Path, rule_set: &RuleSet) -> Result<usize> {
         }
     }
     if problems.is_empty() {
-        Ok(derived.cases.len())
+        Ok(derived.counts())
     } else {
         Err(Error::new(format!(
             "{}: derived files are not up to date (run `cargo xtask corpus --write`):\n  {}",
@@ -278,29 +486,41 @@ pub(crate) fn verify(root: &Path, rule_set: &RuleSet) -> Result<usize> {
 }
 
 /// Rewrites the derived files. Returns the number of cases.
-pub(crate) fn write(root: &Path, rule_set: &RuleSet) -> Result<usize> {
+pub(crate) fn write(root: &Path, rule_set: &RuleSet) -> Result<Counts> {
     let derived = derive(root, rule_set)?;
     let corpus = util::join(&rule_set.base(root), &rule_set.corpus_dir());
     util::remove_dir(&corpus.join(VEFA_DIR))?;
+    util::remove_dir(&corpus.join(mutation::DIR))?;
     for (path, contents) in &derived.files {
         util::write(&util::join(&corpus, path), contents)?;
     }
-    Ok(derived.cases.len())
+    Ok(derived.counts())
+}
+
+impl Derived {
+    fn counts(&self) -> Counts {
+        Counts {
+            cases: self.cases.len(),
+            mutations: self.mutations.len(),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{derive, read_index, verify};
+    use super::{derive, read_index, read_mutation_index, verify};
     use crate::ruleset::VENDORED;
     use crate::util::repo_root;
 
-    /// The committed VEFA documents and index are exactly what extraction
-    /// produces from the vendored test sets.
+    /// The committed VEFA documents, mutated documents and indexes are exactly
+    /// what extraction and the mutation catalogue produce from the vendored
+    /// files.
     #[test]
     fn derived_files_are_reproducible() {
         for rule_set in VENDORED {
-            let count = verify(&repo_root(), rule_set).unwrap_or_else(|e| panic!("{e}"));
-            assert!(count > 0, "{}", rule_set.name);
+            let counts = verify(&repo_root(), rule_set).unwrap_or_else(|e| panic!("{e}"));
+            assert!(counts.cases > 0, "{}", rule_set.name);
+            assert!(counts.mutations > 0, "{}", rule_set.name);
         }
     }
 
@@ -310,6 +530,8 @@ mod tests {
             let derived = derive(&repo_root(), rule_set).unwrap();
             let read = read_index(&repo_root(), rule_set).unwrap();
             assert_eq!(derived.cases, read);
+            let read = read_mutation_index(&repo_root(), rule_set).unwrap();
+            assert_eq!(derived.mutations, read);
         }
     }
 }

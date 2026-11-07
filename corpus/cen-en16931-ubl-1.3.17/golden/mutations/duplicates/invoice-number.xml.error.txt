@@ -1,0 +1,2 @@
+error XPTY0004
+message A sequence of more than one item { ("2018210", "2018210") } is not allowed as the first argument of fn:normalize-space()

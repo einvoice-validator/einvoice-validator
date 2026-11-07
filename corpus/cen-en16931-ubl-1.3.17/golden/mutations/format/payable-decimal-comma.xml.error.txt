@@ -1,0 +1,2 @@
+error FORG0001
+message Cannot convert string "1656,25" to xs:decimal: invalid character ','

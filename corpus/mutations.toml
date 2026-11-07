@@ -1,0 +1,3812 @@
+# Mutation catalogue: each [[mutation]] derives one test document from a base document of a
+# rule set, by a list of edits. `cargo xtask corpus --write` applies it to the bases of each
+# rule set (see xtask/src/mutation.rs for the edits and the path syntax, xtask/src/ruleset.rs
+# for the bases); the reference engine's results are the goldens of the rule set.
+#
+# Keys: id (also the file name), base (invoice, credit-note or allowances), reason (one line:
+# what the mutation exercises, with the rules it targets), edits, and optionally only (the
+# rule sets it applies to). Rule ids in reasons name the rules aimed at: the goldens record
+# what actually fires.
+#
+# Paths in the edits below:
+#   LMT  /*/cac:LegalMonetaryTotal
+#   SUP  /*/cac:AccountingSupplierParty/cac:Party      CUS  ... AccountingCustomerParty
+#   L1   /*/cac:InvoiceLine[1] (CreditNoteLine in credit notes)
+
+# ---------------------------------------------------------------------------------------
+# Document totals: sums one cent off, in each direction
+
+[[mutation]]
+id = "totals/line-extension-plus-cent"
+base = "invoice"
+reason = "Sum of line net amounts (BT-106) one cent above the lines (BR-CO-10)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:LineExtensionAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/line-extension-minus-cent"
+base = "invoice"
+reason = "Sum of line net amounts (BT-106) one cent below the lines (BR-CO-10)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:LineExtensionAmount', "-0.01"]]
+
+[[mutation]]
+id = "totals/tax-exclusive-plus-cent"
+base = "invoice"
+reason = "Total without VAT (BT-109) one cent above lines plus charges minus allowances (BR-CO-13)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/tax-inclusive-plus-cent"
+base = "invoice"
+reason = "Total with VAT (BT-112) one cent above total without VAT plus VAT (BR-CO-15)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/tax-inclusive-minus-cent"
+base = "invoice"
+reason = "Total with VAT (BT-112) one cent below total without VAT plus VAT (BR-CO-15)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount', "-0.01"]]
+
+[[mutation]]
+id = "totals/payable-plus-cent"
+base = "invoice"
+reason = "Amount due (BT-115) one cent above total with VAT minus prepaid plus rounding (BR-CO-16)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/payable-minus-cent"
+base = "invoice"
+reason = "Amount due (BT-115) one cent below the computed amount (BR-CO-16)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "-0.01"]]
+
+[[mutation]]
+id = "totals/charge-total-plus-cent"
+base = "invoice"
+reason = "Sum of document charges (BT-108) one cent above the charges (BR-CO-12)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/allowance-total-plus-cent"
+base = "allowances"
+reason = "Sum of document allowances (BT-107) one cent above the allowances (BR-CO-11)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/prepaid-plus-cent"
+base = "allowances"
+reason = "Paid amount (BT-113) one cent higher, amount due unchanged (BR-CO-16)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:PrepaidAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/rounding-amount-added"
+base = "allowances"
+reason = "Rounding amount (BT-114) of one cent not reflected in the amount due (BR-CO-16)"
+edits = [
+  ["duplicate", '/*/cac:LegalMonetaryTotal/cbc:PrepaidAmount'],
+  ["rename", '/*/cac:LegalMonetaryTotal/cbc:PrepaidAmount[2]', "cbc:PayableRoundingAmount"],
+  ["set", '/*/cac:LegalMonetaryTotal/cbc:PayableRoundingAmount', "0.01"],
+]
+
+[[mutation]]
+id = "totals/rounding-amount-consistent"
+base = "allowances"
+reason = "Rounding amount (BT-114) of minus one cent and amount due lowered to match (BR-CO-16 holds)"
+edits = [
+  ["duplicate", '/*/cac:LegalMonetaryTotal/cbc:PrepaidAmount'],
+  ["rename", '/*/cac:LegalMonetaryTotal/cbc:PrepaidAmount[2]', "cbc:PayableRoundingAmount"],
+  ["set", '/*/cac:LegalMonetaryTotal/cbc:PayableRoundingAmount', "-0.01"],
+  ["add", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "-0.01"],
+]
+
+[[mutation]]
+id = "totals/prepaid-without-due-change"
+base = "invoice"
+reason = "Paid amount (BT-113) added without lowering the amount due (BR-CO-16)"
+edits = [
+  ["remove-all", '/*/cac:LegalMonetaryTotal/cbc:PrepaidAmount'],
+  ["duplicate", '/*/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount'],
+  ["rename", '/*/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount[2]', "cbc:PrepaidAmount"],
+  ["set", '/*/cac:LegalMonetaryTotal/cbc:PrepaidAmount', "100.00"],
+]
+
+[[mutation]]
+id = "totals/tax-total-plus-cent"
+base = "invoice"
+reason = "Invoice total VAT amount (BT-110) one cent above the sum of the VAT category amounts (BR-CO-14)"
+edits = [["add", '/*/cac:TaxTotal[1]/cbc:TaxAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/tax-subtotal-amount-plus-cent"
+base = "invoice"
+reason = "VAT category tax amount (BT-117) one cent high: BR-CO-14 fires, BR-S-09 tolerates it"
+edits = [["add", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/taxable-amount-plus-cent"
+base = "invoice"
+reason = "VAT category taxable amount (BT-116) one cent above its lines: inside the tolerance of 1 of BR-S-08"
+edits = [["add", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxableAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/taxable-amount-plus-one"
+base = "invoice"
+reason = "VAT category taxable amount exactly 1 above its lines: on the bound of the tolerance of BR-S-08"
+edits = [["add", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxableAmount', "1"]]
+
+[[mutation]]
+id = "totals/taxable-amount-minus-just-under-one"
+base = "invoice"
+reason = "VAT category taxable amount 0.99 below its lines: inside the tolerance of 1 of BR-S-08"
+edits = [["add", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxableAmount', "-0.99"]]
+
+[[mutation]]
+id = "totals/taxable-amount-minus-one-cent-over"
+base = "invoice"
+reason = "VAT category taxable amount 1.01 below its lines: outside the tolerance of BR-S-08"
+edits = [["add", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxableAmount', "-1.01"]]
+
+[[mutation]]
+id = "totals/line-amount-plus-cent"
+base = "invoice"
+reason = "First line net amount (BT-131) one cent higher: document sums and VAT breakdown no longer match"
+edits = [["add", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/lines-compensating-cents"
+base = "invoice"
+reason = "One line a cent higher, another a cent lower: sums hold, line amount against quantity times price does not"
+edits = [
+  ["add", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount', "0.01"],
+  ["add", '/*/cac:InvoiceLine[2]/cbc:LineExtensionAmount', "-0.01"],
+]
+
+[[mutation]]
+id = "totals/allowance-plus-cent-totals-unchanged"
+base = "allowances"
+reason = "Document allowance one cent higher while every total stays (BR-CO-11)"
+edits = [["add", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:Amount', "0.01"]]
+
+[[mutation]]
+id = "totals/charge-plus-cent-totals-unchanged"
+base = "allowances"
+reason = "Document charge one cent higher while every total stays (BR-CO-12)"
+edits = [["add", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:Amount', "0.01"]]
+
+[[mutation]]
+id = "totals/credit-note-payable-plus-cent"
+base = "credit-note"
+reason = "Credit note amount due one cent above the computed amount (BR-CO-16 in a credit note)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/credit-note-line-amount-plus-cent"
+base = "credit-note"
+reason = "Credit note line amount one cent higher (BR-CO-10 over cac:CreditNoteLine)"
+edits = [["add", '/*/cac:CreditNoteLine[1]/cbc:LineExtensionAmount', "0.01"]]
+
+[[mutation]]
+id = "totals/credit-note-taxable-minus-cent"
+base = "credit-note"
+reason = "Credit note VAT category taxable amount one cent low: inside the tolerance of 1 of BR-S-08"
+edits = [["add", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxableAmount', "-0.01"]]
+
+[[mutation]]
+id = "totals/all-amounts-negated"
+base = "invoice"
+reason = "Every amount and quantity negated consistently: a negative invoice whose sums still hold"
+edits = [
+  ["multiply", '//cbc:LineExtensionAmount', "-1"],
+  ["multiply", '//cbc:TaxExclusiveAmount', "-1"],
+  ["multiply", '//cbc:TaxInclusiveAmount', "-1"],
+  ["multiply", '//cbc:PayableAmount', "-1"],
+  ["multiply", '//cbc:ChargeTotalAmount', "-1"],
+  ["multiply", '//cbc:TaxableAmount', "-1"],
+  ["multiply", '//cbc:TaxAmount', "-1"],
+  ["multiply", '//cbc:Amount', "-1"],
+  ["multiply", '//cbc:InvoicedQuantity', "-1"],
+]
+
+[[mutation]]
+id = "totals/payable-negated"
+base = "invoice"
+reason = "Only the amount due negated (BR-CO-16 with a negative amount due)"
+edits = [["multiply", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "-1"]]
+
+# ---------------------------------------------------------------------------------------
+# Rounding: XPath round() rounds halves towards positive infinity
+
+[[mutation]]
+id = "rounding/line-half-cent-up"
+base = "invoice"
+reason = "A line amount with a third decimal 5 above: the sum rounds up and no longer matches BT-106 (BR-DEC-23, BR-CO-10)"
+edits = [["add", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount', "0.005"]]
+
+[[mutation]]
+id = "rounding/line-half-cent-down"
+base = "invoice"
+reason = "A line amount with a third decimal 5 below: the sum rounds up back to BT-106 (BR-DEC-23 only)"
+edits = [["add", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount', "-0.005"]]
+
+[[mutation]]
+id = "rounding/negative-sum-half-cent-down"
+base = "invoice"
+reason = "Negated lines and total, one line half a cent lower: round() of a negative half goes towards zero (BR-CO-10 holds)"
+edits = [
+  ["multiply", '/*/cac:InvoiceLine/cbc:LineExtensionAmount', "-1"],
+  ["multiply", '/*/cac:LegalMonetaryTotal/cbc:LineExtensionAmount', "-1"],
+  ["add", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount', "-0.005"],
+]
+
+[[mutation]]
+id = "rounding/negative-sum-half-cent-up"
+base = "invoice"
+reason = "Negated lines and total, one line half a cent higher: the negative sum rounds up away from BT-106 (BR-CO-10)"
+edits = [
+  ["multiply", '/*/cac:InvoiceLine/cbc:LineExtensionAmount', "-1"],
+  ["multiply", '/*/cac:LegalMonetaryTotal/cbc:LineExtensionAmount', "-1"],
+  ["add", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount', "0.005"],
+]
+
+[[mutation]]
+id = "rounding/tax-amount-half-cent"
+base = "invoice"
+reason = "VAT category tax amount with a third decimal 5 (BR-DEC-20, BR-CO-14; inside the tolerance of BR-S-09)"
+edits = [["add", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxAmount', "0.005"]]
+
+[[mutation]]
+id = "rounding/taxable-half-cent"
+base = "invoice"
+reason = "VAT category taxable amount with a third decimal 5 (BR-DEC-19; inside the tolerance of BR-S-08)"
+edits = [["add", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxableAmount', "0.005"]]
+
+[[mutation]]
+id = "rounding/payable-three-decimals"
+base = "invoice"
+reason = "Amount due with three decimals (BR-DEC-18, BR-CO-16 exact comparison)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "0.001"]]
+
+[[mutation]]
+id = "rounding/tax-total-three-decimals"
+base = "invoice"
+reason = "Invoice total VAT amount with three decimals (UBL-DT-01, BR-CO-14)"
+edits = [["add", '/*/cac:TaxTotal[1]/cbc:TaxAmount', "0.001"]]
+
+[[mutation]]
+id = "rounding/credit-note-line-half-cent"
+base = "credit-note"
+reason = "Credit note line amount with a third decimal 5 (BR-DEC-23 and BR-CO-10 over credit note lines)"
+edits = [["add", '/*/cac:CreditNoteLine[1]/cbc:LineExtensionAmount', "0.005"]]
+
+# ---------------------------------------------------------------------------------------
+# Decimals: scale, precision and size of xs:decimal values
+
+[[mutation]]
+id = "decimals/amounts-four-decimals"
+base = "invoice"
+reason = "Every amount written with four decimals, values unchanged: decimal rules fire, sums still equal (BR-DEC-*)"
+edits = [
+  ["add", '//cbc:LineExtensionAmount', "0.0000"],
+  ["add", '//cbc:TaxExclusiveAmount', "0.0000"],
+  ["add", '//cbc:TaxInclusiveAmount', "0.0000"],
+  ["add", '//cbc:PayableAmount', "0.0000"],
+  ["add", '//cbc:ChargeTotalAmount', "0.0000"],
+  ["add", '//cbc:TaxableAmount', "0.0000"],
+  ["add", '//cbc:TaxAmount', "0.0000"],
+  ["add", '//cbc:Amount', "0.0000"],
+  ["add", '//cbc:PriceAmount', "0.0000"],
+]
+
+[[mutation]]
+id = "decimals/allowance-amounts-three-decimals"
+base = "allowances"
+reason = "Every allowance and charge amount and base amount with three decimals, values unchanged (BR-DEC-01..28 on allowances and charges)"
+edits = [
+  ["add", '//cbc:Amount', "0.000"],
+  ["add", '//cbc:BaseAmount', "0.000"],
+]
+
+[[mutation]]
+id = "decimals/doc-allowance-base-amount-three-decimals"
+base = "allowances"
+reason = "Document allowance base amount with three decimals (BR-DEC-02)"
+edits = [
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:BaseAmount'],
+  ["duplicate", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:Amount'],
+  ["rename", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:Amount[2]', "cbc:BaseAmount"],
+  ["set", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:BaseAmount', "1000.125"],
+]
+
+[[mutation]]
+id = "decimals/line-charge-amount-three-decimals"
+base = "allowances"
+reason = "Line charge amount with three decimals (BR-DEC-27)"
+edits = [["add", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:Amount', "0.001"]]
+
+[[mutation]]
+id = "decimals/line-allowance-amount-three-decimals"
+base = "allowances"
+reason = "Line allowance amount with three decimals (BR-DEC-24)"
+edits = [["add", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="false"]/cbc:Amount', "0.001"]]
+
+[[mutation]]
+id = "decimals/payable-tiny-fraction"
+base = "invoice"
+reason = "Amount due 10^-10 above the computed amount: exact decimal comparison (BR-DEC-18, BR-CO-16)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "0.0000000001"]]
+
+[[mutation]]
+id = "decimals/payable-31-decimals"
+base = "invoice"
+reason = "Amount due 10^-31 above the computed amount: beyond 28 significant digits (BR-DEC-18, BR-CO-16)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "0.0000000000000000000000000000001"]]
+
+[[mutation]]
+id = "decimals/line-and-total-25-decimals"
+base = "invoice"
+reason = "A line and the sum of lines both 10^-25 higher: the sum matches exactly in decimal arithmetic"
+edits = [
+  ["add", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount', "0.0000000000000000000000001"],
+  ["add", '/*/cac:LegalMonetaryTotal/cbc:LineExtensionAmount', "0.0000000000000000000000001"],
+]
+
+[[mutation]]
+id = "decimals/payable-trailing-zero-scale"
+base = "invoice"
+reason = "Amount due with a third decimal 0: equal value, longer scale (BR-DEC-18 only)"
+edits = [["add", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "0.000"]]
+
+[[mutation]]
+id = "decimals/amounts-times-1e9"
+base = "invoice"
+reason = "Every amount and price times 10^9, consistently: sums still hold at the scale of 10^13"
+edits = [
+  ["multiply", '//cbc:LineExtensionAmount', "1000000000"],
+  ["multiply", '//cbc:TaxExclusiveAmount', "1000000000"],
+  ["multiply", '//cbc:TaxInclusiveAmount', "1000000000"],
+  ["multiply", '//cbc:PayableAmount', "1000000000"],
+  ["multiply", '//cbc:ChargeTotalAmount', "1000000000"],
+  ["multiply", '//cbc:TaxableAmount', "1000000000"],
+  ["multiply", '//cbc:TaxAmount', "1000000000"],
+  ["multiply", '//cbc:Amount', "1000000000"],
+  ["multiply", '//cbc:PriceAmount', "1000000000"],
+]
+
+[[mutation]]
+id = "decimals/amounts-times-1e15"
+base = "invoice"
+reason = "Every amount and price times 10^15: values beyond 2^53, exact only in decimal arithmetic"
+edits = [
+  ["multiply", '//cbc:LineExtensionAmount', "1000000000000000"],
+  ["multiply", '//cbc:TaxExclusiveAmount', "1000000000000000"],
+  ["multiply", '//cbc:TaxInclusiveAmount', "1000000000000000"],
+  ["multiply", '//cbc:PayableAmount', "1000000000000000"],
+  ["multiply", '//cbc:ChargeTotalAmount', "1000000000000000"],
+  ["multiply", '//cbc:TaxableAmount', "1000000000000000"],
+  ["multiply", '//cbc:TaxAmount', "1000000000000000"],
+  ["multiply", '//cbc:Amount', "1000000000000000"],
+  ["multiply", '//cbc:PriceAmount', "1000000000000000"],
+]
+
+[[mutation]]
+id = "decimals/payable-plus-cent-at-1e15"
+base = "invoice"
+reason = "Amounts times 10^15 and the amount due one cent off: a difference doubles cannot see (BR-CO-16)"
+edits = [
+  ["multiply", '//cbc:LineExtensionAmount', "1000000000000000"],
+  ["multiply", '//cbc:TaxExclusiveAmount', "1000000000000000"],
+  ["multiply", '//cbc:TaxInclusiveAmount', "1000000000000000"],
+  ["multiply", '//cbc:PayableAmount', "1000000000000000"],
+  ["multiply", '//cbc:ChargeTotalAmount', "1000000000000000"],
+  ["multiply", '//cbc:TaxableAmount', "1000000000000000"],
+  ["multiply", '//cbc:TaxAmount', "1000000000000000"],
+  ["multiply", '//cbc:Amount', "1000000000000000"],
+  ["multiply", '//cbc:PriceAmount', "1000000000000000"],
+  ["add", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "0.01"],
+]
+
+[[mutation]]
+id = "decimals/quantity-huge"
+base = "invoice"
+reason = "Invoiced quantity times 10^20: quantity times price far beyond 64-bit integers"
+edits = [["multiply", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity', "100000000000000000000"]]
+
+[[mutation]]
+id = "decimals/quantity-many-decimals"
+base = "allowances"
+reason = "Invoiced quantity with twelve decimals (quantity times price no longer the line amount)"
+edits = [["add", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity', "0.000000000001"]]
+
+[[mutation]]
+id = "decimals/payable-thousand-zeros"
+base = "allowances"
+reason = "Amount due written with 1000 more trailing zeros: same value, scale over 1000 (BR-DEC-18, BR-CO-16 holds)"
+edits = [["suffix", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "0", "1000"]]
+
+# ---------------------------------------------------------------------------------------
+# Lexical forms of numbers and booleans: what xs:decimal, xs:boolean and number() accept
+
+[[mutation]]
+id = "format/payable-exponent"
+base = "invoice"
+reason = "Amount due in exponent notation, which xs:decimal does not accept (FORG0001)"
+edits = [["set", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "1.5E3"]]
+
+[[mutation]]
+id = "format/line-amount-exponent"
+base = "invoice"
+reason = "A line amount in exponent notation: its cast to xs:decimal raises FORG0001"
+edits = [["set", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount', "2.8E3"]]
+
+[[mutation]]
+id = "format/price-exponent"
+base = "allowances"
+reason = "Item net price in exponent notation: a number for the CEN rules (BR-27), a failed xs:decimal cast in the Peppol rules"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount', "4.1E2"]]
+
+[[mutation]]
+id = "format/quantity-exponent"
+base = "invoice"
+reason = "Invoiced quantity in exponent notation"
+edits = [["set", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity', "1E1"]]
+
+[[mutation]]
+id = "format/percent-exponent"
+base = "invoice"
+reason = "VAT rate of a line in exponent notation (2.5E1)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent', "2.5E1"]]
+
+[[mutation]]
+id = "format/payable-leading-plus"
+base = "invoice"
+reason = "Amount due with a leading plus sign, valid for xs:decimal"
+edits = [["prefix", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "+"]]
+
+[[mutation]]
+id = "format/payable-leading-zeros"
+base = "invoice"
+reason = "Amount due with leading zeros, same value"
+edits = [["prefix", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "000"]]
+
+[[mutation]]
+id = "format/line-total-trailing-point"
+base = "invoice"
+reason = "Sum of line net amounts ending with a decimal point (valid xs:decimal when it has no fraction)"
+edits = [["suffix", '/*/cac:LegalMonetaryTotal/cbc:LineExtensionAmount', "."]]
+
+[[mutation]]
+id = "format/payable-padded-spaces"
+base = "invoice"
+reason = "Amount due surrounded by spaces: xs:decimal trims them, substring-after does not (BR-DEC-18)"
+edits = [
+  ["prefix", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "  "],
+  ["suffix", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "  "],
+]
+
+[[mutation]]
+id = "format/payable-padded-newlines"
+base = "invoice"
+reason = "Amount due surrounded by line feeds and tabs"
+edits = [
+  ["prefix", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "\n\t"],
+  ["suffix", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "\n"],
+]
+
+[[mutation]]
+id = "format/line-amount-trailing-space"
+base = "invoice"
+reason = "A line amount with a trailing space: the decimal count of BR-DEC-23 runs on the whitespace-collapsed value"
+edits = [["suffix", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount', " "]]
+
+[[mutation]]
+id = "format/payable-no-break-space"
+base = "invoice"
+reason = "Amount due followed by a no-break space, which is not XML whitespace (cast error)"
+edits = [["suffix", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', " "]]
+
+[[mutation]]
+id = "format/payable-empty"
+base = "invoice"
+reason = "Amount due empty (cast of an empty string to xs:decimal)"
+edits = [["set", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', ""]]
+
+[[mutation]]
+id = "format/payable-whitespace-only"
+base = "invoice"
+reason = "Amount due made of spaces only"
+edits = [["set", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "   "]]
+
+[[mutation]]
+id = "format/tax-amount-empty"
+base = "invoice"
+reason = "VAT category tax amount empty: its cast to xs:decimal raises FORG0001"
+edits = [["set", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxAmount', ""]]
+
+[[mutation]]
+id = "format/charge-total-empty"
+base = "invoice"
+reason = "Sum of charges empty: its cast to xs:decimal raises FORG0001"
+edits = [["set", '/*/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount', ""]]
+
+[[mutation]]
+id = "format/price-empty"
+base = "invoice"
+reason = "Item net price empty: number() and xs:decimal() of an empty string raise an error"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount', ""]]
+
+[[mutation]]
+id = "format/payable-decimal-comma"
+base = "invoice"
+reason = "Amount due with a decimal comma"
+edits = [["set", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "1656,25"]]
+
+[[mutation]]
+id = "format/payable-thousands-separator"
+base = "invoice"
+reason = "Amount due with a thousands separator"
+edits = [["set", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "1,656.25"]]
+
+[[mutation]]
+id = "format/payable-currency-symbol"
+base = "invoice"
+reason = "Amount due with a currency symbol"
+edits = [["prefix", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "€"]]
+
+[[mutation]]
+id = "format/payable-infinity"
+base = "invoice"
+reason = "Amount due INF: a double, not a decimal"
+edits = [["set", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "INF"]]
+
+[[mutation]]
+id = "format/payable-nan"
+base = "invoice"
+reason = "Amount due NaN: a double, not a decimal"
+edits = [["set", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "NaN"]]
+
+[[mutation]]
+id = "format/price-leading-point"
+base = "allowances"
+reason = "Item net price written as a fraction with no integer part (.5)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount', ".5"]]
+
+[[mutation]]
+id = "format/price-negative-zero"
+base = "allowances"
+reason = "Item net price -0.00 (BR-27: not negative)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount', "-0.00"]]
+
+[[mutation]]
+id = "format/percent-trailing-zeros"
+base = "invoice"
+reason = "VAT breakdown rate 25.000 where lines say 25: compared as numbers, equal"
+edits = [["set", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:Percent', "25.000"]]
+
+[[mutation]]
+id = "format/percent-leading-plus"
+base = "invoice"
+reason = "VAT breakdown rate with a leading plus sign"
+edits = [["prefix", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:Percent', "+"]]
+
+[[mutation]]
+id = "format/percent-padded"
+base = "invoice"
+reason = "Line VAT rate surrounded by spaces"
+edits = [
+  ["prefix", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent', " "],
+  ["suffix", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent', " "],
+]
+
+[[mutation]]
+id = "format/percent-empty"
+base = "invoice"
+reason = "Line VAT rate empty"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent', ""]]
+
+[[mutation]]
+id = "format/quantity-leading-plus"
+base = "invoice"
+reason = "Invoiced quantity with a leading plus sign"
+edits = [["prefix", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity', "+"]]
+
+[[mutation]]
+id = "format/charge-indicator-one"
+base = "invoice"
+reason = "Charge indicator written 1, a valid xs:boolean for true"
+edits = [["set", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:ChargeIndicator', "1"]]
+
+[[mutation]]
+id = "format/charge-indicator-zero"
+base = "invoice"
+reason = "Charge indicator of a charge written 0: the charge becomes an allowance"
+edits = [["set", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:ChargeIndicator', "0"]]
+
+[[mutation]]
+id = "format/charge-indicator-uppercase"
+base = "invoice"
+reason = "Charge indicator TRUE, not a valid xs:boolean (compared with true() in rule contexts)"
+edits = [["set", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:ChargeIndicator', "TRUE"]]
+
+[[mutation]]
+id = "format/charge-indicator-padded"
+base = "invoice"
+reason = "Charge indicator surrounded by spaces, still a valid xs:boolean"
+edits = [
+  ["prefix", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:ChargeIndicator', " "],
+  ["suffix", '/*/cac:AllowanceCharge[cbc:ChargeIndicator=" true"]/cbc:ChargeIndicator', "\n"],
+]
+
+[[mutation]]
+id = "format/charge-indicator-empty"
+base = "invoice"
+reason = "Charge indicator empty"
+edits = [["set", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:ChargeIndicator', ""]]
+
+[[mutation]]
+id = "format/charge-indicator-yes"
+base = "allowances"
+reason = "Line charge indicator yes, not a boolean"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:ChargeIndicator', "yes"]]
+
+[[mutation]]
+id = "format/amount-currency-id-padded"
+base = "invoice"
+reason = "Currency of the amount due with a leading space (code list membership by string)"
+edits = [["prefix", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount/@currencyID', " "]]
+
+# ---------------------------------------------------------------------------------------
+# VAT categories, rates and the VAT breakdown
+
+[[mutation]]
+id = "vat/line-standard-rate-zero"
+base = "invoice"
+reason = "Standard rated line with rate 0 (BR-S-05) and no matching breakdown"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent', "0"]]
+
+[[mutation]]
+id = "vat/line-standard-rate-missing"
+base = "invoice"
+reason = "Standard rated line without a rate (BR-S-05)"
+edits = [["remove", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent']]
+
+[[mutation]]
+id = "vat/line-rate-not-in-breakdown"
+base = "invoice"
+reason = "Standard rated line at 12.5 where the breakdown has 25 only (BR-S-08)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent', "12.5"]]
+
+[[mutation]]
+id = "vat/line-rate-many-decimals"
+base = "invoice"
+reason = "Line rate 25.0000000001: differs from the breakdown rate only in the tenth decimal"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent', "25.0000000001"]]
+
+[[mutation]]
+id = "vat/line-rate-negative"
+base = "invoice"
+reason = "Line VAT rate negative"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent', "-25"]]
+
+[[mutation]]
+id = "vat/breakdown-rate-changed"
+base = "invoice"
+reason = "Breakdown rate 24 where the lines say 25 (BR-S-08, BR-S-09)"
+edits = [["set", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:Percent', "24"]]
+
+[[mutation]]
+id = "vat/line-category-zero-rated"
+base = "invoice"
+reason = "First line zero rated (Z) at 25 percent (BR-Z-05) with no Z breakdown (BR-Z-01..)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "Z"]]
+
+[[mutation]]
+id = "vat/line-category-exempt"
+base = "invoice"
+reason = "First line exempt (E) at 25 percent (BR-E-05) with breakdown mismatch"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "E"]]
+
+[[mutation]]
+id = "vat/line-category-reverse-charge"
+base = "invoice"
+reason = "First line reverse charge (AE) at 25 percent (BR-AE-05) and no AE breakdown"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "AE"]]
+
+[[mutation]]
+id = "vat/line-category-intra-community"
+base = "invoice"
+reason = "First line intra-community supply (K) at 25 percent (BR-IC-05) and no K breakdown"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "K"]]
+
+[[mutation]]
+id = "vat/line-category-export"
+base = "invoice"
+reason = "First line export outside the EU (G) at 25 percent (BR-G-05)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "G"]]
+
+[[mutation]]
+id = "vat/line-category-not-subject"
+base = "invoice"
+reason = "First line not subject to VAT (O) with a rate (BR-O-05) next to standard rated lines (BR-O-01, BR-O-02)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "O"]]
+
+[[mutation]]
+id = "vat/line-category-canary"
+base = "invoice"
+reason = "First line IGIC Canary Islands (L) at 25 percent with no L breakdown (BR-IG-01, BR-AF-01)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "L"]]
+
+[[mutation]]
+id = "vat/line-category-ceuta"
+base = "invoice"
+reason = "First line IPSI Ceuta and Melilla (M) at 25 percent with no M breakdown (BR-IP-01, BR-AG-01)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "M"]]
+
+[[mutation]]
+id = "vat/line-category-split-payment"
+base = "invoice"
+reason = "First line split payment (B) outside Italy, mixed with standard rate (BR-B-01, BR-B-02)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "B"]]
+
+[[mutation]]
+id = "vat/split-payment-in-italy"
+base = "invoice"
+reason = "Every VAT category split payment (B) and every country Italy: BR-B-01 and BR-B-02 hold"
+edits = [
+  ["set", '//cac:ClassifiedTaxCategory/cbc:ID', "B"],
+  ["set", '//cac:TaxCategory/cbc:ID', "B"],
+  ["set", '//cbc:IdentificationCode', "IT"],
+]
+
+[[mutation]]
+id = "vat/line-category-unknown"
+base = "invoice"
+reason = "Line VAT category code X, not in UNCL5305 (BR-CL-18)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "X"]]
+
+[[mutation]]
+id = "vat/line-category-lowercase"
+base = "invoice"
+reason = "Line VAT category code s in lower case (code lists are case sensitive, BR-CL-18)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "s"]]
+
+[[mutation]]
+id = "vat/line-category-padded"
+base = "invoice"
+reason = "Line VAT category code with surrounding whitespace (normalize-space in code list checks)"
+edits = [
+  ["prefix", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', " "],
+  ["suffix", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "\t"],
+]
+
+[[mutation]]
+id = "vat/line-category-empty"
+base = "invoice"
+reason = "Line VAT category code empty (BR-CL-18, VAT breakdown)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', ""]]
+
+[[mutation]]
+id = "vat/breakdown-category-unknown"
+base = "invoice"
+reason = "Breakdown VAT category code X (BR-CL-17)"
+edits = [["set", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:ID', "X"]]
+
+[[mutation]]
+id = "vat/breakdown-category-not-subject"
+base = "invoice"
+reason = "Breakdown category O with a rate, its lines still standard rated (BR-O-*, BR-S-*)"
+edits = [["set", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:ID', "O"]]
+
+[[mutation]]
+id = "vat/breakdown-duplicated"
+base = "invoice"
+reason = "A VAT breakdown subtotal repeated: two subtotals for one category and rate (BR-CO-14)"
+edits = [["duplicate", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]']]
+
+[[mutation]]
+id = "vat/breakdown-removed"
+base = "invoice"
+reason = "The breakdown of the standard rate removed (BR-S-01, BR-CO-14)"
+edits = [["remove", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]']]
+
+[[mutation]]
+id = "vat/breakdown-all-removed"
+base = "invoice"
+reason = "Every VAT breakdown subtotal removed (BR-CO-18)"
+edits = [["remove", '/*/cac:TaxTotal/cac:TaxSubtotal']]
+
+[[mutation]]
+id = "vat/tax-total-removed"
+base = "invoice"
+reason = "Every cac:TaxTotal removed (BR-CO-18, BR-S-*)"
+edits = [["remove", '/*/cac:TaxTotal']]
+
+[[mutation]]
+id = "vat/tax-total-duplicated"
+base = "invoice"
+reason = "The first cac:TaxTotal repeated, with its breakdown"
+edits = [["duplicate", '/*/cac:TaxTotal[1]']]
+
+[[mutation]]
+id = "vat/tax-scheme-lowercase"
+base = "invoice"
+reason = "Line tax scheme vat in lower case (rules filter on upper-case VAT)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID', "vat"]]
+
+[[mutation]]
+id = "vat/tax-scheme-other"
+base = "invoice"
+reason = "Breakdown tax scheme GST instead of VAT"
+edits = [["set", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cac:TaxScheme/cbc:ID', "GST"]]
+
+[[mutation]]
+id = "vat/seller-vat-scheme-lowercase"
+base = "invoice"
+reason = "Seller party tax scheme vat in lower case: rules compare the scheme in upper case, nothing fires"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cac:TaxScheme/cbc:ID', "vat"]]
+
+[[mutation]]
+id = "vat/standard-exemption-reason"
+base = "invoice"
+reason = "Standard rated breakdown with an exemption reason (BR-S-10)"
+edits = [["insert-after", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:Percent', "<cbc:TaxExemptionReason>Not exempt</cbc:TaxExemptionReason>"]]
+
+[[mutation]]
+id = "vat/exempt-without-reason"
+base = "allowances"
+reason = "Exempt breakdown without exemption reason or code (BR-E-10)"
+edits = [
+  ["remove-all", '/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID="E"]/cbc:TaxExemptionReason'],
+  ["remove-all", '/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID="E"]/cbc:TaxExemptionReasonCode'],
+]
+
+[[mutation]]
+id = "vat/exemption-code-unknown"
+base = "allowances"
+reason = "Exemption reason code not in the VATEX list (BR-CL-22)"
+edits = [["insert-after", '/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID="E"]/cbc:Percent', "<cbc:TaxExemptionReasonCode>VATEX-XX-999</cbc:TaxExemptionReasonCode>"]]
+
+[[mutation]]
+id = "vat/exemption-code-wrong-case"
+base = "allowances"
+reason = "Exemption reason code VATEX-EU-132-1G in upper case: accepted by the CEN code list check"
+edits = [["insert-after", '/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID="E"]/cbc:Percent', "<cbc:TaxExemptionReasonCode>VATEX-EU-132-1G</cbc:TaxExemptionReasonCode>"]]
+
+[[mutation]]
+id = "vat/exempt-rate-not-zero"
+base = "allowances"
+reason = "Exempt breakdown at 5 percent with tax amount 0 (BR-CO-17)"
+edits = [["set", '/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID="E"]/cbc:Percent', "5"]]
+
+[[mutation]]
+id = "vat/exempt-tax-amount-not-zero"
+base = "allowances"
+reason = "Exempt breakdown with a tax amount of one cent (BR-E-09, BR-CO-14)"
+edits = [["set", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[cac:TaxCategory/cbc:ID="E"]/cbc:TaxAmount', "0.01"]]
+
+[[mutation]]
+id = "vat/seller-vat-id-removed"
+base = "invoice"
+reason = "Seller VAT identifier removed while standard rate is used (BR-S-02 where no tax representative or tax registration id remains)"
+edits = [["remove", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/cbc:ID="VAT"]']]
+
+[[mutation]]
+id = "vat/reverse-charge-everywhere"
+base = "invoice"
+reason = "Every VAT category reverse charge (AE) at 0 percent, tax amounts 0: buyer and seller VAT ids required (BR-AE-*)"
+edits = [
+  ["set", '//cac:ClassifiedTaxCategory/cbc:ID', "AE"],
+  ["set", '//cac:TaxCategory/cbc:ID', "AE"],
+  ["set", '//cac:ClassifiedTaxCategory/cbc:Percent', "0"],
+  ["set", '//cac:TaxCategory/cbc:Percent', "0"],
+  ["set", '//cac:TaxSubtotal/cbc:TaxAmount', "0"],
+]
+
+[[mutation]]
+id = "vat/intra-community-everywhere"
+base = "invoice"
+reason = "Every VAT category intra-community supply (K) at 0 percent: delivery data and VAT ids required (BR-IC-*)"
+edits = [
+  ["set", '//cac:ClassifiedTaxCategory/cbc:ID', "K"],
+  ["set", '//cac:TaxCategory/cbc:ID', "K"],
+  ["set", '//cac:ClassifiedTaxCategory/cbc:Percent', "0"],
+  ["set", '//cac:TaxCategory/cbc:Percent', "0"],
+  ["set", '//cac:TaxSubtotal/cbc:TaxAmount', "0"],
+]
+
+[[mutation]]
+id = "vat/export-everywhere"
+base = "invoice"
+reason = "Every VAT category export (G) at 0 percent, without exemption reasons (BR-G-*)"
+edits = [
+  ["set", '//cac:ClassifiedTaxCategory/cbc:ID', "G"],
+  ["set", '//cac:TaxCategory/cbc:ID', "G"],
+  ["set", '//cac:ClassifiedTaxCategory/cbc:Percent', "0"],
+  ["set", '//cac:TaxCategory/cbc:Percent', "0"],
+  ["set", '//cac:TaxSubtotal/cbc:TaxAmount', "0"],
+]
+
+[[mutation]]
+id = "vat/not-subject-everywhere"
+base = "invoice"
+reason = "Every VAT category not subject to VAT (O) with the rates removed (BR-O-*)"
+edits = [
+  ["set", '//cac:ClassifiedTaxCategory/cbc:ID', "O"],
+  ["set", '//cac:TaxCategory/cbc:ID', "O"],
+  ["remove", '//cac:ClassifiedTaxCategory/cbc:Percent'],
+  ["remove", '//cac:TaxCategory/cbc:Percent'],
+  ["set", '//cac:TaxSubtotal/cbc:TaxAmount', "0"],
+]
+
+[[mutation]]
+id = "vat/canary-everywhere"
+base = "invoice"
+reason = "Every VAT category IGIC (L) at 7 percent with sums not recomputed (BR-AF-*, BR-IG-*)"
+edits = [
+  ["set", '//cac:ClassifiedTaxCategory/cbc:ID', "L"],
+  ["set", '//cac:TaxCategory/cbc:ID', "L"],
+  ["set", '//cac:ClassifiedTaxCategory/cbc:Percent', "7"],
+  ["set", '//cac:TaxCategory/cbc:Percent', "7"],
+]
+
+[[mutation]]
+id = "vat/ceuta-everywhere"
+base = "invoice"
+reason = "Every VAT category IPSI (M) at 4 percent with sums not recomputed (BR-AG-*, BR-IP-*)"
+edits = [
+  ["set", '//cac:ClassifiedTaxCategory/cbc:ID', "M"],
+  ["set", '//cac:TaxCategory/cbc:ID', "M"],
+  ["set", '//cac:ClassifiedTaxCategory/cbc:Percent', "4"],
+  ["set", '//cac:TaxCategory/cbc:Percent', "4"],
+]
+
+[[mutation]]
+id = "vat/zero-rated-everywhere"
+base = "invoice"
+reason = "Every VAT category zero rated (Z) at 0 percent, tax amounts kept (BR-Z-*, BR-CO-17)"
+edits = [
+  ["set", '//cac:ClassifiedTaxCategory/cbc:ID', "Z"],
+  ["set", '//cac:TaxCategory/cbc:ID', "Z"],
+  ["set", '//cac:ClassifiedTaxCategory/cbc:Percent', "0"],
+  ["set", '//cac:TaxCategory/cbc:Percent', "0"],
+]
+
+[[mutation]]
+id = "vat/allowance-category-zero-rated-at-25"
+base = "allowances"
+reason = "Document allowance zero rated (Z) at 25 percent (BR-Z-06)"
+edits = [["set", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cac:TaxCategory/cbc:ID', "Z"]]
+
+[[mutation]]
+id = "vat/charge-category-exempt-at-25"
+base = "allowances"
+reason = "Document charge exempt (E) at 25 percent (BR-E-07)"
+edits = [["set", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cac:TaxCategory/cbc:ID', "E"]]
+
+[[mutation]]
+id = "vat/charge-rate-missing"
+base = "allowances"
+reason = "Document charge standard rated without a rate (BR-S-07)"
+edits = [["remove", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cac:TaxCategory/cbc:Percent']]
+
+[[mutation]]
+id = "vat/tax-currency-without-tax-total"
+base = "invoice"
+reason = "VAT accounting currency stated but no VAT total in it (BR-53)"
+edits = [
+  ["remove-all", '/*/cbc:TaxCurrencyCode'],
+  ["remove-all", '/*/cac:TaxTotal[2]'],
+  ["insert-after", '/*/cbc:DocumentCurrencyCode', "<cbc:TaxCurrencyCode>USD</cbc:TaxCurrencyCode>"],
+]
+
+[[mutation]]
+id = "vat/tax-currency-same-as-document"
+base = "invoice"
+reason = "VAT accounting currency equal to the document currency, two VAT totals in it"
+edits = [
+  ["remove-all", '/*/cbc:TaxCurrencyCode'],
+  ["remove-all", '/*/cac:TaxTotal[2]'],
+  ["insert-after", '/*/cbc:DocumentCurrencyCode', "<cbc:TaxCurrencyCode>EUR</cbc:TaxCurrencyCode>"],
+  ["set", '/*/cbc:DocumentCurrencyCode', "EUR"],
+  ["set", '//@currencyID', "EUR"],
+  ["duplicate", '/*/cac:TaxTotal'],
+]
+
+[[mutation]]
+id = "vat/tax-total-in-tax-currency-with-breakdown"
+base = "allowances"
+reason = "A VAT total in the accounting currency that also has a breakdown"
+edits = [
+  ["remove-all", '/*/cbc:TaxCurrencyCode'],
+  ["remove-all", '/*/cac:TaxTotal[2]'],
+  ["insert-after", '/*/cbc:DocumentCurrencyCode', "<cbc:TaxCurrencyCode>SEK</cbc:TaxCurrencyCode>"],
+  ["duplicate", '/*/cac:TaxTotal'],
+  ["set", '/*/cac:TaxTotal[2]/cbc:TaxAmount/@currencyID', "SEK"],
+]
+
+# ---------------------------------------------------------------------------------------
+# Allowances and charges
+
+[[mutation]]
+id = "allowances/doc-allowance-no-reason"
+base = "allowances"
+reason = "Document allowance with neither reason nor reason code (BR-33)"
+edits = [
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:AllowanceChargeReason'],
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:AllowanceChargeReasonCode'],
+]
+
+[[mutation]]
+id = "allowances/doc-charge-no-reason"
+base = "allowances"
+reason = "Document charge with neither reason nor reason code (BR-38)"
+edits = [
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:AllowanceChargeReason'],
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:AllowanceChargeReasonCode'],
+]
+
+[[mutation]]
+id = "allowances/doc-allowance-reason-code-unknown"
+base = "allowances"
+reason = "Document allowance reason code not in UNCL5189 (BR-CL-19)"
+edits = [
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:AllowanceChargeReasonCode'],
+  ["insert-after", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:ChargeIndicator', "<cbc:AllowanceChargeReasonCode>999</cbc:AllowanceChargeReasonCode>"],
+]
+
+[[mutation]]
+id = "allowances/doc-charge-reason-code-unknown"
+base = "allowances"
+reason = "Document charge reason code not in UNCL7161 (BR-CL-20)"
+edits = [
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:AllowanceChargeReasonCode'],
+  ["insert-after", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:ChargeIndicator', "<cbc:AllowanceChargeReasonCode>ZZZZ</cbc:AllowanceChargeReasonCode>"],
+]
+
+[[mutation]]
+id = "allowances/doc-charge-reason-code-lowercase"
+base = "allowances"
+reason = "Document charge reason code fc in lower case (BR-CL-20 is case sensitive)"
+edits = [
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:AllowanceChargeReasonCode'],
+  ["insert-after", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:ChargeIndicator', "<cbc:AllowanceChargeReasonCode>fc</cbc:AllowanceChargeReasonCode>"],
+]
+
+[[mutation]]
+id = "allowances/allowance-code-used-for-charge"
+base = "allowances"
+reason = "Allowance reason code 95 on a charge (BR-CL-20)"
+edits = [
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:AllowanceChargeReasonCode'],
+  ["insert-after", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:ChargeIndicator', "<cbc:AllowanceChargeReasonCode>95</cbc:AllowanceChargeReasonCode>"],
+]
+
+[[mutation]]
+id = "allowances/multiplier-inconsistent"
+base = "allowances"
+reason = "Document charge whose amount is not base amount times percentage"
+edits = [
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:MultiplierFactorNumeric'],
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:BaseAmount'],
+  ["duplicate", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:Amount'],
+  ["rename", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:Amount[2]', "cbc:BaseAmount"],
+  ["set", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:BaseAmount', "1000"],
+  ["insert-before", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:Amount', "<cbc:MultiplierFactorNumeric>3</cbc:MultiplierFactorNumeric>"],
+]
+
+[[mutation]]
+id = "allowances/multiplier-without-base"
+base = "allowances"
+reason = "Document charge with a percentage but no base amount"
+edits = [
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:MultiplierFactorNumeric'],
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:BaseAmount'],
+  ["insert-before", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:Amount', "<cbc:MultiplierFactorNumeric>20</cbc:MultiplierFactorNumeric>"],
+]
+
+[[mutation]]
+id = "allowances/multiplier-fraction"
+base = "allowances"
+reason = "Document allowance at 2.5 percent of a base amount, amount consistent to the cent"
+edits = [
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:MultiplierFactorNumeric'],
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:BaseAmount'],
+  ["duplicate", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:Amount'],
+  ["rename", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:Amount[2]', "cbc:BaseAmount"],
+  ["multiply", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:BaseAmount', "40"],
+  ["insert-before", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:Amount', "<cbc:MultiplierFactorNumeric>2.5</cbc:MultiplierFactorNumeric>"],
+]
+
+[[mutation]]
+id = "allowances/doc-allowance-negative"
+base = "allowances"
+reason = "Document allowance with a negative amount, totals unchanged"
+edits = [["multiply", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:Amount', "-1"]]
+
+[[mutation]]
+id = "allowances/doc-charge-no-tax-category"
+base = "allowances"
+reason = "Document charge without VAT category (BR-37)"
+edits = [["remove", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cac:TaxCategory']]
+
+[[mutation]]
+id = "allowances/doc-allowance-no-tax-category"
+base = "allowances"
+reason = "Document allowance without VAT category (BR-32)"
+edits = [["remove", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cac:TaxCategory']]
+
+[[mutation]]
+id = "allowances/doc-allowance-no-amount"
+base = "allowances"
+reason = "Document allowance without amount (BR-31)"
+edits = [["remove", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:Amount']]
+
+[[mutation]]
+id = "allowances/doc-charge-no-amount"
+base = "allowances"
+reason = "Document charge without amount (BR-36)"
+edits = [["remove", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:Amount']]
+
+[[mutation]]
+id = "allowances/allowance-total-missing"
+base = "allowances"
+reason = "Sum of allowances (BT-107) missing while there is a document allowance (BR-CO-11, BR-CO-13)"
+edits = [["remove", '/*/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount']]
+
+[[mutation]]
+id = "allowances/charge-total-missing"
+base = "allowances"
+reason = "Sum of charges (BT-108) missing while there is a document charge (BR-CO-12, BR-CO-13)"
+edits = [["remove", '/*/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount']]
+
+[[mutation]]
+id = "allowances/all-document-level-removed"
+base = "allowances"
+reason = "Every document allowance and charge removed, their sums kept (BR-CO-11, BR-CO-12)"
+edits = [["remove", '/*/cac:AllowanceCharge']]
+
+[[mutation]]
+id = "allowances/doc-allowance-duplicated"
+base = "allowances"
+reason = "The document allowance repeated, sums not updated (BR-CO-11, VAT breakdown BR-S-08)"
+edits = [["duplicate", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]']]
+
+[[mutation]]
+id = "allowances/line-allowance-no-reason"
+base = "allowances"
+reason = "Line allowance with neither reason nor reason code (BR-42)"
+edits = [
+  ["remove-all", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="false"]/cbc:AllowanceChargeReason'],
+  ["remove-all", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="false"]/cbc:AllowanceChargeReasonCode'],
+]
+
+[[mutation]]
+id = "allowances/line-charge-no-reason"
+base = "allowances"
+reason = "Line charge with neither reason nor reason code (BR-44)"
+edits = [
+  ["remove-all", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:AllowanceChargeReason'],
+  ["remove-all", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:AllowanceChargeReasonCode'],
+]
+
+[[mutation]]
+id = "allowances/line-allowance-no-amount"
+base = "allowances"
+reason = "Line allowance without amount (BR-41)"
+edits = [["remove", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="false"]/cbc:Amount']]
+
+[[mutation]]
+id = "allowances/line-allowance-with-tax-category"
+base = "allowances"
+reason = "Line allowance with a VAT category, which EN 16931 does not use there"
+edits = [["append", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="false"]', "<cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>25</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory>"]]
+
+[[mutation]]
+id = "allowances/line-allowance-plus-cent"
+base = "allowances"
+reason = "Line allowance one cent higher: line net amount against quantity, price and allowances"
+edits = [["add", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="false"]/cbc:Amount', "0.01"]]
+
+[[mutation]]
+id = "allowances/line-charges-every-line"
+base = "allowances"
+reason = "A one-cent charge in EUR added to every line, line amounts unchanged"
+edits = [["insert-before", '/*/cac:InvoiceLine/cac:Item', "<cac:AllowanceCharge><cbc:ChargeIndicator>true</cbc:ChargeIndicator><cbc:AllowanceChargeReasonCode>FC</cbc:AllowanceChargeReasonCode><cbc:Amount currencyID=\"EUR\">0.01</cbc:Amount></cac:AllowanceCharge>"]]
+
+[[mutation]]
+id = "allowances/price-charge"
+base = "allowances"
+reason = "Item price adjustment that is a charge instead of a discount"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cac:AllowanceCharge/cbc:ChargeIndicator', "true"]]
+
+[[mutation]]
+id = "allowances/price-discount-plus-cent"
+base = "allowances"
+reason = "Item price discount one cent higher: gross price minus discount no longer the net price"
+edits = [["add", '/*/cac:InvoiceLine[1]/cac:Price/cac:AllowanceCharge/cbc:Amount', "0.01"]]
+
+[[mutation]]
+id = "allowances/price-discount-no-base"
+base = "allowances"
+reason = "Item price discounts without gross price"
+edits = [["remove", '/*/cac:InvoiceLine/cac:Price/cac:AllowanceCharge/cbc:BaseAmount']]
+
+[[mutation]]
+id = "allowances/price-discount-three-decimals"
+base = "allowances"
+reason = "Item price discount with three decimals, allowed for prices (UBL-DT-01 excludes them) but the net price no longer matches"
+edits = [["add", '/*/cac:InvoiceLine[1]/cac:Price/cac:AllowanceCharge/cbc:Amount', "0.001"]]
+
+[[mutation]]
+id = "allowances/price-discount-duplicated"
+base = "allowances"
+reason = "Item price with two discounts (UBL-SR-37)"
+edits = [["duplicate", '/*/cac:InvoiceLine[1]/cac:Price/cac:AllowanceCharge']]
+
+# ---------------------------------------------------------------------------------------
+# Quantities, prices and base quantities
+
+[[mutation]]
+id = "prices/base-quantity-zero"
+base = "allowances"
+reason = "Item price base quantity 0 (price per zero units; a division by zero where it is divided)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cbc:BaseQuantity', "0"]]
+
+[[mutation]]
+id = "prices/base-quantity-ten"
+base = "allowances"
+reason = "Item price base quantity 10, line amount unchanged: quantity times price per unit no longer matches"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cbc:BaseQuantity', "10"]]
+
+[[mutation]]
+id = "prices/base-quantity-negative"
+base = "allowances"
+reason = "Item price base quantity -1"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cbc:BaseQuantity', "-1"]]
+
+[[mutation]]
+id = "prices/base-quantity-fraction"
+base = "allowances"
+reason = "Item price base quantity 0.3: the price per unit has no finite decimal expansion"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cbc:BaseQuantity', "0.3"]]
+
+[[mutation]]
+id = "prices/base-quantity-unit-differs"
+base = "allowances"
+reason = "Base quantity unit code different from the invoiced quantity unit code"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cbc:BaseQuantity/@unitCode', "KGM"]]
+
+[[mutation]]
+id = "prices/base-quantity-empty"
+base = "allowances"
+reason = "Item price base quantity empty"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cbc:BaseQuantity', ""]]
+
+[[mutation]]
+id = "prices/price-negative"
+base = "allowances"
+reason = "Item net price negative (BR-27)"
+edits = [["multiply", '/*/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount', "-1"]]
+
+[[mutation]]
+id = "prices/gross-price-negative"
+base = "allowances"
+reason = "Item gross prices negative (BR-28)"
+edits = [["multiply", '/*/cac:InvoiceLine/cac:Price/cac:AllowanceCharge/cbc:BaseAmount', "-1"]]
+
+[[mutation]]
+id = "prices/price-four-decimals"
+base = "allowances"
+reason = "Item net price with four decimals: allowed, line amount still rounded to two"
+edits = [["add", '/*/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount', "0.0001"]]
+
+[[mutation]]
+id = "prices/price-plus-cent"
+base = "invoice"
+reason = "Item net price one cent higher: line amount no longer quantity times price"
+edits = [["add", '/*/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount', "0.01"]]
+
+[[mutation]]
+id = "prices/price-removed"
+base = "invoice"
+reason = "Item net price removed (BR-26)"
+edits = [["remove", '/*/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount']]
+
+[[mutation]]
+id = "prices/quantity-zero"
+base = "invoice"
+reason = "Invoiced quantity 0 with a non-zero line amount"
+edits = [["set", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity', "0"]]
+
+[[mutation]]
+id = "prices/quantity-negated"
+base = "invoice"
+reason = "Invoiced quantity negated, line amount kept"
+edits = [["multiply", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity', "-1"]]
+
+[[mutation]]
+id = "prices/quantity-empty"
+base = "invoice"
+reason = "Invoiced quantity empty"
+edits = [["set", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity', ""]]
+
+[[mutation]]
+id = "prices/quantity-and-amount-negated"
+base = "invoice"
+reason = "A line with quantity and amount negated, document sums unchanged (BR-CO-10, VAT breakdown)"
+edits = [
+  ["multiply", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity', "-1"],
+  ["multiply", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount', "-1"],
+]
+
+[[mutation]]
+id = "prices/credit-note-negative-quantity"
+base = "credit-note"
+reason = "Credited quantity negated, line amount kept"
+edits = [["multiply", '/*/cac:CreditNoteLine[1]/cbc:CreditedQuantity', "-1"]]
+
+# ---------------------------------------------------------------------------------------
+# Dates: the rules compare dates as numbers built from their characters
+
+[[mutation]]
+id = "dates/issue-date-february-30"
+base = "invoice"
+reason = "Issue date 30 February: lexically a date, not a valid one"
+edits = [["set", '/*/cbc:IssueDate', "2018-02-30"]]
+
+[[mutation]]
+id = "dates/issue-date-leap-day"
+base = "invoice"
+reason = "Issue date 29 February of a leap year"
+edits = [["set", '/*/cbc:IssueDate', "2020-02-29"]]
+
+[[mutation]]
+id = "dates/issue-date-leap-day-common-year"
+base = "invoice"
+reason = "Issue date 29 February of a common year"
+edits = [["set", '/*/cbc:IssueDate', "2019-02-29"]]
+
+[[mutation]]
+id = "dates/issue-date-utc"
+base = "invoice"
+reason = "Issue date with the time zone Z"
+edits = [["suffix", '/*/cbc:IssueDate', "Z"]]
+
+[[mutation]]
+id = "dates/issue-date-offset"
+base = "invoice"
+reason = "Issue date with the time zone +02:00"
+edits = [["suffix", '/*/cbc:IssueDate', "+02:00"]]
+
+[[mutation]]
+id = "dates/issue-date-with-time"
+base = "invoice"
+reason = "Issue date written as a date-time"
+edits = [["suffix", '/*/cbc:IssueDate', "T10:00:00"]]
+
+[[mutation]]
+id = "dates/issue-date-padded"
+base = "invoice"
+reason = "Issue date surrounded by whitespace"
+edits = [
+  ["prefix", '/*/cbc:IssueDate', " \n"],
+  ["suffix", '/*/cbc:IssueDate', "\t"],
+]
+
+[[mutation]]
+id = "dates/issue-date-slashes"
+base = "invoice"
+reason = "Issue date in DD/MM/YYYY form"
+edits = [["set", '/*/cbc:IssueDate', "08/02/2018"]]
+
+[[mutation]]
+id = "dates/issue-date-compact"
+base = "invoice"
+reason = "Issue date in YYYYMMDD form"
+edits = [["set", '/*/cbc:IssueDate', "20180208"]]
+
+[[mutation]]
+id = "dates/issue-date-empty"
+base = "invoice"
+reason = "Issue date empty (BR-03 tests presence only)"
+edits = [["set", '/*/cbc:IssueDate', ""]]
+
+[[mutation]]
+id = "dates/issue-date-year-five-digits"
+base = "invoice"
+reason = "Issue date in year 12018"
+edits = [["set", '/*/cbc:IssueDate', "12018-02-08"]]
+
+[[mutation]]
+id = "dates/issue-date-negative-year"
+base = "invoice"
+reason = "Issue date in year -2018"
+edits = [["set", '/*/cbc:IssueDate', "-2018-02-08"]]
+
+[[mutation]]
+id = "dates/due-date-before-issue"
+base = "invoice"
+reason = "Payment due date before the issue date"
+edits = [["set", '/*/cbc:DueDate', "2000-01-01"]]
+
+[[mutation]]
+id = "dates/due-date-invalid-month"
+base = "invoice"
+reason = "Payment due date in month 13"
+edits = [["set", '/*/cbc:DueDate', "2018-13-01"]]
+
+[[mutation]]
+id = "dates/delivery-date-year-one"
+base = "invoice"
+reason = "Actual delivery date in year 0001"
+edits = [["set", '/*/cac:Delivery/cbc:ActualDeliveryDate', "0001-01-01"]]
+
+[[mutation]]
+id = "dates/period-end-before-start"
+base = "allowances"
+reason = "Invoicing period ending before it starts (BR-29)"
+edits = [["set", '/*/cac:InvoicePeriod/cbc:EndDate', "2000-01-01"]]
+
+[[mutation]]
+id = "dates/period-end-one-day-before-start"
+base = "allowances"
+reason = "Invoicing period ending the day before it starts (BR-29)"
+edits = [
+  ["set", '/*/cac:InvoicePeriod/cbc:StartDate', "2017-12-02"],
+  ["set", '/*/cac:InvoicePeriod/cbc:EndDate', "2017-12-01"],
+]
+
+[[mutation]]
+id = "dates/period-single-day"
+base = "allowances"
+reason = "Invoicing period of a single day: BR-29 allows equal dates"
+edits = [
+  ["set", '/*/cac:InvoicePeriod/cbc:StartDate', "2017-12-01"],
+  ["set", '/*/cac:InvoicePeriod/cbc:EndDate', "2017-12-01"],
+]
+
+[[mutation]]
+id = "dates/period-end-with-zone"
+base = "allowances"
+reason = "Invoicing period end date with a time zone (not a number once the hyphens are removed)"
+edits = [["suffix", '/*/cac:InvoicePeriod/cbc:EndDate', "Z"]]
+
+[[mutation]]
+id = "dates/period-start-invalid"
+base = "allowances"
+reason = "Invoicing period start date 2017-02-31"
+edits = [["set", '/*/cac:InvoicePeriod/cbc:StartDate', "2017-02-31"]]
+
+[[mutation]]
+id = "dates/period-empty"
+base = "allowances"
+reason = "Invoicing period without start and end date: BR-CO-19 fires unless a VAT point date code remains"
+edits = [
+  ["remove-all", '/*/cac:InvoicePeriod/cbc:StartDate'],
+  ["remove-all", '/*/cac:InvoicePeriod/cbc:EndDate'],
+]
+
+[[mutation]]
+id = "dates/period-only-end"
+base = "allowances"
+reason = "Invoicing period with an end date only"
+edits = [["remove", '/*/cac:InvoicePeriod/cbc:StartDate']]
+
+[[mutation]]
+id = "dates/line-period-end-before-start"
+base = "allowances"
+reason = "Line periods ending before they start (BR-30)"
+edits = [["set", '/*/cac:InvoiceLine/cac:InvoicePeriod/cbc:EndDate', "2000-01-01"]]
+
+[[mutation]]
+id = "dates/line-period-empty"
+base = "allowances"
+reason = "Line periods with neither start nor end date (BR-CO-20)"
+edits = [
+  ["remove", '/*/cac:InvoiceLine/cac:InvoicePeriod/cbc:StartDate'],
+  ["remove", '/*/cac:InvoiceLine/cac:InvoicePeriod/cbc:EndDate'],
+]
+
+[[mutation]]
+id = "dates/period-description-code-unknown"
+base = "allowances"
+reason = "Invoicing period with a VAT point date code that is not in the code list (BR-CL-06)"
+edits = [["append", '/*/cac:InvoicePeriod', "<cbc:DescriptionCode>999</cbc:DescriptionCode>"]]
+
+[[mutation]]
+id = "dates/period-description-code-with-tax-point-date"
+base = "invoice"
+reason = "VAT point date code and VAT point date both given (BR-CO-03)"
+edits = [
+  ["remove-all", '/*/cac:InvoicePeriod'],
+  ["remove-all", '/*/cbc:TaxPointDate'],
+  ["insert-after", '/*/cbc:DueDate', "<cbc:TaxPointDate>2018-02-08</cbc:TaxPointDate>"],
+  ["insert-after", '/*/cbc:AccountingCost', "<cac:InvoicePeriod><cbc:DescriptionCode>35</cbc:DescriptionCode></cac:InvoicePeriod>"],
+]
+
+# ---------------------------------------------------------------------------------------
+# Code lists: membership is tested by string, so case and whitespace matter
+
+[[mutation]]
+id = "codes/currency-unknown"
+base = "invoice"
+reason = "Document currency code XXY, not in ISO 4217 (BR-CL-04)"
+edits = [["set", '/*/cbc:DocumentCurrencyCode', "XXY"]]
+
+[[mutation]]
+id = "codes/currency-lowercase"
+base = "invoice"
+reason = "Document currency code eur in lower case (BR-CL-04)"
+edits = [["set", '/*/cbc:DocumentCurrencyCode', "eur"]]
+
+[[mutation]]
+id = "codes/currency-padded"
+base = "invoice"
+reason = "Document currency code surrounded by spaces"
+edits = [
+  ["prefix", '/*/cbc:DocumentCurrencyCode', " "],
+  ["suffix", '/*/cbc:DocumentCurrencyCode', " "],
+]
+
+[[mutation]]
+id = "codes/currency-changed"
+base = "invoice"
+reason = "Document currency code changed to another valid code, amounts left in the old one"
+edits = [["set", '/*/cbc:DocumentCurrencyCode', "USD"]]
+
+[[mutation]]
+id = "codes/amount-currencies-unknown"
+base = "invoice"
+reason = "Currency ZZZ on every amount (BR-CL-03)"
+edits = [["set", '//@currencyID', "ZZZ"]]
+
+[[mutation]]
+id = "codes/amount-currencies-changed"
+base = "invoice"
+reason = "Every amount in USD, document currency unchanged"
+edits = [["set", '//@currencyID', "USD"]]
+
+[[mutation]]
+id = "codes/one-amount-other-currency"
+base = "invoice"
+reason = "The amount due alone in another currency"
+edits = [["set", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount/@currencyID', "USD"]]
+
+[[mutation]]
+id = "codes/amount-currency-missing"
+base = "invoice"
+reason = "The amount due without currency"
+edits = [["remove", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount/@currencyID']]
+
+[[mutation]]
+id = "codes/seller-country-unknown"
+base = "invoice"
+reason = "Seller country code XX, not in ISO 3166-1 (BR-CL-14)"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "XX"]]
+
+[[mutation]]
+id = "codes/seller-country-lowercase"
+base = "invoice"
+reason = "Seller country code se in lower case (BR-CL-14)"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "se"]]
+
+[[mutation]]
+id = "codes/seller-country-uk"
+base = "invoice"
+reason = "Seller country code UK, not the ISO code GB (BR-CL-14)"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "UK"]]
+
+[[mutation]]
+id = "codes/buyer-country-padded"
+base = "invoice"
+reason = "Buyer country code surrounded by whitespace"
+edits = [
+  ["prefix", '/*/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "\n"],
+  ["suffix", '/*/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', " "],
+]
+
+[[mutation]]
+id = "codes/delivery-country-unknown"
+base = "invoice"
+reason = "Deliver-to country code QQ (BR-CL-14)"
+edits = [["set", '/*/cac:Delivery/cac:DeliveryLocation/cac:Address/cac:Country/cbc:IdentificationCode', "QQ"]]
+
+[[mutation]]
+id = "codes/origin-country-unknown"
+base = "invoice"
+reason = "Item country of origin code ZZ (BR-CL-15)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:OriginCountry/cbc:IdentificationCode', "ZZ"]]
+
+[[mutation]]
+id = "codes/unit-unknown"
+base = "invoice"
+reason = "Invoiced quantity unit code QQ1, not in UN/ECE Rec 20 or 21 (BR-CL-23)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity/@unitCode', "QQ1"]]
+
+[[mutation]]
+id = "codes/unit-lowercase"
+base = "invoice"
+reason = "Invoiced quantity unit code in lower case (BR-CL-23)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity/@unitCode', "ea"]]
+
+[[mutation]]
+id = "codes/unit-padded"
+base = "invoice"
+reason = "Invoiced quantity unit code with a trailing space"
+edits = [["suffix", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity/@unitCode', " "]]
+
+[[mutation]]
+id = "codes/unit-missing"
+base = "invoice"
+reason = "Invoiced quantity without unit code (BR-23)"
+edits = [["remove", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity/@unitCode']]
+
+[[mutation]]
+id = "codes/unit-rec21"
+base = "invoice"
+reason = "Invoiced quantity unit code X1A, a UN/ECE Rec 21 package code"
+edits = [["set", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity/@unitCode', "X1A"]]
+
+[[mutation]]
+id = "codes/base-quantity-unit-unknown"
+base = "allowances"
+reason = "Base quantity unit code QQQ (BR-CL-23)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Price/cbc:BaseQuantity/@unitCode', "QQQ"]]
+
+[[mutation]]
+id = "codes/endpoint-scheme-unknown"
+base = "invoice"
+reason = "Seller electronic address scheme 9999, not in the EAS list (BR-CL-25)"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "9999"]]
+
+[[mutation]]
+id = "codes/endpoint-scheme-padded"
+base = "invoice"
+reason = "Buyer electronic address scheme with a trailing space: BR-CL-25 normalises it, the Peppol code list check does not"
+edits = [["suffix", '/*/cac:AccountingCustomerParty/cac:Party/cbc:EndpointID/@schemeID', " "]]
+
+[[mutation]]
+id = "codes/endpoint-scheme-email"
+base = "invoice"
+reason = "Seller electronic address scheme EM with an e-mail address"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "EM"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "invoices@example.com"],
+]
+
+[[mutation]]
+id = "codes/endpoint-scheme-lowercase"
+base = "invoice"
+reason = "Seller electronic address scheme em in lower case (BR-CL-25)"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "em"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "invoices@example.com"],
+]
+
+[[mutation]]
+id = "codes/party-id-scheme-unknown"
+base = "invoice"
+reason = "Seller identifier scheme 9999, not in the ICD list (BR-CL-10)"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyIdentification[1]/cbc:ID/@schemeID', "9999"]]
+
+[[mutation]]
+id = "codes/legal-id-scheme-unknown"
+base = "invoice"
+reason = "Buyer legal registration identifier scheme 9999 (BR-CL-11)"
+edits = [["set", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID/@schemeID', "9999"]]
+
+[[mutation]]
+id = "codes/item-standard-id-scheme-unknown"
+base = "invoice"
+reason = "Item standard identifier scheme 9999 (BR-CL-21)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:StandardItemIdentification/cbc:ID/@schemeID', "9999"]]
+
+[[mutation]]
+id = "codes/item-classification-list-unknown"
+base = "invoice"
+reason = "Item classification list identifier QQ, not in UNTDID 7143 (BR-CL-13)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:CommodityClassification[1]/cbc:ItemClassificationCode/@listID', "QQ"]]
+
+[[mutation]]
+id = "codes/item-classification-list-lowercase"
+base = "invoice"
+reason = "Item classification list identifier in lower case (BR-CL-13)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:CommodityClassification[1]/cbc:ItemClassificationCode/@listID', "stl"]]
+
+[[mutation]]
+id = "codes/delivery-location-scheme-unknown"
+base = "invoice"
+reason = "Deliver-to location identifier scheme 9999 (BR-CL-26)"
+edits = [["set", '/*/cac:Delivery/cac:DeliveryLocation/cbc:ID/@schemeID', "9999"]]
+
+[[mutation]]
+id = "codes/delivery-location-scheme-two-codes"
+base = "invoice"
+reason = "Deliver-to location identifier scheme made of two valid codes (BR-CL-26 refuses inner spaces)"
+edits = [["set", '/*/cac:Delivery/cac:DeliveryLocation/cbc:ID/@schemeID', "0088 0060"]]
+
+[[mutation]]
+id = "codes/delivery-location-scheme-padded"
+base = "invoice"
+reason = "Deliver-to location identifier scheme with surrounding spaces: BR-CL-26 normalises them and holds"
+edits = [
+  ["prefix", '/*/cac:Delivery/cac:DeliveryLocation/cbc:ID/@schemeID', " "],
+  ["suffix", '/*/cac:Delivery/cac:DeliveryLocation/cbc:ID/@schemeID', " "],
+]
+
+[[mutation]]
+id = "codes/invoice-type-unknown"
+base = "invoice"
+reason = "Invoice type code 999 (BR-CL-01)"
+edits = [["set", '/*/cbc:InvoiceTypeCode', "999"]]
+
+[[mutation]]
+id = "codes/invoice-type-credit-note"
+base = "invoice"
+reason = "Invoice type code 381 (a credit note code) in an invoice"
+edits = [["set", '/*/cbc:InvoiceTypeCode', "381"]]
+
+[[mutation]]
+id = "codes/invoice-type-padded"
+base = "invoice"
+reason = "Invoice type code with surrounding whitespace"
+edits = [
+  ["prefix", '/*/cbc:InvoiceTypeCode', " "],
+  ["suffix", '/*/cbc:InvoiceTypeCode', "\n"],
+]
+
+[[mutation]]
+id = "codes/payment-means-unknown"
+base = "invoice"
+reason = "Payment means code 999 (BR-CL-16)"
+edits = [["set", '/*/cac:PaymentMeans[1]/cbc:PaymentMeansCode', "999"]]
+
+[[mutation]]
+id = "codes/payment-means-padded"
+base = "invoice"
+reason = "Payment means code with surrounding spaces"
+edits = [
+  ["prefix", '/*/cac:PaymentMeans[1]/cbc:PaymentMeansCode', " "],
+  ["suffix", '/*/cac:PaymentMeans[1]/cbc:PaymentMeansCode', " "],
+]
+
+[[mutation]]
+id = "codes/payment-means-card"
+base = "invoice"
+reason = "Payment means code 48 (card) on one of the payment means, with a credit transfer account and no card"
+edits = [["set", '/*/cac:PaymentMeans[1]/cbc:PaymentMeansCode', "48"]]
+
+[[mutation]]
+id = "codes/payment-means-direct-debit-no-mandate"
+base = "invoice"
+reason = "Payment means code 59 (SEPA direct debit) without mandate"
+edits = [["set", '/*/cac:PaymentMeans[1]/cbc:PaymentMeansCode', "59"]]
+
+[[mutation]]
+id = "codes/mime-code-unknown"
+base = "invoice"
+reason = "Attachment with MIME code application/x-unknown (BR-CL-24)"
+edits = [["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID>ATT-1</cbc:ID><cac:Attachment><cbc:EmbeddedDocumentBinaryObject mimeCode=\"application/x-unknown\" filename=\"a.bin\">QUJD</cbc:EmbeddedDocumentBinaryObject></cac:Attachment></cac:AdditionalDocumentReference>"]]
+
+[[mutation]]
+id = "codes/attachment-without-mime-and-name"
+base = "invoice"
+reason = "Attachment without MIME code nor file name (UBL-DT-06, UBL-DT-07)"
+edits = [["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID>ATT-1</cbc:ID><cac:Attachment><cbc:EmbeddedDocumentBinaryObject>QUJD</cbc:EmbeddedDocumentBinaryObject></cac:Attachment></cac:AdditionalDocumentReference>"]]
+
+[[mutation]]
+id = "codes/attachment-valid"
+base = "invoice"
+reason = "Attachment with a PDF MIME code and a file name"
+edits = [["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID>ATT-1</cbc:ID><cac:Attachment><cbc:EmbeddedDocumentBinaryObject mimeCode=\"application/pdf\" filename=\"a.pdf\">QUJD</cbc:EmbeddedDocumentBinaryObject></cac:Attachment></cac:AdditionalDocumentReference>"]]
+
+[[mutation]]
+id = "codes/note-subject-valid"
+base = "invoice"
+reason = "Invoice note with the subject code AAI between hashes (BR-CL-08 holds)"
+edits = [
+  ["remove-all", '/*/cbc:Note'],
+  ["insert-after", '/*/cbc:InvoiceTypeCode', "<cbc:Note>#AAI#General information</cbc:Note>"],
+]
+
+[[mutation]]
+id = "codes/note-subject-unknown"
+base = "invoice"
+reason = "Invoice note with the subject code QQQ between hashes (BR-CL-08)"
+edits = [
+  ["remove-all", '/*/cbc:Note'],
+  ["insert-after", '/*/cbc:InvoiceTypeCode', "<cbc:Note>#QQQ#Something</cbc:Note>"],
+]
+
+[[mutation]]
+id = "codes/note-subject-lowercase"
+base = "invoice"
+reason = "Invoice note with the subject code aai in lower case (BR-CL-08)"
+edits = [
+  ["remove-all", '/*/cbc:Note'],
+  ["insert-after", '/*/cbc:InvoiceTypeCode', "<cbc:Note>#aai#General information</cbc:Note>"],
+]
+
+[[mutation]]
+id = "codes/note-subject-two-letters"
+base = "invoice"
+reason = "Invoice note starting with a two-letter code between hashes: not a subject code (BR-CL-08 holds)"
+edits = [
+  ["remove-all", '/*/cbc:Note'],
+  ["insert-after", '/*/cbc:InvoiceTypeCode', "<cbc:Note>#AA#Text</cbc:Note>"],
+]
+
+[[mutation]]
+id = "codes/note-subject-one-hash"
+base = "invoice"
+reason = "Invoice note with a single hash"
+edits = [
+  ["remove-all", '/*/cbc:Note'],
+  ["insert-after", '/*/cbc:InvoiceTypeCode', "<cbc:Note>Price #123 applies</cbc:Note>"],
+]
+
+[[mutation]]
+id = "codes/note-subject-in-two-notes"
+base = "invoice"
+reason = "Two invoice notes, one with a valid and one with an unknown subject code (BR-CL-08 per note)"
+edits = [
+  ["remove-all", '/*/cbc:Note'],
+  ["insert-after", '/*/cbc:InvoiceTypeCode', "<cbc:Note>#AAI#First</cbc:Note><cbc:Note>#XYZ#Second</cbc:Note>"],
+]
+
+[[mutation]]
+id = "codes/customization-id-unknown"
+base = "invoice"
+reason = "Specification identifier of another specification"
+edits = [["set", '/*/cbc:CustomizationID', "urn:example:other-specification"]]
+
+[[mutation]]
+id = "codes/customization-id-padded"
+base = "invoice"
+reason = "Specification identifier with surrounding whitespace"
+edits = [
+  ["prefix", '/*/cbc:CustomizationID', " "],
+  ["suffix", '/*/cbc:CustomizationID', "\n"],
+]
+
+[[mutation]]
+id = "codes/profile-id-unknown"
+base = "invoice"
+reason = "Business process identifier of an unknown process"
+edits = [["set", '/*/cbc:ProfileID', "urn:example:unknown-process"]]
+
+[[mutation]]
+id = "codes/ubl-version-other"
+base = "invoice"
+reason = "UBL version 2.2 (UBL-CR-002)"
+edits = [
+  ["remove-all", '/*/cbc:UBLVersionID'],
+  ["insert-before", '/*/cbc:CustomizationID', "<cbc:UBLVersionID>2.2</cbc:UBLVersionID>"],
+]
+
+[[mutation]]
+id = "codes/document-type-code-50-in-invoice"
+base = "invoice"
+reason = "Additional document of type 50 (allowed in credit notes only) in an invoice (UBL-SR-43)"
+edits = [["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID>DOC-50</cbc:ID><cbc:DocumentTypeCode>50</cbc:DocumentTypeCode></cac:AdditionalDocumentReference>"]]
+
+[[mutation]]
+id = "codes/document-type-code-50-in-credit-note"
+base = "credit-note"
+reason = "Additional document of type 50 in a credit note (UBL-SR-43 holds)"
+edits = [["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID>DOC-50</cbc:ID><cbc:DocumentTypeCode>50</cbc:DocumentTypeCode></cac:AdditionalDocumentReference>"]]
+
+[[mutation]]
+id = "codes/document-scheme-without-type"
+base = "invoice"
+reason = "Additional document identifier with a scheme but no type code (UBL-SR-43)"
+edits = [["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID schemeID=\"ABT\">DOC-1</cbc:ID></cac:AdditionalDocumentReference>"]]
+
+# ---------------------------------------------------------------------------------------
+# Identifiers: electronic addresses, check digits, VAT and bank account identifiers
+
+[[mutation]]
+id = "ids/endpoint-gln-valid"
+base = "invoice"
+reason = "Seller electronic address a GLN (scheme 0088) with a valid check digit"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0088"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "5790000435968"],
+]
+
+[[mutation]]
+id = "ids/endpoint-gln-bad-check-digit"
+base = "invoice"
+reason = "Seller electronic address a GLN with a wrong check digit (GLN check in the Peppol rules)"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0088"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "5790000435969"],
+]
+
+[[mutation]]
+id = "ids/endpoint-gln-letters"
+base = "invoice"
+reason = "Seller electronic address a GLN with letters"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0088"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "57900004359A8"],
+]
+
+[[mutation]]
+id = "ids/party-gln-padded"
+base = "invoice"
+reason = "Buyer identifier a valid GLN surrounded by spaces (normalize-space before the check)"
+edits = [
+  ["set", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyIdentification[1]/cbc:ID/@schemeID', "0088"],
+  ["set", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyIdentification[1]/cbc:ID', " 5790000435968 "],
+]
+
+[[mutation]]
+id = "ids/endpoint-norway-valid"
+base = "invoice"
+reason = "Seller electronic address a Norwegian organisation number (0192) with a valid mod 11 check"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0192"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "987654325"],
+]
+
+[[mutation]]
+id = "ids/endpoint-norway-invalid"
+base = "invoice"
+reason = "Seller electronic address a Norwegian organisation number with a wrong mod 11 check"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0192"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "987654321"],
+]
+
+[[mutation]]
+id = "ids/endpoint-belgium-valid"
+base = "invoice"
+reason = "Seller electronic address a Belgian enterprise number (0208) with valid mod 97 check digits"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0208"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "0403003623"],
+]
+
+[[mutation]]
+id = "ids/endpoint-belgium-invalid"
+base = "invoice"
+reason = "Seller electronic address a Belgian enterprise number with wrong mod 97 check digits"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0208"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "0403003624"],
+]
+
+[[mutation]]
+id = "ids/endpoint-belgium-letters"
+base = "invoice"
+reason = "Seller electronic address a Belgian enterprise number made of letters (the format test must stop the integer cast)"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0208"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "ABCDEFGHIJ"],
+]
+
+[[mutation]]
+id = "ids/endpoint-sweden-valid"
+base = "invoice"
+reason = "Seller electronic address a Swedish organisation number (0007) with a valid Luhn check"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0007"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "5566778899"],
+]
+
+[[mutation]]
+id = "ids/endpoint-sweden-invalid"
+base = "invoice"
+reason = "Seller electronic address a Swedish organisation number with a wrong Luhn check"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0007"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "5566778890"],
+]
+
+[[mutation]]
+id = "ids/endpoint-australia-valid"
+base = "invoice"
+reason = "Seller electronic address an Australian ABN (0151) with a valid mod 89 check"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0151"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "51824753556"],
+]
+
+[[mutation]]
+id = "ids/endpoint-australia-invalid"
+base = "invoice"
+reason = "Seller electronic address an Australian ABN with a wrong mod 89 check"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0151"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "51824753557"],
+]
+
+[[mutation]]
+id = "ids/endpoint-denmark-cvr"
+base = "invoice"
+reason = "Seller electronic address a Danish CVR (0184) with the DK prefix"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0184"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "DK12345678"],
+]
+
+[[mutation]]
+id = "ids/endpoint-denmark-bad"
+base = "invoice"
+reason = "Seller electronic address a Danish CVR of nine digits"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0184"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "123456789"],
+]
+
+[[mutation]]
+id = "ids/endpoint-italy-vat-valid"
+base = "invoice"
+reason = "Seller electronic address an Italian VAT number (0211) with a valid check digit (recursive function)"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0211"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "IT01234567897"],
+]
+
+[[mutation]]
+id = "ids/endpoint-italy-vat-invalid"
+base = "invoice"
+reason = "Seller electronic address an Italian VAT number with a wrong check digit"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0211"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "IT01234567890"],
+]
+
+[[mutation]]
+id = "ids/endpoint-italy-fiscal-code"
+base = "invoice"
+reason = "Seller electronic address an Italian fiscal code (0210) of 16 characters"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0210"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "RSSMRA85T10A562S"],
+]
+
+[[mutation]]
+id = "ids/endpoint-italy-fiscal-code-bad"
+base = "invoice"
+reason = "Seller electronic address an Italian fiscal code with digits where letters belong"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID', "0210"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', "RSSMRA8XT10A5621"],
+]
+
+[[mutation]]
+id = "ids/endpoint-italy-ipa"
+base = "invoice"
+reason = "Buyer electronic address an Italian IPA code (0201) of seven characters"
+edits = [
+  ["set", '/*/cac:AccountingCustomerParty/cac:Party/cbc:EndpointID/@schemeID', "0201"],
+  ["set", '/*/cac:AccountingCustomerParty/cac:Party/cbc:EndpointID', "UFXYZ12"],
+]
+
+[[mutation]]
+id = "ids/endpoint-empty"
+base = "invoice"
+reason = "Seller electronic address empty"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID', ""]]
+
+[[mutation]]
+id = "ids/endpoint-scheme-missing"
+base = "invoice"
+reason = "Seller electronic address without scheme (BR-62)"
+edits = [["remove", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID']]
+
+[[mutation]]
+id = "ids/buyer-endpoint-scheme-missing"
+base = "invoice"
+reason = "Buyer electronic address without scheme (BR-63)"
+edits = [["remove", '/*/cac:AccountingCustomerParty/cac:Party/cbc:EndpointID/@schemeID']]
+
+[[mutation]]
+id = "ids/seller-vat-id-without-prefix"
+base = "invoice"
+reason = "Seller VAT identifier without a country prefix (BR-CO-09)"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/cbc:ID="VAT"]/cbc:CompanyID', "123456789"]]
+
+[[mutation]]
+id = "ids/seller-vat-id-lowercase-prefix"
+base = "invoice"
+reason = "Seller VAT identifier with a lower-case country prefix (BR-CO-09)"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/cbc:ID="VAT"]/cbc:CompanyID', "se123456789001"]]
+
+[[mutation]]
+id = "ids/seller-vat-id-greece"
+base = "invoice"
+reason = "Seller VAT identifier with the Greek prefix EL, which is not an ISO country code (BR-CO-09 allows it)"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/cbc:ID="VAT"]/cbc:CompanyID', "EL123456789"]]
+
+[[mutation]]
+id = "ids/seller-vat-id-padded"
+base = "invoice"
+reason = "Seller VAT identifier with a leading space (BR-CO-09 reads the first two characters)"
+edits = [["prefix", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/cbc:ID="VAT"]/cbc:CompanyID', " "]]
+
+[[mutation]]
+id = "ids/buyer-vat-id-without-prefix"
+base = "invoice"
+reason = "Buyer VAT identifier without a country prefix (BR-CO-09)"
+edits = [["set", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID', "4598375937"]]
+
+[[mutation]]
+id = "ids/seller-legal-id-removed"
+base = "invoice"
+reason = "Seller legal registration identifier and trading names removed"
+edits = [["remove", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID']]
+
+[[mutation]]
+id = "ids/payment-id-differs"
+base = "invoice"
+reason = "Two credit transfers with different remittance information (UBL-SR-44)"
+edits = [
+  ["duplicate", '/*/cac:PaymentMeans[1]'],
+  ["set", '/*/cac:PaymentMeans[2]/cbc:PaymentID', "OTHER-REFERENCE"],
+]
+
+[[mutation]]
+id = "ids/payment-means-codes-differ"
+base = "invoice"
+reason = "Two payment means with different codes (UBL-SR-47)"
+edits = [
+  ["duplicate", '/*/cac:PaymentMeans[1]'],
+  ["set", '/*/cac:PaymentMeans[2]/cbc:PaymentMeansCode', "31"],
+]
+
+[[mutation]]
+id = "ids/credit-transfer-no-account"
+base = "invoice"
+reason = "Credit transfers without payment account (BR-61)"
+edits = [["remove", '/*/cac:PaymentMeans/cac:PayeeFinancialAccount']]
+
+[[mutation]]
+id = "ids/account-id-empty"
+base = "invoice"
+reason = "Payment account identifier empty"
+edits = [["set", '/*/cac:PaymentMeans[1]/cac:PayeeFinancialAccount/cbc:ID', ""]]
+
+[[mutation]]
+id = "ids/germany-iban-valid"
+base = "invoice"
+reason = "Seller and buyer in Germany, SEPA credit transfer (58) to a valid IBAN (mod 97 over a 30-digit integer)"
+edits = [
+  ["set", '//cac:Country/cbc:IdentificationCode', "DE"],
+  ["set", '/*/cac:PaymentMeans/cbc:PaymentMeansCode', "58"],
+  ["set", '/*/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID', "DE89370400440532013000"],
+]
+
+[[mutation]]
+id = "ids/germany-iban-invalid"
+base = "invoice"
+reason = "Seller and buyer in Germany, SEPA credit transfer to an IBAN with wrong check digits"
+edits = [
+  ["set", '//cac:Country/cbc:IdentificationCode', "DE"],
+  ["set", '/*/cac:PaymentMeans/cbc:PaymentMeansCode', "58"],
+  ["set", '/*/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID', "DE89370400440532013001"],
+]
+
+[[mutation]]
+id = "ids/germany-iban-spaces"
+base = "invoice"
+reason = "Seller and buyer in Germany, valid IBAN written in groups of four with spaces (removed before the check)"
+edits = [
+  ["set", '//cac:Country/cbc:IdentificationCode', "DE"],
+  ["set", '/*/cac:PaymentMeans/cbc:PaymentMeansCode', "58"],
+  ["set", '/*/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID', "DE89 3704 0044 0532 0130 00"],
+]
+
+[[mutation]]
+id = "ids/germany-iban-lowercase-country"
+base = "invoice"
+reason = "Seller and buyer in Germany, valid IBAN with a lower-case country code"
+edits = [
+  ["set", '//cac:Country/cbc:IdentificationCode', "DE"],
+  ["set", '/*/cac:PaymentMeans/cbc:PaymentMeansCode', "58"],
+  ["set", '/*/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID', "de89370400440532013000"],
+]
+
+[[mutation]]
+id = "ids/germany-iban-long"
+base = "invoice"
+reason = "Seller and buyer in Germany, valid 31-character IBAN with letters in the account part"
+edits = [
+  ["set", '//cac:Country/cbc:IdentificationCode', "DE"],
+  ["set", '/*/cac:PaymentMeans/cbc:PaymentMeansCode', "58"],
+  ["set", '/*/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID', "MT84MALT011000012345MTLCAST001S"],
+]
+
+[[mutation]]
+id = "ids/germany-direct-debit-valid"
+base = "invoice"
+reason = "Seller and buyer in Germany, SEPA direct debit (59) from a valid IBAN (mod 97 on an xs:decimal)"
+edits = [
+  ["set", '//cac:Country/cbc:IdentificationCode', "DE"],
+  ["remove", '/*/cac:PaymentMeans/cac:PayeeFinancialAccount'],
+  ["set", '/*/cac:PaymentMeans/cbc:PaymentMeansCode', "59"],
+  ["append", '/*/cac:PaymentMeans', "<cac:PaymentMandate><cbc:ID>MANDATE-1</cbc:ID><cac:PayerFinancialAccount><cbc:ID>DE89370400440532013000</cbc:ID></cac:PayerFinancialAccount></cac:PaymentMandate>"],
+]
+
+[[mutation]]
+id = "ids/germany-direct-debit-invalid"
+base = "invoice"
+reason = "Seller and buyer in Germany, SEPA direct debit from an IBAN with wrong check digits"
+edits = [
+  ["set", '//cac:Country/cbc:IdentificationCode', "DE"],
+  ["remove", '/*/cac:PaymentMeans/cac:PayeeFinancialAccount'],
+  ["set", '/*/cac:PaymentMeans/cbc:PaymentMeansCode', "59"],
+  ["append", '/*/cac:PaymentMeans', "<cac:PaymentMandate><cbc:ID>MANDATE-1</cbc:ID><cac:PayerFinancialAccount><cbc:ID>DE00370400440532013000</cbc:ID></cac:PayerFinancialAccount></cac:PaymentMandate>"],
+]
+
+# ---------------------------------------------------------------------------------------
+# Missing mandatory information
+
+[[mutation]]
+id = "missing/invoice-number"
+base = "invoice"
+reason = "Invoice number removed (BR-02)"
+edits = [["remove", '/*/cbc:ID']]
+
+[[mutation]]
+id = "missing/issue-date"
+base = "invoice"
+reason = "Issue date removed (BR-03)"
+edits = [["remove", '/*/cbc:IssueDate']]
+
+[[mutation]]
+id = "missing/invoice-type-code"
+base = "invoice"
+reason = "Invoice type code removed (BR-04)"
+edits = [["remove", '/*/cbc:InvoiceTypeCode']]
+
+[[mutation]]
+id = "missing/document-currency"
+base = "invoice"
+reason = "Document currency code removed (BR-05); rules comparing currencies see an empty sequence"
+edits = [["remove", '/*/cbc:DocumentCurrencyCode']]
+
+[[mutation]]
+id = "missing/customization-id"
+base = "invoice"
+reason = "Specification identifier removed (BR-01)"
+edits = [["remove", '/*/cbc:CustomizationID']]
+
+[[mutation]]
+id = "missing/profile-id"
+base = "invoice"
+reason = "Business process identifier removed"
+edits = [["remove", '/*/cbc:ProfileID']]
+
+[[mutation]]
+id = "missing/buyer-reference-and-order"
+base = "invoice"
+reason = "Buyer reference and order reference both removed"
+edits = [
+  ["remove", '/*/cbc:BuyerReference'],
+  ["remove-all", '/*/cac:OrderReference'],
+]
+
+[[mutation]]
+id = "missing/seller-name"
+base = "invoice"
+reason = "Seller legal name removed (BR-06)"
+edits = [["remove", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName']]
+
+[[mutation]]
+id = "missing/buyer-name"
+base = "invoice"
+reason = "Buyer legal name removed (BR-07)"
+edits = [["remove", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName']]
+
+[[mutation]]
+id = "missing/seller-address"
+base = "invoice"
+reason = "Seller postal address removed (BR-08)"
+edits = [["remove", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress']]
+
+[[mutation]]
+id = "missing/seller-country"
+base = "invoice"
+reason = "Seller country removed from the address (BR-09)"
+edits = [["remove", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country']]
+
+[[mutation]]
+id = "missing/buyer-address"
+base = "invoice"
+reason = "Buyer postal address removed (BR-10)"
+edits = [["remove", '/*/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress']]
+
+[[mutation]]
+id = "missing/buyer-country-code-empty"
+base = "invoice"
+reason = "Buyer country code empty (BR-11)"
+edits = [["set", '/*/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', ""]]
+
+[[mutation]]
+id = "missing/seller-party"
+base = "invoice"
+reason = "The whole seller party removed"
+edits = [["remove", '/*/cac:AccountingSupplierParty']]
+
+[[mutation]]
+id = "missing/buyer-party"
+base = "invoice"
+reason = "The whole buyer party removed"
+edits = [["remove", '/*/cac:AccountingCustomerParty']]
+
+[[mutation]]
+id = "missing/seller-endpoint"
+base = "invoice"
+reason = "Seller electronic address removed"
+edits = [["remove", '/*/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID']]
+
+[[mutation]]
+id = "missing/buyer-endpoint"
+base = "invoice"
+reason = "Buyer electronic address removed"
+edits = [["remove", '/*/cac:AccountingCustomerParty/cac:Party/cbc:EndpointID']]
+
+[[mutation]]
+id = "missing/line-extension-total"
+base = "invoice"
+reason = "Sum of line net amounts removed (BR-12, BR-CO-10, BR-CO-13)"
+edits = [["remove", '/*/cac:LegalMonetaryTotal/cbc:LineExtensionAmount']]
+
+[[mutation]]
+id = "missing/tax-exclusive-total"
+base = "invoice"
+reason = "Total without VAT removed (BR-13, BR-CO-13, BR-CO-15)"
+edits = [["remove", '/*/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount']]
+
+[[mutation]]
+id = "missing/tax-inclusive-total"
+base = "invoice"
+reason = "Total with VAT removed (BR-14, BR-CO-15, BR-CO-16)"
+edits = [["remove", '/*/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount']]
+
+[[mutation]]
+id = "missing/payable-amount"
+base = "invoice"
+reason = "Amount due removed (BR-15, BR-CO-16)"
+edits = [["remove", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount']]
+
+[[mutation]]
+id = "missing/monetary-total"
+base = "invoice"
+reason = "The whole document totals group removed"
+edits = [["remove", '/*/cac:LegalMonetaryTotal']]
+
+[[mutation]]
+id = "missing/all-lines"
+base = "invoice"
+reason = "Every invoice line removed (BR-16); sums over no lines"
+edits = [["remove", '/*/cac:InvoiceLine']]
+
+[[mutation]]
+id = "missing/line-id"
+base = "invoice"
+reason = "Line identifier removed (BR-21)"
+edits = [["remove", '/*/cac:InvoiceLine[1]/cbc:ID']]
+
+[[mutation]]
+id = "missing/line-quantity"
+base = "invoice"
+reason = "Invoiced quantity removed (BR-22)"
+edits = [["remove", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity']]
+
+[[mutation]]
+id = "missing/line-amount"
+base = "invoice"
+reason = "Line net amount removed (BR-24, BR-CO-10)"
+edits = [["remove", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount']]
+
+[[mutation]]
+id = "missing/item-name"
+base = "invoice"
+reason = "Item name removed (BR-25)"
+edits = [["remove", '/*/cac:InvoiceLine[1]/cac:Item/cbc:Name']]
+
+[[mutation]]
+id = "missing/item-name-whitespace"
+base = "invoice"
+reason = "Item name made of whitespace only (BR-25 normalises it)"
+edits = [["set", '/*/cac:InvoiceLine[1]/cac:Item/cbc:Name', " \t\n "]]
+
+[[mutation]]
+id = "missing/line-price"
+base = "invoice"
+reason = "Line price group removed (BR-26)"
+edits = [["remove", '/*/cac:InvoiceLine[1]/cac:Price']]
+
+[[mutation]]
+id = "missing/line-vat-category"
+base = "invoice"
+reason = "Line VAT category removed (BR-CO-04, VAT breakdown)"
+edits = [["remove", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory']]
+
+[[mutation]]
+id = "missing/line-item"
+base = "invoice"
+reason = "Line item group removed (BR-25, BR-CO-04)"
+edits = [["remove", '/*/cac:InvoiceLine[1]/cac:Item']]
+
+[[mutation]]
+id = "missing/payment-means-code"
+base = "invoice"
+reason = "Payment means type code removed (BR-49)"
+edits = [["remove", '/*/cac:PaymentMeans[1]/cbc:PaymentMeansCode']]
+
+[[mutation]]
+id = "missing/breakdown-category"
+base = "invoice"
+reason = "VAT category code removed from a breakdown (BR-47, BR-S-01)"
+edits = [["remove", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:ID']]
+
+[[mutation]]
+id = "missing/breakdown-taxable-amount"
+base = "invoice"
+reason = "VAT category taxable amount removed (BR-45)"
+edits = [["remove", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxableAmount']]
+
+[[mutation]]
+id = "missing/breakdown-tax-amount"
+base = "invoice"
+reason = "VAT category tax amount removed (BR-46)"
+edits = [["remove", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxAmount']]
+
+[[mutation]]
+id = "missing/party-tax-scheme-id"
+base = "invoice"
+reason = "Seller party tax scheme without its scheme identifier (UBL-SR-53 family)"
+edits = [["remove", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cac:TaxScheme']]
+
+[[mutation]]
+id = "missing/credit-note-type-code"
+base = "credit-note"
+reason = "Credit note type code removed (BR-04 in a credit note)"
+edits = [["remove", '/*/cbc:CreditNoteTypeCode']]
+
+[[mutation]]
+id = "missing/credited-quantity"
+base = "credit-note"
+reason = "Credited quantity removed (BR-22 in a credit note)"
+edits = [["remove", '/*/cac:CreditNoteLine[1]/cbc:CreditedQuantity']]
+
+[[mutation]]
+id = "missing/credit-note-lines"
+base = "credit-note"
+reason = "Every credit note line removed (BR-16 in a credit note)"
+edits = [["remove", '/*/cac:CreditNoteLine']]
+
+# ---------------------------------------------------------------------------------------
+# Repeated elements: the UBL-SR cardinality rules, and single-valued fields given twice
+# (a sequence of two where a rule expects one value)
+
+[[mutation]]
+id = "duplicates/invoice-number"
+base = "invoice"
+reason = "Invoice number given twice: rules reading it get two values"
+edits = [["duplicate", '/*/cbc:ID']]
+
+[[mutation]]
+id = "duplicates/issue-date"
+base = "invoice"
+reason = "Issue date given twice"
+edits = [["duplicate", '/*/cbc:IssueDate']]
+
+[[mutation]]
+id = "duplicates/invoice-type-code"
+base = "invoice"
+reason = "Invoice type code given twice"
+edits = [["duplicate", '/*/cbc:InvoiceTypeCode']]
+
+[[mutation]]
+id = "duplicates/document-currency"
+base = "invoice"
+reason = "Document currency code given twice"
+edits = [["duplicate", '/*/cbc:DocumentCurrencyCode']]
+
+[[mutation]]
+id = "duplicates/payable-amount"
+base = "invoice"
+reason = "Amount due given twice: xs:decimal() of two values"
+edits = [["duplicate", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount']]
+
+[[mutation]]
+id = "duplicates/line-extension-total"
+base = "invoice"
+reason = "Sum of line net amounts given twice"
+edits = [["duplicate", '/*/cac:LegalMonetaryTotal/cbc:LineExtensionAmount']]
+
+[[mutation]]
+id = "duplicates/monetary-total"
+base = "invoice"
+reason = "Document totals group given twice"
+edits = [["duplicate", '/*/cac:LegalMonetaryTotal']]
+
+[[mutation]]
+id = "duplicates/line-amount"
+base = "invoice"
+reason = "A line net amount given twice"
+edits = [["duplicate", '/*/cac:InvoiceLine[1]/cbc:LineExtensionAmount']]
+
+[[mutation]]
+id = "duplicates/line-quantity"
+base = "invoice"
+reason = "An invoiced quantity given twice"
+edits = [["duplicate", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity']]
+
+[[mutation]]
+id = "duplicates/line-vat-category-code"
+base = "invoice"
+reason = "A line VAT category code given twice"
+edits = [["duplicate", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID']]
+
+[[mutation]]
+id = "duplicates/line-ids-equal"
+base = "invoice"
+reason = "Two lines with the same line identifier"
+edits = [["set", '/*/cac:InvoiceLine[2]/cbc:ID', "1"]]
+
+[[mutation]]
+id = "duplicates/line-repeated"
+base = "invoice"
+reason = "The first line repeated, document sums not updated"
+edits = [["duplicate", '/*/cac:InvoiceLine[1]']]
+
+[[mutation]]
+id = "duplicates/seller-country"
+base = "invoice"
+reason = "Seller country code given twice"
+edits = [["duplicate", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode']]
+
+[[mutation]]
+id = "duplicates/contract-reference"
+base = "invoice"
+reason = "Two contract references (UBL-SR-01)"
+edits = [
+  ["remove-all", '/*/cac:ContractDocumentReference'],
+  ["insert-after", '/*/cbc:BuyerReference', "<cac:ContractDocumentReference><cbc:ID>C-1</cbc:ID></cac:ContractDocumentReference><cac:ContractDocumentReference><cbc:ID>C-2</cbc:ID></cac:ContractDocumentReference>"],
+]
+
+[[mutation]]
+id = "duplicates/receipt-reference"
+base = "invoice"
+reason = "Two receiving advice references (UBL-SR-02)"
+edits = [
+  ["remove-all", '/*/cac:ReceiptDocumentReference'],
+  ["insert-after", '/*/cbc:BuyerReference', "<cac:ReceiptDocumentReference><cbc:ID>R-1</cbc:ID></cac:ReceiptDocumentReference><cac:ReceiptDocumentReference><cbc:ID>R-2</cbc:ID></cac:ReceiptDocumentReference>"],
+]
+
+[[mutation]]
+id = "duplicates/despatch-reference"
+base = "invoice"
+reason = "Two despatch advice references (UBL-SR-03)"
+edits = [
+  ["remove-all", '/*/cac:DespatchDocumentReference'],
+  ["insert-after", '/*/cbc:BuyerReference', "<cac:DespatchDocumentReference><cbc:ID>D-1</cbc:ID></cac:DespatchDocumentReference><cac:DespatchDocumentReference><cbc:ID>D-2</cbc:ID></cac:DespatchDocumentReference>"],
+]
+
+[[mutation]]
+id = "duplicates/invoiced-object-reference"
+base = "invoice"
+reason = "Two invoiced object identifiers, document type 130 (UBL-SR-04)"
+edits = [["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID schemeID=\"ABZ\">OBJ-1</cbc:ID><cbc:DocumentTypeCode>130</cbc:DocumentTypeCode></cac:AdditionalDocumentReference><cac:AdditionalDocumentReference><cbc:ID schemeID=\"ABZ\">OBJ-2</cbc:ID><cbc:DocumentTypeCode>130</cbc:DocumentTypeCode></cac:AdditionalDocumentReference>"]]
+
+[[mutation]]
+id = "duplicates/payment-terms-note"
+base = "invoice"
+reason = "Two payment terms notes (UBL-SR-05)"
+edits = [["duplicate", '/*/cac:PaymentTerms/cbc:Note']]
+
+[[mutation]]
+id = "duplicates/billing-reference-two-invoices"
+base = "invoice"
+reason = "A preceding invoice reference group with two invoice references (UBL-SR-06)"
+edits = [["insert-after", '/*/cbc:BuyerReference', "<cac:BillingReference><cac:InvoiceDocumentReference><cbc:ID>INV-1</cbc:ID></cac:InvoiceDocumentReference><cac:InvoiceDocumentReference><cbc:ID>INV-2</cbc:ID></cac:InvoiceDocumentReference></cac:BillingReference>"]]
+
+[[mutation]]
+id = "duplicates/invoice-period"
+base = "invoice"
+reason = "Two invoicing periods (UBL-SR-08)"
+edits = [
+  ["remove-all", '/*/cac:InvoicePeriod'],
+  ["insert-after", '/*/cbc:BuyerReference', "<cac:InvoicePeriod><cbc:StartDate>2018-01-01</cbc:StartDate><cbc:EndDate>2018-01-31</cbc:EndDate></cac:InvoicePeriod><cac:InvoicePeriod><cbc:StartDate>2018-02-01</cbc:StartDate><cbc:EndDate>2018-02-28</cbc:EndDate></cac:InvoicePeriod>"],
+]
+
+[[mutation]]
+id = "duplicates/seller-legal-name"
+base = "invoice"
+reason = "Seller legal name given twice (UBL-SR-09): a rule reading it raises XPTY0004 first"
+edits = [["duplicate", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName']]
+
+[[mutation]]
+id = "duplicates/seller-trading-name"
+base = "invoice"
+reason = "Seller trading name given twice (UBL-SR-10)"
+edits = [["duplicate", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyName/cbc:Name']]
+
+[[mutation]]
+id = "duplicates/seller-legal-form"
+base = "invoice"
+reason = "Seller additional legal information given twice (UBL-SR-14)"
+edits = [
+  ["remove-all", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyLegalForm'],
+  ["append", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity', "<cbc:CompanyLegalForm>Share capital 1</cbc:CompanyLegalForm><cbc:CompanyLegalForm>Share capital 2</cbc:CompanyLegalForm>"],
+]
+
+[[mutation]]
+id = "duplicates/buyer-legal-name"
+base = "invoice"
+reason = "Buyer legal name given twice (UBL-SR-15): a rule reading it raises XPTY0004 first"
+edits = [["duplicate", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName']]
+
+[[mutation]]
+id = "duplicates/buyer-trading-name"
+base = "invoice"
+reason = "Buyer trading name given twice (UBL-SR-40)"
+edits = [["duplicate", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyName/cbc:Name']]
+
+[[mutation]]
+id = "duplicates/tax-representative-names-and-ids"
+base = "invoice"
+reason = "Tax representative with two names and two VAT identifiers (UBL-SR-22, UBL-SR-23): a rule reading the name raises XPTY0004 first"
+edits = [
+  ["remove-all", '/*/cac:TaxRepresentativeParty'],
+  ["insert-before", '/*/cac:PaymentMeans[1]', "<cac:TaxRepresentativeParty><cac:PartyName><cbc:Name>Rep A</cbc:Name></cac:PartyName><cac:PartyName><cbc:Name>Rep B</cbc:Name></cac:PartyName><cac:PostalAddress><cac:Country><cbc:IdentificationCode>SE</cbc:IdentificationCode></cac:Country></cac:PostalAddress><cac:PartyTaxScheme><cbc:CompanyID>SE111111111101</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme><cac:PartyTaxScheme><cbc:CompanyID>SE222222222201</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme></cac:TaxRepresentativeParty>"],
+]
+
+[[mutation]]
+id = "duplicates/delivery"
+base = "invoice"
+reason = "Delivery information given twice (UBL-SR-24)"
+edits = [["duplicate", '/*/cac:Delivery']]
+
+[[mutation]]
+id = "duplicates/deliver-to-name"
+base = "invoice"
+reason = "Deliver-to party name given twice (UBL-SR-25)"
+edits = [["duplicate", '/*/cac:Delivery/cac:DeliveryParty/cac:PartyName/cbc:Name']]
+
+[[mutation]]
+id = "duplicates/payment-id"
+base = "invoice"
+reason = "Remittance information given twice in one payment means (UBL-SR-26)"
+edits = [["duplicate", '/*/cac:PaymentMeans[1]/cbc:PaymentID']]
+
+[[mutation]]
+id = "duplicates/payment-means-code"
+base = "invoice"
+reason = "Payment means code given twice in one payment means (UBL-SR-27): a rule reading it raises XPTY0004 first"
+edits = [["duplicate", '/*/cac:PaymentMeans[1]/cbc:PaymentMeansCode']]
+
+[[mutation]]
+id = "duplicates/mandate-id"
+base = "invoice"
+reason = "Direct debit mandate with two identifiers (UBL-SR-28)"
+edits = [
+  ["set", '/*/cac:PaymentMeans/cbc:PaymentMeansCode', "59"],
+  ["remove", '/*/cac:PaymentMeans/cac:PayeeFinancialAccount'],
+  ["append", '/*/cac:PaymentMeans[1]', "<cac:PaymentMandate><cbc:ID>M-1</cbc:ID><cbc:ID>M-2</cbc:ID><cac:PayerFinancialAccount><cbc:ID>DE89370400440532013000</cbc:ID></cac:PayerFinancialAccount></cac:PaymentMandate>"],
+]
+
+[[mutation]]
+id = "duplicates/allowance-reason"
+base = "allowances"
+reason = "Document allowance reason given twice (UBL-SR-30)"
+edits = [["duplicate", '/*/cac:AllowanceCharge[cbc:ChargeIndicator!="true"]/cbc:AllowanceChargeReason']]
+
+[[mutation]]
+id = "duplicates/charge-reason"
+base = "allowances"
+reason = "Document charge reason given twice (UBL-SR-31)"
+edits = [["duplicate", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:AllowanceChargeReason']]
+
+[[mutation]]
+id = "duplicates/exemption-reason"
+base = "allowances"
+reason = "Exemption reason given twice in one VAT breakdown (UBL-SR-32)"
+edits = [["duplicate", '/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID="E"]/cbc:TaxExemptionReason']]
+
+[[mutation]]
+id = "duplicates/document-description"
+base = "invoice"
+reason = "Supporting document with two descriptions (UBL-SR-33)"
+edits = [["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID>DOC-1</cbc:ID><cbc:DocumentDescription>First</cbc:DocumentDescription><cbc:DocumentDescription>Second</cbc:DocumentDescription></cac:AdditionalDocumentReference>"]]
+
+[[mutation]]
+id = "duplicates/line-note"
+base = "invoice"
+reason = "A line with two notes (UBL-SR-34)"
+edits = [
+  ["remove-all", '/*/cac:InvoiceLine[1]/cbc:Note'],
+  ["insert-after", '/*/cac:InvoiceLine[1]/cbc:ID', "<cbc:Note>First</cbc:Note><cbc:Note>Second</cbc:Note>"],
+]
+
+[[mutation]]
+id = "duplicates/order-line-id"
+base = "invoice"
+reason = "A line with two referenced purchase order line identifiers (UBL-SR-35)"
+edits = [
+  ["remove-all", '/*/cac:InvoiceLine[1]/cac:OrderLineReference'],
+  ["insert-before", '/*/cac:InvoiceLine[1]/cac:Item', "<cac:OrderLineReference><cbc:LineID>1</cbc:LineID><cbc:LineID>2</cbc:LineID></cac:OrderLineReference>"],
+]
+
+[[mutation]]
+id = "duplicates/line-period"
+base = "invoice"
+reason = "A line with two invoicing periods (UBL-SR-36)"
+edits = [
+  ["remove-all", '/*/cac:InvoiceLine[1]/cac:InvoicePeriod'],
+  ["insert-before", '/*/cac:InvoiceLine[1]/cac:Item', "<cac:InvoicePeriod><cbc:StartDate>2018-01-01</cbc:StartDate></cac:InvoicePeriod><cac:InvoicePeriod><cbc:EndDate>2018-01-31</cbc:EndDate></cac:InvoicePeriod>"],
+]
+
+[[mutation]]
+id = "duplicates/project-reference"
+base = "invoice"
+reason = "Two project references (UBL-SR-39)"
+edits = [
+  ["remove-all", '/*/cac:ProjectReference'],
+  ["insert-after", '/*/cbc:BuyerReference', "<cac:ProjectReference><cbc:ID>P-1</cbc:ID></cac:ProjectReference><cac:ProjectReference><cbc:ID>P-2</cbc:ID></cac:ProjectReference>"],
+]
+
+[[mutation]]
+id = "duplicates/payment-due-date"
+base = "invoice"
+reason = "Two payment means each with a due date (UBL-SR-45)"
+edits = [
+  ["duplicate", '/*/cac:PaymentMeans[1]'],
+  ["insert-after", '/*/cac:PaymentMeans/cbc:PaymentMeansCode', "<cbc:PaymentDueDate>2018-03-07</cbc:PaymentDueDate>"],
+]
+
+[[mutation]]
+id = "duplicates/payment-means-name"
+base = "invoice"
+reason = "Two payment means codes with a name attribute (UBL-SR-46)"
+edits = [
+  ["duplicate", '/*/cac:PaymentMeans[1]'],
+  ["set", '/*/cac:PaymentMeans/cbc:PaymentMeansCode/@name', "Credit transfer"],
+]
+
+[[mutation]]
+id = "duplicates/item-description"
+base = "invoice"
+reason = "An item with two descriptions (UBL-SR-50)"
+edits = [["duplicate", '/*/cac:InvoiceLine[1]/cac:Item/cbc:Description']]
+
+[[mutation]]
+id = "duplicates/address-line"
+base = "invoice"
+reason = "A seller address with two address lines (UBL-SR-51)"
+edits = [
+  ["remove-all", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:AddressLine'],
+  ["insert-before", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country', "<cac:AddressLine><cbc:Line>Third line</cbc:Line></cac:AddressLine><cac:AddressLine><cbc:Line>Fourth line</cbc:Line></cac:AddressLine>"],
+]
+
+[[mutation]]
+id = "duplicates/line-document-reference"
+base = "invoice"
+reason = "A line with two invoiced object references (UBL-SR-52)"
+edits = [
+  ["remove-all", '/*/cac:InvoiceLine[1]/cac:DocumentReference'],
+  ["insert-before", '/*/cac:InvoiceLine[1]/cac:Item', "<cac:DocumentReference><cbc:ID schemeID=\"ABZ\">L-1</cbc:ID><cbc:DocumentTypeCode>130</cbc:DocumentTypeCode></cac:DocumentReference><cac:DocumentReference><cbc:ID schemeID=\"ABZ\">L-2</cbc:ID><cbc:DocumentTypeCode>130</cbc:DocumentTypeCode></cac:DocumentReference>"],
+]
+
+[[mutation]]
+id = "duplicates/card-account"
+base = "invoice"
+reason = "Two payment means with a payment card each (UBL-SR-54)"
+edits = [
+  ["remove-all", '/*/cac:PaymentMeans[4]'],
+  ["remove-all", '/*/cac:PaymentMeans[3]'],
+  ["remove-all", '/*/cac:PaymentMeans[2]'],
+  ["duplicate", '/*/cac:PaymentMeans[1]'],
+  ["set", '/*/cac:PaymentMeans/cbc:PaymentMeansCode', "48"],
+  ["remove", '/*/cac:PaymentMeans/cac:PayeeFinancialAccount'],
+  ["append", '/*/cac:PaymentMeans', "<cac:CardAccount><cbc:PrimaryAccountNumberID>1234</cbc:PrimaryAccountNumberID><cbc:NetworkID>VISA</cbc:NetworkID></cac:CardAccount>"],
+]
+
+[[mutation]]
+id = "duplicates/payment-mandate"
+base = "invoice"
+reason = "Two payment means with a direct debit mandate each (UBL-SR-55)"
+edits = [
+  ["duplicate", '/*/cac:PaymentMeans[1]'],
+  ["set", '/*/cac:PaymentMeans/cbc:PaymentMeansCode', "59"],
+  ["remove", '/*/cac:PaymentMeans/cac:PayeeFinancialAccount'],
+  ["append", '/*/cac:PaymentMeans', "<cac:PaymentMandate><cbc:ID>M-1</cbc:ID><cac:PayerFinancialAccount><cbc:ID>DE89370400440532013000</cbc:ID></cac:PayerFinancialAccount></cac:PaymentMandate>"],
+]
+
+[[mutation]]
+id = "duplicates/tender-reference"
+base = "invoice"
+reason = "Two tender or lot references (UBL-SR-56)"
+edits = [
+  ["remove-all", '/*/cac:OriginatorDocumentReference'],
+  ["insert-after", '/*/cbc:BuyerReference', "<cac:OriginatorDocumentReference><cbc:ID>T-1</cbc:ID></cac:OriginatorDocumentReference><cac:OriginatorDocumentReference><cbc:ID>T-2</cbc:ID></cac:OriginatorDocumentReference>"],
+]
+
+[[mutation]]
+id = "duplicates/payment-service-provider"
+base = "invoice"
+reason = "A payment account with two service provider identifiers (UBL-SR-58)"
+edits = [["duplicate", '/*/cac:PaymentMeans[1]/cac:PayeeFinancialAccount/cac:FinancialInstitutionBranch/cbc:ID']]
+
+[[mutation]]
+id = "duplicates/legal-entity"
+base = "invoice"
+reason = "Seller with two legal entity groups (UBL-SR-57): a rule reading its name raises XPTY0004 first"
+edits = [["duplicate", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity']]
+
+# ---------------------------------------------------------------------------------------
+# Credit notes
+
+[[mutation]]
+id = "credit-notes/type-code-unknown"
+base = "credit-note"
+reason = "Credit note type code 999 (BR-CL-01)"
+edits = [["set", '/*/cbc:CreditNoteTypeCode', "999"]]
+
+[[mutation]]
+id = "credit-notes/type-code-invoice"
+base = "credit-note"
+reason = "Credit note type code 380 (an invoice code) in a credit note"
+edits = [["set", '/*/cbc:CreditNoteTypeCode', "380"]]
+
+[[mutation]]
+id = "credit-notes/type-code-padded"
+base = "credit-note"
+reason = "Credit note type code with surrounding whitespace"
+edits = [
+  ["prefix", '/*/cbc:CreditNoteTypeCode', "\t"],
+  ["suffix", '/*/cbc:CreditNoteTypeCode', " "],
+]
+
+[[mutation]]
+id = "credit-notes/invoice-type-code-element"
+base = "credit-note"
+reason = "Credit note carrying cbc:InvoiceTypeCode instead of cbc:CreditNoteTypeCode"
+edits = [["rename", '/*/cbc:CreditNoteTypeCode', "cbc:InvoiceTypeCode"]]
+
+[[mutation]]
+id = "credit-notes/invoice-line-element"
+base = "credit-note"
+reason = "Credit note whose first line is a cac:InvoiceLine with an invoiced quantity"
+edits = [
+  ["rename", '/*/cac:CreditNoteLine[1]/cbc:CreditedQuantity', "cbc:InvoicedQuantity"],
+  ["rename", '/*/cac:CreditNoteLine[1]', "cac:InvoiceLine"],
+]
+
+[[mutation]]
+id = "credit-notes/credit-note-line-in-invoice"
+base = "invoice"
+reason = "Invoice whose first line is a cac:CreditNoteLine with a credited quantity"
+edits = [
+  ["rename", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity', "cbc:CreditedQuantity"],
+  ["rename", '/*/cac:InvoiceLine[1]', "cac:CreditNoteLine"],
+]
+
+[[mutation]]
+id = "credit-notes/all-negated"
+base = "credit-note"
+reason = "Every amount and credited quantity of a credit note negated consistently"
+edits = [
+  ["multiply", '//cbc:LineExtensionAmount', "-1"],
+  ["multiply", '//cbc:TaxExclusiveAmount', "-1"],
+  ["multiply", '//cbc:TaxInclusiveAmount', "-1"],
+  ["multiply", '//cbc:PayableAmount', "-1"],
+  ["multiply", '//cbc:TaxableAmount', "-1"],
+  ["multiply", '//cbc:TaxAmount', "-1"],
+  ["multiply", '//cbc:CreditedQuantity', "-1"],
+]
+
+[[mutation]]
+id = "credit-notes/preceding-invoice-removed"
+base = "credit-note"
+reason = "Credit note without reference to the preceding invoice"
+edits = [["remove", '/*/cac:BillingReference']]
+
+[[mutation]]
+id = "credit-notes/preceding-invoice-without-id"
+base = "credit-note"
+reason = "Preceding invoice reference with an issue date and no identifier (BR-55, UBL-SR-07)"
+edits = [["remove", '/*/cac:BillingReference[1]/cac:InvoiceDocumentReference/cbc:ID']]
+
+[[mutation]]
+id = "credit-notes/due-date"
+base = "credit-note"
+reason = "Credit note with a payment due date in its payment means"
+edits = [["insert-after", '/*/cac:PaymentMeans[1]/cbc:PaymentMeansCode', "<cbc:PaymentDueDate>2018-03-07</cbc:PaymentDueDate>"]]
+
+[[mutation]]
+id = "credit-notes/vat-category-exempt"
+base = "credit-note"
+reason = "Credit note line exempt (E) at 25 percent (BR-E-05 over credit note lines)"
+edits = [["set", '/*/cac:CreditNoteLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "E"]]
+
+[[mutation]]
+id = "credit-notes/line-period-end-before-start"
+base = "credit-note"
+reason = "Credit note line period ending before it starts (BR-30 over credit note lines)"
+edits = [
+  ["remove-all", '/*/cac:CreditNoteLine[1]/cac:InvoicePeriod'],
+  ["insert-after", '/*/cac:CreditNoteLine[1]/cbc:LineExtensionAmount', "<cac:InvoicePeriod><cbc:StartDate>2018-02-07</cbc:StartDate><cbc:EndDate>2018-02-01</cbc:EndDate></cac:InvoicePeriod>"],
+]
+
+[[mutation]]
+id = "credit-notes/line-allowance-without-reason"
+base = "credit-note"
+reason = "Credit note line allowance without reason (BR-42 over credit note lines)"
+edits = [["insert-before", '/*/cac:CreditNoteLine[1]/cac:Item', "<cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:Amount currencyID=\"EUR\">0</cbc:Amount></cac:AllowanceCharge>"]]
+
+[[mutation]]
+id = "credit-notes/rounding-negative-half"
+base = "credit-note"
+reason = "Credit note with negated lines and total, a line half a cent lower: round() of a negative half goes towards zero (BR-CO-10 holds)"
+edits = [
+  ["multiply", '/*/cac:CreditNoteLine/cbc:LineExtensionAmount', "-1"],
+  ["multiply", '/*/cac:LegalMonetaryTotal/cbc:LineExtensionAmount', "-1"],
+  ["add", '/*/cac:CreditNoteLine[1]/cbc:LineExtensionAmount', "-0.005"],
+]
+
+# ---------------------------------------------------------------------------------------
+# Namespaces: rules match expanded names, never prefixes
+
+[[mutation]]
+id = "namespaces/root-prefixed"
+base = "invoice"
+reason = "Invoice element with a prefix instead of the default namespace: same document"
+edits = [
+  ["replace", 'xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"', 'xmlns:inv="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"'],
+  ["rename", '/*', "inv:Invoice"],
+]
+
+[[mutation]]
+id = "namespaces/credit-note-root-prefixed"
+base = "credit-note"
+reason = "Credit note element with a prefix instead of the default namespace: same document"
+edits = [
+  ["replace", 'xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"', 'xmlns:cn="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"'],
+  ["rename", '/*', "cn:CreditNote"],
+]
+
+[[mutation]]
+id = "namespaces/cbc-prefix-renamed"
+base = "invoice"
+reason = "Basic components bound to the prefix b instead of cbc: same document"
+edits = [
+  ["replace", "<cbc:", "<b:"],
+  ["replace", "</cbc:", "</b:"],
+  ["replace", "xmlns:cbc=", "xmlns:b="],
+]
+
+[[mutation]]
+id = "namespaces/cac-prefix-renamed"
+base = "credit-note"
+reason = "Aggregate components bound to the prefix agg instead of cac: same document"
+edits = [
+  ["replace", "<cac:", "<agg:"],
+  ["replace", "</cac:", "</agg:"],
+  ["replace", "xmlns:cac=", "xmlns:agg="],
+]
+
+[[mutation]]
+id = "namespaces/prefixes-swapped"
+base = "invoice"
+reason = "The prefixes cbc and cac swapped (cbc names aggregate components): same document"
+edits = [
+  ["replace", "<cbc:", "<x0:"],
+  ["replace", "</cbc:", "</x0:"],
+  ["replace", "xmlns:cbc=", "xmlns:x0="],
+  ["replace", "<cac:", "<cbc:"],
+  ["replace", "</cac:", "</cbc:"],
+  ["replace", "xmlns:cac=", "xmlns:cbc="],
+  ["replace", "<x0:", "<cac:"],
+  ["replace", "</x0:", "</cac:"],
+  ["replace", "xmlns:x0=", "xmlns:cac="],
+]
+
+[[mutation]]
+id = "namespaces/cbc-default-in-totals"
+base = "invoice"
+reason = "Basic components of the totals in the default namespace, declared on the totals group: same document"
+edits = [
+  ["set", '/*/cac:LegalMonetaryTotal/@xmlns', "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"],
+  ["replace-in", '/*/cac:LegalMonetaryTotal', "cbc:", ""],
+]
+
+[[mutation]]
+id = "namespaces/second-prefix-same-uri"
+base = "invoice"
+reason = "A second prefix for the basic components namespace, used in the totals: same document"
+edits = [
+  ["set", '/*/@xmlns:basic', "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"],
+  ["replace-in", '/*/cac:LegalMonetaryTotal', "cbc:", "basic:"],
+]
+
+[[mutation]]
+id = "namespaces/cbc-rebound-in-subtree"
+base = "invoice"
+reason = "The cbc prefix bound to another namespace inside the first VAT total: its amounts and codes disappear"
+edits = [["set", '/*/cac:TaxTotal[1]/@xmlns:cbc', "urn:example:not-ubl"]]
+
+[[mutation]]
+id = "namespaces/extra-declarations"
+base = "invoice"
+reason = "Unused namespace declarations, a redundant redeclaration and an xsi:schemaLocation: same document"
+edits = [
+  ["set", '/*/@xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance"],
+  ["set", '/*/@xsi:schemaLocation', "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd"],
+  ["set", '/*/@xmlns:unused', "urn:example:unused"],
+  ["set", '/*/cac:InvoiceLine[1]/@xmlns:cac', "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"],
+]
+
+[[mutation]]
+id = "namespaces/element-in-wrong-namespace"
+base = "invoice"
+reason = "Amount due in the aggregate components namespace: it is no longer there (BR-15)"
+edits = [["rename", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "cac:PayableAmount"]]
+
+[[mutation]]
+id = "namespaces/root-in-credit-note-namespace"
+base = "invoice"
+reason = "Invoice element in the credit note namespace: no rule context matches it"
+edits = [["replace", 'xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"', 'xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"']]
+
+[[mutation]]
+id = "namespaces/root-without-namespace"
+base = "invoice"
+reason = "Invoice element in no namespace"
+edits = [["replace", 'xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"', 'xmlns:unused="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"']]
+
+[[mutation]]
+id = "namespaces/credit-note-root-in-invoice-namespace"
+base = "credit-note"
+reason = "Credit note element in the invoice namespace"
+edits = [["replace", 'xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"', 'xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"']]
+
+[[mutation]]
+id = "namespaces/attribute-prefixed"
+base = "invoice"
+reason = "The currency of the amount due as a cbc:currencyID attribute in a namespace, not currencyID"
+edits = [["replace-in", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "currencyID=", "cbc:currencyID="]]
+
+# ---------------------------------------------------------------------------------------
+# Comments, processing instructions, CDATA, references and whitespace in odd places
+
+[[mutation]]
+id = "markup/comment-in-amount"
+base = "invoice"
+reason = "Amount due split by a comment (0<!--c-->value): the string value is the concatenated text"
+edits = [
+  ["prefix-xml", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "<!--c-->"],
+  ["prefix", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "0"],
+]
+
+[[mutation]]
+id = "markup/cdata-in-amount"
+base = "invoice"
+reason = "Amount due starting with a CDATA section holding a leading zero"
+edits = [["prefix-xml", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "<![CDATA[0]]>"]]
+
+[[mutation]]
+id = "markup/character-reference-in-amount"
+base = "invoice"
+reason = "Amount due starting with a character reference (&#48;, a leading zero)"
+edits = [["prefix-xml", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "&#48;"]]
+
+[[mutation]]
+id = "markup/processing-instruction-in-amount"
+base = "invoice"
+reason = "Amount due starting with a processing instruction"
+edits = [["prefix-xml", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount', "<?note amount?>"]]
+
+[[mutation]]
+id = "markup/comment-in-code"
+base = "invoice"
+reason = "Line VAT category code split by comments"
+edits = [["set-xml", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID', "<!--a-->S<!--b-->"]]
+
+[[mutation]]
+id = "markup/cdata-code"
+base = "invoice"
+reason = "Document currency code written in a CDATA section"
+edits = [
+  ["replace", "<cbc:DocumentCurrencyCode>", "<cbc:DocumentCurrencyCode><![CDATA["],
+  ["replace", "</cbc:DocumentCurrencyCode>", "]]></cbc:DocumentCurrencyCode>"],
+]
+
+[[mutation]]
+id = "markup/empty-comment-in-every-element"
+base = "invoice"
+reason = "An empty comment at the start of every element: every text is split, no value changes"
+edits = [["prefix-xml", '//*', "<!---->"]]
+
+[[mutation]]
+id = "markup/comments-around-root"
+base = "invoice"
+reason = "Comments and a processing instruction before and after the document element"
+edits = [
+  ["insert-before", '/*', "<!-- before --><?pi before?>"],
+  ["insert-after", '/*', "<!-- after --><?pi after?>"],
+]
+
+[[mutation]]
+id = "markup/crlf-line-ends"
+base = "invoice"
+reason = "CR LF line ends everywhere (the parser normalises them to LF)"
+edits = [["replace", "\n", "\r\n"]]
+
+[[mutation]]
+id = "markup/single-line"
+base = "invoice"
+reason = "Every line feed removed: no whitespace-only text between elements, notes joined"
+edits = [["replace", "\n", ""]]
+
+[[mutation]]
+id = "markup/no-xml-declaration"
+base = "invoice"
+reason = "Document without XML declaration"
+edits = [["replace", '<?xml version="1.0" encoding="UTF-8"?>', ""]]
+
+[[mutation]]
+id = "markup/byte-order-mark"
+base = "invoice"
+reason = "Document starting with a UTF-8 byte order mark"
+edits = [["replace", '<?xml version="1.0" encoding="UTF-8"?>', "﻿<?xml version=\"1.0\" encoding=\"UTF-8\"?>"]]
+
+[[mutation]]
+id = "markup/standalone-declaration"
+base = "invoice"
+reason = "XML declaration with standalone=\"yes\""
+edits = [["replace", '<?xml version="1.0" encoding="UTF-8"?>', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>']]
+
+[[mutation]]
+id = "markup/id-whitespace-only"
+base = "invoice"
+reason = "Invoice number made of spaces only (BR-02 normalises it)"
+edits = [["set", '/*/cbc:ID', "   "]]
+
+[[mutation]]
+id = "markup/id-tab-newline"
+base = "invoice"
+reason = "Invoice number made of a tab and a line feed (BR-02)"
+edits = [["set", '/*/cbc:ID', "\t\n"]]
+
+[[mutation]]
+id = "markup/id-no-break-space"
+base = "invoice"
+reason = "Invoice number a single no-break space, which normalize-space keeps (BR-02 holds)"
+edits = [["set", '/*/cbc:ID', " "]]
+
+[[mutation]]
+id = "markup/id-zero-width-space"
+base = "invoice"
+reason = "Invoice number a single zero-width space"
+edits = [["set", '/*/cbc:ID', "​"]]
+
+[[mutation]]
+id = "markup/id-character-references"
+base = "invoice"
+reason = "Invoice number written with character and entity references"
+edits = [["set-xml", '/*/cbc:ID', "INV&#45;1&amp;2&#x41;"]]
+
+[[mutation]]
+id = "markup/names-with-markup-characters"
+base = "invoice"
+reason = "Seller and buyer names with ampersands, angle brackets and quotes"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName', "A & B <Seller> \"Ltd\""],
+  ["set", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName', "C 'D' & E > F"],
+]
+
+[[mutation]]
+id = "markup/names-padded"
+base = "invoice"
+reason = "Seller legal name surrounded by whitespace"
+edits = [
+  ["prefix", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName', " \n\t "],
+  ["suffix", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName', "\n "],
+]
+
+[[mutation]]
+id = "markup/attribute-whitespace-references"
+base = "invoice"
+reason = "Unit code with tab and line feed character references (kept by attribute value normalisation)"
+edits = [["suffix", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity/@unitCode', "\t\n"]]
+
+# ---------------------------------------------------------------------------------------
+# Long strings and large documents
+
+[[mutation]]
+id = "long/note-10000-characters"
+base = "invoice"
+reason = "An invoice note of 10000 characters"
+edits = [
+  ["remove-all", '/*/cbc:Note'],
+  ["insert-after", '/*/cbc:InvoiceTypeCode', "<cbc:Note>x</cbc:Note>"],
+  ["set", '/*/cbc:Note', "abcdefghij", "1000"],
+]
+
+[[mutation]]
+id = "long/invoice-number-5000-characters"
+base = "invoice"
+reason = "An invoice number of 5000 characters"
+edits = [["set", '/*/cbc:ID', "0123456789", "500"]]
+
+[[mutation]]
+id = "long/quantity-60-digits"
+base = "invoice"
+reason = "An invoiced quantity of 60 digits"
+edits = [["set", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity', "9", "60"]]
+
+[[mutation]]
+id = "long/astral-characters"
+base = "invoice"
+reason = "Buyer reference and item name made of characters outside the Basic Multilingual Plane"
+edits = [
+  ["set", '/*/cbc:BuyerReference', "\U0001F600", "300"],
+  ["set", '/*/cac:InvoiceLine[1]/cac:Item/cbc:Name', "\U00010348é", "50"],
+]
+
+[[mutation]]
+id = "long/128-lines"
+base = "invoice"
+reason = "Lines doubled six times: 128 lines, sums not updated"
+edits = [
+  ["duplicate", '/*/cac:InvoiceLine'],
+  ["duplicate", '/*/cac:InvoiceLine'],
+  ["duplicate", '/*/cac:InvoiceLine'],
+  ["duplicate", '/*/cac:InvoiceLine'],
+  ["duplicate", '/*/cac:InvoiceLine'],
+  ["duplicate", '/*/cac:InvoiceLine'],
+]
+
+# ---------------------------------------------------------------------------------------
+# Seller countries with national rules (Peppol): the same document from each country
+
+[[mutation]]
+id = "national/seller-in-germany"
+base = "invoice"
+reason = "Seller and buyer in Germany"
+edits = [["set", '//cac:Country/cbc:IdentificationCode', "DE"]]
+
+[[mutation]]
+id = "national/seller-in-denmark"
+base = "invoice"
+reason = "Seller in Denmark"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "DK"]]
+
+[[mutation]]
+id = "national/seller-in-greece"
+base = "invoice"
+reason = "Seller in Greece"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "GR"]]
+
+[[mutation]]
+id = "national/seller-in-italy"
+base = "invoice"
+reason = "Seller in Italy"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "IT"]]
+
+[[mutation]]
+id = "national/seller-in-netherlands"
+base = "invoice"
+reason = "Seller in the Netherlands"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "NL"]]
+
+[[mutation]]
+id = "national/seller-in-norway"
+base = "invoice"
+reason = "Seller in Norway"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "NO"]]
+
+[[mutation]]
+id = "national/seller-in-sweden-credit-note"
+base = "credit-note"
+reason = "Credit note from a seller in Sweden (the CEN base is Swedish already)"
+only = ["peppol-bis-billing-ubl-3.0.22"]
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "SE"]]
+
+[[mutation]]
+id = "national/seller-in-netherlands-credit-note"
+base = "credit-note"
+reason = "Credit note from a seller in the Netherlands"
+edits = [["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "NL"]]
+
+# ---------------------------------------------------------------------------------------
+# Elements EN 16931 does not use (UBL-CR): each mutation adds every such element of one
+# group, empty, under the deepest group both invoice bases have (generated from the rules)
+
+[[mutation]]
+id = "forbidden/document-level-misc"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in various groups of the document: 22 UBL-CR rules from UBL-CR-001 to UBL-CR-514"
+edits = [
+  ["set", '/*/@xmlns:ext', "urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2"],
+  ["append", '/*', "<ext:UBLExtensions/><cbc:ProfileExecutionID/><cbc:CopyIndicator/><cbc:UUID/><cbc:IssueTime/><cbc:PricingCurrencyCode/><cbc:PaymentCurrencyCode/><cbc:PaymentAlternativeCurrencyCode/><cbc:AccountingCostCode/><cbc:LineCountNumeric/><cac:StatementDocumentReference/><cac:Signature/><cac:BuyerCustomerParty/><cac:SellerSupplierParty/><cac:DeliveryTerms/><cac:PrepaidPayment/><cac:TaxExchangeRate/><cac:PricingExchangeRate/><cac:PaymentExchangeRate/><cac:PaymentAlternativeExchangeRate/><cac:WithholdingTaxTotal/>"],
+  ["append", '/*/cac:LegalMonetaryTotal', "<cbc:PayableAlternativeAmount/>"],
+]
+
+[[mutation]]
+id = "forbidden/invoice-period"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:InvoicePeriod of the document: 4 UBL-CR rules from UBL-CR-012 to UBL-CR-015"
+edits = [
+  ["append", '/*', "<cac:InvoicePeriod><cbc:StartTime/><cbc:EndTime/><cbc:DurationMeasure/><cbc:Description/></cac:InvoicePeriod>"],
+]
+
+[[mutation]]
+id = "forbidden/order-reference"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:OrderReference of the document: 7 UBL-CR rules from UBL-CR-016 to UBL-CR-022"
+edits = [
+  ["append", '/*', "<cac:OrderReference><cbc:CopyIndicator/><cbc:UUID/><cbc:IssueDate/><cbc:IssueTime/><cbc:CustomerReference/><cbc:OrderTypeCode/><cac:DocumentReference/></cac:OrderReference>"],
+]
+
+[[mutation]]
+id = "forbidden/billing-reference"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:BillingReference of the document: 22 UBL-CR rules from UBL-CR-023 to UBL-CR-044"
+edits = [
+  ["append", '/*', "<cac:BillingReference><cac:InvoiceDocumentReference><cbc:CopyIndicator/><cbc:UUID/><cbc:IssueTime/><cbc:DocumentTypeCode/><cbc:DocumentType/><cbc:XPath/><cbc:LanguageID/><cbc:LocaleCode/><cbc:VersionID/><cbc:DocumentStatusCode/><cbc:DocumentDescription/><cac:Attachment/><cac:ValidityPeriod/><cac:IssuerParty/><cac:ResultOfVerification/></cac:InvoiceDocumentReference><cac:SelfBilledInvoiceDocumentReference/><cac:CreditNoteDocumentReference/><cac:SelfBilledCreditNoteDocumentReference/><cac:DebitNoteDocumentReference/><cac:ReminderDocumentReference/><cac:AdditionalDocumentReference/><cac:BillingReferenceLine/></cac:BillingReference>"],
+]
+
+[[mutation]]
+id = "forbidden/despatch-document-reference"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:DespatchDocumentReference of the document: 16 UBL-CR rules from UBL-CR-045 to UBL-CR-060"
+edits = [
+  ["append", '/*', "<cac:DespatchDocumentReference><cbc:CopyIndicator/><cbc:UUID/><cbc:IssueDate/><cbc:IssueTime/><cbc:DocumentTypeCode/><cbc:DocumentType/><cbc:XPath/><cbc:LanguageID/><cbc:LocaleCode/><cbc:VersionID/><cbc:DocumentStatusCode/><cbc:DocumentDescription/><cac:Attachment/><cac:ValidityPeriod/><cac:IssuerParty/><cac:ResultOfVerification/></cac:DespatchDocumentReference>"],
+]
+
+[[mutation]]
+id = "forbidden/receipt-document-reference"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:ReceiptDocumentReference of the document: 16 UBL-CR rules from UBL-CR-061 to UBL-CR-076"
+edits = [
+  ["append", '/*', "<cac:ReceiptDocumentReference><cbc:CopyIndicator/><cbc:UUID/><cbc:IssueDate/><cbc:IssueTime/><cbc:DocumentTypeCode/><cbc:DocumentType/><cbc:XPath/><cbc:LanguageID/><cbc:LocaleCode/><cbc:VersionID/><cbc:DocumentStatusCode/><cbc:DocumentDescription/><cac:Attachment/><cac:ValidityPeriod/><cac:IssuerParty/><cac:ResultOfVerification/></cac:ReceiptDocumentReference>"],
+]
+
+[[mutation]]
+id = "forbidden/originator-document-reference"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:OriginatorDocumentReference of the document: 16 UBL-CR rules from UBL-CR-078 to UBL-CR-093"
+edits = [
+  ["append", '/*', "<cac:OriginatorDocumentReference><cbc:CopyIndicator/><cbc:UUID/><cbc:IssueDate/><cbc:IssueTime/><cbc:DocumentTypeCode/><cbc:DocumentType/><cbc:XPath/><cbc:LanguageID/><cbc:LocaleCode/><cbc:VersionID/><cbc:DocumentStatusCode/><cbc:DocumentDescription/><cac:Attachment/><cac:ValidityPeriod/><cac:IssuerParty/><cac:ResultOfVerification/></cac:OriginatorDocumentReference>"],
+]
+
+[[mutation]]
+id = "forbidden/contract-document-reference"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:ContractDocumentReference of the document: 16 UBL-CR rules from UBL-CR-094 to UBL-CR-109"
+edits = [
+  ["append", '/*', "<cac:ContractDocumentReference><cbc:CopyIndicator/><cbc:UUID/><cbc:IssueDate/><cbc:IssueTime/><cbc:DocumentTypeCode/><cbc:DocumentType/><cbc:XPath/><cbc:LanguageID/><cbc:LocaleCode/><cbc:VersionID/><cbc:DocumentStatusCode/><cbc:DocumentDescription/><cac:Attachment/><cac:ValidityPeriod/><cac:IssuerParty/><cac:ResultOfVerification/></cac:ContractDocumentReference>"],
+]
+
+[[mutation]]
+id = "forbidden/additional-document-reference"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:AdditionalDocumentReference of the document: 23 UBL-CR rules from UBL-CR-110 to UBL-CR-133"
+edits = [
+  ["append", '/*', "<cac:AdditionalDocumentReference><cbc:CopyIndicator/><cbc:UUID/><cbc:IssueDate/><cbc:IssueTime/><cbc:DocumentType/><cbc:XPath/><cbc:LanguageID/><cbc:LocaleCode/><cbc:VersionID/><cbc:DocumentStatusCode/><cac:Attachment><cac:ExternalReference><cbc:DocumentHash/><cbc:HashAlgorithmMethod/><cbc:ExpiryDate/><cbc:ExpiryTime/><cbc:MimeCode/><cbc:FormatCode/><cbc:EncodingCode/><cbc:CharacterSetCode/><cbc:FileName/><cbc:Description/></cac:ExternalReference></cac:Attachment><cac:ValidityPeriod/><cac:IssuerParty/><cac:ResultOfVerification/></cac:AdditionalDocumentReference>"],
+]
+
+[[mutation]]
+id = "forbidden/project-reference"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:ProjectReference of the document: 3 UBL-CR rules from UBL-CR-134 to UBL-CR-136"
+edits = [
+  ["append", '/*', "<cac:ProjectReference><cbc:UUID/><cbc:IssueDate/><cac:WorkPhaseReference/></cac:ProjectReference>"],
+]
+
+[[mutation]]
+id = "forbidden/accounting-supplier-party"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:AccountingSupplierParty of the document: 63 UBL-CR rules from UBL-CR-138 to UBL-CR-200"
+edits = [
+  ["append", '/*/cac:AccountingSupplierParty', "<cbc:CustomerAssignedAccountID/><cbc:AdditionalAccountID/><cbc:DataSendingCapability/><cac:DespatchContact/><cac:AccountingContact/><cac:SellerContact/>"],
+  ["append", '/*/cac:AccountingSupplierParty/cac:Party', "<cbc:MarkCareIndicator/><cbc:MarkAttentionIndicator/><cbc:WebsiteURI/><cbc:LogoReferenceID/><cbc:IndustryClassificationCode/><cac:Language/><cac:PhysicalLocation/><cac:Contact><cbc:ID/><cbc:Telefax/><cbc:Note/><cac:OtherCommunication/></cac:Contact><cac:Person/><cac:AgentParty/><cac:ServiceProviderParty/><cac:PowerOfAttorney/><cac:FinancialAccount/>"],
+  ["append", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress', "<cbc:ID/><cbc:AddressTypeCode/><cbc:AddressFormatCode/><cbc:Postbox/><cbc:Floor/><cbc:Room/><cbc:BlockName/><cbc:BuildingName/><cbc:BuildingNumber/><cbc:InhouseMail/><cbc:Department/><cbc:MarkAttention/><cbc:MarkCare/><cbc:PlotIdentification/><cbc:CitySubdivisionName/><cbc:CountrySubentityCode/><cbc:Region/><cbc:District/><cbc:TimezoneOffset/><cac:LocationCoordinate/>"],
+  ["append", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country', "<cbc:Name/>"],
+  ["append", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]', "<cbc:RegistrationName/><cbc:TaxLevelCode/><cbc:ExemptionReasonCode/><cbc:ExemptionReason/><cac:RegistrationAddress/>"],
+  ["append", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cac:TaxScheme', "<cbc:Name/><cbc:TaxTypeCode/><cbc:CurrencyCode/><cac:JurisdictionRegionAddress/>"],
+  ["append", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity', "<cbc:RegistrationDate/><cbc:RegistrationExpirationDate/><cbc:CompanyLegalFormCode/><cbc:SoleProprietorshipIndicator/><cbc:CompanyLiquidationStatusCode/><cbc:CorporateStockAmount/><cbc:FullyPaidSharesIndicator/><cac:RegistrationAddress/><cac:CorporateRegistrationScheme/><cac:HeadOfficeParty/><cac:ShareholderParty/>"],
+]
+
+[[mutation]]
+id = "forbidden/accounting-customer-party"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:AccountingCustomerParty of the document: 64 UBL-CR rules from UBL-CR-201 to UBL-CR-264"
+edits = [
+  ["append", '/*/cac:AccountingCustomerParty', "<cbc:CustomerAssignedAccountID/><cbc:SupplierAssignedAccountID/><cbc:AdditionalAccountID/><cac:DeliveryContact/><cac:AccountingContact/><cac:BuyerContact/>"],
+  ["append", '/*/cac:AccountingCustomerParty/cac:Party', "<cbc:MarkCareIndicator/><cbc:MarkAttentionIndicator/><cbc:WebsiteURI/><cbc:LogoReferenceID/><cbc:IndustryClassificationCode/><cac:Language/><cac:PhysicalLocation/><cac:Person/><cac:AgentParty/><cac:ServiceProviderParty/><cac:PowerOfAttorney/><cac:FinancialAccount/>"],
+  ["append", '/*/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress', "<cbc:ID/><cbc:AddressTypeCode/><cbc:AddressFormatCode/><cbc:Postbox/><cbc:Floor/><cbc:Room/><cbc:BlockName/><cbc:BuildingName/><cbc:BuildingNumber/><cbc:InhouseMail/><cbc:Department/><cbc:MarkAttention/><cbc:MarkCare/><cbc:PlotIdentification/><cbc:CitySubdivisionName/><cbc:CountrySubentityCode/><cbc:Region/><cbc:District/><cbc:TimezoneOffset/><cac:LocationCoordinate/>"],
+  ["append", '/*/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cac:Country', "<cbc:Name/>"],
+  ["append", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme', "<cbc:RegistrationName/><cbc:TaxLevelCode/><cbc:ExemptionReasonCode/><cbc:ExemptionReason/><cac:RegistrationAddress/>"],
+  ["append", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cac:TaxScheme', "<cbc:Name/><cbc:TaxTypeCode/><cbc:CurrencyCode/><cac:JurisdictionRegionAddress/>"],
+  ["append", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity', "<cbc:RegistrationDate/><cbc:RegistrationExpirationDate/><cbc:CompanyLegalFormCode/><cbc:CompanyLegalForm/><cbc:SoleProprietorshipIndicator/><cbc:CompanyLiquidationStatusCode/><cbc:CorporateStockAmount/><cbc:FullyPaidSharesIndicator/><cac:RegistrationAddress/><cac:CorporateRegistrationScheme/><cac:HeadOfficeParty/><cac:ShareholderParty/>"],
+  ["append", '/*/cac:AccountingCustomerParty/cac:Party/cac:Contact', "<cbc:ID/><cbc:Telefax/><cbc:Note/><cac:OtherCommunication/>"],
+]
+
+[[mutation]]
+id = "forbidden/payee-party"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:PayeeParty of the document: 29 UBL-CR rules from UBL-CR-265 to UBL-CR-293"
+edits = [
+  ["append", '/*', "<cac:PayeeParty><cbc:MarkCareIndicator/><cbc:MarkAttentionIndicator/><cbc:WebsiteURI/><cbc:LogoReferenceID/><cbc:EndpointID/><cbc:IndustryClassificationCode/><cac:Language/><cac:PostalAddress/><cac:PhysicalLocation/><cac:PartyTaxScheme/><cac:PartyLegalEntity><cbc:RegistrationName/><cbc:RegistrationDate/><cbc:RegistrationExpirationDate/><cbc:CompanyLegalFormCode/><cbc:CompanyLegalForm/><cbc:SoleProprietorshipIndicator/><cbc:CompanyLiquidationStatusCode/><cbc:CorporateStockAmount/><cbc:FullyPaidSharesIndicator/><cac:RegistrationAddress/><cac:CorporateRegistrationScheme/><cac:HeadOfficeParty/><cac:ShareholderParty/></cac:PartyLegalEntity><cac:Contact/><cac:Person/><cac:AgentParty/><cac:ServiceProviderParty/><cac:PowerOfAttorney/><cac:FinancialAccount/></cac:PayeeParty>"],
+]
+
+[[mutation]]
+id = "forbidden/tax-representative-party"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:TaxRepresentativeParty of the document: 46 UBL-CR rules from UBL-CR-296 to UBL-CR-341"
+edits = [
+  ["append", '/*', "<cac:TaxRepresentativeParty><cbc:MarkCareIndicator/><cbc:MarkAttentionIndicator/><cbc:WebsiteURI/><cbc:LogoReferenceID/><cbc:EndpointID/><cbc:IndustryClassificationCode/><cac:PartyIdentification/><cac:Language/><cac:PostalAddress><cbc:ID/><cbc:AddressTypeCode/><cbc:AddressFormatCode/><cbc:Postbox/><cbc:Floor/><cbc:Room/><cbc:BlockName/><cbc:BuildingName/><cbc:BuildingNumber/><cbc:InhouseMail/><cbc:Department/><cbc:MarkAttention/><cbc:MarkCare/><cbc:PlotIdentification/><cbc:CitySubdivisionName/><cbc:CountrySubentityCode/><cbc:Region/><cbc:District/><cbc:TimezoneOffset/><cac:Country><cbc:Name/></cac:Country><cac:LocationCoordinate/></cac:PostalAddress><cac:PhysicalLocation/><cac:PartyTaxScheme><cbc:RegistrationName/><cbc:TaxLevelCode/><cbc:ExemptionReasonCode/><cbc:ExemptionReason/><cac:RegistrationAddress/><cac:TaxScheme><cbc:Name/><cbc:TaxTypeCode/><cbc:CurrencyCode/><cac:JurisdictionRegionAddress/></cac:TaxScheme></cac:PartyTaxScheme><cac:PartyLegalEntity/><cac:Contact/><cac:Person/><cac:AgentParty/><cac:ServiceProviderParty/><cac:PowerOfAttorney/><cac:FinancialAccount/></cac:TaxRepresentativeParty>"],
+]
+
+[[mutation]]
+id = "forbidden/delivery"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:Delivery of the document: 69 UBL-CR rules from UBL-CR-342 to UBL-CR-682"
+edits = [
+  ["append", '/*/cac:Delivery', "<cbc:ID/><cbc:Quantity/><cbc:MinimumQuantity/><cbc:MaximumQuantity/><cbc:ActualDeliveryTime/><cbc:LatestDeliveryDate/><cbc:LatestDeliveryTime/><cbc:ReleaseID/><cbc:TrackingID/><cac:AlternativeDeliveryLocation/><cac:RequestedDeliveryPeriod/><cac:EstimatedDeliveryPeriod/><cac:CarrierParty/><cac:NotifyParty/><cac:Despatch/><cac:DeliveryTerms/><cac:MinimumDeliveryUnit/><cac:MaximumDeliveryUnit/><cac:Shipment/><cac:DeliveryAddress/>"],
+  ["append", '/*/cac:Delivery/cac:DeliveryLocation', "<cbc:Description/><cbc:Conditions/><cbc:CountrySubentity/><cbc:CountrySubentityCode/><cbc:LocationTypeCode/><cbc:InformationURI/><cbc:Name/><cac:ValidityPeriod/><cac:SubsidiaryLocation/><cac:LocationCoordinate/>"],
+  ["append", '/*/cac:Delivery/cac:DeliveryLocation/cac:Address', "<cbc:ID/><cbc:AddressTypeCode/><cbc:AddressFormatCode/><cbc:Postbox/><cbc:Floor/><cbc:Room/><cbc:BlockName/><cbc:BuildingName/><cbc:BuildingNumber/><cbc:InhouseMail/><cbc:Department/><cbc:MarkAttention/><cbc:MarkCare/><cbc:PlotIdentification/><cbc:CitySubdivisionName/><cbc:CountrySubentityCode/><cbc:Region/><cbc:District/><cbc:TimezoneOffset/><cac:LocationCoordinate/>"],
+  ["append", '/*/cac:Delivery/cac:DeliveryLocation/cac:Address/cac:Country', "<cbc:Name/>"],
+  ["append", '/*/cac:Delivery/cac:DeliveryParty', "<cbc:MarkCareIndicator/><cbc:MarkAttentionIndicator/><cbc:WebsiteURI/><cbc:LogoReferenceID/><cbc:EndpointID/><cbc:IndustryClassificationCode/><cac:PartyIdentification/><cac:Language/><cac:PostalAddress/><cac:PhysicalLocation/><cac:PartyTaxScheme/><cac:PartyLegalEntity/><cac:Contact/><cac:Person/><cac:AgentParty/><cac:ServiceProviderParty/><cac:PowerOfAttorney/><cac:FinancialAccount/>"],
+]
+
+[[mutation]]
+id = "forbidden/payment-means"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:PaymentMeans of the document: 40 UBL-CR rules from UBL-CR-411 to UBL-CR-681"
+edits = [
+  ["append", '/*/cac:PaymentMeans[1]', "<cbc:ID/><cbc:PaymentChannelCode/><cbc:InstructionID/><cac:CardAccount><cbc:CardTypeCode/><cbc:ValidityStartDate/><cbc:ExpiryDate/><cbc:IssuerID/><cbc:IssueNumberID/><cbc:CV2ID/><cbc:CardChipCode/><cbc:ChipApplicationID/></cac:CardAccount><cac:CreditAccount/><cac:PaymentMandate><cbc:MandateTypeCode/><cbc:MaximumPaymentInstructionsNumeric/><cbc:MaximumPaidAmount/><cbc:SignatureID/><cac:PayerParty/><cac:PayerFinancialAccount><cbc:Name/><cbc:AliasName/><cbc:AccountTypeCode/><cbc:AccountFormatCode/><cbc:CurrencyCode/><cbc:PaymentNote/><cac:FinancialInstitutionBranch/><cac:Country/></cac:PayerFinancialAccount><cac:ValidityPeriod/><cac:PaymentReversalPeriod/><cac:Clause/></cac:PaymentMandate><cac:TradeFinancing/><cbc:InstructionNote/>"],
+  ["append", '/*/cac:PaymentMeans[1]/cac:PayeeFinancialAccount', "<cbc:AliasName/><cbc:AccountTypeCode/><cbc:AccountFormatCode/><cbc:CurrencyCode/><cbc:PaymentNote/><cac:Country/>"],
+  ["append", '/*/cac:PaymentMeans[1]/cac:PayeeFinancialAccount/cac:FinancialInstitutionBranch', "<cbc:Name/><cac:FinancialInstitution><cbc:Name/><cac:Address/></cac:FinancialInstitution><cac:Address/>"],
+]
+
+[[mutation]]
+id = "forbidden/payment-terms"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:PaymentTerms of the document: 18 UBL-CR rules from UBL-CR-452 to UBL-CR-469"
+edits = [
+  ["append", '/*/cac:PaymentTerms', "<cbc:ID/><cbc:PaymentMeansID/><cbc:PrepaidPaymentReferenceID/><cbc:ReferenceEventCode/><cbc:SettlementDiscountPercent/><cbc:PenaltySurchargePercent/><cbc:PaymentPercent/><cbc:Amount/><cbc:SettlementDiscountAmount/><cbc:PenaltyAmount/><cbc:PaymentTermsDetailsURI/><cbc:PaymentDueDate/><cbc:InstallmentDueDate/><cbc:InvoicingPartyReference/><cac:SettlementPeriod/><cac:PenaltyPeriod/><cac:ExchangeRate/><cac:ValidityPeriod/>"],
+]
+
+[[mutation]]
+id = "forbidden/allowance-charge"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:AllowanceCharge of the document: 19 UBL-CR rules from UBL-CR-471 to UBL-CR-489"
+edits = [
+  ["append", '/*/cac:AllowanceCharge[1]', "<cbc:ID/><cbc:PrepaidIndicator/><cbc:SequenceNumeric/><cbc:AccountingCostCode/><cbc:AccountingCost/><cbc:PerUnitAmount/><cac:TaxTotal/><cac:PaymentMeans/>"],
+  ["append", '/*/cac:AllowanceCharge[1]/cac:TaxCategory', "<cbc:Name/><cbc:BaseUnitMeasure/><cbc:PerUnitAmount/><cbc:TaxExemptionReasonCode/><cbc:TaxExemptionReason/><cbc:TierRange/><cbc:TierRatePercent/>"],
+  ["append", '/*/cac:AllowanceCharge[1]/cac:TaxCategory/cac:TaxScheme', "<cbc:Name/><cbc:TaxTypeCode/><cbc:CurrencyCode/><cac:JurisdictionRegionAddress/>"],
+]
+
+[[mutation]]
+id = "forbidden/tax-total"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:TaxTotal of the document: 19 UBL-CR rules from UBL-CR-494 to UBL-CR-512"
+edits = [
+  ["append", '/*/cac:TaxTotal[1]', "<cbc:RoundingAmount/><cbc:TaxEvidenceIndicator/><cbc:TaxIncludedIndicator/>"],
+  ["append", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]', "<cbc:CalculationSequenceNumeric/><cbc:TransactionCurrencyTaxAmount/><cbc:Percent/><cbc:BaseUnitMeasure/><cbc:PerUnitAmount/><cbc:TierRange/><cbc:TierRatePercent/>"],
+  ["append", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory', "<cbc:Name/><cbc:BaseUnitMeasure/><cbc:PerUnitAmount/><cbc:TierRange/><cbc:TierRatePercent/>"],
+  ["append", '/*/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cac:TaxScheme', "<cbc:Name/><cbc:TaxTypeCode/><cbc:CurrencyCode/><cac:JurisdictionRegionAddress/>"],
+]
+
+[[mutation]]
+id = "forbidden/line-misc"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in various groups of the first line: 21 UBL-CR rules from UBL-CR-515 to UBL-CR-647"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]', "<cbc:UUID/><cbc:TaxPointDate/><cbc:AccountingCostCode/><cbc:PaymentPurposeCode/><cbc:FreeOfChargeIndicator/><cac:DespatchLineReference/><cac:ReceiptLineReference/><cac:BillingReference/><cac:PricingReference/><cac:OriginatorParty/><cac:Delivery/><cac:PaymentTerms/><cac:TaxTotal/><cac:WithholdingTaxTotal/><cac:DeliveryTerms/><cac:SubInvoiceLine/><cac:ItemPriceExtension/>"],
+  ["append", '/*/cac:InvoiceLine[1]/cac:Item/cac:OriginCountry', "<cbc:Name/>"],
+  ["append", '/*/cac:InvoiceLine[1]/cac:Item/cac:CommodityClassification[1]', "<cbc:NatureCode/><cbc:CargoTypeCode/><cbc:CommodityCode/>"],
+]
+
+[[mutation]]
+id = "forbidden/line-invoice-period"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:InvoicePeriod of the first line: 5 UBL-CR rules from UBL-CR-520 to UBL-CR-524"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]', "<cac:InvoicePeriod><cbc:StartTime/><cbc:EndTime/><cbc:DurationMeasure/><cbc:DescriptionCode/><cbc:Description/></cac:InvoicePeriod>"],
+]
+
+[[mutation]]
+id = "forbidden/line-order-line-reference"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:OrderLineReference of the first line: 4 UBL-CR rules from UBL-CR-525 to UBL-CR-528"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]/cac:OrderLineReference', "<cbc:SalesOrderLineID/><cbc:UUID/><cbc:LineStatusCode/><cac:OrderReference/>"],
+]
+
+[[mutation]]
+id = "forbidden/line-document-reference"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:DocumentReference of the first line: 15 UBL-CR rules from UBL-CR-532 to UBL-CR-547"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]', "<cac:DocumentReference><cbc:CopyIndicator/><cbc:UUID/><cbc:IssueDate/><cbc:IssueTime/><cbc:DocumentType/><cbc:XPath/><cbc:LanguageID/><cbc:LocaleCode/><cbc:VersionID/><cbc:DocumentStatusCode/><cbc:DocumentDescription/><cac:Attachment/><cac:ValidityPeriod/><cac:IssuerParty/><cac:ResultOfVerification/></cac:DocumentReference>"],
+]
+
+[[mutation]]
+id = "forbidden/line-allowance-charge"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:AllowanceCharge of the first line: 9 UBL-CR rules from UBL-CR-552 to UBL-CR-560"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]', "<cac:AllowanceCharge><cbc:ID/><cbc:PrepaidIndicator/><cbc:SequenceNumeric/><cbc:AccountingCostCode/><cbc:AccountingCost/><cbc:PerUnitAmount/><cac:TaxCategory/><cac:TaxTotal/><cac:PaymentMeans/></cac:AllowanceCharge>"],
+]
+
+[[mutation]]
+id = "forbidden/line-item"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:Item of the first line: 21 UBL-CR rules from UBL-CR-563 to UBL-CR-624"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]/cac:Item', "<cbc:PackQuantity/><cbc:PackSizeNumeric/><cbc:CatalogueIndicator/><cbc:HazardousRiskIndicator/><cbc:AdditionalInformation/><cbc:Keyword/><cbc:BrandName/><cbc:ModelName/><cac:ManufacturersItemIdentification/><cac:CatalogueItemIdentification/><cac:AdditionalItemIdentification/><cac:CatalogueDocumentReference/><cac:ItemSpecificationDocumentReference/><cac:TransactionConditions/><cac:HazardousItem/><cac:ManufacturerParty/><cac:InformationContentProviderParty/><cac:OriginAddress/><cac:ItemInstance/><cac:Certificate/><cac:Dimension/>"],
+]
+
+[[mutation]]
+id = "forbidden/line-item-buyers-item-identification"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:Item/cac:BuyersItemIdentification of the first line: 5 UBL-CR rules from UBL-CR-571 to UBL-CR-575"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]/cac:Item', "<cac:BuyersItemIdentification><cbc:ExtendedID/><cbc:BarcodeSymbologyID/><cac:PhysicalAttribute/><cac:MeasurementDimension/><cac:IssuerParty/></cac:BuyersItemIdentification>"],
+]
+
+[[mutation]]
+id = "forbidden/line-item-sellers-item-identification"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:Item/cac:SellersItemIdentification of the first line: 5 UBL-CR rules from UBL-CR-576 to UBL-CR-580"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]/cac:Item', "<cac:SellersItemIdentification><cbc:ExtendedID/><cbc:BarcodeSymbologyID/><cac:PhysicalAttribute/><cac:MeasurementDimension/><cac:IssuerParty/></cac:SellersItemIdentification>"],
+]
+
+[[mutation]]
+id = "forbidden/line-item-standard-item-identification"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:Item/cac:StandardItemIdentification of the first line: 5 UBL-CR rules from UBL-CR-582 to UBL-CR-586"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]/cac:Item/cac:StandardItemIdentification', "<cbc:ExtendedID/><cbc:BarcodeSymbologyID/><cac:PhysicalAttribute/><cac:MeasurementDimension/><cac:IssuerParty/>"],
+]
+
+[[mutation]]
+id = "forbidden/line-item-classified-tax-category"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:Item/cac:ClassifiedTaxCategory of the first line: 11 UBL-CR rules from UBL-CR-597 to UBL-CR-607"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory', "<cbc:Name/><cbc:BaseUnitMeasure/><cbc:PerUnitAmount/><cbc:TaxExemptionReasonCode/><cbc:TaxExemptionReason/><cbc:TierRange/><cbc:TierRatePercent/>"],
+  ["append", '/*/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme', "<cbc:Name/><cbc:TaxTypeCode/><cbc:CurrencyCode/><cac:JurisdictionRegionAddress/>"],
+]
+
+[[mutation]]
+id = "forbidden/line-item-additional-item-property"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:Item/cac:AdditionalItemProperty of the first line: 11 UBL-CR rules from UBL-CR-608 to UBL-CR-618"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]/cac:Item', "<cac:AdditionalItemProperty><cbc:ID/><cbc:NameCode/><cbc:TestMethod/><cbc:ValueQuantity/><cbc:ValueQualifier/><cbc:ImportanceCode/><cbc:ListValue/><cac:UsabilityPeriod/><cac:ItemPropertyGroup/><cac:RangeDimension/><cac:ItemPropertyRange/></cac:AdditionalItemProperty>"],
+]
+
+[[mutation]]
+id = "forbidden/line-price"
+base = "invoice"
+reason = "Elements EN 16931 does not use, in cac:Price of the first line: 19 UBL-CR rules from UBL-CR-625 to UBL-CR-644"
+edits = [
+  ["append", '/*/cac:InvoiceLine[1]/cac:Price', "<cbc:PriceChangeReason/><cbc:PriceTypeCode/><cbc:PriceType/><cbc:OrderableUnitFactorRate/><cbc:ValidityPeriod/><cbc:PriceList/><cac:AllowanceCharge><cbc:ID/><cbc:AllowanceChargeReasonCode/><cbc:AllowanceChargeReason/><cbc:MultiplierFactorNumeric/><cbc:PrepaidIndicator/><cbc:SequenceNumeric/><cbc:AccountingCostCode/><cbc:AccountingCost/><cbc:PerUnitAmount/><cac:TaxCategory/><cac:TaxTotal/><cac:PaymentMeans/></cac:AllowanceCharge><cac:PricingExchangeRate/>"],
+]
+
+
+# Attributes and other constructs EN 16931 does not use (UBL-CR with attributes, UBL-DT)
+
+[[mutation]]
+id = "forbidden/header-attributes"
+base = "invoice"
+reason = "Scheme and list attributes on header elements and a root sales order id (UBL-CR-648..651, UBL-CR-656..658)"
+edits = [
+  ["set", '/*/cbc:CustomizationID/@schemeID', "x"],
+  ["set", '/*/cbc:ProfileID/@schemeID', "x"],
+  ["set", '/*/cbc:ID/@schemeID', "x"],
+  ["set", '/*/cbc:InvoiceTypeCode/@listID', "UNCL1001"],
+  ["set", '/*/cbc:DocumentCurrencyCode/@listID', "ISO4217"],
+  ["remove-all", '/*/cbc:TaxCurrencyCode'],
+  ["insert-after", '/*/cbc:DocumentCurrencyCode', "<cbc:TaxCurrencyCode listID=\"ISO4217\">EUR</cbc:TaxCurrencyCode><cbc:SalesOrderID schemeID=\"x\">SO-1</cbc:SalesOrderID>"],
+]
+
+[[mutation]]
+id = "forbidden/payment-attributes"
+base = "invoice"
+reason = "Scheme and list attributes in the first payment means, a financial institution and a payer account (UBL-CR-653..655, UBL-CR-661, UBL-CR-664, UBL-CR-680)"
+edits = [
+  ["set", '/*/cac:PaymentMeans[1]/cbc:PaymentID/@schemeID', "x"],
+  ["set", '/*/cac:PaymentMeans[1]/cbc:PaymentMeansCode/@listID', "UNCL4461"],
+  ["set", '/*/cac:PaymentMeans[1]/cac:PayeeFinancialAccount/cbc:ID/@schemeID', "IBAN"],
+  ["set", '/*/cac:PaymentMeans[1]/cac:PayeeFinancialAccount/cac:FinancialInstitutionBranch/cbc:ID/@schemeID', "BIC"],
+  ["append", '/*/cac:PaymentMeans[1]/cac:PayeeFinancialAccount/cac:FinancialInstitutionBranch', "<cac:FinancialInstitution><cbc:ID>BANK</cbc:ID></cac:FinancialInstitution>"],
+  ["append", '/*/cac:PaymentMeans[1]', "<cac:PayerFinancialAccount><cbc:ID>ACC</cbc:ID></cac:PayerFinancialAccount>"],
+]
+
+[[mutation]]
+id = "forbidden/party-and-category-attributes"
+base = "invoice"
+reason = "Scheme and list attributes on VAT identifiers, country codes, VAT categories and a unit code list attribute (UBL-CR-652, 660, 663, 678, 679)"
+edits = [
+  ["set", '//cac:PartyTaxScheme/cbc:CompanyID/@schemeID', "VAT"],
+  ["set", '//cac:Country/cbc:IdentificationCode/@listID', "ISO3166-1:Alpha2"],
+  ["set", '//cac:TaxCategory/cbc:ID/@schemeID', "UNCL5305"],
+  ["set", '//cac:ClassifiedTaxCategory/cbc:ID/@schemeID', "UNCL5305"],
+  ["set", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity/@unitCodeListID', "UNECERec20"],
+]
+
+[[mutation]]
+id = "forbidden/item-and-reason-attributes"
+base = "allowances"
+reason = "Scheme attributes on item identifiers, list attributes on reason codes, reason and percentage on a price discount (UBL-CR-662, 667..671)"
+edits = [
+  ["set", '//cbc:AllowanceChargeReasonCode/@listID', "UNCL5189"],
+  ["set", '/*/cac:InvoiceLine[1]/cac:Item/cac:SellersItemIdentification/cbc:ID/@schemeID', "x"],
+  ["insert-before", '/*/cac:InvoiceLine[1]/cac:Item/cac:SellersItemIdentification', "<cac:BuyersItemIdentification><cbc:ID schemeID=\"x\">B-1</cbc:ID></cac:BuyersItemIdentification>"],
+  ["insert-after", '/*/cac:InvoiceLine[1]/cac:Price/cac:AllowanceCharge/cbc:ChargeIndicator', "<cbc:AllowanceChargeReasonCode>95</cbc:AllowanceChargeReasonCode><cbc:AllowanceChargeReason>Discount</cbc:AllowanceChargeReason><cbc:MultiplierFactorNumeric>10</cbc:MultiplierFactorNumeric>"],
+]
+
+[[mutation]]
+id = "forbidden/additional-document-attributes"
+base = "invoice"
+reason = "A type code list, a scheme on a supporting document id, and an attachment and description on an invoiced object (UBL-CR-659, 665, 666, 673)"
+edits = [["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID schemeID=\"x\">DOC-1</cbc:ID><cbc:DocumentTypeCode listID=\"UNCL1001\">916</cbc:DocumentTypeCode></cac:AdditionalDocumentReference><cac:AdditionalDocumentReference><cbc:ID schemeID=\"ABZ\">OBJ-1</cbc:ID><cbc:DocumentTypeCode>130</cbc:DocumentTypeCode><cbc:DocumentDescription>Object</cbc:DocumentDescription><cac:Attachment><cac:ExternalReference><cbc:URI>http://example.com/object</cbc:URI></cac:ExternalReference></cac:Attachment></cac:AdditionalDocumentReference>"]]
+
+[[mutation]]
+id = "forbidden/card-and-mandate-attributes"
+base = "invoice"
+reason = "Scheme attributes on a card number, a card network, a mandate id and a payer account id (UBL-CR-674..677)"
+edits = [["insert-after", '/*/cac:PaymentMeans[1]', "<cac:PaymentMeans><cbc:PaymentMeansCode>48</cbc:PaymentMeansCode><cac:CardAccount><cbc:PrimaryAccountNumberID schemeID=\"x\">1234</cbc:PrimaryAccountNumberID><cbc:NetworkID schemeID=\"x\">VISA</cbc:NetworkID></cac:CardAccount></cac:PaymentMeans><cac:PaymentMeans><cbc:PaymentMeansCode>59</cbc:PaymentMeansCode><cac:PaymentMandate><cbc:ID schemeID=\"x\">M-1</cbc:ID><cac:PayerFinancialAccount><cbc:ID schemeID=\"IBAN\">DE89370400440532013000</cbc:ID></cac:PayerFinancialAccount></cac:PaymentMandate></cac:PaymentMeans>"]]
+
+[[mutation]]
+id = "forbidden/credit-note-type-list"
+base = "credit-note"
+reason = "A list attribute on the credit note type code (UBL-CR-672)"
+edits = [["set", '/*/cbc:CreditNoteTypeCode/@listID', "UNCL1001"]]
+
+[[mutation]]
+id = "forbidden/payment-due-date-in-invoice"
+base = "invoice"
+reason = "A payment due date in the payment means of an invoice, allowed in credit notes only (UBL-CR-412)"
+edits = [["insert-after", '/*/cac:PaymentMeans[1]/cbc:PaymentMeansCode', "<cbc:PaymentDueDate>2018-03-07</cbc:PaymentDueDate>"]]
+
+[[mutation]]
+id = "forbidden/identifier-attributes"
+base = "invoice"
+reason = "Scheme and list metadata attributes EN 16931 does not use (UBL-DT-08..11, 16, 17, 20, 21, 27, 28)"
+edits = [
+  ["set", '/*/cbc:ID/@schemeName', "x"],
+  ["set", '/*/cbc:ID/@schemeAgencyName', "x"],
+  ["set", '/*/cbc:ID/@schemeDataURI', "http://example.com"],
+  ["set", '/*/cbc:ID/@schemeURI', "http://example.com"],
+  ["set", '/*/cbc:ID/@schemeAgencyID', "x"],
+  ["set", '/*/cbc:InvoiceTypeCode/@listAgencyName', "x"],
+  ["set", '/*/cbc:InvoiceTypeCode/@listName', "x"],
+  ["set", '/*/cbc:InvoiceTypeCode/@listURI', "http://example.com"],
+  ["set", '/*/cbc:InvoiceTypeCode/@listSchemeURI', "http://example.com"],
+  ["set", '/*/cbc:InvoiceTypeCode/@listAgencyID', "x"],
+]
+
+[[mutation]]
+id = "forbidden/other-attributes"
+base = "invoice"
+reason = "Unit, language, format, URI, character set, encoding, currency list and name attributes EN 16931 does not use (UBL-DT-12..15, 18, 19, 22..26)"
+edits = [
+  ["set", '/*/cbc:IssueDate/@format', "YYYY-MM-DD"],
+  ["set", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity/@unitCodeListIdentifier', "x"],
+  ["set", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity/@unitCodeListAgencyIdentifier', "x"],
+  ["set", '/*/cac:InvoiceLine[1]/cbc:InvoicedQuantity/@unitCodeListAgencyName', "x"],
+  ["set", '/*/cbc:BuyerReference/@languageID', "en"],
+  ["set", '/*/cbc:BuyerReference/@languageLocaleID', "en-GB"],
+  ["set", '/*/cbc:CustomizationID/@uri', "http://example.com"],
+  ["set", '/*/cbc:CustomizationID/@characterSetCode', "UTF-8"],
+  ["set", '/*/cbc:CustomizationID/@encodingCode', "Base64"],
+  ["set", '/*/cac:LegalMonetaryTotal/cbc:PayableAmount/@currencyCodeListVersionID', "2001"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyName/cbc:Name/@name', "x"],
+]
+
+# ---------------------------------------------------------------------------------------
+# Rules no other case reaches
+
+[[mutation]]
+id = "decimals/doc-charge-base-amount-three-decimals"
+base = "allowances"
+reason = "Document charge base amount with three decimals (BR-DEC-06)"
+edits = [
+  ["remove-all", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:BaseAmount'],
+  ["duplicate", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:Amount'],
+  ["rename", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:Amount[2]', "cbc:BaseAmount"],
+  ["set", '/*/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:BaseAmount', "1000.125"],
+]
+
+[[mutation]]
+id = "decimals/line-allowance-base-amount-three-decimals"
+base = "allowances"
+reason = "Line allowance base amount with three decimals (BR-DEC-25)"
+edits = [
+  ["remove-all", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="false"]/cbc:BaseAmount'],
+  ["duplicate", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="false"]/cbc:Amount'],
+  ["rename", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="false"]/cbc:Amount[2]', "cbc:BaseAmount"],
+  ["set", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="false"]/cbc:BaseAmount', "100.125"],
+]
+
+[[mutation]]
+id = "decimals/line-charge-base-amount-three-decimals"
+base = "allowances"
+reason = "Line charge base amount with three decimals (BR-DEC-28)"
+edits = [
+  ["remove-all", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:BaseAmount'],
+  ["duplicate", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:Amount'],
+  ["rename", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:Amount[2]', "cbc:BaseAmount"],
+  ["set", '/*/cac:InvoiceLine[1]/cac:AllowanceCharge[cbc:ChargeIndicator="true"]/cbc:BaseAmount', "100.125"],
+]
+
+[[mutation]]
+id = "decimals/tax-amount-with-currency-children"
+base = "invoice"
+reason = "VAT totals nested in the delivery whose amounts hold currency code children: the relative predicates of BR-DEC-13 and BR-DEC-15 select them"
+edits = [["append", '/*/cac:Delivery', "<cac:TaxTotal><cbc:TaxAmount currencyID=\"XXX\">1.001<cbc:DocumentCurrencyCode>XXX</cbc:DocumentCurrencyCode></cbc:TaxAmount></cac:TaxTotal><cac:TaxTotal><cbc:TaxAmount currencyID=\"YYY\">2.002<cbc:TaxCurrencyCode>YYY</cbc:TaxCurrencyCode></cbc:TaxAmount></cac:TaxTotal>"]]
+
+[[mutation]]
+id = "national/iceland-seller-and-buyer"
+base = "invoice"
+reason = "Seller and buyer in Iceland, invoice type 383, seller without postal code, buyer without street name, legal ids without scheme 0196 (IS-R-001..005)"
+edits = [
+  ["set", '//cac:Country/cbc:IdentificationCode', "IS"],
+  ["set", '/*/cbc:InvoiceTypeCode', "383"],
+  ["remove", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:PostalZone'],
+  ["remove", '/*/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:StreetName'],
+]
+
+[[mutation]]
+id = "national/iceland-legal-ids"
+base = "invoice"
+reason = "Seller and buyer in Iceland with legal identifiers in scheme 0196 (IS-R-002 and IS-R-004 hold)"
+edits = [
+  ["set", '//cac:Country/cbc:IdentificationCode', "IS"],
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID/@schemeID', "0196"],
+  ["set", '/*/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID/@schemeID', "0196"],
+]
+
+[[mutation]]
+id = "national/iceland-payment-accounts"
+base = "invoice"
+reason = "Seller in Iceland, payment means 9 and 42 with accounts that are not 12 characters (IS-R-006, IS-R-007)"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "IS"],
+  ["duplicate", '/*/cac:PaymentMeans[1]'],
+  ["set", '/*/cac:PaymentMeans[1]/cbc:PaymentMeansCode', "9"],
+  ["set", '/*/cac:PaymentMeans[2]/cbc:PaymentMeansCode', "42"],
+  ["set", '/*/cac:PaymentMeans[1]/cac:PayeeFinancialAccount/cbc:ID', "0123"],
+  ["set", '/*/cac:PaymentMeans[2]/cac:PayeeFinancialAccount/cbc:ID', " 0123456789012 "],
+]
+
+[[mutation]]
+id = "national/iceland-due-date-reference-invalid"
+base = "invoice"
+reason = "Seller in Iceland, EINDAGI reference whose identifier is not a valid date, no due date (IS-R-008 castable as xs:date, IS-R-009)"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "IS"],
+  ["remove", '/*/cbc:DueDate'],
+  ["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID>2018-02-30</cbc:ID><cbc:DocumentDescription>EINDAGI</cbc:DocumentDescription></cac:AdditionalDocumentReference>"],
+]
+
+[[mutation]]
+id = "national/iceland-due-date-after-reference"
+base = "invoice"
+reason = "Seller in Iceland, EINDAGI reference date before the due date (IS-R-010 compares them as strings)"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "IS"],
+  ["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID>2000-01-01</cbc:ID><cbc:DocumentDescription>EINDAGI</cbc:DocumentDescription></cac:AdditionalDocumentReference>"],
+]
+
+[[mutation]]
+id = "national/iceland-due-date-reference-valid"
+base = "invoice"
+reason = "Seller in Iceland, EINDAGI reference date after the due date (IS-R-008..010 hold)"
+edits = [
+  ["set", '/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode', "IS"],
+  ["insert-after", '/*/cbc:BuyerReference', "<cac:AdditionalDocumentReference><cbc:ID>2099-12-31</cbc:ID><cbc:DocumentDescription>EINDAGI</cbc:DocumentDescription></cac:AdditionalDocumentReference>"],
+]

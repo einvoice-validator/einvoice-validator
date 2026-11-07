@@ -1,0 +1,546 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed under European Union Public Licence (EUPL) version 1.2.
+
+-->
+<!-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  -->
+<!--     PEPPOL BIS Billing 3.0 - MAXIMUM content: INVOICE                      -->
+<!--     Reference - http://docs.peppol.eu/poacc/billing/3.0/                   -->
+<!--                                                                            -->
+<!--     Note - The purpose is to illustrate maximum contents of invoice        -->
+<!--     instances, but without breaking breaking formal business rules.        -->
+<!--                                                                            -->
+<!--     Revised with validation rules according to PEPPOL's Fall release 2020  -->
+<!-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  -->
+
+<Invoice 
+ xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" 
+ xmlns:b="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+ xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+
+	<b:UBLVersionID>2.1</b:UBLVersionID>   
+	<b:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</b:CustomizationID>
+	<b:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</b:ProfileID>
+	<b:ID>2018210</b:ID>
+	<b:IssueDate>2018-02-08</b:IssueDate>
+	<b:DueDate>2018-03-07</b:DueDate>
+	<b:InvoiceTypeCode>380</b:InvoiceTypeCode>
+	<b:Note>Document level Note
+Line break should be respected here.</b:Note>
+	<b:TaxPointDate>2018-02-08</b:TaxPointDate>
+	<b:DocumentCurrencyCode>SEK</b:DocumentCurrencyCode>
+	<b:TaxCurrencyCode>EUR</b:TaxCurrencyCode>
+	<b:AccountingCost>BES, 87392</b:AccountingCost>
+
+<!-- For the use of references in invoices generally, see guide "The use of references and..." on
+     http://www.sfti.se/standarder/peppolbisochsvehandel/peppolbisbilling3/implementationsradochfaq.4728.html
+-->
+	<b:BuyerReference>Buyer reference</b:BuyerReference>
+
+	<cac:InvoicePeriod>
+		<b:StartDate>2018-02-01</b:StartDate>
+		<b:EndDate>2018-02-07</b:EndDate>
+<!-- *** Inactivated element in this message due to "mutually exclusive"-rule when validating:
+     ***	<b:DescriptionCode>35</b:DescriptionCode>                         
+-->
+	</cac:InvoicePeriod>
+	<cac:OrderReference>
+		<b:ID>20180117</b:ID>
+		<b:SalesOrderID>INK/0117/JM</b:SalesOrderID>
+	</cac:OrderReference>
+	<cac:BillingReference>
+		<cac:InvoiceDocumentReference>
+			<b:ID>Preceding invoice no.1</b:ID>
+			<b:IssueDate>2018-01-31</b:IssueDate>
+		</cac:InvoiceDocumentReference>
+	</cac:BillingReference>
+	<cac:BillingReference>
+		<cac:InvoiceDocumentReference>
+			<b:ID>Preceding invoice no.2</b:ID>
+		</cac:InvoiceDocumentReference>
+	</cac:BillingReference>
+	<cac:DespatchDocumentReference>
+		<b:ID>Despatch_advice Feb 01-07</b:ID>
+	</cac:DespatchDocumentReference>
+	<cac:ReceiptDocumentReference>
+		<b:ID>Receipt_advice 01-07</b:ID>
+	</cac:ReceiptDocumentReference>
+	<cac:OriginatorDocumentReference>
+		<b:ID>Tender 2017-12, lot no. 3</b:ID>
+	</cac:OriginatorDocumentReference>
+	<cac:ContractDocumentReference>
+		<b:ID>2017-123</b:ID>
+	</cac:ContractDocumentReference>
+
+	<cac:AdditionalDocumentReference>
+<!-- When the invoice refers to an "invoiced object": for more information, see guide "The use of references and..." on
+     http://www.sfti.se/standarder/peppolbisochsvehandel/peppolbisbilling3/implementationsradochfaq.4728.html
+-->
+		<b:ID schemeID="VT">ABC123</b:ID>
+		<b:DocumentTypeCode>130</b:DocumentTypeCode>
+	</cac:AdditionalDocumentReference>
+
+	<cac:AdditionalDocumentReference> 
+<!-- When the invoice refers to a document known to both parties: for more information, see guide "The use of references and..." on
+     http://www.sfti.se/standarder/peppolbisochsvehandel/peppolbisbilling3/implementationsradochfaq.4728.html
+-->
+		<b:ID>MT123</b:ID>
+		<b:DocumentDescription>Contracted maintenance plan</b:DocumentDescription>
+	</cac:AdditionalDocumentReference>
+
+	<cac:AdditionalDocumentReference> 
+<!-- When the invoice has an embedded attachment: for more information, see guide "The use of attachments" on
+     http://www.sfti.se/standarder/peppolbisochsvehandel/peppolbisbilling3/implementationsradochfaq.4728.html
+-->
+		<b:ID>Time report 1</b:ID>
+		<b:DocumentDescription>Attached sample document</b:DocumentDescription>
+		<cac:Attachment>
+			<b:EmbeddedDocumentBinaryObject mimeCode="text/csv" filename="testfilnamn.abc">
+				01234567
+			</b:EmbeddedDocumentBinaryObject>
+		</cac:Attachment>
+	</cac:AdditionalDocumentReference>
+
+	<cac:AdditionalDocumentReference> 
+<!-- When the invoice has an external document as attachment: for more information, see guide "The use of attachments" on
+     http://www.sfti.se/standarder/peppolbisochsvehandel/peppolbisbilling3/implementationsradochfaq.4728.html
+-->
+		<b:ID>Example 1</b:ID>
+		<b:DocumentDescription>Referenced external sample document</b:DocumentDescription>
+		<cac:Attachment>
+			<cac:ExternalReference>
+				<b:URI>http://www.example.com/index.html</b:URI>
+			</cac:ExternalReference>
+		</cac:Attachment>
+	</cac:AdditionalDocumentReference>
+
+	<cac:ProjectReference>
+		<b:ID>Project 99</b:ID>
+	</cac:ProjectReference>
+
+	<cac:AccountingSupplierParty>
+		<cac:Party>
+			<b:EndpointID schemeID="0007">1234567890</b:EndpointID>
+			<cac:PartyIdentification>
+				<b:ID schemeID="0088">7350000001204</b:ID >
+			</cac:PartyIdentification>
+			<cac:PartyIdentification>
+				<b:ID>BilateralID</b:ID >
+			</cac:PartyIdentification>
+			<cac:PartyName>
+				<b:Name>Global Trade Chain</b:Name>
+			</cac:PartyName>
+			<cac:PostalAddress>
+				<b:StreetName>Streetname-line1</b:StreetName>
+				<b:AdditionalStreetName>AddStreetname-line2</b:AdditionalStreetName>
+				<b:CityName>Big City</b:CityName>
+				<b:PostalZone>11122</b:PostalZone>
+				<b:CountrySubentity>Delstat A</b:CountrySubentity>
+				<cac:AddressLine>
+					<b:Line>Address-line3</b:Line>
+				</cac:AddressLine>
+				<cac:Country>
+					<b:IdentificationCode>SE</b:IdentificationCode>
+				</cac:Country>
+			</cac:PostalAddress>
+			<cac:PartyTaxScheme>
+				<b:CompanyID>SE123456789001</b:CompanyID>
+				<cac:TaxScheme>
+					<b:ID>VAT</b:ID>
+				</cac:TaxScheme>
+			</cac:PartyTaxScheme>
+			<cac:PartyTaxScheme>
+				<b:CompanyID>Godkänd för F-skatt</b:CompanyID>
+				<cac:TaxScheme>
+					<b:ID>TAX</b:ID>
+				</cac:TaxScheme>
+			</cac:PartyTaxScheme>
+			<cac:PartyLegalEntity>
+				<b:RegistrationName>The Global Chain Sweden AB</b:RegistrationName>
+				<b:CompanyID schemeID="0007">1234567890</b:CompanyID>
+				<b:CompanyLegalForm>Säte: Big CIty</b:CompanyLegalForm>
+			</cac:PartyLegalEntity>
+			<cac:Contact>
+				<b:Name>A Persson</b:Name>
+				<b:Telephone>0201234567</b:Telephone>
+				<b:ElectronicMail>info@UCS.se</b:ElectronicMail>
+			</cac:Contact>
+		</cac:Party>
+	</cac:AccountingSupplierParty>
+
+	<cac:AccountingCustomerParty>
+		<cac:Party>
+			<b:EndpointID schemeID="0007">1234512345</b:EndpointID>
+			<cac:PartyIdentification>
+				<b:ID schemeID="0088">7350000001228</b:ID >
+	 		</cac:PartyIdentification>
+			<cac:PartyName>
+				<b:Name>Project Services</b:Name>
+			</cac:PartyName>
+			<cac:PostalAddress>
+				<b:StreetName>Gata (rad1)</b:StreetName>
+				<b:AdditionalStreetName>Box 8 (rad2)</b:AdditionalStreetName>
+				<b:CityName>Motown</b:CityName>
+				<b:PostalZone>10203</b:PostalZone>
+				<b:CountrySubentity>Delstat B</b:CountrySubentity>
+				<cac:AddressLine>
+					<b:Line>Building 4 (rad3)</b:Line>
+				</cac:AddressLine>
+				<cac:Country>
+					<b:IdentificationCode>SE</b:IdentificationCode>
+				</cac:Country>
+			</cac:PostalAddress>
+			<cac:PartyTaxScheme>
+				<b:CompanyID>SE123451234501</b:CompanyID>
+				<cac:TaxScheme>
+					<b:ID>VAT</b:ID>
+				</cac:TaxScheme>
+			</cac:PartyTaxScheme>
+			<cac:PartyLegalEntity>
+				<b:RegistrationName>Project services AB</b:RegistrationName>
+				<b:CompanyID schemeID="0007">1234512345</b:CompanyID>
+			</cac:PartyLegalEntity>
+			<cac:Contact>
+				<b:Name>B. E. Ställman</b:Name>
+				<b:Telephone>070123456</b:Telephone>
+				<b:ElectronicMail>B.E.Stallman@projekttjanst.se</b:ElectronicMail>
+			</cac:Contact>
+		</cac:Party>
+	</cac:AccountingCustomerParty>
+
+	<cac:PayeeParty>
+		<cac:PartyIdentification>
+			<b:ID schemeID="0088">7350053850019</b:ID >
+		</cac:PartyIdentification>
+		<cac:PartyName>
+			<b:Name>Finansiell Support u.p.a.</b:Name>
+		</cac:PartyName>
+		<cac:PartyLegalEntity>
+			<b:CompanyID schemeID="0007">5566778899</b:CompanyID>
+		</cac:PartyLegalEntity>
+	</cac:PayeeParty>
+
+<!-- Be cautious if TaxRepresentative is found in invoices to Swedish buyers:
+     If referenced in Sweden, still the supplier's Swedish VAT number is required, 
+     and only one VAT number on the supplier's side should be present in an invoice.  
+-->
+	<cac:TaxRepresentativeParty>
+		<cac:PartyName>
+			<b:Name>Tax Administrators Inc.</b:Name>
+		</cac:PartyName>
+		<cac:PostalAddress>
+			<b:StreetName>TaxREP Streetname-line1</b:StreetName>
+			<b:AdditionalStreetName>TaxREP AddStreetname-line2</b:AdditionalStreetName>
+			<b:CityName>TaxREP Village</b:CityName>
+			<b:PostalZone>TaxREP 98765</b:PostalZone>
+			<b:CountrySubentity>TaxREP State A</b:CountrySubentity>
+			<cac:AddressLine>
+				<b:Line>TaxREP-line3</b:Line>
+			</cac:AddressLine>
+			<cac:Country>
+				<b:IdentificationCode>SE</b:IdentificationCode>
+			</cac:Country>
+		</cac:PostalAddress>
+		<cac:PartyTaxScheme>
+		<!-- Not compatible with Swedish VAT rules (but may be OK in other countries): -->
+			<b:CompanyID>SE998877665501</b:CompanyID>
+			<cac:TaxScheme>
+				<b:ID>VAT</b:ID>
+			</cac:TaxScheme>
+		</cac:PartyTaxScheme>
+	</cac:TaxRepresentativeParty>
+
+	<cac:Delivery>
+		<b:ActualDeliveryDate>2017-12-01</b:ActualDeliveryDate>
+		<cac:DeliveryLocation>
+			<b:ID schemeID="0088">7350000001211</b:ID>
+			<cac:Address>
+				<b:StreetName>DELIV Streetname-line1</b:StreetName>
+				<b:AdditionalStreetName>DELIV AddStreetname-line2</b:AdditionalStreetName>
+				<b:CityName>DELIV Town</b:CityName>
+				<b:PostalZone>DELIV 90807</b:PostalZone>
+				<b:CountrySubentity>DELIV Delstat C</b:CountrySubentity>
+				<cac:AddressLine>
+					<b:Line>DELIV-line3</b:Line>
+				</cac:AddressLine>
+				<cac:Country>
+					<b:IdentificationCode>SE</b:IdentificationCode>
+				</cac:Country>
+			</cac:Address>
+		</cac:DeliveryLocation>
+		<cac:DeliveryParty>
+			<cac:PartyName>
+				<b:Name>Deliver-to Name A.S.</b:Name>
+			</cac:PartyName>
+		</cac:DeliveryParty>
+	</cac:Delivery>
+
+<!-- NB! Note the restrictions on PaymentMeans in order for the invoice instance to be valid:   
+         * Credit transfer, debit transfer and card payment are mutually exclusive options      
+         * Credit transfer may be repeated, but then only with the same PaymentMeansCode         
+         * The PaymentID value must be present in all PaymentMeans in the invoice instance (or just in one PaymentMeans)           
+         * The below list shows common uses of credit transfer in Sweden                         
+         * For information on other arrangements for payment, see the guide on the use of payment means on
+         * http://www.sfti.se/standarder/peppolbisochsvehandel/peppolbisbilling3/implementationsradochfaq.4728.html 
+-->
+	<cac:PaymentMeans> <!-- Credit transfer (domestic, with bank account on IBAN format) -->
+		<b:PaymentMeansCode name="Credit transfer">30</b:PaymentMeansCode>
+		<b:PaymentID>1800355</b:PaymentID>
+		<cac:PayeeFinancialAccount>
+			<b:ID>SE1212341234123412341234</b:ID>
+			<b:Name>Name-of-account_A (normally not used in Sweden)</b:Name>
+		        <cac:FinancialInstitutionBranch>
+			   <b:ID>BANKSBIC</b:ID>
+		        </cac:FinancialInstitutionBranch>
+		</cac:PayeeFinancialAccount>
+	</cac:PaymentMeans>
+	<cac:PaymentMeans> <!-- Credit transfer (domestic, with bank account on national format) -->
+		<b:PaymentMeansCode>30</b:PaymentMeansCode>
+		<b:PaymentID>1800355</b:PaymentID>
+		<cac:PayeeFinancialAccount>
+			<b:ID>12341234567</b:ID> 
+			<b:Name>Name-of-account_B (normally not used in Sweden)</b:Name>
+		        <cac:FinancialInstitutionBranch>
+			   <b:ID>BANKSBIC</b:ID>
+		        </cac:FinancialInstitutionBranch>
+		</cac:PayeeFinancialAccount>
+	</cac:PaymentMeans>
+	<cac:PaymentMeans> <!-- Credit transfer (Swedish Bankgiro) -->
+		<b:PaymentMeansCode>30</b:PaymentMeansCode>
+		<b:PaymentID>1800355</b:PaymentID>
+		<cac:PayeeFinancialAccount>
+			<b:ID>1112222</b:ID>
+		        <cac:FinancialInstitutionBranch>
+			   <b:ID>SE:BANKGIRO</b:ID>
+		        </cac:FinancialInstitutionBranch>
+		</cac:PayeeFinancialAccount>
+	</cac:PaymentMeans>
+	<cac:PaymentMeans> <!-- Credit transfer (Swedish Plusgiro) -->
+		<b:PaymentMeansCode>30</b:PaymentMeansCode>
+		<b:PaymentID>1800355</b:PaymentID>
+		<cac:PayeeFinancialAccount>
+			<b:ID>121212</b:ID>
+		        <cac:FinancialInstitutionBranch>
+			   <b:ID>SE:PLUSGIRO</b:ID>
+		        </cac:FinancialInstitutionBranch>
+		</cac:PayeeFinancialAccount>
+	</cac:PaymentMeans>
+
+<!-- NB! Payment means for card payment is de-activated in this instance of the document:
+	<cac:PaymentMeans> 
+		<b:PaymentMeansCode name="Credit card">54</b:PaymentMeansCode>
+		<b:PaymentDueDate>2018-03-07</b:PaymentDueDate>
+		<b:PaymentID>1800355</b:PaymentID>
+		<cac:CardAccount>
+			<b:PrimaryAccountNumberID>123236</b:PrimaryAccountNumberID>
+			<b:NetworkID>VISA</b:NetworkID>
+			<b:HolderName>Card holders name</b:HolderName>
+		</cac:CardAccount>
+	</cac:PaymentMeans>
+-->
+<!-- NB! Payment means for direct debit is de-activated in this instance of the document:
+         (use PaymentMeansCode="49" for autogiro or "59" for SEPA autogiro)
+	<cac:PaymentMeans> 
+		<b:PaymentMeansCode name="SEPA direct debit">59</b:PaymentMeansCode>
+		<b:PaymentDueDate>2018-03-07</b:PaymentDueDate>
+		<b:PaymentID>1800355</b:PaymentID>
+		<cac:PaymentMandate>
+			<b:ID>123456</b:ID>
+			<cac:PayerFinancialAccount>
+				<b:ID>DK12328462834823</b:ID>
+			</cac:PayerFinancialAccount>
+		</cac:PaymentMandate>
+	</cac:PaymentMeans>
+-->
+	<cac:PaymentTerms>
+		<b:Note>30 days net. Penalty rate 12 %
+Line break should be respected here.</b:Note>
+	</cac:PaymentTerms>
+
+	<cac:AllowanceCharge> <!-- Allowance: -->
+		<b:ChargeIndicator>false</b:ChargeIndicator>
+		<b:AllowanceChargeReasonCode>95</b:AllowanceChargeReasonCode>
+		<b:AllowanceChargeReason>Discount</b:AllowanceChargeReason>
+		<b:MultiplierFactorNumeric>0</b:MultiplierFactorNumeric>
+		<b:Amount currencyID="SEK">0</b:Amount>
+		<b:BaseAmount currencyID="SEK">0</b:BaseAmount>
+		<cac:TaxCategory>
+			<b:ID>E</b:ID>
+			<b:Percent>0</b:Percent>
+			<cac:TaxScheme>
+				<b:ID>VAT</b:ID>
+			</cac:TaxScheme>
+		</cac:TaxCategory>
+	</cac:AllowanceCharge>
+	<cac:AllowanceCharge> <!-- Charge: -->
+		<b:ChargeIndicator>true</b:ChargeIndicator>
+		<b:AllowanceChargeReasonCode>WH</b:AllowanceChargeReasonCode>
+		<b:AllowanceChargeReason>Warehousing</b:AllowanceChargeReason>
+		<b:MultiplierFactorNumeric>0</b:MultiplierFactorNumeric>
+		<b:Amount currencyID="SEK">0</b:Amount>
+		<b:BaseAmount currencyID="SEK">0</b:BaseAmount>
+		<cac:TaxCategory>
+			<b:ID>E</b:ID>
+			<b:Percent>0</b:Percent>
+			<cac:TaxScheme>
+				<b:ID>VAT</b:ID>
+			</cac:TaxScheme>
+		</cac:TaxCategory>
+	</cac:AllowanceCharge>
+
+	<cac:TaxTotal>
+		<b:TaxAmount currencyID="SEK">2500</b:TaxAmount>
+		<cac:TaxSubtotal>
+			<b:TaxableAmount currencyID="SEK">10000</b:TaxableAmount>
+			<b:TaxAmount currencyID="SEK">2500</b:TaxAmount>
+			<cac:TaxCategory>
+				<b:ID>S</b:ID>
+				<b:Percent>25</b:Percent>
+				<cac:TaxScheme>
+					<b:ID>VAT</b:ID>
+				</cac:TaxScheme>
+			</cac:TaxCategory>
+		</cac:TaxSubtotal>
+		<cac:TaxSubtotal>
+			<b:TaxableAmount currencyID="SEK">0</b:TaxableAmount>
+			<b:TaxAmount currencyID="SEK">0</b:TaxAmount>
+			<cac:TaxCategory>
+				<b:ID>E</b:ID>
+				<b:Percent>0</b:Percent>
+				<b:TaxExemptionReasonCode>vatex-eu-132-1g</b:TaxExemptionReasonCode>
+				<b:TaxExemptionReason>EU Direcive Article 132, section 1(g)</b:TaxExemptionReason>
+				<cac:TaxScheme>
+					<b:ID>VAT</b:ID>
+				</cac:TaxScheme>
+			</cac:TaxCategory>
+		</cac:TaxSubtotal>
+	</cac:TaxTotal>
+
+<!-- NB! Two occurrencies of TaxTotal may be present in an invoice: if so, one TaxTotal is
+         to show the tax amount in a TaxCurrency that is different from DocumentCurrency: 
+-->
+	<cac:TaxTotal>
+		<b:TaxAmount currencyID="EUR">249</b:TaxAmount>
+	</cac:TaxTotal>
+
+	<cac:LegalMonetaryTotal>
+		<b:LineExtensionAmount currencyID="SEK">10000</b:LineExtensionAmount>
+		<b:TaxExclusiveAmount currencyID="SEK">10000</b:TaxExclusiveAmount>
+		<b:TaxInclusiveAmount currencyID="SEK">12500</b:TaxInclusiveAmount>
+		<b:AllowanceTotalAmount currencyID="SEK">0</b:AllowanceTotalAmount>
+		<b:ChargeTotalAmount currencyID="SEK">0</b:ChargeTotalAmount>
+		<b:PrepaidAmount currencyID="SEK">0</b:PrepaidAmount>
+		<b:PayableRoundingAmount currencyID="SEK">0</b:PayableRoundingAmount>
+		<b:PayableAmount currencyID="SEK">12500</b:PayableAmount>
+	</cac:LegalMonetaryTotal>
+
+	<cac:InvoiceLine>
+		<b:ID>1</b:ID>
+		<b:Note>Line level Note
+Line break should be respected here.</b:Note>
+
+<!-- For guidance on measure units in invoices, see guide "Shortlisted codes for units of measure and package types" on
+     http://www.sfti.se/standarder/peppolbisochsvehandel/peppolbisbilling3/implementationsradochfaq.4728.html
+-->
+		<b:InvoicedQuantity unitCode="MTR">500</b:InvoicedQuantity>
+		<b:LineExtensionAmount currencyID="SEK">10000</b:LineExtensionAmount>
+		<b:AccountingCost>Accounting 101-222-8</b:AccountingCost>
+		<cac:InvoicePeriod>
+			<b:StartDate>2018-02-01</b:StartDate>
+			<b:EndDate>2018-02-07</b:EndDate>
+		</cac:InvoicePeriod>
+		<cac:OrderLineReference>
+			<b:LineID>20080117/JM</b:LineID>
+		</cac:OrderLineReference>
+		<cac:DocumentReference> <!-- Identification of "invoiced object", applicable to this very line -->
+			<b:ID schemeID="ABZ">130-DR35141</b:ID>
+			<b:DocumentTypeCode>130</b:DocumentTypeCode>
+		</cac:DocumentReference>
+
+		<cac:AllowanceCharge> <!-- Allowance: -->
+			<b:ChargeIndicator>false</b:ChargeIndicator>
+			<b:AllowanceChargeReasonCode>95</b:AllowanceChargeReasonCode>
+			<b:AllowanceChargeReason>Discount</b:AllowanceChargeReason>
+			<b:MultiplierFactorNumeric>0</b:MultiplierFactorNumeric>
+			<b:Amount currencyID="SEK">0</b:Amount>
+			<b:BaseAmount currencyID="SEK">0</b:BaseAmount>
+		</cac:AllowanceCharge>
+		<cac:AllowanceCharge> <!-- Charge: -->
+			<b:ChargeIndicator>true</b:ChargeIndicator>
+			<b:AllowanceChargeReasonCode>WH</b:AllowanceChargeReasonCode>
+			<b:AllowanceChargeReason>Warehousing</b:AllowanceChargeReason>
+			<b:MultiplierFactorNumeric>0</b:MultiplierFactorNumeric>
+			<b:Amount currencyID="SEK">0</b:Amount>
+			<b:BaseAmount currencyID="SEK">0</b:BaseAmount>
+		</cac:AllowanceCharge>
+
+		<cac:Item>
+			<b:Description>Universal product, customized with option X</b:Description>
+			<b:Name>Universal product</b:Name>
+			<cac:BuyersItemIdentification>
+				<b:ID>Buyer's ID</b:ID>
+			</cac:BuyersItemIdentification>
+			<cac:SellersItemIdentification>
+				<b:ID>UNI+X</b:ID>
+			</cac:SellersItemIdentification>
+			<cac:StandardItemIdentification>
+				<b:ID schemeID="0088">17350053850016</b:ID>
+			</cac:StandardItemIdentification>
+			<cac:OriginCountry>
+				<b:IdentificationCode>SE</b:IdentificationCode>
+			</cac:OriginCountry>
+			<cac:CommodityClassification>
+				<b:ItemClassificationCode listID="SSR" listVersionID="1.0">9873242</b:ItemClassificationCode>
+			</cac:CommodityClassification>
+			<cac:CommodityClassification>
+				<b:ItemClassificationCode listID="SST">SST3242</b:ItemClassificationCode>
+			</cac:CommodityClassification>
+			<cac:ClassifiedTaxCategory>
+				<b:ID>S</b:ID>
+				<b:Percent>25</b:Percent>
+				<cac:TaxScheme>
+					<b:ID>VAT</b:ID>
+				</cac:TaxScheme>
+			</cac:ClassifiedTaxCategory>
+			<cac:AdditionalItemProperty>
+				<b:Name>Surface grade</b:Name>
+				<b:Value>A11</b:Value>
+			</cac:AdditionalItemProperty>
+			<cac:AdditionalItemProperty>
+				<b:Name>Density</b:Name>
+				<b:Value>2.33</b:Value>
+			</cac:AdditionalItemProperty>
+		</cac:Item>
+		<cac:Price>
+			<b:PriceAmount currencyID="SEK">20</b:PriceAmount>
+			<b:BaseQuantity unitCode="MTR">1</b:BaseQuantity>
+			<cac:AllowanceCharge>
+				<!-- EN 16931-1 tillåter endast rabatt, max en förekomst -->
+				<b:ChargeIndicator>false</b:ChargeIndicator>
+				<b:Amount currencyID="SEK">0.50</b:Amount>
+				<b:BaseAmount currencyID="SEK">20.50</b:BaseAmount>
+			</cac:AllowanceCharge>
+		</cac:Price>
+	</cac:InvoiceLine>
+
+	<cac:InvoiceLine>
+		<b:ID>2</b:ID>
+		<b:InvoicedQuantity unitCode="EA">10000</b:InvoicedQuantity>
+		<b:LineExtensionAmount currencyID="SEK">0</b:LineExtensionAmount>
+		<cac:Item>
+			<b:Name>Guarantee facility</b:Name>
+			<cac:ClassifiedTaxCategory>
+				<b:ID>E</b:ID>
+				<b:Percent>0</b:Percent>
+				<cac:TaxScheme>
+					<b:ID>VAT</b:ID>
+				</cac:TaxScheme>
+			</cac:ClassifiedTaxCategory>
+		</cac:Item>
+		<cac:Price>
+			<b:PriceAmount currencyID="SEK">0</b:PriceAmount>
+		</cac:Price>
+	</cac:InvoiceLine>
+
+</Invoice>

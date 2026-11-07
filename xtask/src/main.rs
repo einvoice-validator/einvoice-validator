@@ -3,6 +3,7 @@
 //! ```text
 //! cargo xtask manifest [--write]    check (or rewrite) SHA256SUMS of the vendored artefacts
 //! cargo xtask corpus [--write]      check (or regenerate) the cases extracted from VEFA test sets
+//!                                   and the documents of the mutation catalogue
 //! cargo xtask oracle [--write] [--java JAVA] [--saxon JAR]
 //!                                   run Saxon-HE on every case and compare with (or write) the goldens
 //! cargo xtask crosscheck            compare the goldens with the VEFA expectations
@@ -24,10 +25,12 @@
 mod corpus;
 mod crosscheck;
 mod manifest;
+mod mutation;
 mod oracle;
 mod peppol;
 mod ruleset;
 mod svrl;
+mod toml;
 mod util;
 mod vefa;
 
@@ -113,13 +116,16 @@ fn run_manifest(root: &Path, write: bool) -> Result<()> {
 
 fn run_corpus(root: &Path, write: bool) -> Result<()> {
     for rule_set in ruleset::VENDORED {
-        let count = if write {
+        let counts = if write {
             corpus::write(root, rule_set)?
         } else {
             corpus::verify(root, rule_set)?
         };
         let verb = if write { "written" } else { "verified" };
-        println!("corpus {verb}: {}: {count} cases", rule_set.name);
+        println!(
+            "corpus {verb}: {}: {} cases, {} mutation cases",
+            rule_set.name, counts.cases, counts.mutations
+        );
     }
     Ok(())
 }
@@ -129,14 +135,16 @@ fn run_oracle(root: &Path, options: &oracle::Options) -> Result<()> {
     for rule_set in ruleset::VENDORED {
         for outcome in oracle::run(root, rule_set, options)? {
             println!(
-                "oracle {}: {} {}: {} cases, {} with findings, {} failed asserts, {} successful reports",
+                "oracle {}: {} {}: {} cases, {} with findings, {} failed asserts, {} successful reports, {} stopped by an error, {} with pattern warnings",
                 if options.write { "written" } else { "checked" },
                 rule_set.name,
                 outcome.stylesheet,
                 outcome.cases,
                 outcome.cases_with_findings,
                 outcome.failed_asserts,
-                outcome.successful_reports
+                outcome.successful_reports,
+                outcome.errors,
+                outcome.warned
             );
             problems.extend(outcome.problems);
         }

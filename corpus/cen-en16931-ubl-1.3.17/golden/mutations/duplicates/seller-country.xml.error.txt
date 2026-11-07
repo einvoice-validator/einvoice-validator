@@ -1,0 +1,2 @@
+error XPTY0004
+message A sequence of more than one item { ("SE", "SE") } is not allowed as the first argument of fn:normalize-space()

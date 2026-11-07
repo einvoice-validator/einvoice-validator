@@ -62,6 +62,9 @@ pub(crate) struct RuleSet {
     /// Files in those directories that are neither documents nor test sets,
     /// relative to the source directory. Each must exist.
     pub(crate) ignored: &'static [&'static str],
+    /// The base documents of the mutation catalogue (`corpus/mutations.toml`):
+    /// (base name, id of a whole-document case).
+    pub(crate) mutation_bases: &'static [(&'static str, &'static str)],
 }
 
 impl RuleSet {
@@ -124,6 +127,11 @@ pub(crate) const CEN_UBL: RuleSet = RuleSet {
     ],
     vefa_dirs: &["test/Invoice-unit-UBL", "test/CreditNote-unit-UBL"],
     ignored: &[],
+    mutation_bases: &[
+        ("invoice", "testfiles/Invoice-Max_content.xml"),
+        ("credit-note", "testfiles/CreditNote-Max_content.xml"),
+        ("allowances", "examples/ubl-tc434-example2.xml"),
+    ],
 };
 
 /// Peppol BIS Billing 3.0.22, UBL syntax: its own rules and the
@@ -169,7 +177,15 @@ pub(crate) const PEPPOL_UBL: RuleSet = RuleSet {
         // `*.xml` files of a test folder, does not run it.
         "unit-UBL-PEPPOL/PEPPOL-COMMON-R048.xm",
     ],
+    mutation_bases: &[
+        ("invoice", "examples/base-example.xml"),
+        ("credit-note", "examples/base-creditnote-correction.xml"),
+        ("allowances", "examples/Allowance-example.xml"),
+    ],
 };
 
 /// The vendored rule sets: their corpus is committed.
 pub(crate) const VENDORED: &[&RuleSet] = &[&CEN_UBL];
+
+/// Every rule set, vendored or fetched.
+pub(crate) const ALL: &[&RuleSet] = &[&CEN_UBL, &PEPPOL_UBL];

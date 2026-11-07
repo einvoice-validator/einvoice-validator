@@ -18,14 +18,14 @@ SVRL report as Saxon-HE.
 
 | Part | State |
 |---|---|
-| Test corpus of CEN EN 16931 UBL 1.3.17 (1179 cases) with the Saxon-HE results for each case | done |
+| Test corpus of CEN EN 16931 UBL 1.3.17 (1179 cases, and 504 cases of our own made by mutating official examples) with the Saxon-HE results for each case | done |
 | `einvoice-xdm`: XPath 2.0 atomic values with exact decimals, checked against Saxon-HE | done |
 | `einvoice-xpath`: parser of the XPath 2.0 subset; parses every expression of the CEN 1.3.17 stylesheet | done |
 | `einvoice-xslt`: loader of the XSLT 2.0 subset; loads the CEN 1.3.17 stylesheet | done |
 | `einvoice-xpath-eval`: XPath 2.0 evaluator; agrees with Saxon-HE on every distinct expression of the CEN 1.3.17 stylesheet at nodes of corpus documents | done |
 | `einvoice-xslt-exec`: XSLT executor and SVRL output | done |
-| Same results as Saxon-HE on the whole CEN corpus | done: 1179 / 1179 cases identical; own mutation cases to come ([#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
-| Test corpus of Peppol BIS Billing 3.0.22 (707 cases), built locally from the pinned release (not redistributed) with the Saxon-HE results of both stylesheets | done ([#4](https://github.com/einvoice-validator/einvoice-validator/issues/4)) |
+| Same results as Saxon-HE on the whole CEN corpus | done: 1179 / 1179 cases identical; the equivalence test of the 504 mutation cases is to come ([#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
+| Test corpus of Peppol BIS Billing 3.0.22 (707 cases, and 505 mutation cases), built locally from the pinned release (not redistributed) with the Saxon-HE results of both stylesheets | done ([#4](https://github.com/einvoice-validator/einvoice-validator/issues/4)) |
 | Same results as Saxon-HE on the whole Peppol corpus | done: 707 / 707 cases identical with each of the two stylesheets ([#5](https://github.com/einvoice-validator/einvoice-validator/issues/5)) |
 | `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1546 cases, every corpus case agrees, the other differences are listed with their cause | done ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6) follow-ups) |
 | Public API (`einvoice-validator`: rule-set bundles, `Validator`, `Report`) and command-line tool (`einvoice-validate`); verdicts and findings agree with Saxon-HE on all 1179 CEN cases and, with the Peppol bundle, on all 707 Peppol cases | done ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
@@ -170,11 +170,15 @@ flowchart LR
 | [`einvoice-svrl`](crates/einvoice-svrl) | The canonical, line-oriented form of SVRL reports ([`corpus/SVRL-CANONICAL.md`](corpus/SVRL-CANONICAL.md)) used to compare reports with the reference engine. |
 | [`einvoice-validator`](crates/einvoice-validator) | The public crate: rule-set bundles (a `bundle.toml` manifest with the SHA-256 of each stylesheet, from memory or a directory; CEN EN 16931 UBL 1.3.17 built in), the `Validator` (XML check, UBL 2.1 schema, then each stylesheet; `Send + Sync`) and the `Report` (schema errors, findings, SVRL, verdict). |
 | [`einvoice-cli`](crates/einvoice-cli) | The `einvoice-validate` command-line tool: files and standard input, built-in rule sets or bundle directories, several threads, text, JSON or SVRL output, documented exit codes. |
-| [`xtask`](xtask) | Repository tooling, not published: artefact checksums, corpus extraction, the Saxon-HE oracle, the VEFA cross-check. |
+| [`xtask`](xtask) | Repository tooling, not published: artefact checksums, corpus extraction, the mutation catalogue, the Saxon-HE oracle, the VEFA cross-check. |
 
 **Testing against the reference engine.** The corpus of each rule set holds the official example
 documents, the official test files and one document per test of the official VEFA unit test
-sets. For each case, the golden file is the SVRL that Saxon-HE produces, in the canonical form
+sets, plus cases of our own: a catalogue of edits ([`corpus/mutations.toml`](corpus/mutations.toml))
+applied to official examples, aimed at what the rules check and where engines can diverge
+(rounding, decimal precision, number and date forms, code lists, check digits, namespaces,
+repeated elements). For each case, the golden file is the SVRL that Saxon-HE produces (or the
+error that stops it), in the canonical form
 of [`corpus/SVRL-CANONICAL.md`](corpus/SVRL-CANONICAL.md); it is committed for CEN, and built
 in `target/` for Peppol, whose files may not be redistributed. CI re-runs Saxon-HE on every
 case whenever the corpus or its tooling changes and fails if a committed golden differs,
@@ -226,7 +230,7 @@ The corpus and the oracle can also be run step by step:
 
 ```sh
 cargo xtask manifest         # vendored artefacts match their SHA256SUMS
-cargo xtask corpus           # corpus/*/cases.tsv and the extracted VEFA documents are up to date
+cargo xtask corpus           # corpus/*/cases.tsv, the extracted VEFA documents and the mutation cases are up to date
 cargo xtask crosscheck       # goldens against the VEFA expectations
 scripts/fetch-saxon.sh       # Saxon-HE 12.10 and the XML Resolver 5.3.3 from Maven Central into target/, checksums verified
 cargo xtask oracle           # Saxon-HE on every case; the goldens must not change
@@ -272,7 +276,7 @@ upstream.toml        every pinned upstream version and the files that record it
 - The code of this project is under the [MIT licence](LICENSE).
 - `artefacts/cen-en16931-ubl-1.3.17/` holds files published by CEN/TC 434, vendored unmodified,
   under the European Union Public Licence 1.2 (EUPL-1.2). `corpus/cen-en16931-ubl-1.3.17/` is
-  derived from them and is EUPL-1.2 too. Each directory has a README with the provenance and a
+  derived from them, its mutation cases included, and is EUPL-1.2 too. Each directory has a README with the provenance and a
   `LICENSE.txt`.
 - `einvoice-validator` embeds the CEN stylesheet of `artefacts/cen-en16931-ubl-1.3.17/` (EUPL-1.2)
   through its default feature `cen-ubl`, which provides the built-in rule set `cen-ubl`; so does

@@ -1,0 +1,2 @@
+error XPTY0004
+message A sequence of more than one item { (10000, 10000) } is not allowed as the first operand of '+'

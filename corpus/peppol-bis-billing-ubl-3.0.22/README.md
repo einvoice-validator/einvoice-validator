@@ -21,11 +21,14 @@ checks it:
    as packaged in ph-schematron, and checks the SHA-256 of both results:
    `target/peppol/peppol-bis-billing-ubl-3.0.22/xslt/`. Every pin is at the top of the script.
 2. `cargo xtask peppol` extracts the cases into `target/peppol/peppol-bis-billing-ubl-3.0.22/corpus/`
-   (same layout and `cases.tsv` format as the committed corpora, see `../README.md`), runs
+   (same layout and `cases.tsv` format as the committed corpora, see `../README.md`), applies
+   the mutation catalogue `../mutations.toml` to `rules/examples/base-example.xml`,
+   `base-creditnote-correction.xml` and `Allowance-example.xml` (505 mutation cases,
+   `mutations.tsv` and `mutations/`), runs
    Saxon-HE with each stylesheet on every case (`golden-peppol/` and `golden-cen/`), cross-checks
    the goldens of both stylesheets together with the VEFA expectations against
-   `vefa-disagreements.tsv`, and writes `complete.txt` (number of cases, checksums of the
-   stylesheets).
+   `vefa-disagreements.tsv`, and writes `complete.txt` (number of cases and of mutation cases,
+   checksums of the stylesheets).
 3. `crates/einvoice-xslt-exec/tests/peppol_equivalence.rs`: the engine runs both stylesheets on
    every case; each canonical SVRL must equal its golden.
 

@@ -12,6 +12,17 @@ against.
 
 ### Added
 
+- Mutation cases: a catalogue of edits of official examples (`corpus/mutations.toml`, applied by
+  `cargo xtask corpus`), aimed at totals and rounding, decimal precision and size, lexical forms
+  of numbers, booleans and dates, VAT categories, allowances and charges, prices, code lists,
+  identifiers with check digits, missing and repeated elements, credit notes, namespaces,
+  markup in values, long values, national rules and the elements and attributes EN 16931 does
+  not use. 504 cases for CEN 1.3.17 (committed, EUPL-1.2 like the rest of its corpus, with
+  their Saxon-HE 12.10 goldens) and 505 for Peppol BIS Billing 3.0.22 (built locally with the
+  Peppol corpus). They raise the number of distinct CEN assert ids that fire in the corpus
+  from 235 to 973 of 982. A case on which Saxon-HE stops with a dynamic error has the error as
+  its golden (`<case>.error.txt`); the oracle runs the mutation cases on one thread with `-t`
+  so that every diagnostic is attributed to its document.
 - Cargo workspace (edition 2024) with the toolchain pinned in `rust-toolchain.toml`, every
   warning denied, clippy `all` and `pedantic` denied, `unsafe` code forbidden, and a
   dependency policy checked by cargo-deny.

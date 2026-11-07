@@ -6,6 +6,7 @@
 # end-of-line conversion. Upstream LICENSE.txt has CRLF line ends.
 artefacts/** -text
 corpus/*/vefa/** -text
+corpus/*/mutations/** -text
 corpus/*/LICENSE.txt -text
 crates/einvoice-validator/bundles/cen-ubl/ubl/** -text
 crates/*/LICENSES/EUPL-1.2.txt -text
