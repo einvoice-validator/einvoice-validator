@@ -22,6 +22,12 @@ impl fmt::Display for Error {
     }
 }
 
+impl From<einvoice_svrl::Error> for Error {
+    fn from(e: einvoice_svrl::Error) -> Self {
+        Self(e.to_string())
+    }
+}
+
 pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 /// The repository root: the parent of this crate's directory.

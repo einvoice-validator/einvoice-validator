@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+einvoice-svrl = { path = "../crates/einvoice-svrl" }
 roxmltree = "0.21.2"
 sha2 = "0.11.1"
 

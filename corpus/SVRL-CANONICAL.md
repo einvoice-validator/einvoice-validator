@@ -3,7 +3,8 @@
 The golden files (`corpus/<rule set>/golden/<case id>.svrl.txt`) hold the SVRL report of the
 reference engine in a canonical, line-oriented form, so that two engines can be compared with a
 plain text diff. It keeps every SVRL element, attribute, text and comment of the report, in
-document order. The implementation is `xtask/src/svrl.rs`.
+document order. The implementation is the `einvoice-svrl` crate (`crates/einvoice-svrl`), used by
+the oracle (`cargo xtask oracle`) and by the equivalence tests of the engine.
 
 ## Lines
 

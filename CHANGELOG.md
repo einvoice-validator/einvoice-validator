@@ -35,6 +35,8 @@ against.
   is refused when a schema set is loaded. Errors carry a stable kind, the line and column.
   Compared with xmllint on the corpus and on mutations; every difference is listed with its
   cause.
+- `einvoice-svrl`: the canonical, line-oriented form of SVRL reports (`corpus/SVRL-CANONICAL.md`),
+  shared by the oracle tooling and the equivalence tests.
 - The CEN EN 16931 UBL validation artefacts 1.3.17, vendored unmodified (EUPL-1.2) with their
   SHA-256 checksums.
 - A test corpus of 1179 cases derived from those artefacts (official examples, test files and
