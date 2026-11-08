@@ -15,8 +15,10 @@
 # - WASM_OPT: wasm-opt of binaryen, version BINARYEN_VERSION below.
 # `tools` installs both in EINVOICE_WASM_TOOLS (default
 # ${XDG_CACHE_HOME:-~/.cache}/einvoice-validator/wasm-tools), outside the repository:
-# wasm-bindgen-cli built from crates.io with --locked, and binaryen's release archive for
-# x86_64 Linux (or the archive BINARYEN_ARCHIVE names), checked against its SHA-256 below.
+# wasm-bindgen-cli built from crates.io with --locked (kept when that version is there
+# already), and binaryen's release archive for x86_64 Linux (or the archive
+# BINARYEN_ARCHIVE names), checked against its SHA-256 below on every run and kept in
+# EINVOICE_WASM_TOOLS/downloads/, so that a cache of that directory saves both.
 # Also needed: the wasm32-unknown-unknown target of the pinned toolchain, jq, node and npm.
 #
 # The test runs the Node.js tests (node:test) in a throw-away project where the packed
@@ -89,16 +91,25 @@ cmd_tools() {
     fi
     dir=$(mktemp -d)
     if [ -n "${BINARYEN_ARCHIVE:-}" ]; then
-        # An archive downloaded before (a CI cache): checked all the same.
+        # An archive downloaded before: checked all the same.
         archive=$BINARYEN_ARCHIVE
         echo "binaryen: $archive"
     else
-        archive=$dir/binaryen.tar.gz
-        curl --fail --silent --show-error --location --retry 3 -H 'Accept: application/octet-stream' \
-            -o "$archive" "$BINARYEN_ASSET"
+        # Kept in the tools directory (a CI cache), downloaded again unless it has the
+        # pinned SHA-256: a kept archive is never trusted.
+        archive=$TOOLS/downloads/binaryen-version_$BINARYEN_VERSION-x86_64-linux.tar.gz
+        mkdir -p "$TOOLS/downloads"
+        if [ -f "$archive" ] && [ "$(sha256sum "$archive" | cut -d' ' -f1)" = "$BINARYEN_SHA256" ]; then
+            echo "binaryen: $archive already present"
+        else
+            rm -f "$archive"
+            curl --fail --silent --show-error --location --retry 3 -H 'Accept: application/octet-stream' \
+                -o "$archive" "$BINARYEN_ASSET"
+        fi
     fi
     if [ "$(sha256sum "$archive" | cut -d' ' -f1)" != "$BINARYEN_SHA256" ]; then
         echo "binaryen: the archive does not have the pinned SHA-256 $BINARYEN_SHA256" >&2
+        [ -n "${BINARYEN_ARCHIVE:-}" ] || rm -f "$archive"
         rm -rf "$dir"
         return 1
     fi
