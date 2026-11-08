@@ -294,7 +294,15 @@ impl Executable {
             .with_regex_cache(&self.regexes);
         runtime.dc.set(Some(&dc));
         let mut writer = XmlWriter::new(self.serialization, target);
-        runtime.apply_rule(&root, 1, 1, self.default_mode, None, &[], &mut writer)?;
+        runtime.apply_rule(
+            &root,
+            1,
+            &Size::Known(1),
+            self.default_mode,
+            None,
+            &[],
+            &mut writer,
+        )?;
         let finished = writer.finish()?;
         let warnings = runtime.warnings.take();
         Ok((finished, warnings))
@@ -461,6 +469,31 @@ struct Runtime<'e, 'a> {
     /// Per mode, the chains of rules of the names of the source document, by
     /// [`Node::name_id`] (twice: elements, then attributes), as looked up.
     named_chains: RefCell<Vec<Vec<Option<&'e [u32]>>>>,
+}
+
+/// The size of the sequence of nodes a template rule is applied to, the context size of
+/// the rule: known, or that of the children of a node, counted when first needed (the
+/// built-in rule applies the rules to the children, and most children of a document
+/// walked by a compiled Schematron get a rule with an empty body or the built-in rule).
+enum Size<'n> {
+    Known(usize),
+    ChildrenOf(&'n Node, Cell<Option<usize>>),
+}
+
+impl Size<'_> {
+    fn get(&self) -> usize {
+        match self {
+            Self::Known(size) => *size,
+            Self::ChildrenOf(parent, counted) => {
+                if let Some(size) = counted.get() {
+                    return size;
+                }
+                let size = parent.children().count();
+                counted.set(Some(size));
+                size
+            }
+        }
+    }
 }
 
 /// An invocation counted in [`Runtime::nesting`], until it is dropped.
@@ -975,6 +1008,9 @@ impl<'e, 'a> Runtime<'e, 'a> {
     }
 
     fn with_params(&self, params: &'e [WithParam], state: &State<'_>) -> Result<Params<'e>> {
+        if params.is_empty() {
+            return Ok(Vec::new());
+        }
         params
             .iter()
             .map(|p| {
@@ -1097,7 +1133,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
         for (i, item) in items.iter().enumerate() {
             match item {
                 Item::Node(node) => self
-                    .apply_rule(node, i + 1, size, mode, None, &params, sink)
+                    .apply_rule(node, i + 1, &Size::Known(size), mode, None, &params, sink)
                     .at(line)?,
                 // As Saxon, an XSLT 3.0 processor: no pattern of the subset matches an
                 // atomic value, whose built-in rule writes it as text.
@@ -1127,7 +1163,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
         self.apply_rule(
             node,
             focus.position,
-            focus.size,
+            &Size::Known(focus.size),
             state.mode,
             Some(rank),
             &params,
@@ -1383,7 +1419,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
         &self,
         node: &Node,
         position: usize,
-        size: usize,
+        size: &Size<'_>,
         mode: usize,
         after: Option<u32>,
         params: &[(&'e QName, Slot<'e>)],
@@ -1398,7 +1434,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
                     let _nested = self.nested().at(template.line)?;
                     return Ok(());
                 }
-                let context = Context::at(Item::Node(node.clone()), position, size);
+                let context = Context::at(Item::Node(node.clone()), position, size.get());
                 self.invoke(index, &context, mode, Some(rank), params, sink)
             }
             None => self.builtin(node, mode, params, sink),
@@ -1435,6 +1471,10 @@ impl<'e, 'a> Runtime<'e, 'a> {
     /// recovered as Saxon recovers it (see [`Runtime::pattern_error`]).
     fn rule_matches(&self, rank: u32, mode: usize, node: &Node) -> Result<bool> {
         let rule = &self.exe.modes[mode].rules[rank as usize];
+        if rule.certain {
+            // The node is in a chain of the rule, every node of which matches it.
+            return Ok(true);
+        }
         let template = &self.exe.templates[rule.template];
         let matcher = Matcher { dc: self.dc()? };
         // A union pattern with an explicit priority is one rule: its alternatives in
@@ -1609,9 +1649,10 @@ impl<'e, 'a> Runtime<'e, 'a> {
         match node.kind() {
             NodeKind::Document | NodeKind::Element => {
                 let _nested = self.nested()?;
-                let size = node.children().count();
+                // The children are counted only if a template rule applied to one runs.
+                let size = Size::ChildrenOf(node, Cell::new(None));
                 for (i, child) in node.children().enumerate() {
-                    self.apply_rule(&child, i + 1, size, mode, None, params, sink)?;
+                    self.apply_rule(&child, i + 1, &size, mode, None, params, sink)?;
                 }
                 Ok(())
             }

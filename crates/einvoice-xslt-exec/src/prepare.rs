@@ -253,6 +253,10 @@ pub(crate) struct Rule {
     /// without explicit priority; 0 for a pattern with an explicit priority (Saxon's
     /// `part`, which keeps `xsl:next-match` from running the same template twice).
     pub(crate) part: usize,
+    /// Whether every node of the chains holding the rule matches its pattern, which is
+    /// then matched without evaluating anything (`text()`, `node()`, `*`, `@*`, `cac:X`,
+    /// alone and without predicates, in the chain of their kind or name).
+    pub(crate) certain: bool,
 }
 
 /// Rule ranks of elements or attributes by local name, then namespace.
@@ -1748,6 +1752,7 @@ fn rank_rules(sheet: &Stylesheet, templates: &[CompiledTemplate], mode: &Mode) -
                 priority: as_double(rule.priority),
                 sequence: index,
                 part: if rule.is_default { rule.alternative } else { 0 },
+                certain: false,
             });
             if whole {
                 break;
@@ -1767,22 +1772,27 @@ fn rank_rules(sheet: &Stylesheet, templates: &[CompiledTemplate], mode: &Mode) -
         },
         ..CompiledMode::default()
     };
-    for (rank, rule) in rules.iter().enumerate() {
+    for (rank, rule) in rules.iter_mut().enumerate() {
         let rank = u32::try_from(rank).unwrap_or(u32::MAX);
         let pattern = &templates[rule.template].pattern;
-        match rule.alternative {
-            Some(alternative) => {
-                if let Some(alternative) = pattern.get(alternative) {
-                    for key in alternative.chain_keys() {
-                        compiled.index(rank, &key);
-                    }
-                }
-            }
-            None => {
-                if let Some(key) = pattern::union_chain_key(pattern) {
-                    compiled.index(rank, &key);
-                }
-            }
+        let (keys, first) = match rule.alternative {
+            Some(alternative) => (
+                pattern
+                    .get(alternative)
+                    .map(pattern::Alternative::chain_keys)
+                    .unwrap_or_default(),
+                pattern.get(alternative),
+            ),
+            None => (
+                pattern::union_chain_key(pattern).into_iter().collect(),
+                pattern.first(),
+            ),
+        };
+        // The alternative matched first decides when every node of the chains matches it.
+        rule.certain = !keys.is_empty()
+            && first.is_some_and(|a| keys.iter().all(|key| a.matches_every_node_under(key)));
+        for key in &keys {
+            compiled.index(rank, key);
         }
     }
     compiled.rules = rules;

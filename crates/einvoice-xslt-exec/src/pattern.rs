@@ -242,6 +242,63 @@ impl Alternative {
         }
     }
 
+    /// Whether every node a rule chain of `key` can be searched for matches the
+    /// alternative, without evaluating anything ([`Alternative::matches_every_node_of`],
+    /// or for the chain of a name, a lone step without predicates testing that name).
+    pub(crate) fn matches_every_node_under(&self, key: &Key) -> bool {
+        match key {
+            Key::Document => self.matches_every_node_of(NodeKind::Document),
+            Key::Element(namespace, local) | Key::Attribute(namespace, local) => {
+                let kind = if matches!(key, Key::Element(..)) {
+                    NodeKind::Element
+                } else {
+                    NodeKind::Attribute
+                };
+                self.matches_every_node_of(kind)
+                    || self.is_lone_name_test(kind, namespace.as_deref(), local)
+            }
+            Key::AnyElement => self.matches_every_node_of(NodeKind::Element),
+            Key::AnyAttribute => self.matches_every_node_of(NodeKind::Attribute),
+            Key::AnyChild => [
+                NodeKind::Element,
+                NodeKind::Text,
+                NodeKind::Comment,
+                NodeKind::ProcessingInstruction,
+            ]
+            .into_iter()
+            .all(|kind| self.matches_every_node_of(kind)),
+            Key::Text => self.matches_every_node_of(NodeKind::Text),
+            Key::Comment => self.matches_every_node_of(NodeKind::Comment),
+            Key::ProcessingInstruction => {
+                self.matches_every_node_of(NodeKind::ProcessingInstruction)
+            }
+            Key::Generic => false,
+        }
+    }
+
+    /// Whether the alternative is a lone relative step without predicates testing for
+    /// nodes of `kind` named `{namespace}local`.
+    fn is_lone_name_test(&self, kind: NodeKind, namespace: Option<&str>, local: &str) -> bool {
+        let Self::Path {
+            anchor: PatternAnchor::Relative,
+            steps,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        matches!(
+            steps.as_slice(),
+            [PathStep::Axis(CompiledStep {
+                test: StepTest::Named {
+                    kind: k,
+                    name: NameMatch::Exact { namespace: ns, local: l },
+                },
+                predicates: Predicates::None,
+            })] if *k == kind && ns.as_deref() == namespace && l == local
+        )
+    }
+
     /// The rule chains of Saxon that hold a rule with this pattern: one chain, except
     /// for `node()`, which Saxon splits by node kind (see [`Key::AnyChild`]).
     pub(crate) fn chain_keys(&self) -> Vec<Key> {
