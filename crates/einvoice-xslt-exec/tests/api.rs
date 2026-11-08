@@ -303,3 +303,26 @@ fn an_executable_can_be_shared_between_threads() {
     fn shared<T: Send + Sync>() {}
     shared::<Executable>();
 }
+
+#[test]
+fn template_rules_are_chosen_by_name_kind_and_priority() {
+    let executable = prepare(
+        r#"<xsl:output omit-xml-declaration="yes"/>
+<xsl:template match="/"><r><xsl:apply-templates/>|<xsl:apply-templates mode="m"/>|<xsl:apply-templates mode="n"/></r></xsl:template>
+<xsl:template match="text()" priority="-1"/>
+<xsl:template match="text()" mode="m">t</xsl:template>
+<xsl:template match="*" mode="m"><xsl:value-of select="name()"/><xsl:apply-templates mode="m"/></xsl:template>
+<xsl:template match="b" mode="m">B<xsl:next-match/></xsl:template>
+<xsl:template match="@*|node()" mode="n" priority="-2"><xsl:apply-templates mode="n" select="@*|*"/></xsl:template>
+<xsl:template match="@x" mode="n">[x=<xsl:value-of select="."/>]</xsl:template>
+<xsl:template match="c" mode="n">C</xsl:template>"#,
+    )
+    .unwrap();
+    for _ in 0..2 {
+        let result = executable
+            .transform(r#"<a x="1"><b>u</b>v<c x="2"/></a>"#, None)
+            .unwrap();
+        assert_eq!(result.output, format!("<r{NS}>|aBbttc|[x=1]C</r>"));
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    }
+}

@@ -42,7 +42,7 @@ use crate::output::{CompactBuilder, CompactTransformation, ResultObserver};
 use crate::pattern::{self, Matcher};
 use crate::prepare::{
     AvtItem, Binding, CompiledAvt, CompiledFunction, CompiledTemplate, CountPattern, Eval,
-    Executable, Inst, ModeRef, Value, When, WithParam,
+    Executable, Inst, ModeRef, Plan, Value, When, WithParam,
 };
 use crate::sink::{
     Compact, SequenceSink, Sink, Target, TextSink, TreeSink, WholeText, XmlWriter, attribute_name,
@@ -282,6 +282,7 @@ impl Executable {
             stack: StackLimit::from_here(options.max_stack),
             learners: (0..self.learners).map(|_| Rc::default()).collect(),
             argument_learners: RefCell::new(HashMap::new()),
+            named_chains: RefCell::new(vec![Vec::new(); self.modes.len()]),
         };
         let timezone = options.implicit_timezone.unwrap_or(0);
         let clock = match options.current_date_time {
@@ -457,6 +458,9 @@ struct Runtime<'e, 'a> {
     /// The same for the arguments of stylesheet function calls, by call site
     /// ([`Argument::site`]).
     argument_learners: RefCell<HashMap<usize, Rc<Learner>>>,
+    /// Per mode, the chains of rules of the names of the source document, by
+    /// [`Node::name_id`] (twice: elements, then attributes), as looked up.
+    named_chains: RefCell<Vec<Vec<Option<&'e [u32]>>>>,
 }
 
 /// An invocation counted in [`Runtime::nesting`], until it is dropped.
@@ -1387,11 +1391,43 @@ impl<'e, 'a> Runtime<'e, 'a> {
     ) -> Result<()> {
         match self.find_rule(mode, node, after)? {
             Some(rank) => {
-                let template = self.exe.modes[mode].rules[rank as usize].template;
+                let index = self.exe.modes[mode].rules[rank as usize].template;
+                let template = &self.exe.templates[index];
+                if template.body.is_empty() && template.params.is_empty() {
+                    // Nothing to bind or run: only the invocation counts, as in `invoke`.
+                    let _nested = self.nested().at(template.line)?;
+                    return Ok(());
+                }
                 let context = Context::at(Item::Node(node.clone()), position, size);
-                self.invoke(template, &context, mode, Some(rank), params, sink)
+                self.invoke(index, &context, mode, Some(rank), params, sink)
             }
             None => self.builtin(node, mode, params, sink),
+        }
+    }
+
+    /// The chain of rules of `mode` for the name of `node`, an element or (`attribute`)
+    /// an attribute: looked up once per name of the source document and mode.
+    fn named_chain(&self, mode: usize, node: &Node, attribute: bool) -> &'e [u32] {
+        let exe: &'e Executable = self.exe;
+        let compiled = &exe.modes[mode];
+        let id = node
+            .name_id()
+            .filter(|_| Rc::ptr_eq(node.document(), self.source_root.document()));
+        let Some(id) = id else {
+            return compiled.named_chain(attribute, node.name());
+        };
+        let slot = (id as usize) * 2 + usize::from(attribute);
+        let mut cache = self.named_chains.borrow_mut();
+        let Some(chains) = cache.get_mut(mode) else {
+            return compiled.named_chain(attribute, node.name());
+        };
+        if chains.is_empty() {
+            chains.resize(self.source_root.document().name_count() * 2, None);
+        }
+        match chains.get_mut(slot) {
+            Some(Some(chain)) => chain,
+            Some(entry) => entry.insert(compiled.named_chain(attribute, node.name())),
+            None => compiled.named_chain(attribute, node.name()),
         }
     }
 
@@ -1468,6 +1504,19 @@ impl<'e, 'a> Runtime<'e, 'a> {
     fn find_rule(&self, mode: usize, node: &Node, after: Option<u32>) -> Result<Option<u32>> {
         let compiled = &self.exe.modes[mode];
         let rules = &compiled.rules;
+        let kind = node.kind();
+        let named = match kind {
+            NodeKind::Element => self.named_chain(mode, node, false),
+            NodeKind::Attribute => self.named_chain(mode, node, true),
+            _ => &[],
+        };
+        if after.is_none() && named.is_empty() {
+            match compiled.plan(kind) {
+                Plan::Builtin => return Ok(None),
+                Plan::Rule(rank) => return Ok(Some(rank)),
+                Plan::Search => {}
+            }
+        }
         let below_current = |rank: u32| -> bool {
             let Some(current) = after else {
                 return true;
@@ -1482,7 +1531,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
             }
         };
         let mut best: Option<u32> = None;
-        for chain in compiled.chains(node.kind(), node.name()) {
+        for chain in compiled.chains_with(kind, named) {
             for &rank in chain {
                 if !below_current(rank) {
                     continue;

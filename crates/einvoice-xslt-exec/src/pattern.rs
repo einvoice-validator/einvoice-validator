@@ -204,6 +204,44 @@ pub(crate) enum Key {
 }
 
 impl Alternative {
+    /// Whether every node of `kind` matches the alternative, which is then a lone step
+    /// without predicates whose test does not depend on the name (`text()`, `node()`,
+    /// `*`, `@*`): matching it evaluates nothing and cannot fail.
+    pub(crate) fn matches_every_node_of(&self, kind: NodeKind) -> bool {
+        let Self::Path {
+            anchor: PatternAnchor::Relative,
+            steps,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        let [
+            PathStep::Axis(CompiledStep {
+                test,
+                predicates: Predicates::None,
+            }),
+        ] = steps.as_slice()
+        else {
+            return false;
+        };
+        match test {
+            StepTest::AnyChild => matches!(
+                kind,
+                NodeKind::Element
+                    | NodeKind::Text
+                    | NodeKind::Comment
+                    | NodeKind::ProcessingInstruction
+            ),
+            StepTest::Kind(k)
+            | StepTest::Named {
+                kind: k,
+                name: NameMatch::Any,
+            } => *k == kind,
+            StepTest::Named { .. } | StepTest::Never => false,
+        }
+    }
+
     /// The rule chains of Saxon that hold a rule with this pattern: one chain, except
     /// for `node()`, which Saxon splits by node kind (see [`Key::AnyChild`]).
     pub(crate) fn chain_keys(&self) -> Vec<Key> {

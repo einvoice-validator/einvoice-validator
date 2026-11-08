@@ -374,6 +374,12 @@ impl Document {
         self.has_xml_base
     }
 
+    /// The number of distinct names of its nodes ([`Node::name_id`]).
+    #[must_use]
+    pub fn name_count(&self) -> usize {
+        self.names.len()
+    }
+
     /// The number of nodes, the document node and attributes included.
     #[must_use]
     pub fn node_count(&self) -> usize {
@@ -659,6 +665,15 @@ impl Node {
     #[must_use]
     pub fn name(&self) -> Option<&QName> {
         self.doc.name(self.index)
+    }
+
+    /// The number of the node's name in its document, `None` for a node without name:
+    /// two nodes of a document have the same number when their names have the same
+    /// prefix, local name and namespace. Numbers are below [`Document::name_count`].
+    #[must_use]
+    pub fn name_id(&self) -> Option<u32> {
+        let name = self.doc.record(self.index).name;
+        (name != NONE).then_some(name)
     }
 
     /// The parent node.

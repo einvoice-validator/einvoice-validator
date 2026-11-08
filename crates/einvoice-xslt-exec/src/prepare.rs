@@ -277,11 +277,119 @@ pub(crate) struct CompiledMode {
     processing_instruction: Vec<u32>,
     document: Vec<u32>,
     generic: Vec<u32>,
+    /// What the rule search gives for a node of each kind ([`kind_index`]) whose name has
+    /// no rule of its own, when it is known without matching any pattern.
+    plans: [Plan; 6],
+}
+
+/// The outcome of the rule search ([`Runtime::find_rule`](crate::run)) for a node of a
+/// kind, when the chain of its name is empty and no rule is current
+/// (`xsl:apply-templates`, not `xsl:next-match`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum Plan {
+    /// Unknown without matching patterns: search the chains.
+    #[default]
+    Search,
+    /// No rule can match: the built-in rule.
+    Builtin,
+    /// This rule matches every node of the kind, without evaluating anything, and every
+    /// other rule that could match has a lower priority.
+    Rule(u32),
+}
+
+/// The index of a node kind in [`CompiledMode`]'s plans.
+pub(crate) const fn kind_index(kind: einvoice_xpath_eval::NodeKind) -> usize {
+    use einvoice_xpath_eval::NodeKind as K;
+    match kind {
+        K::Document => 0,
+        K::Element => 1,
+        K::Attribute => 2,
+        K::Text => 3,
+        K::Comment => 4,
+        K::ProcessingInstruction => 5,
+    }
 }
 
 const EMPTY: &[u32] = &[];
 
 impl CompiledMode {
+    /// The chain of rules for elements (or attributes, `attribute`) of a name.
+    pub(crate) fn named_chain(&self, attribute: bool, name: Option<&QName>) -> &[u32] {
+        Self::named(
+            if attribute {
+                &self.attributes
+            } else {
+                &self.elements
+            },
+            name,
+        )
+    }
+
+    /// The rule search's outcome for a node of `kind` without rules for its name.
+    pub(crate) const fn plan(&self, kind: einvoice_xpath_eval::NodeKind) -> Plan {
+        self.plans[kind_index(kind)]
+    }
+
+    /// The chains Saxon searches for a node of that kind, `named` being the chain of its
+    /// name ([`CompiledMode::named_chain`], empty for other kinds), in its order: the
+    /// chain of the name, the chain of the kind, the generic chain.
+    pub(crate) fn chains_with<'a>(
+        &'a self,
+        kind: einvoice_xpath_eval::NodeKind,
+        named: &'a [u32],
+    ) -> [&'a [u32]; 3] {
+        [named, self.kind_chain(kind), &self.generic]
+    }
+
+    fn kind_chain(&self, kind: einvoice_xpath_eval::NodeKind) -> &[u32] {
+        use einvoice_xpath_eval::NodeKind as K;
+        match kind {
+            K::Element => &self.any_element,
+            K::Attribute => &self.any_attribute,
+            K::Text => &self.text,
+            K::Comment => &self.comment,
+            K::ProcessingInstruction => &self.processing_instruction,
+            K::Document => &self.document,
+        }
+    }
+
+    /// The plans of the node kinds ([`Plan`]), once the rules are indexed: the search
+    /// [`Runtime::find_rule`](crate::run) does, over the chain of the kind and the
+    /// generic chain, when its outcome needs no pattern to be matched.
+    fn plan_kinds(&mut self, templates: &[CompiledTemplate]) {
+        use einvoice_xpath_eval::NodeKind as K;
+        for kind in [
+            K::Document,
+            K::Element,
+            K::Attribute,
+            K::Text,
+            K::Comment,
+            K::ProcessingInstruction,
+        ] {
+            let mut ranks = self.kind_chain(kind).iter().chain(&self.generic).copied();
+            let plan = match ranks.next() {
+                None => Plan::Builtin,
+                Some(first) => {
+                    let rule = &self.rules[first as usize];
+                    let alternatives = &templates[rule.template].pattern;
+                    let alternative = match rule.alternative {
+                        Some(index) => alternatives.get(index),
+                        None => alternatives.first(),
+                    };
+                    let unconditional = alternative.is_some_and(|a| a.matches_every_node_of(kind));
+                    if unconditional
+                        && ranks.all(|r| self.rules[r as usize].priority < rule.priority)
+                    {
+                        Plan::Rule(first)
+                    } else {
+                        Plan::Search
+                    }
+                }
+            };
+            self.plans[kind_index(kind)] = plan;
+        }
+    }
+
     fn named<'a>(map: &'a ByName, name: Option<&QName>) -> &'a [u32] {
         let Some(name) = name else {
             return EMPTY;
@@ -293,25 +401,6 @@ impl CompiledMode {
                     .find(|(ns, _)| ns.as_deref() == name.namespace.as_deref())
             })
             .map_or(EMPTY, |(_, ranks)| ranks.as_slice())
-    }
-
-    /// The chains Saxon searches for a node of that kind and name, in its order: the
-    /// chain of the name, the chain of the kind, the generic chain.
-    pub(crate) fn chains(
-        &self,
-        kind: einvoice_xpath_eval::NodeKind,
-        name: Option<&QName>,
-    ) -> [&[u32]; 3] {
-        use einvoice_xpath_eval::NodeKind as K;
-        let kind_chain: (&[u32], &[u32]) = match kind {
-            K::Element => (Self::named(&self.elements, name), &self.any_element),
-            K::Attribute => (Self::named(&self.attributes, name), &self.any_attribute),
-            K::Text => (EMPTY, &self.text),
-            K::Comment => (EMPTY, &self.comment),
-            K::ProcessingInstruction => (EMPTY, &self.processing_instruction),
-            K::Document => (EMPTY, &self.document),
-        };
-        [kind_chain.0, kind_chain.1, &self.generic]
     }
 
     fn index(&mut self, rank: u32, key: &Key) {
@@ -1697,5 +1786,6 @@ fn rank_rules(sheet: &Stylesheet, templates: &[CompiledTemplate], mode: &Mode) -
         }
     }
     compiled.rules = rules;
+    compiled.plan_kinds(templates);
     compiled
 }
