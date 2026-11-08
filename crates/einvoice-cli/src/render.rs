@@ -184,7 +184,7 @@ fn report_text(name: &str, report: &Report, style: Style, out: &mut String) {
             out,
             "  {label} {}: {}",
             f.id.as_deref().unwrap_or("(no id)"),
-            f.text
+            one_line(&f.text)
         );
         let _ = writeln!(out, "           at {}", f.location);
     }
@@ -239,6 +239,13 @@ fn label(f: &Finding) -> &str {
         einvoice_validator::FindingKind::FailedAssert => "assert",
         einvoice_validator::FindingKind::SuccessfulReport => "report",
     })
+}
+
+/// A message on one line: runs of whitespace (the stylesheets keep line breaks and
+/// indentation in their message texts) become one space, with none at either end. Only the
+/// text form does this; the JSON and SVRL forms keep the text as the stylesheet wrote it.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// The closing line of the text form when there was more than one document.
@@ -427,6 +434,17 @@ pub(crate) fn json_summary(statuses: &[Status]) -> Json {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn messages_on_one_line() {
+        assert_eq!(
+            one_line("[BR-01] An Invoice shall have (BT-24).   "),
+            "[BR-01] An Invoice shall have (BT-24)."
+        );
+        assert_eq!(one_line("\n  a\t\tb \r\n c  "), "a b c");
+        assert_eq!(one_line("   "), "");
+        assert_eq!(one_line("é\u{a0}x"), "é x");
+    }
 
     #[test]
     fn exit_codes() {

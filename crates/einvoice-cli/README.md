@@ -155,5 +155,6 @@ conditions a stylesheet reported (ambiguous template rule matches), as Saxon-HE 
 
 ## Licence
 
-MIT, like the rest of the project. The built-in `cen-ubl` rule set embeds the CEN EN 16931
-validation artefacts, which are under the EUPL-1.2 (see `artefacts/cen-en16931-ubl-1.3.17/`).
+`MIT AND EUPL-1.2`: the code is MIT, and the built-in `cen-ubl` rule set embeds the CEN
+EN 16931 validation stylesheet, which is under the EUPL-1.2 (see
+`crates/einvoice-validator/bundles/cen-ubl/`). The texts are in `LICENSES/`.

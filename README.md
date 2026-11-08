@@ -184,7 +184,7 @@ in `target/` for Peppol, whose files may not be redistributed. CI re-runs Saxon-
 case whenever the corpus or its tooling changes and fails if a committed golden differs,
 cross-checks the goldens with the expectations written in the VEFA tests, and builds the Peppol
 corpus whenever the engine changes, to check the engine against it. The crates are
-checked the same way: `einvoice-xdm` against 5068 Saxon-HE results of atomic operations,
+checked the same way: `einvoice-xdm` against 5078 Saxon-HE results of atomic operations,
 `einvoice-xpath-eval` against Saxon-HE's value of every distinct expression of the CEN
 stylesheet at nodes of corpus documents. `einvoice-xsd` is compared with xmllint (libxml2) on
 the corpus and on mutations of synthetic documents. See [`corpus/README.md`](corpus/README.md).

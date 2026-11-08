@@ -194,6 +194,9 @@ against.
 
 ### Fixed
 
+- `einvoice-validate`: the text output writes each finding's message on one line, without the
+  line breaks and trailing spaces the stylesheets leave in some messages (the JSON and SVRL
+  outputs keep the text as written).
 - `einvoice-xslt-exec` recovers from a dynamic error raised while matching a pattern (a
   template rule's, in `xsl:apply-templates`, `xsl:next-match` and the built-in rules, or the
   `count` pattern of `xsl:number`) as Saxon-HE 12.10 does: the node does not match and the error
