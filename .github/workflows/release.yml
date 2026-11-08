@@ -1,13 +1,20 @@
 name: release
 
-# Publishes the GitHub release of a pushed tag vX.Y.Z, made by
-# scripts/release.sh (see RELEASING.md). Jobs:
-#   verify   the tag, the workspace version in Cargo.toml and the CHANGELOG.md
-#            section of that version agree (scripts/release.sh --verify), and
-#            the tagged commit is on main; extracts the section as the notes
-#   publish  creates the GitHub release with those notes; the only job with
-#            write access, and it checks out and runs nothing from the
-#            repository
+# Publishes a pushed tag vX.Y.Z, made by scripts/release.sh (see
+# RELEASING.md). Jobs:
+#   verify          the tag, the workspace version in Cargo.toml and the
+#                   CHANGELOG.md section of that version agree
+#                   (scripts/release.sh --verify), and the tagged commit is on
+#                   main; extracts the section as the notes
+#   crates-io       publishes every publishable crate on crates.io with trusted
+#                   publishing (scripts/release.sh --publish): a token of 30
+#                   minutes obtained through OpenID Connect, in the environment
+#                   "release" (tags v* only); the only job allowed an OIDC
+#                   token. Versions already on crates.io are skipped, so a
+#                   failed run can be re-run
+#   github-release  creates the GitHub release with those notes once the
+#                   crates are published; the only job with write access, and
+#                   it checks out and runs nothing from the repository
 # The tag signature is checked by whoever pushes it, not here.
 
 on:
@@ -74,9 +81,44 @@ jobs:
             ;;
           esac
 
-  publish:
-    name: publish (GitHub release)
+  crates-io:
+    name: crates-io (cargo publish, trusted publishing)
     needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # crates.io accepts the tokens of this repository, workflow and
+    # environment only (scripts/release.sh --trusted-publishing); the
+    # environment admits the tags v* only.
+    environment: release
+    permissions:
+      contents: read # check out the tag
+      id-token: write # the OIDC token exchanged for a crates.io token
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+      # Transient download failures are retried (cargo, rustup).
+      CARGO_NET_RETRY: "10"
+      RUSTUP_MAX_RETRIES: "10"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: scripts/check.sh toolchain
+      # The token expires after 30 minutes; the post step of the action
+      # revokes it at the end of the job.
+      - name: Obtain a crates.io token (trusted publishing)
+        id: auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      - name: Publish the crates
+        env:
+          TAG: ${{ github.ref_name }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: scripts/release.sh --publish "$TAG"
+
+  github-release:
+    name: github-release (GitHub release)
+    needs: [verify, crates-io]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

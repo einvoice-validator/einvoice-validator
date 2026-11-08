@@ -53,32 +53,71 @@ a failure leaves the working tree untouched.
 
 Pushing the tag starts [`.github/workflows/release.yml`](.github/workflows/release.yml). It
 checks that the tag, the workspace version and the changelog section agree and that the
-tagged commit is on `main` (`scripts/release.sh --verify vX.Y.Z`), then publishes the GitHub
-release with that changelog section as its notes. If the workflow fails, fix the cause on
-`main` and release the next patch version; a pushed tag is never moved.
+tagged commit is on `main` (`scripts/release.sh --verify vX.Y.Z`), publishes the crates on
+crates.io (below), then publishes the GitHub release with that changelog section as its notes.
+If the verification fails, fix the cause on `main` and release the next patch version; a pushed
+tag is never moved. If the publication on crates.io fails (a rate limit, a new crate, an outage),
+fix that and re-run the failed jobs of the run: the versions already on crates.io are skipped.
 
 The release scripts are tested in throw-away repositories by `scripts/test-release.sh` (run in
 CI by the `workflows` job of `ci.yml`).
 
 ## Publishing on crates.io
 
-The release workflow does not publish on crates.io. Once the tag is pushed and the workflow
-has passed, a maintainer with a crates.io token publishes every crate of the release from the
-tagged commit:
+The release workflow publishes the crates, with crates.io trusted publishing
+([RFC 3691](https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html)): no API
+token is stored anywhere. Its job `crates-io` runs in the GitHub environment `release`, which
+admits the tags `v*` only, and is the only job allowed an OpenID Connect token; the action
+`rust-lang/crates-io-auth-action` exchanges it for a crates.io token that expires after 30
+minutes (and is revoked at the end of the job). crates.io accepts that token only for the
+crates configured to trust this repository, the workflow `release.yml` and the environment
+`release`.
 
-```sh
-git checkout vX.Y.Z
-cargo publish --locked --workspace      # every crate but those with publish = false, in dependency order
-```
+The job runs `scripts/release.sh --publish vX.Y.Z` on the tagged commit. It checks that the
+tag and the workspace version agree, reads the crates.io index, skips every crate already
+published at that version, and publishes the others with `cargo publish --locked --workspace`
+(the crates already published left out with `--exclude`): every crate but those with
+`publish = false`, in dependency order. A refusal by crates.io's rate limits (HTTP 429) is
+retried after the time crates.io gives, else after 60 s doubled at each refusal (at most 600 s),
+10 attempts at most and only within 25 minutes of the start (`RELEASE_PUBLISH_DEADLINE`, in
+seconds), the token living 30; any other failure stops the job. Re-running the job resumes
+where it stopped.
 
 The crates not published are `xtask` (repository tooling), `einvoice-testkit` (helpers of the
 tests; the crates depend on it by path without a version, which cargo leaves out of their
 published manifests) and `einvoice-wasm` (the source of the npm package, published on npm
 below).
 
-`cargo publish --workspace` publishes the crates in dependency order and waits for each to be
-available before publishing those that depend on it (dev-dependencies included). It
-uploads them in this order, which also works one at a time (`cargo publish --locked -p NAME`):
+### A new crate
+
+Trusted publishing only publishes new versions of crates that exist: crates.io cannot be
+configured for a crate before its first version is published. So `--publish` refuses a
+publishable crate that is not on crates.io yet, before publishing anything, and names it
+(`einvoice-pdf` and `einvoice-xml`, added after 0.2.0, are the first such crates). For a
+release that adds a crate, its owner publishes its first version from the tagged commit with
+their own token (`cargo login`, a token with the scopes `publish-new` and
+`trusted-publishing`), then configures trusted publishing for it; this can be done before
+pushing the tag (once `scripts/release.sh` has created it), or after the workflow has refused,
+followed by a re-run of the failed jobs:
+
+```sh
+git checkout vX.Y.Z
+scripts/release.sh --publish vX.Y.Z NEW-CRATE...      # cargo publish --locked -p NEW-CRATE..., same retries
+scripts/release.sh --trusted-publishing NEW-CRATE...  # trust release.yml in the environment release, listed back
+```
+
+Name with the new crate every workspace crate it depends on that is not published at that
+version yet. `--trusted-publishing` without a crate checks every publishable crate: it keeps
+an identical configuration and adds a missing one through the crates.io API
+(`/api/v1/trusted_publishing/github_configs`), then lists each crate's configurations back.
+New crates are subject to their own, stricter rate limit on crates.io; the retries above apply.
+
+### Order of the crates
+
+`cargo publish --workspace` packages and verifies every crate before uploading any, then
+publishes them in dependency order and waits for each to be available before publishing those
+that depend on it (dev-dependencies included). It uploads them in this order, which also works
+one at a time (`cargo publish --locked -p NAME`):
 `einvoice-pdf`, `einvoice-svrl`, `einvoice-xdm`, `einvoice-xml`, `einvoice-xpath`,
 `einvoice-xsd`, `einvoice-xpath-eval`, `einvoice-xslt`, `einvoice-xslt-exec`,
 `einvoice-validator`, `einvoice-cli`. `einvoice-pdf` must be published before
@@ -97,8 +136,3 @@ crates/einvoice-wasm/npm.sh tools               # wasm-bindgen-cli and wasm-opt,
 crates/einvoice-wasm/npm.sh build test pack     # target/npm/einvoice-validator/, tested
 (cd target/npm/einvoice-validator && npm publish)
 ```
-
-Publishing from the release workflow with crates.io trusted publishing
-([RFC 3691](https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html)), with a
-short-lived token obtained through OpenID Connect instead of a long-lived API token, is not
-set up yet.

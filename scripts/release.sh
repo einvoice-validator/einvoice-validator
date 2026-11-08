@@ -12,6 +12,16 @@
 #                                          and write the release notes to FILE
 #                                          (stdout without FILE); used by the
 #                                          release workflow, needs no Rust toolchain
+#   scripts/release.sh --publish TAG [CRATE...]
+#                                          publish on crates.io, from the tagged
+#                                          commit, every publishable crate (or the
+#                                          CRATEs) whose version is not there yet;
+#                                          used by the release workflow
+#   scripts/release.sh --trusted-publishing [CRATE...]
+#                                          configure crates.io trusted publishing
+#                                          from the release workflow for every
+#                                          publishable crate (or the CRATEs), then
+#                                          list the configurations back
 #
 # VERSION is a SemVer 2.0.0 version without the `v` and without build
 # metadata, greater than the current workspace version. The release is
@@ -32,6 +42,31 @@
 #
 # The changes are prepared and checked in a temporary worktree first, so a
 # failure leaves the working tree untouched.
+#
+# --publish checks that HEAD is the tagged commit and that the versions agree
+# with the tag, then reads the crates.io index: a crate whose version is
+# already there is skipped, so a failed run can simply be run again. Without
+# CRATE it publishes every publishable crate of the workspace (publish not
+# set to false) with `cargo publish --locked --workspace`, in dependency
+# order, and refuses a crate that is not on crates.io yet: trusted publishing
+# can only publish new versions of an existing crate, so the first version of
+# a crate is published by hand, by naming it (`cargo publish --locked -p`,
+# with the maintainer's own token). A refusal of crates.io's rate limits
+# (HTTP 429) is retried after the time crates.io gives, else with an
+# exponential backoff, at most 10 attempts and only until
+# RELEASE_PUBLISH_DEADLINE seconds after the start (default 1500: the token of
+# trusted publishing lives 30 minutes); when cargo finds a version already
+# published that the index read did not show, the index is read again after
+# 30 s. Any other failure stops at once. The token is cargo's (CARGO_REGISTRY_TOKEN in the workflow).
+#
+# --trusted-publishing adds, for each crate, the configuration that lets the
+# workflow .github/workflows/release.yml of the GitHub repository named by
+# `repository` in [workspace.package], in its environment "release", publish
+# the crate; an identical configuration is kept as it is. It authenticates
+# with CARGO_REGISTRY_TOKEN, else the token of [registry] in
+# $CARGO_HOME/credentials.toml (cargo login), which must be allowed the
+# trusted-publishing scope. Only owners of a crate can configure it, and only
+# once the crate exists on crates.io.
 #
 # Exit status: 0 done, 1 refused or failed, 2 usage error.
 set -euo pipefail
@@ -289,6 +324,282 @@ verify() {
     echo "release: tag $tag, workspace version and CHANGELOG.md section agree" >&2
 }
 
+# ---- crates.io ----------------------------------------------------------------
+
+crates_io=https://crates.io
+crates_index=https://index.crates.io
+# The workflow and environment that trusted publishing accepts.
+release_workflow=release.yml
+release_environment=release
+user_agent="einvoice-validator-release/1 (scripts/release.sh; +https://github.com/einvoice-validator/einvoice-validator)"
+publish_attempts=10
+
+need_tools() {
+    local tool
+    for tool in "$@"; do
+        command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"
+    done
+}
+
+# The publishable crates of the workspace: `publish` unset or naming crates-io.
+publishable_crates() {
+    cargo metadata --locked --no-deps --format-version 1 |
+        jq -r '.packages[] | select(.publish == null or (.publish | index("crates-io") != null)) | .name'
+}
+
+# select_crates NAME...: sets `selection` to the NAMEs, each of which must be
+# a publishable crate, or to every publishable crate without NAME.
+select_crates() {
+    local list name
+    list=$(publishable_crates) || die "cargo metadata failed"
+    [ -n "$list" ] || die "the workspace has no publishable crate"
+    if [ $# -eq 0 ]; then
+        mapfile -t selection <<<"$list"
+        return
+    fi
+    for name in "$@"; do
+        grep -qxF -- "$name" <<<"$list" || die "$name is not a publishable crate of the workspace"
+    done
+    selection=("$@")
+}
+
+# index_state NAME VERSION: "published" if the crates.io index has VERSION of
+# the crate NAME (yanked or not), "pending" if it has the crate but not that
+# version, "new" if it does not have the crate; fails if it cannot be read.
+index_state() {
+    local name=$1 version=$2 lower path body code versions
+    lower=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
+    case ${#lower} in
+    1) path=1/$lower ;;
+    2) path=2/$lower ;;
+    3) path=3/${lower:0:1}/$lower ;;
+    *) path=${lower:0:2}/${lower:2:2}/$lower ;;
+    esac
+    body=$(mktemp)
+    code=$(curl --proto '=https' --tlsv1.2 -sS --retry 5 --retry-delay 2 -A "$user_agent" \
+        -o "$body" -w '%{http_code}' "$crates_index/$path") || {
+        rm -f "$body"
+        return 1
+    }
+    case $code in
+    200)
+        versions=$(jq -r '.vers' <"$body") || {
+            rm -f "$body"
+            echo "the crates.io index entry of $name is not JSON" >&2
+            return 1
+        }
+        if grep -qxF -- "$version" <<<"$versions"; then echo published; else echo pending; fi
+        ;;
+    404) echo new ;;
+    *)
+        rm -f "$body"
+        echo "the crates.io index answered HTTP $code for $name" >&2
+        return 1
+        ;;
+    esac
+    rm -f "$body"
+}
+
+# rate_limit_wait LOG LIMITED NOW: the seconds to wait after the rate limit
+# refusal in LOG, the LIMITED-th of the run: until the time crates.io gives
+# ("Please try again after <HTTP date>") plus 5 s, else 60 s doubled at each
+# refusal, at most 600 s.
+rate_limit_wait() {
+    local log=$1 limited=$2 now=$3 when until wait
+    when=$(sed -n 's/.*[Tt]ry again after \([A-Z][a-z][a-z], [0-9][0-9]* [A-Z][a-z][a-z] [0-9]\{4\} [0-9][0-9]:[0-9][0-9]:[0-9][0-9] GMT\).*/\1/p' "$log" | tail -n 1)
+    if [ -n "$when" ] && until=$(date -u -d "$when" +%s 2>/dev/null); then
+        wait=$((until - now + 5))
+        [ "$wait" -ge 5 ] || wait=5
+    else
+        wait=$((60 << (limited - 1)))
+        [ "$wait" -le 600 ] || wait=600
+    fi
+    echo "$wait"
+}
+
+publish() {
+    local tag=$1 version tagged name state attempt status now wait reason deadline limited=0 log
+    shift
+    local -a named=("$@") selection published pending new args
+    version=${tag#v}
+    if [[ $tag != v* ]] || ! is_semver "$version"; then
+        die "the tag must be vX.Y.Z (SemVer, no build metadata): $tag"
+    fi
+    [[ ${RELEASE_PUBLISH_DEADLINE:-1500} =~ ^[0-9]+$ ]] || die "RELEASE_PUBLISH_DEADLINE is not a number of seconds"
+    deadline=$(($(date +%s) + ${RELEASE_PUBLISH_DEADLINE:-1500}))
+    cd "$(git rev-parse --show-toplevel)"
+    need_tools cargo jq curl
+    tagged=$(git rev-parse --verify --quiet "refs/tags/$tag^{commit}") || die "no tag $tag in this clone"
+    [ "$(git rev-parse HEAD)" = "$tagged" ] || die "HEAD is not the commit of $tag: git checkout $tag"
+    check_versions . "$version"
+    select_crates "$@"
+    log=$(mktemp)
+    # shellcheck disable=SC2064 # expand now: the path is fixed
+    trap "rm -f '$log'" EXIT
+
+    for ((attempt = 1; attempt <= publish_attempts; attempt++)); do
+        published=() pending=() new=()
+        for name in "${selection[@]}"; do
+            state=$(index_state "$name" "$version") || die "cannot read the crates.io index entry of $name"
+            case $state in
+            published) published+=("$name") ;;
+            pending) pending+=("$name") ;;
+            *) new+=("$name") ;;
+            esac
+        done
+        if [ ${#named[@]} -eq 0 ] && [ ${#new[@]} -gt 0 ]; then
+            die "not on crates.io yet: ${new[*]}. Trusted publishing only publishes new versions of existing crates:" \
+                "publish the first version by hand from $tag (scripts/release.sh --publish $tag ${new[*]}, with your own token)," \
+                "configure trusted publishing (scripts/release.sh --trusted-publishing ${new[*]}), then run this again;" \
+                "nothing was published (RELEASING.md)"
+        fi
+        pending+=("${new[@]}")
+        [ ${#published[@]} -eq 0 ] || echo "release: already on crates.io at $version, skipped: ${published[*]}"
+        if [ ${#pending[@]} -eq 0 ]; then
+            echo "release: every crate is on crates.io at $version"
+            return 0
+        fi
+        echo "release: publishing at $version, attempt $attempt of $publish_attempts: ${pending[*]}"
+        if [ ${#named[@]} -eq 0 ]; then
+            args=(--workspace)
+            for name in "${published[@]}"; do args+=(--exclude "$name"); done
+        else
+            args=()
+            for name in "${pending[@]}"; do args+=(-p "$name"); done
+        fi
+        status=0
+        cargo publish --locked "${args[@]}" 2>&1 | tee "$log" || status=$?
+        if [ "$status" -eq 0 ]; then
+            echo "release: published at $version: ${pending[*]}"
+            return 0
+        fi
+        now=$(date +%s)
+        if grep -qE 'status 429|Too Many Requests' "$log"; then
+            limited=$((limited + 1))
+            wait=$(rate_limit_wait "$log" "$limited" "$now")
+            reason="crates.io rate limit (HTTP 429)"
+        elif grep -qE 'already (exists|uploaded)' "$log"; then
+            wait=30
+            reason="a version is already on crates.io but not yet in the index read"
+        else
+            die "cargo publish failed (exit $status), not on a rate limit. If crates.io refused the token for a crate," \
+                "configure trusted publishing for it (scripts/release.sh --trusted-publishing NAME); then run this again:" \
+                "the versions already published are skipped"
+        fi
+        if [ $((now + wait)) -gt "$deadline" ]; then
+            die "$reason: waiting ${wait}s would pass the deadline (RELEASE_PUBLISH_DEADLINE);" \
+                "run this again later: the versions already published are skipped"
+        fi
+        [ "$attempt" -lt "$publish_attempts" ] || break
+        echo "release: $reason; attempt $((attempt + 1)) in ${wait}s"
+        sleep "$wait"
+    done
+    die "not published after $publish_attempts attempts; run this again later: the versions already published are skipped"
+}
+
+# The crates.io token: CARGO_REGISTRY_TOKEN, else the token of [registry] in
+# cargo's credentials file.
+registry_token() {
+    local home=${CARGO_HOME:-$HOME/.cargo} file
+    if [ -n "${CARGO_REGISTRY_TOKEN:-}" ]; then
+        printf '%s\n' "$CARGO_REGISTRY_TOKEN"
+        return
+    fi
+    for file in "$home/credentials.toml" "$home/credentials"; do
+        [ -f "$file" ] || continue
+        awk '
+            /^\[/ { inside = ($0 == "[registry]") }
+            inside && /^token *= *"/ { t = $0; sub(/^token *= *"/, "", t); sub(/".*/, "", t); print t; n++ }
+            END { exit n != 1 }
+        ' "$file"
+        return
+    done
+    return 1
+}
+
+# api METHOD PATH [BODY]: a request to the crates.io API with the token in
+# $token (sent on curl's standard input, never on its command line), BODY a
+# JSON file; prints the response, fails with the API's error unless 2xx.
+api() {
+    local method=$1 path=$2 data=${3:-} body code detail
+    local -a args=(--proto '=https' --tlsv1.2 -sS -A "$user_agent" -X "$method" -H @-)
+    if [ -n "$data" ]; then
+        args+=(-H 'Content-Type: application/json' --data-binary "@$data")
+    else
+        args+=(--retry 3 --retry-delay 2)
+    fi
+    body=$(mktemp)
+    code=$(printf 'Authorization: %s\n' "$token" |
+        curl "${args[@]}" -o "$body" -w '%{http_code}' "$crates_io$path") || {
+        rm -f "$body"
+        echo "crates.io: $method $path: request failed" >&2
+        return 1
+    }
+    case $code in
+    2??) cat "$body" ;;
+    *)
+        detail=$(jq -r '[.errors[]?.detail] | join("; ")' <"$body" 2>/dev/null || true)
+        echo "crates.io: $method $path: HTTP $code${detail:+: $detail}" >&2
+        rm -f "$body"
+        return 1
+        ;;
+    esac
+    rm -f "$body"
+}
+
+trusted_publishing() {
+    local repository owner repo token name list id request filter
+    local -a selection
+    cd "$(git rev-parse --show-toplevel)"
+    need_tools cargo jq curl
+    repository=$(awk '
+        /^\[/ { inside = ($0 == "[workspace.package]") }
+        inside && /^repository *= *"/ { r = $0; sub(/^repository *= *"/, "", r); sub(/".*/, "", r); print r }
+    ' Cargo.toml)
+    [[ $repository =~ ^https://github\.com/([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)$ ]] ||
+        die "Cargo.toml: the repository of [workspace.package] is not https://github.com/OWNER/NAME: $repository"
+    owner=${BASH_REMATCH[1]} repo=${BASH_REMATCH[2]%.git}
+    [ -f ".github/workflows/$release_workflow" ] || die "no workflow .github/workflows/$release_workflow"
+    select_crates "$@"
+    token=$(registry_token) || die "no crates.io token: set CARGO_REGISTRY_TOKEN or run cargo login"
+    [ -n "$token" ] || die "the crates.io token is empty"
+    request=$(mktemp)
+    # shellcheck disable=SC2064 # expand now: the path is fixed
+    trap "rm -f '$request'" EXIT
+    # GitHub owner and repository names are case-insensitive.
+    # shellcheck disable=SC2016 # a jq program: $o, $r, $w and $e are jq's
+    filter='[.github_configs[] | select((.repository_owner | ascii_downcase) == ($o | ascii_downcase)
+        and (.repository_name | ascii_downcase) == ($r | ascii_downcase)
+        and .workflow_filename == $w and .environment == $e) | .id] | first // empty'
+    echo "release: trusted publishing from $owner/$repo, workflow $release_workflow, environment $release_environment"
+    for name in "${selection[@]}"; do
+        list=$(api GET "/api/v1/trusted_publishing/github_configs?crate=$name") ||
+            die "$name: cannot list its trusted publishing configurations (is the crate on crates.io, and the token allowed the trusted-publishing scope?)"
+        id=$(jq -r --arg o "$owner" --arg r "$repo" --arg w "$release_workflow" --arg e "$release_environment" \
+            "$filter" <<<"$list") || die "$name: unexpected answer from crates.io"
+        if [ -n "$id" ]; then
+            echo "$name: already configured (id $id)"
+        else
+            jq -n --arg c "$name" --arg o "$owner" --arg r "$repo" --arg w "$release_workflow" --arg e "$release_environment" \
+                '{github_config: {crate: $c, repository_owner: $o, repository_name: $r, workflow_filename: $w, environment: $e}}' \
+                >"$request"
+            sleep 1
+            api POST /api/v1/trusted_publishing/github_configs "$request" >/dev/null ||
+                die "$name: cannot add the configuration"
+            sleep 1
+            list=$(api GET "/api/v1/trusted_publishing/github_configs?crate=$name") ||
+                die "$name: cannot list its trusted publishing configurations"
+            id=$(jq -r --arg o "$owner" --arg r "$repo" --arg w "$release_workflow" --arg e "$release_environment" \
+                "$filter" <<<"$list") || die "$name: unexpected answer from crates.io"
+            [ -n "$id" ] || die "$name: the configuration added is not listed back"
+            echo "$name: configured (id $id)"
+        fi
+        jq -r '.github_configs[] | "  id \(.id): \(.repository_owner)/\(.repository_name), workflow \(.workflow_filename), environment \(.environment // "any"), created \(.created_at)"' \
+            <<<"$list"
+        sleep 1
+    done
+}
+
 prepare() {
     local version=$1 dry_run=$2 tag current branch remote_head note today tmp wt
     tag=v$version
@@ -392,6 +703,18 @@ case ${1:-} in
         exit 2
     }
     verify "$2" "${3:-}"
+    ;;
+--publish)
+    [ $# -ge 2 ] || {
+        usage >&2
+        exit 2
+    }
+    shift
+    publish "$@"
+    ;;
+--trusted-publishing)
+    shift
+    trusted_publishing "$@"
     ;;
 --dry-run)
     [ $# -eq 2 ] || {
