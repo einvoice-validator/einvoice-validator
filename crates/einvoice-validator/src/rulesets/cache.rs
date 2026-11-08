@@ -363,13 +363,12 @@ mod tests {
             let release = r.release().to_owned();
             (cache.bundle_dir(r), release)
         };
+        // Made absolute: on Windows, with the current drive.
+        let rules = std::path::absolute("/c").unwrap().join("rules");
         let (en16931, release) = dir("factur-x-en16931");
-        assert_eq!(
-            en16931,
-            Path::new("/c/rules").join(&release).join("en16931")
-        );
+        assert_eq!(en16931, rules.join(&release).join("en16931"));
         let (peppol, release) = dir("peppol");
-        assert_eq!(peppol, Path::new("/c/rules").join(release));
+        assert_eq!(peppol, rules.join(release));
     }
 
     #[test]
