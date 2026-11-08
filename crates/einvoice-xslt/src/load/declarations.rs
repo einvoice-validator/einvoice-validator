@@ -234,12 +234,17 @@ impl<'input> Loader<'_, 'input> {
             BindingKind::Variable | BindingKind::Param => &["name", "select", "as"],
         };
         let attributes = self.check_attributes(node, allowed);
-        let name = self.required_qname(node, "name");
-        let as_type = self.xpath(node, "as", parse_sequence_type);
-        let select = self.xpath(node, "select", parse_expr);
+        let name = self.required_qname(node, "name").map(Box::new);
+        let as_type = self
+            .xpath(node, "as", parse_sequence_type)
+            .map(|t| t.map(Box::new));
+        let select = self
+            .xpath(node, "select", parse_expr)
+            .map(|e| e.map(Box::new));
         let content = self.sequence_constructor(node);
         let (name, as_type, select, content) = (name?, as_type?, select?, content?);
         attributes?;
+        let (name, as_type, select) = (*name, as_type.map(|t| *t), select.map(|e| *e));
         let value = match (select, content.is_empty()) {
             (Some(_), false) => {
                 let message = format!(

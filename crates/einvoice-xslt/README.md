@@ -6,7 +6,8 @@ named templates, functions, global and local variables and parameters, and the i
 of each sequence constructor, each with its source line. XPath expressions are parsed with
 [`einvoice-xpath`](https://crates.io/crates/einvoice-xpath); nothing is evaluated. The
 subset is closed: any other XSLT element, attribute or value is an error naming it and its
-line.
+line. Instructions nested deeper than `MAX_NESTING` (64 levels) are refused too, so that
+loading, preparing and running the stylesheet needs a bounded call stack.
 
 This crate is part of [einvoice-validator](https://github.com/einvoice-validator/einvoice-validator), which validates EN 16931 and Peppol BIS
 Billing 3.0 e-invoices against the official validation artefacts in pure Rust.

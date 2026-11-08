@@ -15,7 +15,10 @@
 //! only the attributes the official stylesheets use. Any other XSLT element, any other
 //! attribute (including `xsl:` attributes on literal result elements and attributes in
 //! other namespaces on XSLT elements, which XSLT would otherwise ignore) and any
-//! unsupported attribute value is a [`LoadError`] naming it and its line.
+//! unsupported attribute value is a [`LoadError`] naming it and its line. So are
+//! instructions nested deeper than [`MAX_NESTING`] ([`LoadErrorKind::TooDeep`]) and
+//! expressions nested deeper than [`einvoice_xpath::MAX_DEPTH`]: the stack needed to load,
+//! prepare and run a stylesheet stays bounded, whatever its text.
 //!
 //! The stylesheet's whitespace-only text nodes are stripped as XSLT 2.0 section 4.2
 //! prescribes, honouring `xml:space`.
@@ -52,6 +55,23 @@ pub use priority::{Priority, default_priority};
 
 /// The XSLT namespace.
 pub const XSLT_NAMESPACE: &str = load::XSL;
+
+/// The maximum nesting of sequence constructors: deeper, a stylesheet is refused with a
+/// [`LoadErrorKind::TooDeep`] error.
+///
+/// Loading, preparing and running a stylesheet recurse over the nesting of its
+/// instructions, so the call stack they need grows with it: without a bound, a short
+/// stylesheet nested deeply enough would overflow the stack of its thread, which aborts
+/// the whole process. The body of a template, a function or a global variable is at
+/// level 1; the content of an instruction or of a literal result element (`xsl:if`,
+/// `xsl:when`, `xsl:otherwise`, `xsl:for-each`, `xsl:variable`, `xsl:with-param`,
+/// `xsl:value-of`, `xsl:attribute`, `xsl:comment`, an element) is one level deeper than
+/// that instruction. The XPath expressions in the stylesheet are bounded by
+/// [`einvoice_xpath::MAX_DEPTH`].
+///
+/// 64: the official stylesheets nest their instructions 9 deep at most (CEN, Peppol,
+/// Factur-X, XRechnung and the French rules).
+pub const MAX_NESTING: u32 = 64;
 
 /// Loads a stylesheet from its XML text.
 ///

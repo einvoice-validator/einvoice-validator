@@ -13,6 +13,7 @@ use crate::compile::ValueType;
 use crate::error::{ErrorCode, Result, err};
 use crate::eval::Argument;
 use crate::item::Item;
+use crate::limit::StackLimit;
 use crate::tree::Node;
 
 /// The identity of a variable declared by the host, given back to it at evaluation.
@@ -348,12 +349,14 @@ fn check_timezone(minutes: i16) -> Result<()> {
 }
 
 /// The dynamic context shared by evaluations: the host, the [`Clock`] (implicit timezone
-/// and current date and time) and a cache of compiled regular expressions.
+/// and current date and time), a cache of compiled regular expressions and, if the host
+/// sets one, the bound of the call stack ([`DynamicContext::with_stack_limit`]).
 pub struct DynamicContext<'h> {
     pub(crate) host: &'h dyn Host,
     pub(crate) implicit_timezone: i16,
     pub(crate) current_date_time: DateTime,
     pub(crate) regex_cache: RefCell<HashMap<(String, String), Rc<XPathRegex>>>,
+    pub(crate) stack_limit: Option<StackLimit>,
 }
 
 impl std::fmt::Debug for DynamicContext<'_> {
@@ -361,6 +364,7 @@ impl std::fmt::Debug for DynamicContext<'_> {
         f.debug_struct("DynamicContext")
             .field("implicit_timezone", &self.implicit_timezone)
             .field("current_date_time", &self.current_date_time)
+            .field("stack_limit", &self.stack_limit)
             .finish_non_exhaustive()
     }
 }
@@ -374,6 +378,29 @@ impl<'h> DynamicContext<'h> {
             implicit_timezone: clock.implicit_timezone,
             current_date_time: clock.current_date_time,
             regex_cache: RefCell::new(HashMap::new()),
+            stack_limit: None,
+        }
+    }
+
+    /// Bounds the call stack of the evaluations: every level of an expression evaluated
+    /// one inside another checks `limit`, and the evaluation ends with a
+    /// [`LimitExceeded::Stack`](crate::LimitExceeded::Stack) error
+    /// ([`Error::limit`](crate::Error::limit)) when the stack used is beyond it. For a
+    /// host that evaluates expressions inside a recursion of its own, measured from where
+    /// that recursion starts. Without it, an evaluation needs a stack in proportion to
+    /// the depth of the expression ([`einvoice_xpath::MAX_DEPTH`] at most).
+    #[must_use]
+    pub const fn with_stack_limit(mut self, limit: StackLimit) -> Self {
+        self.stack_limit = Some(limit);
+        self
+    }
+
+    /// A [`LimitExceeded::Stack`](crate::LimitExceeded::Stack) error when the stack used
+    /// is beyond the bound set by [`DynamicContext::with_stack_limit`].
+    pub(crate) fn check_stack(&self) -> Result<()> {
+        match self.stack_limit {
+            Some(limit) => limit.check().map_err(crate::error::Error::limit_exceeded),
+            None => Ok(()),
         }
     }
 

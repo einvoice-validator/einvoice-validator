@@ -14,6 +14,10 @@ pub enum ErrorKind {
     UndeclaredPrefix,
     /// A type name that is not an atomic type (`err:XPST0051`).
     UnknownType,
+    /// The expression (or pattern) is nested deeper than [`MAX_DEPTH`](crate::MAX_DEPTH):
+    /// it is refused rather than read, compiled and evaluated with a call stack in
+    /// proportion to its depth.
+    TooDeep,
 }
 
 /// A parse error, with its position in the parsed text.
@@ -48,6 +52,7 @@ impl fmt::Display for Error {
             ErrorKind::Unsupported => "unsupported",
             ErrorKind::UndeclaredPrefix => "undeclared namespace prefix",
             ErrorKind::UnknownType => "unknown type",
+            ErrorKind::TooDeep => "too deep",
         };
         write!(f, "{kind} at column {}: {}", self.column, self.message)
     }

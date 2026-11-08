@@ -68,5 +68,5 @@ pub use context::{
 pub use error::{Error, ErrorCode, Result};
 pub use eval::Argument;
 pub use item::Item;
-pub use limit::{DEFAULT_MAX_DEPTH, LimitExceeded};
+pub use limit::{DEFAULT_MAX_DEPTH, LimitExceeded, StackLimit};
 pub use tree::{Document, DocumentError, Node, NodeAxis, NodeKind, TreeBuilder, file_uri};

@@ -147,7 +147,10 @@ impl std::error::Error for TransformError {}
 
 impl From<einvoice_xpath_eval::Error> for TransformError {
     fn from(e: einvoice_xpath_eval::Error) -> Self {
-        Self::new(e.code().as_str(), e.message())
+        match e.limit() {
+            Some(limit) => Self::limit_exceeded(limit),
+            None => Self::new(e.code().as_str(), e.message()),
+        }
     }
 }
 

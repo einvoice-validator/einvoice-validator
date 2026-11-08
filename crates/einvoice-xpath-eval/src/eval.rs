@@ -20,10 +20,38 @@ use crate::context::{Context, DynamicContext, FunctionId};
 use crate::error::{Error, ErrorCode, Result, err};
 use crate::functions::Builtin;
 use crate::item::Item;
+use crate::library::ordinal;
 use crate::tree::{Node, NodeAxis, NodeKind};
 
 /// A lazily produced sequence.
 pub(crate) type Iter<'s> = Box<dyn Iterator<Item = Result<Item>> + 's>;
+
+/// What an operand or an argument is, as an error names it: written out only when an
+/// error is raised.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum What<'w> {
+    /// As written.
+    Text(&'w str),
+    /// The first (`true`) or second operand of an operator, as named.
+    Operand(bool, &'w str),
+    /// The argument at an index of a function, by name.
+    Argument(usize, &'w str),
+}
+
+impl std::fmt::Display for What<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text(text) => f.write_str(text),
+            Self::Operand(first, of) => {
+                let nth = if *first { "first" } else { "second" };
+                write!(f, "{nth} operand of {of}")
+            }
+            Self::Argument(index, function) => {
+                write!(f, "{} argument of {function}()", ordinal(*index))
+            }
+        }
+    }
+}
 
 /// The range variables in scope, innermost first.
 #[derive(Debug)]
@@ -133,6 +161,17 @@ impl Argument {
 pub(crate) struct Run<'a> {
     pub(crate) dc: &'a DynamicContext<'a>,
     pub(crate) current: Option<Item>,
+}
+
+/// How an operand of a general comparison is named in errors.
+const GENERAL_OPERAND: &str = "operand of a general comparison";
+
+/// The value, if any, as a sequence.
+fn optional<'s>(value: Option<AtomicValue>) -> Iter<'s> {
+    match value {
+        Some(value) => once(Item::Atomic(value)),
+        None => Box::new(std::iter::empty()),
+    }
 }
 
 pub(crate) fn once<'s>(item: Item) -> Iter<'s> {
@@ -248,8 +287,65 @@ impl<'a> Run<'a> {
         self.dc.host.call_function(id, arguments, self.dc)
     }
 
-    /// The sequence of `expr`, lazily.
+    /// The sequence of `expr`, lazily. The forms that evaluate operands are each
+    /// evaluated by a function of their own, so that the recursion over a deep
+    /// expression holds, at each level, only what that level's form needs (the call stack
+    /// of a debug build keeps every local of a function).
     pub(crate) fn seq<'s>(&'s self, expr: &'s Expr, ctx: &Ctx) -> Result<Iter<'s>>
+    where
+        'a: 's,
+    {
+        self.dc.check_stack()?;
+        match expr {
+            Expr::Literal(_)
+            | Expr::ContextItem
+            | Expr::Root
+            | Expr::Local(_)
+            | Expr::External(_) => self.leaf(expr, ctx),
+            Expr::Sequence(items) => Ok(self.sequence(items, ctx)),
+            Expr::Filter { base, predicates } => self.filtered(base, predicates, ctx),
+            Expr::Step(step) => self.step(step, ctx),
+            Expr::Path {
+                lhs,
+                rhs,
+                mode,
+                rhs_uses_last,
+            } => self.path(lhs, rhs, *mode, *rhs_uses_last, ctx),
+            Expr::Union {
+                lhs,
+                rhs,
+                lhs_ordered,
+                rhs_ordered,
+            } => self.union(lhs, *lhs_ordered, rhs, *rhs_ordered, ctx),
+            Expr::Range(lhs, rhs) => self.range(lhs, rhs, ctx),
+            Expr::If {
+                condition,
+                then,
+                otherwise,
+            } => self.conditional(condition, then, otherwise, ctx),
+            Expr::For { sequence, body } => self.for_each(sequence, body, ctx),
+            Expr::Call {
+                function,
+                args,
+                data,
+            } => self.call(*function, args, data, ctx),
+            Expr::HostCall { id, args } => self.host_call(*id, args, ctx).map(from_vec),
+            Expr::Cast { .. } => self.cast(expr, ctx).map(optional),
+            Expr::Negate(..) | Expr::Arithmetic { .. } | Expr::ValueComparison { .. } => {
+                self.atomic_operation(expr, ctx).map(optional)
+            }
+            Expr::GeneralComparison { .. }
+            | Expr::And(..)
+            | Expr::Or(..)
+            | Expr::Quantified { .. }
+            | Expr::InstanceOf { .. }
+            | Expr::Castable { .. } => self.ebv(expr, ctx).map(boolean),
+        }
+    }
+
+    /// The expressions that evaluate no operand: literals, `.`, `/`, variables.
+    #[inline]
+    fn leaf<'s>(&'s self, expr: &'s Expr, ctx: &Ctx) -> Result<Iter<'s>>
     where
         'a: 's,
     {
@@ -271,83 +367,93 @@ impl<'a> Run<'a> {
                 let value = self.dc.host.variable(*id)?;
                 Box::new((0..value.len()).map(move |i| Ok(value[i].clone())))
             }
-            Expr::Sequence(items) => {
-                let ctx = ctx.clone();
-                Box::new(
-                    items
-                        .iter()
-                        .flat_map(move |e| self.seq(e, &ctx).unwrap_or_else(failed)),
-                )
-            }
-            Expr::Filter { base, predicates } => {
-                let input = self.seq(base, ctx)?;
-                self.filter(input, predicates, ctx)?
-            }
-            Expr::Step(step) => self.step(step, ctx)?,
-            Expr::Path {
-                lhs,
-                rhs,
-                mode,
-                rhs_uses_last,
-            } => self.path(lhs, rhs, *mode, *rhs_uses_last, ctx)?,
-            Expr::Union {
-                lhs,
-                rhs,
-                lhs_ordered,
-                rhs_ordered,
-            } => {
-                let left = self.union_operand(lhs, *lhs_ordered, ctx, "first")?;
-                let right = self.union_operand(rhs, *rhs_ordered, ctx, "second")?;
-                Box::new(Merge {
-                    left,
-                    right,
-                    heads: None,
-                })
-            }
-            Expr::Range(lhs, rhs) => self.range(lhs, rhs, ctx)?,
-            Expr::If {
-                condition,
-                then,
-                otherwise,
-            } => {
-                let branch = if self.ebv(condition, ctx)? {
-                    then
-                } else {
-                    otherwise
-                };
-                self.seq(branch, ctx)?
-            }
-            Expr::For { sequence, body } => {
-                let input = self.seq(sequence, ctx)?;
-                let ctx = ctx.clone();
-                Box::new(input.flat_map(move |item| match item {
-                    Ok(item) => self.seq(body, &ctx.with_local(item)).unwrap_or_else(failed),
-                    Err(e) => failed(e),
-                }))
-            }
-            Expr::Call {
-                function,
-                args,
-                data,
-            } => self.call(*function, args, data, ctx)?,
-            Expr::HostCall { id, args } => from_vec(self.host_call(*id, args, ctx)?),
-            Expr::Cast { .. } => match self.cast(expr, ctx)? {
-                Some(value) => once(Item::Atomic(value)),
-                None => Box::new(std::iter::empty()),
-            },
-            Expr::Negate(..) | Expr::Arithmetic { .. } | Expr::ValueComparison { .. } => {
-                match self.atomic_operation(expr, ctx)? {
-                    Some(value) => once(Item::Atomic(value)),
-                    None => Box::new(std::iter::empty()),
-                }
-            }
-            Expr::GeneralComparison { .. }
-            | Expr::And(..)
-            | Expr::Or(..)
-            | Expr::Quantified { .. }
-            | Expr::InstanceOf { .. }
-            | Expr::Castable { .. } => boolean(self.ebv(expr, ctx)?),
+            _ => return err(ErrorCode::Internal, "not a leaf"),
         })
+    }
+
+    /// `(a, b, ...)`
+    #[inline]
+    fn sequence<'s>(&'s self, items: &'s [Expr], ctx: &Ctx) -> Iter<'s>
+    where
+        'a: 's,
+    {
+        let ctx = ctx.clone();
+        Box::new(
+            items
+                .iter()
+                .flat_map(move |e| self.seq(e, &ctx).unwrap_or_else(failed)),
+        )
+    }
+
+    /// `base[predicates]...`
+    #[inline]
+    fn filtered<'s>(
+        &'s self,
+        base: &'s Expr,
+        predicates: &'s [Predicate],
+        ctx: &Ctx,
+    ) -> Result<Iter<'s>>
+    where
+        'a: 's,
+    {
+        let input = self.seq(base, ctx)?;
+        self.filter(input, predicates, ctx)
+    }
+
+    /// `lhs | rhs`
+    #[inline]
+    fn union<'s>(
+        &'s self,
+        lhs: &'s Expr,
+        lhs_ordered: bool,
+        rhs: &'s Expr,
+        rhs_ordered: bool,
+        ctx: &Ctx,
+    ) -> Result<Iter<'s>>
+    where
+        'a: 's,
+    {
+        let left = self.union_operand(lhs, lhs_ordered, ctx, "first")?;
+        let right = self.union_operand(rhs, rhs_ordered, ctx, "second")?;
+        Ok(Box::new(Merge {
+            left,
+            right,
+            heads: None,
+        }))
+    }
+
+    /// `if (condition) then then else otherwise`
+    #[inline]
+    fn conditional<'s>(
+        &'s self,
+        condition: &'s Expr,
+        then: &'s Expr,
+        otherwise: &'s Expr,
+        ctx: &Ctx,
+    ) -> Result<Iter<'s>>
+    where
+        'a: 's,
+    {
+        let branch = if self.ebv(condition, ctx)? {
+            then
+        } else {
+            otherwise
+        };
+        self.seq(branch, ctx)
+    }
+
+    /// `for $v in sequence return body`
+    #[inline]
+    fn for_each<'s>(&'s self, sequence: &'s Expr, body: &'s Expr, ctx: &Ctx) -> Result<Iter<'s>>
+    where
+        'a: 's,
+    {
+        let input = self.seq(sequence, ctx)?;
+        let ctx = ctx.clone();
+        Ok(Box::new(input.flat_map(move |item| match item {
+            Ok(item) => self.seq(body, &ctx.with_local(item)).unwrap_or_else(failed),
+            Err(e) => failed(e),
+        })))
     }
 
     /// `operand cast as target`, `?` when `allows_empty`: the atomized operand, at most
@@ -363,7 +469,7 @@ impl<'a> Run<'a> {
         else {
             return err(ErrorCode::Internal, "not a cast");
         };
-        match self.atomic_opt(operand, ctx, "value in 'cast as' expression")? {
+        match self.atomic_opt(operand, ctx, What::Text("value in 'cast as' expression"))? {
             None if *allows_empty => Ok(None),
             None => err(
                 ErrorCode::Xpty0004,
@@ -377,58 +483,101 @@ impl<'a> Run<'a> {
     /// Unary minus, arithmetic and value comparisons: the operands are atomized and read
     /// left to right, and an empty one makes the result empty without reading the next.
     fn atomic_operation(&self, expr: &Expr, ctx: &Ctx) -> Result<Option<AtomicValue>> {
-        let operands = |lhs: &Expr,
-                        rhs: &Expr,
-                        what: &str|
-         -> Result<Option<(AtomicValue, AtomicValue)>> {
-            let Some(a) = self.atomic_opt(lhs, ctx, &format!("first operand of {what}"))? else {
-                return Ok(None);
-            };
-            let Some(b) = self.atomic_opt(rhs, ctx, &format!("second operand of {what}"))? else {
-                return Ok(None);
-            };
-            Ok(Some((a, b)))
-        };
-        Ok(match expr {
-            Expr::Negate(operand) => match self.atomic_opt(operand, ctx, "operand of '-'")? {
-                Some(value) => Some(ops::negate(&value)?),
-                None => None,
-            },
+        match expr {
+            Expr::Negate(operand) => self.negated(operand, ctx),
             Expr::Arithmetic {
                 op,
                 lhs,
                 rhs,
                 calculator,
-            } => match operands(lhs, rhs, &format!("'{}'", arithmetic_name(*op)))? {
-                Some((a, b)) => Some(arithmetic(*op, *calculator, &a, &b)?),
-                None => None,
-            },
-            Expr::ValueComparison { op, lhs, rhs } => {
-                match operands(lhs, rhs, "a value comparison")? {
-                    Some((a, b)) => Some(AtomicValue::Boolean(ops::value_compare(
-                        &a,
-                        *op,
-                        &b,
-                        self.dc.implicit_timezone,
-                    )?)),
-                    None => None,
-                }
-            }
-            _ => return err(ErrorCode::Internal, "not an atomic operation"),
-        })
+            } => self.arithmetic_value(*op, *calculator, lhs, rhs, ctx),
+            Expr::ValueComparison { op, lhs, rhs } => self.value_comparison(*op, lhs, rhs, ctx),
+            _ => err(ErrorCode::Internal, "not an atomic operation"),
+        }
+    }
+
+    /// The atomized operands of a binary atomic operation, `None` as soon as one is
+    /// empty.
+    #[inline]
+    fn operands(
+        &self,
+        lhs: &Expr,
+        rhs: &Expr,
+        what: &str,
+        ctx: &Ctx,
+    ) -> Result<Option<(AtomicValue, AtomicValue)>> {
+        let Some(a) = self.atomic_opt(lhs, ctx, What::Operand(true, what))? else {
+            return Ok(None);
+        };
+        let Some(b) = self.atomic_opt(rhs, ctx, What::Operand(false, what))? else {
+            return Ok(None);
+        };
+        Ok(Some((a, b)))
+    }
+
+    /// `-operand`
+    #[inline]
+    fn negated(&self, operand: &Expr, ctx: &Ctx) -> Result<Option<AtomicValue>> {
+        match self.atomic_opt(operand, ctx, What::Text("operand of '-'"))? {
+            Some(value) => Ok(Some(ops::negate(&value)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// `lhs op rhs` for `+ - * div idiv mod`
+    #[inline]
+    fn arithmetic_value(
+        &self,
+        op: ops::ArithmeticOp,
+        calculator: Calculator,
+        lhs: &Expr,
+        rhs: &Expr,
+        ctx: &Ctx,
+    ) -> Result<Option<AtomicValue>> {
+        match self.operands(lhs, rhs, arithmetic_name(op), ctx)? {
+            Some((a, b)) => Ok(Some(arithmetic(op, calculator, &a, &b)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// A value comparison.
+    #[inline]
+    fn value_comparison(
+        &self,
+        op: ops::ComparisonOp,
+        lhs: &Expr,
+        rhs: &Expr,
+        ctx: &Ctx,
+    ) -> Result<Option<AtomicValue>> {
+        match self.operands(lhs, rhs, "a value comparison", ctx)? {
+            Some((a, b)) => Ok(Some(AtomicValue::Boolean(ops::value_compare(
+                &a,
+                op,
+                &b,
+                self.dc.implicit_timezone,
+            )?))),
+            None => Ok(None),
+        }
     }
 
     /// `lhs and rhs` (`decisive` false) or `lhs or rhs` (`decisive` true), as Saxon-HE
     /// 12.10 evaluates them (`AndElaborator`, `OrElaborator`): the first operand first,
     /// and its value decides when it is `decisive`; when it raises a dynamic error, the
     /// second operand is evaluated all the same, and the error is raised only if the
-    /// second does not decide the result (an error of the second wins). A refusal or a
-    /// bug of this crate is never set aside.
+    /// second does not decide the result (an error of the second wins). A refusal, a
+    /// limit or a bug of this crate is never set aside.
     fn and_or(&self, lhs: &Expr, rhs: &Expr, decisive: bool, ctx: &Ctx) -> Result<bool> {
         match self.ebv(lhs, ctx) {
             Ok(value) if value == decisive => Ok(decisive),
             Ok(_) => self.ebv(rhs, ctx),
-            Err(e) if matches!(e.code(), ErrorCode::Unsupported | ErrorCode::Internal) => Err(e),
+            Err(e)
+                if matches!(
+                    e.code(),
+                    ErrorCode::Unsupported | ErrorCode::Internal | ErrorCode::Limit
+                ) =>
+            {
+                Err(e)
+            }
             Err(e) => {
                 if self.ebv(rhs, ctx)? == decisive {
                     Ok(decisive)
@@ -441,6 +590,7 @@ impl<'a> Run<'a> {
 
     /// The effective boolean value of `expr`.
     pub(crate) fn ebv(&self, expr: &Expr, ctx: &Ctx) -> Result<bool> {
+        self.dc.check_stack()?;
         match expr {
             Expr::GeneralComparison {
                 op,
@@ -458,15 +608,7 @@ impl<'a> Run<'a> {
                 every,
                 sequence,
                 satisfies,
-            } => {
-                for item in self.seq(sequence, ctx)? {
-                    let holds = self.ebv(satisfies, &ctx.with_local(item?))?;
-                    if holds != *every {
-                        return Ok(holds);
-                    }
-                }
-                Ok(*every)
-            }
+            } => self.quantified(*every, sequence, satisfies, ctx),
             Expr::InstanceOf {
                 operand,
                 item,
@@ -476,22 +618,7 @@ impl<'a> Run<'a> {
                 operand,
                 target,
                 allows_empty,
-            } => {
-                let mut values = self.seq(operand, ctx)?;
-                let Some(first) = values.next() else {
-                    return Ok(*allows_empty);
-                };
-                let first = first?.atomize();
-                if let Some(second) = values.next() {
-                    second?;
-                    return Ok(false);
-                }
-                match first.cast(*target) {
-                    Ok(_) => Ok(true),
-                    Err(e) if e.code() == einvoice_xdm::ErrorCode::Unsupported => Err(e.into()),
-                    Err(_) => Ok(false),
-                }
-            }
+            } => self.castable(operand, *target, *allows_empty, ctx),
             // As Saxon: `count(E)` as a boolean is `exists(E)`.
             Expr::Call {
                 function: Builtin::Count,
@@ -504,6 +631,49 @@ impl<'a> Run<'a> {
                 ..
             } => self.ebv(&args[0], ctx),
             _ => ebv_of(self.seq(expr, ctx)?),
+        }
+    }
+
+    /// `some` (`every` false) or `every` `$v in sequence satisfies satisfies`.
+    #[inline]
+    fn quantified(
+        &self,
+        every: bool,
+        sequence: &Expr,
+        satisfies: &Expr,
+        ctx: &Ctx,
+    ) -> Result<bool> {
+        for item in self.seq(sequence, ctx)? {
+            let holds = self.ebv(satisfies, &ctx.with_local(item?))?;
+            if holds != every {
+                return Ok(holds);
+            }
+        }
+        Ok(every)
+    }
+
+    /// `operand castable as target` (`?` when `allows_empty`).
+    #[inline]
+    fn castable(
+        &self,
+        operand: &Expr,
+        target: einvoice_xdm::AtomicType,
+        allows_empty: bool,
+        ctx: &Ctx,
+    ) -> Result<bool> {
+        let mut values = self.seq(operand, ctx)?;
+        let Some(first) = values.next() else {
+            return Ok(allows_empty);
+        };
+        let first = first?.atomize();
+        if let Some(second) = values.next() {
+            second?;
+            return Ok(false);
+        }
+        match first.cast(target) {
+            Ok(_) => Ok(true),
+            Err(e) if e.code() == einvoice_xdm::ErrorCode::Unsupported => Err(e.into()),
+            Err(_) => Ok(false),
         }
     }
 
@@ -578,13 +748,13 @@ impl<'a> Run<'a> {
         &self,
         expr: &Expr,
         ctx: &Ctx,
-        what: &str,
+        what: What<'_>,
     ) -> Result<Option<AtomicValue>> {
         Ok(self.item_opt(expr, ctx, what)?.map(|i| i.atomize()))
     }
 
     /// At most one item of `expr`; `XPTY0004` when there are more.
-    pub(crate) fn item_opt(&self, expr: &Expr, ctx: &Ctx, what: &str) -> Result<Option<Item>> {
+    pub(crate) fn item_opt(&self, expr: &Expr, ctx: &Ctx, what: What<'_>) -> Result<Option<Item>> {
         let mut items = self.seq(expr, ctx)?;
         let Some(first) = items.next() else {
             return Ok(None);
@@ -608,49 +778,72 @@ impl<'a> Run<'a> {
         strategy: CompareStrategy,
         ctx: &Ctx,
     ) -> Result<bool> {
-        let tz = self.dc.implicit_timezone;
-        let compare = |a: &AtomicValue, b: &AtomicValue| -> Result<bool> {
-            Ok(ops::general_compare(a, op, b, tz)?)
-        };
-        let what = "operand of a general comparison";
         match strategy {
-            CompareStrategy::OneToOne => {
-                let Some(a) = self.atomic_opt(lhs, ctx, what)? else {
-                    return Ok(false);
-                };
-                let Some(b) = self.atomic_opt(rhs, ctx, what)? else {
-                    return Ok(false);
-                };
-                compare(&a, &b)
-            }
-            CompareStrategy::ManyToOne => {
-                let Some(b) = self.atomic_opt(rhs, ctx, what)? else {
-                    return Ok(false);
-                };
-                for a in self.atomized(lhs, ctx)? {
-                    if compare(&a?, &b)? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            CompareStrategy::OneToMany => {
-                let Some(a) = self.atomic_opt(lhs, ctx, what)? else {
-                    return Ok(false);
-                };
-                for b in self.atomized(rhs, ctx)? {
-                    if compare(&a, &b?)? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
+            CompareStrategy::OneToOne => self.one_to_one(op, lhs, rhs, ctx),
+            CompareStrategy::ManyToOne => self.many_to_one(op, lhs, rhs, ctx),
+            CompareStrategy::OneToMany => self.one_to_many(op, lhs, rhs, ctx),
             CompareStrategy::ManyToMany => {
+                let tz = self.dc.implicit_timezone;
+                let compare = |a: &AtomicValue, b: &AtomicValue| -> Result<bool> {
+                    Ok(ops::general_compare(a, op, b, tz)?)
+                };
                 let left = self.atomized(lhs, ctx)?;
                 let right = self.atomized(rhs, ctx)?;
                 many_to_many(left, right, &compare)
             }
         }
+    }
+
+    /// A general comparison of two operands of at most one item each.
+    #[inline]
+    fn one_to_one(&self, op: ops::ComparisonOp, lhs: &Expr, rhs: &Expr, ctx: &Ctx) -> Result<bool> {
+        let Some(a) = self.atomic_opt(lhs, ctx, What::Text(GENERAL_OPERAND))? else {
+            return Ok(false);
+        };
+        let Some(b) = self.atomic_opt(rhs, ctx, What::Text(GENERAL_OPERAND))? else {
+            return Ok(false);
+        };
+        Ok(ops::general_compare(&a, op, &b, self.dc.implicit_timezone)?)
+    }
+
+    /// A general comparison whose second operand has at most one item.
+    #[inline]
+    fn many_to_one(
+        &self,
+        op: ops::ComparisonOp,
+        lhs: &Expr,
+        rhs: &Expr,
+        ctx: &Ctx,
+    ) -> Result<bool> {
+        let Some(b) = self.atomic_opt(rhs, ctx, What::Text(GENERAL_OPERAND))? else {
+            return Ok(false);
+        };
+        for a in self.atomized(lhs, ctx)? {
+            if ops::general_compare(&a?, op, &b, self.dc.implicit_timezone)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// A general comparison whose first operand has at most one item.
+    #[inline]
+    fn one_to_many(
+        &self,
+        op: ops::ComparisonOp,
+        lhs: &Expr,
+        rhs: &Expr,
+        ctx: &Ctx,
+    ) -> Result<bool> {
+        let Some(a) = self.atomic_opt(lhs, ctx, What::Text(GENERAL_OPERAND))? else {
+            return Ok(false);
+        };
+        for b in self.atomized(rhs, ctx)? {
+            if ops::general_compare(&a, op, &b?, self.dc.implicit_timezone)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn filter<'s>(
@@ -880,7 +1073,7 @@ impl<'a> Run<'a> {
         'a: 's,
     {
         let bound = |expr: &Expr, what: &str| -> Result<Option<i64>> {
-            let Some(value) = self.atomic_opt(expr, ctx, what)? else {
+            let Some(value) = self.atomic_opt(expr, ctx, What::Text(what))? else {
                 return Ok(None);
             };
             let value = match value {
@@ -1087,14 +1280,15 @@ fn arithmetic(
     }
 }
 
+/// The operator, quoted, as errors name it.
 const fn arithmetic_name(op: ops::ArithmeticOp) -> &'static str {
     match op {
-        ops::ArithmeticOp::Add => "+",
-        ops::ArithmeticOp::Subtract => "-",
-        ops::ArithmeticOp::Multiply => "*",
-        ops::ArithmeticOp::Divide => "div",
-        ops::ArithmeticOp::IntegerDivide => "idiv",
-        ops::ArithmeticOp::Modulo => "mod",
+        ops::ArithmeticOp::Add => "'+'",
+        ops::ArithmeticOp::Subtract => "'-'",
+        ops::ArithmeticOp::Multiply => "'*'",
+        ops::ArithmeticOp::Divide => "'div'",
+        ops::ArithmeticOp::IntegerDivide => "'idiv'",
+        ops::ArithmeticOp::Modulo => "'mod'",
     }
 }
 

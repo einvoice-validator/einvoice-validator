@@ -17,8 +17,9 @@ use einvoice_xpath_eval::{
     VariableInfo, compile,
 };
 use einvoice_xslt::{
-    ApplyMode, GlobalKind, Instruction, Mode, NamespaceBinding, NumberLevel, Priority, Standalone,
-    Stylesheet, Template, TemplateModes, Variable, VariableValue,
+    ApplyMode, ApplyTemplates, Attribute, CallTemplate, Choose, Comment, ForEach, GlobalKind, If,
+    Instruction, LiteralElement, Mode, NamespaceBinding, NextMatch, Number, NumberLevel, Priority,
+    Sequence, Standalone, Stylesheet, Template, TemplateModes, ValueOf, Variable, VariableValue,
 };
 
 use crate::error::{PrepareError, PrepareErrors};
@@ -914,23 +915,22 @@ impl Compiler<'_> {
         frame: &mut Frame,
         lazy: bool,
     ) -> Vec<WithParam> {
-        params
-            .iter()
-            .map(|p| {
-                let value = self.value(p.line, &p.value, frame);
-                let eval = if lazy {
-                    self.learning(&p.value)
-                } else {
-                    Eval::Eager
-                };
-                WithParam {
-                    name: p.name.clone(),
-                    as_type: p.as_type.clone(),
-                    value,
-                    eval,
-                }
-            })
-            .collect()
+        let mut compiled = Vec::with_capacity(params.len());
+        for p in params {
+            let value = self.value(p.line, &p.value, frame);
+            let eval = if lazy {
+                self.learning(&p.value)
+            } else {
+                Eval::Eager
+            };
+            compiled.push(WithParam {
+                name: p.name.clone(),
+                as_type: p.as_type.clone(),
+                value,
+                eval,
+            });
+        }
+        compiled
     }
 
     /// [`Eval::Learning`] with new counters, or [`Eval::Eager`] for a value that depends
@@ -1094,209 +1094,257 @@ impl Compiler<'_> {
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one arm per instruction of the supported subset"
-    )]
+    /// Compiles one instruction. Each kind is compiled by a function of its own, so that
+    /// the recursion over nested instructions holds, at each level, only what that
+    /// level's instruction needs (the call stack of a debug build keeps every local of a
+    /// function).
     fn instruction(&mut self, instruction: &Instruction, frame: &mut Frame) -> Option<Inst> {
-        Some(match instruction {
-            Instruction::ApplyTemplates(apply) => {
-                let select = if let Some(e) = &apply.select {
-                    self.expr(apply.line, e, Some(frame))
-                } else {
-                    let children = parse_expr("child::node()", &NamespaceMap::new()).ok()?;
-                    self.expr(apply.line, &children, Some(frame))
-                };
-                let mode = match &apply.mode {
-                    ApplyMode::Current => ModeRef::Current,
-                    ApplyMode::Mode(m) => ModeRef::Mode(self.mode_index(m)),
-                };
-                let params = self.with_params(&apply.params, frame, false);
-                Inst::ApplyTemplates {
-                    line: apply.line,
-                    select: select?,
-                    mode,
-                    params,
-                }
+        match instruction {
+            Instruction::ApplyTemplates(apply) => self.apply_templates(apply, frame),
+            Instruction::NextMatch(next) => Some(self.next_match(next, frame)),
+            Instruction::CallTemplate(call) => self.call_template(call, frame),
+            Instruction::Choose(choose) => self.choose(choose, frame),
+            Instruction::If(i) => self.if_instruction(i, frame),
+            Instruction::ForEach(f) => self.for_each(f, frame),
+            Instruction::Variable(v) => Some(self.local_variable(v, frame)),
+            Instruction::Sequence(s) => self.sequence(s, frame),
+            Instruction::ValueOf(v) => self.value_of(v, frame),
+            Instruction::Attribute(a) => self.attribute(a, frame),
+            Instruction::Comment(c) => Some(self.comment(c, frame)),
+            Instruction::Text(t) => Some(Inst::Text(t.value.as_str().into())),
+            Instruction::Number(n) => self.number(n),
+            Instruction::LiteralElement(e) => self.literal_element(e, frame),
+        }
+    }
+
+    /// `xsl:apply-templates`.
+    fn apply_templates(&mut self, apply: &ApplyTemplates, frame: &mut Frame) -> Option<Inst> {
+        let select = if let Some(e) = &apply.select {
+            self.expr(apply.line, e, Some(frame))
+        } else {
+            let children = parse_expr("child::node()", &NamespaceMap::new()).ok()?;
+            self.expr(apply.line, &children, Some(frame))
+        };
+        let mode = match &apply.mode {
+            ApplyMode::Current => ModeRef::Current,
+            ApplyMode::Mode(m) => ModeRef::Mode(self.mode_index(m)),
+        };
+        let params = self.with_params(&apply.params, frame, false);
+        Some(Inst::ApplyTemplates {
+            line: apply.line,
+            select: select?,
+            mode,
+            params,
+        })
+    }
+
+    /// `xsl:next-match`.
+    fn next_match(&mut self, next: &NextMatch, frame: &mut Frame) -> Inst {
+        Inst::NextMatch {
+            line: next.line,
+            params: self.with_params(&next.params, frame, false),
+        }
+    }
+
+    /// `xsl:call-template`.
+    fn call_template(&mut self, call: &CallTemplate, frame: &mut Frame) -> Option<Inst> {
+        let Some(template) = self.sheet.templates.iter().position(|t| {
+            t.name
+                .as_ref()
+                .is_some_and(|n| n.same_expanded_name(&call.name))
+        }) else {
+            self.error(
+                call.line,
+                format!("no template named {} (XTSE0650)", call.name),
+            );
+            return None;
+        };
+        let declared = &self.sheet.templates[template].params;
+        if let Some(p) = call
+            .params
+            .iter()
+            .find(|p| !declared.iter().any(|d| d.name.same_expanded_name(&p.name)))
+        {
+            let message = format!(
+                "parameter {} is not declared by template {} (XTSE0680)",
+                p.name, call.name
+            );
+            self.error(call.line, message);
+            return None;
+        }
+        Some(Inst::CallTemplate {
+            line: call.line,
+            template,
+            params: self.with_params(&call.params, frame, true),
+        })
+    }
+
+    /// `xsl:choose`.
+    fn choose(&mut self, choose: &Choose, frame: &mut Frame) -> Option<Inst> {
+        let mut whens = Vec::with_capacity(choose.whens.len());
+        for when in &choose.whens {
+            whens.push(self.when(when.line, &when.test, &when.body, frame)?);
+        }
+        let otherwise = match &choose.otherwise {
+            Some(body) => self.sequence_constructor(body, frame),
+            None => Vec::new(),
+        };
+        Some(Inst::Choose { whens, otherwise })
+    }
+
+    /// `xsl:when`, and `xsl:if` as a `xsl:choose` of one `xsl:when`.
+    fn when(
+        &mut self,
+        line: u32,
+        test: &Expr,
+        body: &[Instruction],
+        frame: &mut Frame,
+    ) -> Option<When> {
+        let test = self.expr(line, test, Some(frame));
+        let body = self.sequence_constructor(body, frame);
+        Some(When {
+            line,
+            test: test?,
+            body,
+        })
+    }
+
+    /// `xsl:if`.
+    fn if_instruction(&mut self, i: &If, frame: &mut Frame) -> Option<Inst> {
+        let when = self.when(i.line, &i.test, &i.body, frame)?;
+        Some(Inst::Choose {
+            whens: vec![when],
+            otherwise: Vec::new(),
+        })
+    }
+
+    /// `xsl:for-each`.
+    fn for_each(&mut self, f: &ForEach, frame: &mut Frame) -> Option<Inst> {
+        let select = self.expr(f.line, &f.select, Some(frame));
+        frame.depth += 1;
+        let body = self.sequence_constructor(&f.body, frame);
+        frame.depth -= 1;
+        Some(Inst::ForEach {
+            line: f.line,
+            select: select?,
+            body,
+        })
+    }
+
+    /// A local `xsl:variable`.
+    fn local_variable(&mut self, v: &Variable, frame: &mut Frame) -> Inst {
+        let slot = frame.reserve();
+        frame.enclosing.push(slot);
+        let value = self.value(v.line, &v.value, frame);
+        frame.enclosing.pop();
+        let cardinality = binding_cardinality(v.as_type.as_ref(), &value);
+        let value_type = ValueType::local_variable(binding_value(&value), v.as_type.as_ref());
+        frame.bind(
+            slot,
+            v.name.clone(),
+            cardinality,
+            value_type,
+            self.globals.len(),
+        );
+        // Decided once the references in its scope are known (`sequence_constructor`).
+        let eval = if depends_on_focus_position(&v.value) {
+            Eval::Eager
+        } else {
+            Eval::Lazy
+        };
+        Inst::Variable(Box::new(Binding {
+            line: v.line,
+            name: v.name.clone(),
+            slot,
+            as_type: v.as_type.clone(),
+            value,
+            eval,
+            used: false,
+        }))
+    }
+
+    /// `xsl:sequence`.
+    fn sequence(&mut self, s: &Sequence, frame: &mut Frame) -> Option<Inst> {
+        Some(Inst::Sequence {
+            line: s.line,
+            select: self.expr(s.line, &s.select, Some(frame))?,
+        })
+    }
+
+    /// `xsl:value-of`.
+    fn value_of(&mut self, v: &ValueOf, frame: &mut Frame) -> Option<Inst> {
+        let select = v.select.as_ref().map(|e| self.expr(v.line, e, Some(frame)));
+        let separator = v
+            .separator
+            .as_ref()
+            .map(|s| self.avt(v.line, s, Some(frame)));
+        let body = self.sequence_constructor(&v.body, frame);
+        Some(Inst::ValueOf {
+            line: v.line,
+            select: select.map_or(Some(None), |s| s.map(Some))?,
+            separator: separator.map_or(Some(None), |s| s.map(Some))?,
+            body,
+        })
+    }
+
+    /// `xsl:attribute`.
+    fn attribute(&mut self, a: &Attribute, frame: &mut Frame) -> Option<Inst> {
+        let name = self.avt(a.line, &a.name, Some(frame));
+        let select = a.select.as_ref().map(|e| self.expr(a.line, e, Some(frame)));
+        let body = self.sequence_constructor(&a.body, frame);
+        Some(Inst::Attribute {
+            line: a.line,
+            name: name?,
+            namespaces: Arc::clone(&a.namespaces),
+            select: select.map_or(Some(None), |s| s.map(Some))?,
+            body,
+        })
+    }
+
+    /// `xsl:comment`.
+    fn comment(&mut self, c: &Comment, frame: &mut Frame) -> Inst {
+        Inst::Comment {
+            line: c.line,
+            body: self.sequence_constructor(&c.body, frame),
+        }
+    }
+
+    /// `xsl:number`.
+    fn number(&mut self, n: &Number) -> Option<Inst> {
+        let count = match &n.count {
+            None => None,
+            Some(p) => Some(CountPattern {
+                alternatives: self.pattern(n.line, p)?,
+                text: p.to_string(),
+            }),
+        };
+        Some(Inst::Number {
+            line: n.line,
+            level: n.level,
+            count,
+        })
+    }
+
+    /// A literal result element.
+    fn literal_element(&mut self, e: &LiteralElement, frame: &mut Frame) -> Option<Inst> {
+        let mut attributes = Vec::with_capacity(e.attributes.len());
+        let mut ok = true;
+        for attribute in &e.attributes {
+            match self.avt(e.line, &attribute.value, Some(frame)) {
+                Some(value) => attributes.push((self.intern(&attribute.name), value)),
+                None => ok = false,
             }
-            Instruction::NextMatch(next) => Inst::NextMatch {
-                line: next.line,
-                params: self.with_params(&next.params, frame, false),
-            },
-            Instruction::CallTemplate(call) => {
-                let Some(template) = self.sheet.templates.iter().position(|t| {
-                    t.name
-                        .as_ref()
-                        .is_some_and(|n| n.same_expanded_name(&call.name))
-                }) else {
-                    self.error(
-                        call.line,
-                        format!("no template named {} (XTSE0650)", call.name),
-                    );
-                    return None;
-                };
-                let declared = &self.sheet.templates[template].params;
-                if let Some(p) = call
-                    .params
-                    .iter()
-                    .find(|p| !declared.iter().any(|d| d.name.same_expanded_name(&p.name)))
-                {
-                    let message = format!(
-                        "parameter {} is not declared by template {} (XTSE0680)",
-                        p.name, call.name
-                    );
-                    self.error(call.line, message);
-                    return None;
-                }
-                Inst::CallTemplate {
-                    line: call.line,
-                    template,
-                    params: self.with_params(&call.params, frame, true),
-                }
-            }
-            Instruction::Choose(choose) => {
-                let mut whens = Vec::with_capacity(choose.whens.len());
-                for when in &choose.whens {
-                    let test = self.expr(when.line, &when.test, Some(frame));
-                    let body = self.sequence_constructor(&when.body, frame);
-                    whens.push(When {
-                        line: when.line,
-                        test: test?,
-                        body,
-                    });
-                }
-                let otherwise = choose
-                    .otherwise
-                    .as_ref()
-                    .map(|body| self.sequence_constructor(body, frame))
-                    .unwrap_or_default();
-                Inst::Choose { whens, otherwise }
-            }
-            Instruction::If(i) => {
-                let test = self.expr(i.line, &i.test, Some(frame));
-                let body = self.sequence_constructor(&i.body, frame);
-                Inst::Choose {
-                    whens: vec![When {
-                        line: i.line,
-                        test: test?,
-                        body,
-                    }],
-                    otherwise: Vec::new(),
-                }
-            }
-            Instruction::ForEach(f) => {
-                let select = self.expr(f.line, &f.select, Some(frame));
-                frame.depth += 1;
-                let body = self.sequence_constructor(&f.body, frame);
-                frame.depth -= 1;
-                Inst::ForEach {
-                    line: f.line,
-                    select: select?,
-                    body,
-                }
-            }
-            Instruction::Variable(v) => {
-                let slot = frame.reserve();
-                frame.enclosing.push(slot);
-                let value = self.value(v.line, &v.value, frame);
-                frame.enclosing.pop();
-                let cardinality = binding_cardinality(v.as_type.as_ref(), &value);
-                let value_type =
-                    ValueType::local_variable(binding_value(&value), v.as_type.as_ref());
-                frame.bind(
-                    slot,
-                    v.name.clone(),
-                    cardinality,
-                    value_type,
-                    self.globals.len(),
-                );
-                // Decided once the references in its scope are known
-                // (`sequence_constructor`).
-                let eval = if depends_on_focus_position(&v.value) {
-                    Eval::Eager
-                } else {
-                    Eval::Lazy
-                };
-                Inst::Variable(Box::new(Binding {
-                    line: v.line,
-                    name: v.name.clone(),
-                    slot,
-                    as_type: v.as_type.clone(),
-                    value,
-                    eval,
-                    used: false,
-                }))
-            }
-            Instruction::Sequence(s) => Inst::Sequence {
-                line: s.line,
-                select: self.expr(s.line, &s.select, Some(frame))?,
-            },
-            Instruction::ValueOf(v) => {
-                let select = v.select.as_ref().map(|e| self.expr(v.line, e, Some(frame)));
-                let separator = v
-                    .separator
-                    .as_ref()
-                    .map(|s| self.avt(v.line, s, Some(frame)));
-                let body = self.sequence_constructor(&v.body, frame);
-                Inst::ValueOf {
-                    line: v.line,
-                    select: select.map_or(Some(None), |s| s.map(Some))?,
-                    separator: separator.map_or(Some(None), |s| s.map(Some))?,
-                    body,
-                }
-            }
-            Instruction::Attribute(a) => {
-                let name = self.avt(a.line, &a.name, Some(frame));
-                let select = a.select.as_ref().map(|e| self.expr(a.line, e, Some(frame)));
-                let body = self.sequence_constructor(&a.body, frame);
-                Inst::Attribute {
-                    line: a.line,
-                    name: name?,
-                    namespaces: Arc::clone(&a.namespaces),
-                    select: select.map_or(Some(None), |s| s.map(Some))?,
-                    body,
-                }
-            }
-            Instruction::Comment(c) => Inst::Comment {
-                line: c.line,
-                body: self.sequence_constructor(&c.body, frame),
-            },
-            Instruction::Text(t) => Inst::Text(t.value.as_str().into()),
-            Instruction::Number(n) => {
-                let count = match &n.count {
-                    None => None,
-                    Some(p) => Some(CountPattern {
-                        alternatives: self.pattern(n.line, p)?,
-                        text: p.to_string(),
-                    }),
-                };
-                Inst::Number {
-                    line: n.line,
-                    level: n.level,
-                    count,
-                }
-            }
-            Instruction::LiteralElement(e) => {
-                let mut attributes = Vec::with_capacity(e.attributes.len());
-                let mut ok = true;
-                for attribute in &e.attributes {
-                    match self.avt(e.line, &attribute.value, Some(frame)) {
-                        Some(value) => attributes.push((self.intern(&attribute.name), value)),
-                        None => ok = false,
-                    }
-                }
-                let body = self.sequence_constructor(&e.body, frame);
-                if !ok {
-                    return None;
-                }
-                Inst::Element {
-                    line: e.line,
-                    name: self.intern(&e.name),
-                    namespaces: Arc::clone(&e.namespaces),
-                    attributes,
-                    body,
-                }
-            }
+        }
+        let body = self.sequence_constructor(&e.body, frame);
+        if !ok {
+            return None;
+        }
+        Some(Inst::Element {
+            line: e.line,
+            name: self.intern(&e.name),
+            namespaces: Arc::clone(&e.namespaces),
+            attributes,
+            body,
         })
     }
 

@@ -15,11 +15,16 @@
 //! accept them in 2.0 stylesheets: `root()` alone, and parenthesized patterns as steps
 //! (`PostfixExprP ::= '(' Pattern ')' PredicateList`), normalised as Saxon-HE 12.10 reads
 //! them (see [`crate::parse_pattern`]).
+//!
+//! The depth of a path pattern counts its steps as the depth of a path expression does
+//! (a pattern is matched step by step from its last one), and the depth of a
+//! parenthesized step is that of its pattern: both are bounded by
+//! [`MAX_DEPTH`](crate::MAX_DEPTH).
 
 use super::Parser;
 use crate::ast::{
-    Axis, NodeTest, PathPattern, PathStep, Pattern, PatternAlternative, PatternAnchor, PatternAxis,
-    PatternLink, PatternStep,
+    Axis, Expr, NodeTest, PathPattern, PathStep, Pattern, PatternAlternative, PatternAnchor,
+    PatternAxis, PatternLink, PatternStep,
 };
 use crate::error::{ErrorKind, Result};
 use crate::lexer::Tok;
@@ -52,35 +57,68 @@ fn has_parenthesized_step(alternative: &PatternAlternative) -> bool {
 }
 
 impl Parser<'_> {
-    /// \[1\] `Pattern ::= PathPattern | Pattern '|' PathPattern`
-    pub(crate) fn pattern(&mut self) -> Result<Pattern> {
-        let mut alternatives = self.pattern_alternative()?;
+    /// \[1\] `Pattern ::= PathPattern | Pattern '|' PathPattern`, and the depth of its
+    /// deepest alternative.
+    pub(crate) fn pattern(&mut self) -> Result<(Pattern, u32)> {
+        let mut pattern = (
+            Pattern {
+                alternatives: Vec::new(),
+            },
+            0,
+        );
         loop {
-            for word in ["union", "intersect", "except"] {
-                if self.peek()?.is_word(word) {
-                    return Err(self.error_here(
-                        ErrorKind::Unsupported,
-                        format!("`{word}` operator in a pattern"),
-                    ));
-                }
+            let alternative = self.pattern_alternative()?;
+            if !self.pattern_continues(&mut pattern, alternative)? {
+                return Ok(pattern);
             }
-            if *self.peek()? != Tok::Pipe {
-                return Ok(Pattern { alternatives });
-            }
-            self.bump()?;
-            alternatives.extend(self.pattern_alternative()?);
         }
     }
 
+    /// Adds `alternative` to `pattern`; whether another alternative follows (after `|`).
+    fn pattern_continues(
+        &mut self,
+        pattern: &mut (Pattern, u32),
+        (alternatives, depth): (Vec<PatternAlternative>, u32),
+    ) -> Result<bool> {
+        pattern.0.alternatives.extend(alternatives);
+        pattern.1 = pattern.1.max(depth);
+        for word in ["union", "intersect", "except"] {
+            if self.peek()?.is_word(word) {
+                return Err(self.error_here(
+                    ErrorKind::Unsupported,
+                    format!("`{word}` operator in a pattern"),
+                ));
+            }
+        }
+        self.eat(&Tok::Pipe)
+    }
+
     /// \[2\] `PathPattern`, plus the XSLT 3.0 `root()` and parenthesized forms: one
-    /// alternative, or several when a parenthesized pattern is distributed.
-    fn pattern_alternative(&mut self) -> Result<Vec<PatternAlternative>> {
+    /// alternative, or several when a parenthesized pattern is distributed; with the
+    /// depth of the path.
+    fn pattern_alternative(&mut self) -> Result<(Vec<PatternAlternative>, u32)> {
+        let mut path = match self.pattern_start()? {
+            PatternStart::Whole(alternative) => return Ok((vec![alternative], 1)),
+            PatternStart::Path(path) => path,
+        };
+        loop {
+            let step = self.path_step()?;
+            if !self.pattern_step_end(&mut path, step)? {
+                break;
+            }
+        }
+        self.pattern_end(path)
+    }
+
+    /// What precedes the first step of a path pattern, or a whole alternative without
+    /// steps (`/`, `root()`).
+    fn pattern_start(&mut self) -> Result<PatternStart> {
         let tok = self.peek()?.clone();
         let anchor = match tok {
             Tok::Slash => {
                 self.bump()?;
                 if !self.starts_pattern_step()? {
-                    return Ok(vec![PatternAlternative::DocumentRoot]);
+                    return Ok(PatternStart::Whole(PatternAlternative::DocumentRoot));
                 }
                 PatternAnchor::Root
             }
@@ -92,7 +130,7 @@ impl Parser<'_> {
                 prefix: None,
                 local,
             } if *self.peek2()? == Tok::LParen => match local.as_str() {
-                "root" => return self.root_pattern().map(|a| vec![a]),
+                "root" => return self.root_pattern().map(PatternStart::Whole),
                 "id" | "key" | "doc" | "element-with-id" => {
                     return Err(
                         self.error_here(ErrorKind::Unsupported, format!("`{local}()` pattern"))
@@ -115,18 +153,58 @@ impl Parser<'_> {
             _ => PatternAnchor::Relative,
         };
         let start = self.offset()?;
-        let first = self.path_step()?;
-        let mut rest = Vec::new();
-        loop {
-            let link = match self.peek()? {
-                Tok::Slash => PatternLink::Child,
-                Tok::DoubleSlash => PatternLink::Descendant,
-                _ => break,
-            };
-            self.bump()?;
-            rest.push((link, self.path_step()?));
+        Ok(PatternStart::Path(Box::new(PatternPath {
+            anchor,
+            start,
+            first: None,
+            rest: Vec::new(),
+            link: None,
+            depth: 0,
+        })))
+    }
+
+    /// Adds `step` to `path`; whether another step follows (after `/` or `//`).
+    fn pattern_step_end(
+        &mut self,
+        path: &mut PatternPath,
+        (step, depth): (Box<PathStep>, u32),
+    ) -> Result<bool> {
+        match path.link.take() {
+            None => {
+                path.first = Some(*step);
+                path.depth = depth;
+            }
+            Some((link, offset)) => {
+                path.rest.push((link, *step));
+                path.depth = self.above([path.depth, depth], offset)?;
+            }
         }
-        self.normalise(anchor, first, rest, start)
+        let link = match self.peek()? {
+            Tok::Slash => PatternLink::Child,
+            Tok::DoubleSlash => PatternLink::Descendant,
+            _ => return Ok(false),
+        };
+        let offset = self.bump()?.start;
+        path.link = Some((link, offset));
+        Ok(true)
+    }
+
+    /// The alternatives of the path read, normalised.
+    #[expect(
+        clippy::boxed_local,
+        reason = "the caller, on the recursion of the parser, holds the box, not the value"
+    )]
+    fn pattern_end(&self, path: Box<PatternPath>) -> Result<(Vec<PatternAlternative>, u32)> {
+        let PatternPath {
+            anchor,
+            start,
+            first,
+            rest,
+            depth,
+            ..
+        } = *path;
+        let first = first.ok_or_else(|| self.error_at(ErrorKind::Syntax, start, "no step"))?;
+        Ok((self.normalise(anchor, first, rest, start)?, depth))
     }
 
     /// The alternatives of a parsed path, normalised as Saxon reads parenthesized
@@ -228,19 +306,34 @@ impl Parser<'_> {
         })])
     }
 
-    /// A step: `(Pattern) Predicate*` (XSLT 3.0 `PostfixExprP`) or an axis step.
-    fn path_step(&mut self) -> Result<PathStep> {
-        if *self.peek()? != Tok::LParen {
-            return self.pattern_step().map(PathStep::Axis);
+    /// A step: `(Pattern) Predicate*` (XSLT 3.0 `PostfixExprP`) or an axis step; with its
+    /// depth.
+    fn path_step(&mut self) -> Result<(Box<PathStep>, u32)> {
+        if !self.group_start()? {
+            return self.pattern_step();
         }
+        let (inner, depth) = self.pattern()?;
+        self.group_end()?;
+        let predicates = self.predicates(depth)?;
+        self.leave();
+        Ok(group(inner, predicates))
+    }
+
+    /// `(` starting a parenthesized step, one level deeper; false, and nothing read,
+    /// otherwise.
+    fn group_start(&mut self) -> Result<bool> {
+        if *self.peek()? != Tok::LParen {
+            return Ok(false);
+        }
+        self.enter()?;
         self.bump()?;
-        let inner = self.pattern()?;
+        Ok(true)
+    }
+
+    /// The `)` of a parenthesized step.
+    fn group_end(&mut self) -> Result<()> {
         self.expect(&Tok::RParen, "`)` or `|`")?;
-        let predicates = self.predicates()?;
-        Ok(PathStep::Parenthesized {
-            inner: Box::new(inner),
-            predicates,
-        })
+        Ok(())
     }
 
     /// `root()` alone (XSLT 3.0 `RootedPath` with no predicate and no step).
@@ -269,8 +362,8 @@ impl Parser<'_> {
         ))
     }
 
-    /// \[4\] `PatternStep ::= PatternAxis? NodeTest PredicateList`
-    fn pattern_step(&mut self) -> Result<PatternStep> {
+    /// \[4\] `PatternStep ::= PatternAxis? NodeTest PredicateList`, with its depth.
+    fn pattern_step(&mut self) -> Result<(Box<PathStep>, u32)> {
         let offset = self.offset()?;
         let tok = self.peek()?.clone();
         let explicit = match tok {
@@ -318,11 +411,44 @@ impl Parser<'_> {
             NodeTest::Kind(crate::ast::KindTest::Attribute(_)) => PatternAxis::Attribute,
             _ => PatternAxis::Child,
         });
-        let predicates = self.predicates()?;
-        Ok(PatternStep {
+        let (predicates, depth) = self.predicates(1)?;
+        let step = PatternStep {
             axis,
             test,
             predicates,
-        })
+        };
+        Ok((Box::new(PathStep::Axis(step)), depth))
     }
+}
+
+/// The parenthesized step `(inner)` with its predicates, and its depth.
+fn group(inner: Pattern, (predicates, depth): (Vec<Expr>, u32)) -> (Box<PathStep>, u32) {
+    let step = PathStep::Parenthesized {
+        inner: Box::new(inner),
+        predicates,
+    };
+    (Box::new(step), depth)
+}
+
+/// The start of an alternative, as read by [`Parser::pattern_start`].
+#[derive(Debug)]
+enum PatternStart {
+    /// An alternative without steps.
+    Whole(PatternAlternative),
+    /// A path pattern, its steps not read yet.
+    Path(Box<PatternPath>),
+}
+
+/// A path pattern being read.
+#[derive(Debug)]
+struct PatternPath {
+    anchor: PatternAnchor,
+    /// Where the first step starts.
+    start: usize,
+    first: Option<PathStep>,
+    rest: Vec<(PatternLink, PathStep)>,
+    /// The separator read before the next step, and its offset.
+    link: Option<(PatternLink, usize)>,
+    /// The depth of the steps read.
+    depth: u32,
 }

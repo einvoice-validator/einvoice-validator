@@ -9,8 +9,9 @@ string, or kept compactly (each distinct piece of the text once) and read as it 
 an observer (`Executable::transform_compact`).
 Constructs whose result would differ from Saxon-HE's are refused when a stylesheet is
 prepared. A document nested deeper than 256 elements (`TransformOptions::max_depth`), and
-template or function invocations nested beyond a maximum nesting or stack, end the
-transformation with a `LIMIT` error rather than overflowing the stack.
+template or function invocations nested beyond a maximum nesting or stack (the expressions
+they evaluate included), end the transformation with a `LIMIT` error rather than overflowing
+the stack.
 
 This crate is part of [einvoice-validator](https://github.com/einvoice-validator/einvoice-validator), which validates EN 16931 and Peppol BIS
 Billing 3.0 e-invoices against the official validation artefacts in pure Rust. On every case

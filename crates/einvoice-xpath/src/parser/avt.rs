@@ -37,7 +37,7 @@ pub(crate) fn parse_avt(src: &str, namespaces: &dyn Namespaces) -> Result<Avt> {
                 }
                 let expr = parser.expr()?;
                 let close = parser.expect(&Tok::RBrace, "`}`")?;
-                parts.push(AvtPart::Expr(expr));
+                parts.push(AvtPart::Expr(*expr.expr));
                 pos = close.end;
             }
             ('}', _) => {

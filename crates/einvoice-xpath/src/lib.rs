@@ -27,6 +27,10 @@
 //! addition except the zero-argument `document-uri()`, which is an ordinary function call
 //! here.
 //!
+//! Refused as well, with an [`ErrorKind::TooDeep`] error: an expression or pattern nested
+//! deeper than [`MAX_DEPTH`], which would otherwise need a call stack in proportion to
+//! its depth to be read, compiled and evaluated.
+//!
 //! ```
 //! use einvoice_xpath::{parse_expr, NamespaceMap, XS_NAMESPACE};
 //!
@@ -59,6 +63,27 @@ pub use names::{
 
 use parser::Parser;
 
+/// The maximum depth of an expression or pattern: deeper, it is refused with an
+/// [`ErrorKind::TooDeep`] error.
+///
+/// Reading, printing, compiling and evaluating an expression recurse over its tree, so
+/// the call stack they need grows with its depth: without a bound, a short text nested
+/// deeply enough (`((((...))))`, `1+1+...+1`) would overflow the stack of its thread,
+/// which aborts the whole process. The depth is 1 for a literal, a variable reference,
+/// `.` and a call without argument; every other expression is one level deeper than its
+/// deepest operand. A chain of left-associative operators nests too (`a + b + c` is
+/// `(a + b) + c`, depth 3), and so do the steps of a path (`a/b/c` is `(a/b)/c`), the
+/// predicates of a step (each filters what the previous ones kept), the bindings of a
+/// `for`, `some` or `every` (each binds inside the previous one) and the steps of a
+/// pattern; parentheses add no level, but the nesting of parentheses is bounded by the
+/// same maximum. The steps of a path written with `//` count the
+/// `descendant-or-self::node()` step `//` stands for.
+///
+/// 128: the official stylesheets nest their expressions 32 deep at most (CEN, Peppol,
+/// Factur-X, XRechnung and the French rules), most often through a chain of `or` or
+/// `and`.
+pub const MAX_DEPTH: u32 = 128;
+
 /// Parses an XPath expression (XPath 2.0 production \[1\] `XPath ::= Expr`).
 ///
 /// # Errors
@@ -68,7 +93,7 @@ pub fn parse_expr(src: &str, namespaces: &dyn Namespaces) -> Result<Expr> {
     let mut parser = Parser::new(src, 0, namespaces);
     let expr = parser.expr()?;
     parser.expect_end()?;
-    Ok(expr)
+    Ok(*expr.expr)
 }
 
 /// Parses an XSLT match pattern.
@@ -95,7 +120,7 @@ pub fn parse_expr(src: &str, namespaces: &dyn Namespaces) -> Result<Expr> {
 /// A syntax error, a construct outside the supported subset, or an undeclared prefix.
 pub fn parse_pattern(src: &str, namespaces: &dyn Namespaces) -> Result<Pattern> {
     let mut parser = Parser::new(src, 0, namespaces);
-    let pattern = parser.pattern()?;
+    let (pattern, _) = parser.pattern()?;
     parser.expect_end()?;
     Ok(pattern)
 }

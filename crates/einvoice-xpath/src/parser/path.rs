@@ -1,6 +1,6 @@
 //! Path expressions, steps, node tests and primary expressions (\[25\]–\[48\]).
 
-use super::{NameRole, Parser};
+use super::{NameRole, Parsed, Parser};
 use crate::ast::{
     Axis, AxisStep, Expr, KindTest, Literal, NameOrWildcard, NameTest, NodeTest, PathExpr,
     PathStart, Step,
@@ -53,43 +53,100 @@ impl Parser<'_> {
     /// \[25\] `PathExpr ::= ("/" RelativePathExpr?) | ("//" RelativePathExpr) | RelativePathExpr`.
     /// A lone `/` is a path only when no relative path can follow it (the
     /// "leading-lone-slash" constraint of appendix A.2.1.1).
-    pub(super) fn path_expr(&mut self) -> Result<Expr> {
+    ///
+    /// The depth of a path: that of its first step (of the root, for `/` and `//`), then
+    /// one more level for each step after it, or the depth of that step plus one if
+    /// deeper (`a/b/c` is evaluated as `(a/b)/c`).
+    pub(super) fn path_expr(&mut self) -> Result<Parsed> {
+        let mut path = self.path_start()?;
+        if path.open {
+            loop {
+                self.step(&mut path)?;
+                if !self.path_continues(&mut path)? {
+                    break;
+                }
+            }
+        }
+        self.path_end(path)
+    }
+
+    /// The start of a path: the root (`/`, `//`) or nothing.
+    fn path_start(&mut self) -> Result<PathBeingRead> {
+        let offset = self.offset()?;
+        let mut path = PathBeingRead {
+            offset,
+            start: PathStart::Relative,
+            steps: Vec::new(),
+            depth: 0,
+            open: true,
+        };
         match self.peek()? {
             Tok::Slash => {
                 self.bump()?;
-                let steps = if self.starts_step()? {
-                    self.relative_path()?
-                } else {
-                    Vec::new()
-                };
-                Ok(Expr::Path(PathExpr {
-                    start: PathStart::Root,
-                    steps,
-                }))
+                path.start = PathStart::Root;
+                path.depth = 1;
+                path.open = self.starts_step()?;
             }
             Tok::DoubleSlash => {
                 self.bump()?;
-                let mut steps = vec![descendant_or_self_step()];
-                steps.extend(self.relative_path()?);
-                Ok(Expr::Path(PathExpr {
-                    start: PathStart::Root,
-                    steps,
-                }))
+                path.start = PathStart::Root;
+                path.steps.push(descendant_or_self_step());
+                path.depth = 2;
             }
-            _ => {
-                let mut steps = self.relative_path()?;
-                if steps.len() == 1
-                    && let Some(Step::Expr(_)) = steps.first()
-                    && let Some(Step::Expr(expr)) = steps.pop()
-                {
-                    return Ok(expr);
-                }
-                Ok(Expr::Path(PathExpr {
-                    start: PathStart::Relative,
-                    steps,
-                }))
-            }
+            _ => {}
         }
+        Ok(path)
+    }
+
+    /// Adds a step of depth `depth`, read at `offset`, to `path`.
+    fn add_step(
+        &self,
+        path: &mut PathBeingRead,
+        step: Step,
+        depth: u32,
+        offset: usize,
+    ) -> Result<()> {
+        path.depth = if path.steps.is_empty() && path.start == PathStart::Relative {
+            depth
+        } else {
+            self.above([path.depth, depth], offset)?
+        };
+        path.steps.push(step);
+        Ok(())
+    }
+
+    /// After a step: whether another step follows (after `/` or `//`).
+    fn path_continues(&mut self, path: &mut PathBeingRead) -> Result<bool> {
+        let offset = self.offset()?;
+        match self.peek()? {
+            Tok::Slash => {
+                self.bump()?;
+            }
+            Tok::DoubleSlash => {
+                self.bump()?;
+                path.steps.push(descendant_or_self_step());
+                path.depth = self.above([path.depth], offset)?;
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
+    /// The path read: a single filter expression without slash is that expression.
+    fn path_end(&self, mut path: PathBeingRead) -> Result<Parsed> {
+        if path.start == PathStart::Relative
+            && path.steps.len() == 1
+            && let Some(Step::Expr(_)) = path.steps.first()
+            && let Some(Step::Expr(expr)) = path.steps.pop()
+        {
+            return Ok(Parsed::new(expr, path.depth));
+        }
+        let depth = self.checked(path.depth, path.offset)?;
+        let expr = Expr::Path(PathExpr {
+            start: path.start,
+            steps: path.steps,
+        });
+        Ok(Parsed::new(expr, depth))
     }
 
     /// Whether the current token can start a step (\[27\] `StepExpr`).
@@ -112,46 +169,75 @@ impl Parser<'_> {
         ))
     }
 
-    /// \[26\] `RelativePathExpr ::= StepExpr (("/" | "//") StepExpr)*`
-    fn relative_path(&mut self) -> Result<Vec<Step>> {
-        let mut steps = vec![self.step()?];
-        loop {
-            match self.peek()? {
-                Tok::Slash => {
-                    self.bump()?;
-                }
-                Tok::DoubleSlash => {
-                    self.bump()?;
-                    steps.push(descendant_or_self_step());
-                }
-                _ => return Ok(steps),
-            }
-            steps.push(self.step()?);
+    /// \[27\] `StepExpr ::= FilterExpr | AxisStep`, added to `path`.
+    fn step(&mut self, path: &mut PathBeingRead) -> Result<()> {
+        let offset = self.offset()?;
+        if let Some(step) = self.axis_step_start()? {
+            let predicates = self.predicates(1)?;
+            return self.axis_step_end(path, step, predicates, offset);
         }
+        let filter = self.filter_expr()?;
+        self.filter_step_end(path, filter, offset)
     }
 
-    /// \[27\] `StepExpr ::= FilterExpr | AxisStep`
-    fn step(&mut self) -> Result<Step> {
-        let offset = self.offset()?;
-        let tok = self.peek()?.clone();
-        let axis_step = |parser: &mut Self, axis: Axis| -> Result<Step> {
-            let test = parser.node_test(axis)?;
-            let predicates = parser.predicates()?;
-            Ok(Step::Axis(AxisStep {
+    /// The end of a filter expression used as a step.
+    fn filter_step_end(
+        &self,
+        path: &mut PathBeingRead,
+        filter: Parsed,
+        offset: usize,
+    ) -> Result<()> {
+        self.add_step(path, Step::Expr(*filter.expr), filter.depth, offset)
+    }
+
+    /// The axis step at the current token, read up to its predicates; `None` for a
+    /// filter expression, not read yet.
+    fn axis_step_start(&mut self) -> Result<Option<Box<AxisStep>>> {
+        let axis_step = |axis: Axis, test: NodeTest| {
+            Some(Box::new(AxisStep {
                 axis,
                 test,
-                predicates,
+                predicates: Vec::new(),
             }))
+        };
+        Ok(match self.step_start()? {
+            StepStart::Axis(axis, test) => axis_step(axis, test),
+            StepStart::Filter => None,
+        })
+    }
+
+    /// The end of an axis step: its predicates and their depth.
+    #[expect(
+        clippy::boxed_local,
+        reason = "the caller, on the recursion of the parser, holds the box, not the value"
+    )]
+    fn axis_step_end(
+        &self,
+        path: &mut PathBeingRead,
+        mut step: Box<AxisStep>,
+        (predicates, depth): (Vec<Expr>, u32),
+        offset: usize,
+    ) -> Result<()> {
+        step.predicates = predicates;
+        self.add_step(path, Step::Axis(*step), depth, offset)
+    }
+
+    /// What the step at the current token is: an axis step, read up to its predicates, or
+    /// a filter expression, not read yet.
+    fn step_start(&mut self) -> Result<StepStart> {
+        let offset = self.offset()?;
+        let tok = self.peek()?.clone();
+        let axis_step = |parser: &mut Self, axis: Axis| -> Result<StepStart> {
+            let test = parser.node_test(axis)?;
+            Ok(StepStart::Axis(axis, test))
         };
         match tok {
             Tok::DotDot => {
                 self.bump()?;
-                let predicates = self.predicates()?;
-                Ok(Step::Axis(AxisStep {
-                    axis: Axis::Parent,
-                    test: NodeTest::Kind(KindTest::AnyKind),
-                    predicates,
-                }))
+                Ok(StepStart::Axis(
+                    Axis::Parent,
+                    NodeTest::Kind(KindTest::AnyKind),
+                ))
             }
             Tok::At => {
                 self.bump()?;
@@ -178,9 +264,7 @@ impl Parser<'_> {
                 };
                 axis_step(self, axis)
             }
-            Tok::Name { .. } if *self.peek2()? == Tok::LParen => {
-                Ok(Step::Expr(self.filter_expr()?))
-            }
+            Tok::Name { .. } if *self.peek2()? == Tok::LParen => Ok(StepStart::Filter),
             Tok::Name { .. } | Tok::Star | Tok::PrefixWildcard(_) | Tok::LocalWildcard(_) => {
                 axis_step(self, Axis::Child)
             }
@@ -190,7 +274,7 @@ impl Parser<'_> {
             | Tok::String(_)
             | Tok::Integer(_)
             | Tok::Decimal(_)
-            | Tok::Double(_) => Ok(Step::Expr(self.filter_expr()?)),
+            | Tok::Double(_) => Ok(StepStart::Filter),
             _ => Err(self.unexpected("an expression")),
         }
     }
@@ -324,35 +408,74 @@ impl Parser<'_> {
         Ok(Some(name))
     }
 
-    /// \[39\] `PredicateList ::= Predicate*`, \[40\] `Predicate ::= "[" Expr "]"`
-    pub(super) fn predicates(&mut self) -> Result<Vec<Expr>> {
-        let mut predicates = Vec::new();
-        while *self.peek()? == Tok::LBracket {
-            self.bump()?;
-            predicates.push(self.expr()?);
-            self.expect(&Tok::RBracket, "`]`")?;
+    /// \[39\] `PredicateList ::= Predicate*`, \[40\] `Predicate ::= "[" Expr "]"`, and the
+    /// depth of what they filter: `base` (the depth of the filtered expression), then one
+    /// more level for each predicate, or the depth of that predicate plus one if deeper
+    /// (each predicate filters the result of the previous ones).
+    pub(super) fn predicates(&mut self, base: u32) -> Result<(Vec<Expr>, u32)> {
+        let mut list = (Vec::new(), base);
+        while let Some(offset) = self.predicate_start()? {
+            let predicate = self.expr()?;
+            self.predicate_end(&mut list, predicate, offset)?;
         }
-        Ok(predicates)
+        Ok(list)
+    }
+
+    /// `[`, if it is the current token: its offset.
+    fn predicate_start(&mut self) -> Result<Option<usize>> {
+        if *self.peek()? == Tok::LBracket {
+            Ok(Some(self.bump()?.start))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// `]`, after `predicate`, which is added to `list`.
+    fn predicate_end(
+        &mut self,
+        list: &mut (Vec<Expr>, u32),
+        predicate: Parsed,
+        offset: usize,
+    ) -> Result<()> {
+        list.1 = self.above([list.1, predicate.depth], offset)?;
+        list.0.push(*predicate.expr);
+        self.expect(&Tok::RBracket, "`]`")?;
+        Ok(())
     }
 
     /// \[38\] `FilterExpr ::= PrimaryExpr PredicateList`
-    fn filter_expr(&mut self) -> Result<Expr> {
+    fn filter_expr(&mut self) -> Result<Parsed> {
         let base = self.primary_expr()?;
-        let predicates = self.predicates()?;
-        if predicates.is_empty() {
-            Ok(base)
-        } else {
-            Ok(Expr::Filter {
-                base: Box::new(base),
-                predicates,
-            })
+        let (predicates, depth) = self.predicates(base.depth)?;
+        Ok(filtered(base, predicates, depth))
+    }
+
+    /// \[41\] `PrimaryExpr ::= Literal | VarRef | ParenthesizedExpr | ContextItemExpr | FunctionCall`.
+    /// A parenthesized expression has the depth of its content: the tree does not keep
+    /// the parentheses.
+    fn primary_expr(&mut self) -> Result<Parsed> {
+        match self.primary_start()? {
+            Primary::Leaf(leaf) => Ok(leaf),
+            Primary::Parenthesized => {
+                let inner = self.expr()?;
+                self.close_parenthesis()?;
+                Ok(inner)
+            }
+            Primary::Call(call) => self.function_call(call),
         }
     }
 
-    /// \[41\] `PrimaryExpr ::= Literal | VarRef | ParenthesizedExpr | ContextItemExpr | FunctionCall`
-    fn primary_expr(&mut self) -> Result<Expr> {
+    /// The `)` of a parenthesized expression.
+    fn close_parenthesis(&mut self) -> Result<()> {
+        self.expect(&Tok::RParen, "`)`")?;
+        Ok(())
+    }
+
+    /// The primary expression at the current token: a leaf, read; a parenthesized
+    /// expression, read up to `(`; a function call, read up to its name.
+    fn primary_start(&mut self) -> Result<Primary> {
         let token = self.bump()?;
-        Ok(match token.tok {
+        Ok(Primary::Leaf(Parsed::leaf(match token.tok {
             Tok::String(s) => Expr::Literal(Literal::String(s)),
             Tok::Integer(n) => Expr::Literal(Literal::Integer(n)),
             Tok::Decimal(n) => Expr::Literal(Literal::Decimal(n)),
@@ -362,13 +485,15 @@ impl Parser<'_> {
             Tok::LParen => {
                 if *self.peek()? == Tok::RParen {
                     self.bump()?;
-                    return Ok(Expr::Sequence(Vec::new()));
+                    Expr::Sequence(Vec::new())
+                } else {
+                    return Ok(Primary::Parenthesized);
                 }
-                let inner = self.expr()?;
-                self.expect(&Tok::RParen, "`)`")?;
-                inner
             }
-            Tok::Name { prefix, local } => self.function_call(prefix, local, token.start)?,
+            Tok::Name { prefix, local } => {
+                let name = self.function_name(prefix, local, token.start)?;
+                return Ok(Primary::Call(Box::new((name, token.start))));
+            }
             other => {
                 return Err(self.error_at(
                     ErrorKind::Syntax,
@@ -376,17 +501,11 @@ impl Parser<'_> {
                     format!("expected an expression, found {}", other.describe()),
                 ));
             }
-        })
+        })))
     }
 
-    /// \[48\] `FunctionCall ::= QName "(" (ExprSingle ("," ExprSingle)*)? ")"`; the name has
-    /// been read.
-    fn function_call(
-        &mut self,
-        prefix: Option<String>,
-        local: String,
-        offset: usize,
-    ) -> Result<Expr> {
+    /// The name of a function call, read at `offset`: refused if it is reserved.
+    fn function_name(&self, prefix: Option<String>, local: String, offset: usize) -> Result<QName> {
         if prefix.is_none() {
             if local == "function" {
                 return Err(self.error_at(
@@ -403,23 +522,53 @@ impl Parser<'_> {
                 ));
             }
         }
-        let name = self.resolve(prefix, local, NameRole::Function, offset)?;
-        self.expect(&Tok::LParen, "`(`")?;
-        let mut args = Vec::new();
-        if *self.peek()? == Tok::RParen {
-            self.bump()?;
-        } else {
+        self.resolve(prefix, local, NameRole::Function, offset)
+    }
+
+    /// \[48\] `FunctionCall ::= QName "(" (ExprSingle ("," ExprSingle)*)? ")"`; the name,
+    /// and the offset where it was found, have been read. One level over its deepest
+    /// argument.
+    fn function_call(&mut self, call: Box<(QName, usize)>) -> Result<Parsed> {
+        let mut args = (Vec::new(), 0);
+        if self.arguments_start()? {
             loop {
-                args.push(self.expr_single()?);
-                if self.bump_if_comma()? {
-                    continue;
+                let arg = self.expr_single()?;
+                if !self.argument_end(&mut args, arg)? {
+                    break;
                 }
-                self.expect(&Tok::RParen, "`,` or `)`")?;
-                break;
             }
         }
+        self.call_end(call, args)
+    }
+
+    /// `(`; whether an argument follows (else `)` has been read too).
+    fn arguments_start(&mut self) -> Result<bool> {
+        self.expect(&Tok::LParen, "`(`")?;
+        Ok(!self.eat(&Tok::RParen)?)
+    }
+
+    /// `,` or `)` after `arg`, which is added to `args`; whether another argument follows.
+    fn argument_end(&mut self, args: &mut (Vec<Expr>, u32), arg: Parsed) -> Result<bool> {
+        args.1 = args.1.max(arg.depth);
+        args.0.push(*arg.expr);
+        if self.eat(&Tok::Comma)? {
+            return Ok(true);
+        }
+        self.expect(&Tok::RParen, "`,` or `)`")?;
+        Ok(false)
+    }
+
+    /// The end of a function call: its arguments and the depth of the deepest.
+    #[expect(
+        clippy::boxed_local,
+        reason = "the caller, on the recursion of the parser, holds the box, not the value"
+    )]
+    fn call_end(&self, call: Box<(QName, usize)>, args: (Vec<Expr>, u32)) -> Result<Parsed> {
+        let (name, offset) = *call;
+        let (mut args, deepest) = args;
         self.resolve_property_name(&name, &mut args);
-        Ok(Expr::FunctionCall { name, args })
+        let depth = self.above([deepest], offset)?;
+        Ok(Parsed::new(Expr::FunctionCall { name, args }, depth))
     }
 
     /// The argument of `system-property("prefix:local")`, a lexical `QName` resolved with the
@@ -445,13 +594,49 @@ impl Parser<'_> {
             *text = format!("Q{{{uri}}}{local}");
         }
     }
+}
 
-    fn bump_if_comma(&mut self) -> Result<bool> {
-        if *self.peek()? == Tok::Comma {
-            self.bump()?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+/// A path being read.
+#[derive(Debug)]
+struct PathBeingRead {
+    /// Where it starts.
+    offset: usize,
+    start: PathStart,
+    steps: Vec<Step>,
+    /// The depth of the steps read so far (and of the root).
+    depth: u32,
+    /// Whether steps follow.
+    open: bool,
+}
+
+/// A step, as read by [`Parser::step_start`].
+#[derive(Debug)]
+enum StepStart {
+    /// An axis step, its predicates not read yet.
+    Axis(Axis, NodeTest),
+    /// A filter expression, not read yet.
+    Filter,
+}
+
+/// A primary expression, as read by [`Parser::primary_start`].
+#[derive(Debug)]
+enum Primary {
+    Leaf(Parsed),
+    /// After `(`, not followed by `)`.
+    Parenthesized,
+    /// A function call, read up to its name, found at the offset.
+    Call(Box<(QName, usize)>),
+}
+
+/// `base` with `predicates`, the whole `depth` deep.
+fn filtered(base: Parsed, predicates: Vec<Expr>, depth: u32) -> Parsed {
+    if predicates.is_empty() {
+        base
+    } else {
+        let expr = Expr::Filter {
+            base: base.expr,
+            predicates,
+        };
+        Parsed::new(expr, depth)
     }
 }

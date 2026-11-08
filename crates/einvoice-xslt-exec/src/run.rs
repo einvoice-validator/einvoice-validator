@@ -33,7 +33,7 @@ use einvoice_xpath::{AtomicKind, ItemType, Occurrence, QName, SequenceType};
 use einvoice_xpath_eval::{
     Argument, Clock, CompiledExpr, Context, DEFAULT_MAX_DEPTH, Document, DocumentError,
     DynamicContext, ErrorCode, FunctionId, Host, Item, LimitExceeded, Node, NodeAxis, NodeKind,
-    VariableId,
+    StackLimit, VariableId,
 };
 use einvoice_xslt::{NamespaceBinding, NumberLevel};
 
@@ -99,28 +99,35 @@ pub struct TransformOptions<'r> {
     /// ends with a `LIMIT` error ([`TransformError::limit`]) instead of overflowing the
     /// stack. Default: [`DEFAULT_MAX_NESTING`]. A larger value needs a larger stack.
     pub max_nesting: u32,
-    /// The most stack, in bytes, the invocations in progress may use, measured from the
-    /// start of the transformation: beyond it, the transformation ends with a `LIMIT`
-    /// error ([`LimitExceeded::Stack`]) instead of overflowing the stack. It bounds what
-    /// the nesting alone cannot, the stack of each level, which depends on the
-    /// stylesheet: a function calling itself from a nested expression needs much more
-    /// than a template rule applied to a child. The thread must have this much stack and
-    /// some more, for its caller and for the deepest level. Default:
-    /// [`DEFAULT_MAX_STACK`].
+    /// The most stack, in bytes, the invocations in progress and the expressions they
+    /// evaluate may use, measured from the start of the transformation: beyond it, the
+    /// transformation ends with a `LIMIT` error ([`LimitExceeded::Stack`]) instead of
+    /// overflowing the stack. It bounds what the nesting alone cannot, the stack of each
+    /// level, which depends on the stylesheet: a function calling itself from a nested
+    /// expression needs much more than a template rule applied to a child. The thread
+    /// must have this much stack and some more, for its caller and for the deepest level.
+    /// Default: [`DEFAULT_MAX_STACK`].
     pub max_stack: u32,
 }
 
 /// The default of [`TransformOptions::max_stack`]: 1.5 MiB, for a thread with the
-/// default 2 MiB stack of a spawned thread; 640 KiB on WebAssembly, whose stack is 1 MiB.
-/// With it, the official stylesheets run on a document [`DEFAULT_MAX_DEPTH`] deep, in a
-/// debug build too, and the 512 KiB left (384 KiB on WebAssembly) are more than the
-/// caller and one level of invocation need.
+/// default 2 MiB stack of a spawned thread; 256 KiB on WebAssembly. With it, the official
+/// stylesheets run on a document [`DEFAULT_MAX_DEPTH`] deep, in a debug build too, and
+/// the 512 KiB left are more than the caller and one level of invocation need.
+///
+/// On WebAssembly, the stack measured is the program's stack in linear memory (1 MiB),
+/// but what runs out first is the stack of the engine running the code, which the
+/// program cannot measure: 512 KiB by default in wasmtime. A recursion stopped at 256 KiB
+/// of the former uses at most 380 KB of the latter (measured on the `wasm-validate`
+/// example of `einvoice-validator`, a function calling itself without end), and the
+/// official stylesheets need less than half of it on a document [`DEFAULT_MAX_DEPTH`]
+/// deep.
 #[cfg(not(target_family = "wasm"))]
 pub const DEFAULT_MAX_STACK: u32 = 3 << 19;
 
 /// The default of [`TransformOptions::max_stack`] (see the other targets).
 #[cfg(target_family = "wasm")]
-pub const DEFAULT_MAX_STACK: u32 = 640 << 10;
+pub const DEFAULT_MAX_STACK: u32 = 256 << 10;
 
 impl Default for TransformOptions<'_> {
     fn default() -> Self {
@@ -272,7 +279,7 @@ impl Executable {
             warned: RefCell::new(HashSet::new()),
             stashed: RefCell::new(None),
             nesting: Cell::new(0),
-            stack_base: stack_position(),
+            stack: StackLimit::from_here(options.max_stack),
             learners: (0..self.learners).map(|_| Rc::default()).collect(),
             argument_learners: RefCell::new(HashMap::new()),
         };
@@ -281,7 +288,7 @@ impl Executable {
             Some(now) => Clock::new(timezone, now)?,
             None => system_clock(timezone)?,
         };
-        let dc = DynamicContext::new(&runtime, clock);
+        let dc = DynamicContext::new(&runtime, clock).with_stack_limit(runtime.stack);
         runtime.dc.set(Some(&dc));
         let mut writer = XmlWriter::new(self.serialization, target);
         runtime.apply_rule(&root, 1, 1, self.default_mode, None, &[], &mut writer)?;
@@ -440,23 +447,14 @@ struct Runtime<'e, 'a> {
     /// The invocations in progress: template rules, built-in template rules, named
     /// templates and stylesheet functions (at most `options.max_nesting`).
     nesting: Cell<u32>,
-    /// The position of the stack when the transformation started (see
-    /// [`stack_position`]).
-    stack_base: usize,
+    /// The stack the transformation may use, from its start (`options.max_stack`): the
+    /// invocations and the evaluations of the expressions check it.
+    stack: StackLimit,
     /// The counters of the bindings evaluated as Saxon learns ([`Eval::Learning`]).
     learners: Vec<Rc<Learner>>,
     /// The same for the arguments of stylesheet function calls, by call site
     /// ([`Argument::site`]).
     argument_learners: RefCell<HashMap<usize, Rc<Learner>>>,
-}
-
-/// The position of the call stack: the address of a local of this function. Two of them
-/// measure the stack used between two calls (stacks grow downwards on every supported
-/// target, the WebAssembly shadow stack included; the distance is taken either way).
-#[inline(never)]
-fn stack_position() -> usize {
-    let marker = 0_u8;
-    std::hint::black_box(std::ptr::addr_of!(marker)).addr()
 }
 
 /// An invocation counted in [`Runtime::nesting`], until it is dropped.
@@ -683,15 +681,11 @@ impl<'e, 'a> Runtime<'e, 'a> {
     /// A `LIMIT` error when the invocations in progress use more than `options.max_stack`
     /// bytes of stack. Computing a lazy value checks it: a value may refer to another lazy
     /// one, and so on (a parameter passed down a recursion and read at its end), each
-    /// computed inside the one that refers to it.
+    /// computed inside the one that refers to it. The evaluator checks the same bound
+    /// ([`DynamicContext::with_stack_limit`]) at each level of an expression, which may be
+    /// evaluated at the deepest invocation.
     fn check_stack(&self) -> Result<()> {
-        let used = self.stack_base.abs_diff(stack_position());
-        if u32::try_from(used).map_or(true, |used| used > self.options.max_stack) {
-            return Err(TransformError::limit_exceeded(LimitExceeded::Stack {
-                max: self.options.max_stack,
-            }));
-        }
-        Ok(())
+        self.stack.check().map_err(TransformError::limit_exceeded)
     }
 
     /// Keeps an error for [`Runtime::xerr`] and gives the evaluator a placeholder.

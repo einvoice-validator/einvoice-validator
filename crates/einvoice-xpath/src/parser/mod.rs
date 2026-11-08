@@ -1,10 +1,20 @@
-//! Recursive-descent parser, one function per grammar level of XPath 2.0 (appendix A.1 of
-//! the specification; production numbers are cited as \[n\]).
+//! Recursive-descent parser, following the grammar of XPath 2.0 (appendix A.1 of the
+//! specification; production numbers are cited as \[n\]).
 //!
 //! Precedence, loosest first: `,` \[2\]; `for`/`some`/`every`/`if` \[3\]; `or` \[8\]; `and`
 //! \[9\]; comparisons \[10\] (not associative); `to` \[11\] (not associative); `+ -` \[12\];
 //! `* div idiv mod` \[13\]; `|` \[14\]; `instance of` \[16\]; `castable as` \[18\]; unary `-`
 //! \[20\]; paths \[25\]; predicates and primaries \[38\], \[41\].
+//!
+//! The binary operators of productions \[8\] to \[14\] are read by one loop with an
+//! operator stack ([`Parser::binary`]), and the operators of \[16\] to \[20\] by one
+//! function ([`Parser::operand`]): the parser recurses only where the grammar nests (a
+//! parenthesized expression, an argument, a predicate, the parts of `for`, `some`,
+//! `every` and `if`), never along a chain of operators or of unary minus signs, and each
+//! level of nesting costs a few frames. Every parsed expression carries its depth
+//! ([`Parsed`]), computed bottom-up, and both the depth and the nesting of the parser
+//! are bounded by [`MAX_DEPTH`](crate::MAX_DEPTH): beyond it the parse fails with
+//! [`ErrorKind::TooDeep`].
 
 mod avt;
 mod path;
@@ -13,6 +23,7 @@ mod types;
 
 use std::collections::VecDeque;
 
+use crate::MAX_DEPTH;
 use crate::ast::{ArithmeticOp, Binding, CompareKind, ComparisonOp, Expr, Quantifier};
 use crate::error::{Error, ErrorKind, Result};
 use crate::lexer::{Lexer, Tok, Token};
@@ -31,12 +42,91 @@ pub(crate) enum NameRole {
     Function,
 }
 
-/// The parser state: a lexer, a lookahead buffer and the namespace bindings.
+/// A parsed expression and its depth (see [`MAX_DEPTH`](crate::MAX_DEPTH)). The
+/// expression is boxed: the parser passes it up from level to level, where it becomes
+/// the boxed operand of the expression above, and a small value keeps the frames of the
+/// recursion small.
+#[derive(Debug)]
+pub(crate) struct Parsed {
+    pub(crate) expr: Box<Expr>,
+    pub(crate) depth: u32,
+}
+
+impl Parsed {
+    fn new(expr: Expr, depth: u32) -> Self {
+        Self {
+            expr: Box::new(expr),
+            depth,
+        }
+    }
+
+    /// A leaf: a literal, a variable reference, `.`, a call without argument.
+    fn leaf(expr: Expr) -> Self {
+        Self::new(expr, 1)
+    }
+}
+
+/// A binary operator of productions \[8\] to \[14\].
+#[derive(Debug, Clone, Copy)]
+enum BinaryOp {
+    Or,
+    And,
+    Comparison(ComparisonOp),
+    /// A node comparison (\[24\] `NodeComp`: `is`, `<<`, `>>`), refused where it would
+    /// apply.
+    NodeComparison,
+    Range,
+    Arithmetic(ArithmeticOp),
+    Union,
+}
+
+impl BinaryOp {
+    /// The binding strength, loosest first.
+    const fn precedence(self) -> u8 {
+        match self {
+            Self::Or => 1,
+            Self::And => 2,
+            Self::Comparison(_) | Self::NodeComparison => 3,
+            Self::Range => 4,
+            Self::Arithmetic(ArithmeticOp::Add | ArithmeticOp::Subtract) => 5,
+            Self::Arithmetic(_) => 6,
+            Self::Union => 7,
+        }
+    }
+
+    /// Whether `a op b op c` is `(a op b) op c`; otherwise (comparisons \[10\] and `to`
+    /// \[11\]) the second operator ends the expression.
+    const fn is_associative(self) -> bool {
+        !matches!(
+            self,
+            Self::Comparison(_) | Self::NodeComparison | Self::Range
+        )
+    }
+
+    /// The expression `lhs op rhs`; `None` for a node comparison, which is never built.
+    fn build(self, lhs: Box<Expr>, rhs: Box<Expr>) -> Option<Expr> {
+        Some(match self {
+            Self::Or => Expr::Or(lhs, rhs),
+            Self::And => Expr::And(lhs, rhs),
+            Self::Comparison(op) => Expr::Comparison { op, lhs, rhs },
+            Self::NodeComparison => return None,
+            Self::Range => Expr::Range(lhs, rhs),
+            Self::Arithmetic(op) => Expr::Arithmetic { op, lhs, rhs },
+            Self::Union => Expr::Union(lhs, rhs),
+        })
+    }
+}
+
+/// The parser state: a lexer, a lookahead buffer, the namespace bindings and the nesting
+/// of the expressions being read.
 pub(crate) struct Parser<'a> {
     src: &'a str,
     lexer: Lexer<'a>,
     lookahead: VecDeque<Token>,
     namespaces: &'a dyn Namespaces,
+    /// How many expressions (\[3\] `ExprSingle`, and parenthesized patterns) are being
+    /// read one inside another: the recursion of the parser.
+    nesting: u32,
 }
 
 impl<'a> Parser<'a> {
@@ -47,6 +137,7 @@ impl<'a> Parser<'a> {
             lexer: Lexer::new(src, pos),
             lookahead: VecDeque::new(),
             namespaces,
+            nesting: 0,
         }
     }
 
@@ -132,6 +223,16 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Consumes the current token if it is `tok`.
+    fn eat(&mut self, tok: &Tok) -> Result<bool> {
+        if self.peek()? == tok {
+            self.bump()?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Consumes the current token if it is the unprefixed name `word`.
     fn eat_word(&mut self, word: &str) -> Result<bool> {
         if self.peek()?.is_word(word) {
@@ -148,6 +249,48 @@ impl<'a> Parser<'a> {
         } else {
             Err(self.unexpected(&format!("`{word}`")))
         }
+    }
+
+    /// The error for an expression deeper than [`MAX_DEPTH`], found at `offset`.
+    fn too_deep(&self, offset: usize) -> Error {
+        self.error_at(
+            ErrorKind::TooDeep,
+            offset,
+            format!("expression nested deeper than the maximum depth of {MAX_DEPTH}"),
+        )
+    }
+
+    /// `depth`, if it is within [`MAX_DEPTH`]; `offset` is where the expression that deep
+    /// was found.
+    fn checked(&self, depth: u32, offset: usize) -> Result<u32> {
+        if depth > MAX_DEPTH {
+            Err(self.too_deep(offset))
+        } else {
+            Ok(depth)
+        }
+    }
+
+    /// One level deeper in the recursion of the parser, refused beyond [`MAX_DEPTH`]
+    /// before anything is read at that level.
+    fn enter(&mut self) -> Result<()> {
+        if self.nesting >= MAX_DEPTH {
+            let offset = self.offset()?;
+            return Err(self.too_deep(offset));
+        }
+        self.nesting += 1;
+        Ok(())
+    }
+
+    /// Back from a level entered with [`Parser::enter`].
+    fn leave(&mut self) {
+        self.nesting = self.nesting.saturating_sub(1);
+    }
+
+    /// One more level over the deepest of `depths`: the depth of an expression whose
+    /// operands have those depths.
+    fn above(&self, depths: impl IntoIterator<Item = u32>, offset: usize) -> Result<u32> {
+        let deepest = depths.into_iter().max().unwrap_or(0);
+        self.checked(deepest.saturating_add(1), offset)
     }
 
     /// Resolves a written name. `xml` is always bound; other prefixes come from the caller.
@@ -221,265 +364,333 @@ impl<'a> Parser<'a> {
     }
 
     /// \[2\] `Expr ::= ExprSingle ("," ExprSingle)*`
-    pub(crate) fn expr(&mut self) -> Result<Expr> {
+    pub(crate) fn expr(&mut self) -> Result<Parsed> {
+        let offset = self.offset()?;
         let first = self.expr_single()?;
         if *self.peek()? != Tok::Comma {
             return Ok(first);
         }
-        let mut items = vec![first];
-        while *self.peek()? == Tok::Comma {
-            self.bump()?;
-            items.push(self.expr_single()?);
+        self.sequence(first, offset)
+    }
+
+    /// The items after the first of a sequence (\[2\] `Expr` with a comma).
+    fn sequence(&mut self, first: Parsed, offset: usize) -> Result<Parsed> {
+        let mut items = Items::new(first);
+        while self.eat(&Tok::Comma)? {
+            let item = self.expr_single()?;
+            items.push(item);
         }
-        Ok(Expr::Sequence(items))
+        let depth = self.above([items.deepest], offset)?;
+        Ok(Parsed::new(Expr::Sequence(items.exprs), depth))
     }
 
     /// \[3\] `ExprSingle ::= ForExpr | QuantifiedExpr | IfExpr | OrExpr`. The keywords are
     /// recognised only when followed by `$` (or `(` for `if`): otherwise they are names.
-    pub(crate) fn expr_single(&mut self) -> Result<Expr> {
-        let next_is_dollar =
-            matches!(self.peek()?, Tok::Name { prefix: None, .. }) && *self.peek2()? == Tok::Dollar;
-        let next_is_paren =
-            matches!(self.peek()?, Tok::Name { prefix: None, .. }) && *self.peek2()? == Tok::LParen;
-        let tok = self.peek()?.clone();
-        if next_is_dollar {
-            if tok.is_word("for") {
-                return self.for_expr();
-            }
-            if tok.is_word("some") || tok.is_word("every") {
-                return self.quantified_expr();
-            }
-            if tok.is_word("let") {
-                return Err(self.error_here(ErrorKind::Unsupported, "`let` expression (XPath 3.0)"));
-            }
-        }
-        if next_is_paren {
-            if tok.is_word("if") {
-                return self.if_expr();
-            }
-            if tok.is_word("typeswitch") {
-                return Err(self.error_here(ErrorKind::Unsupported, "`typeswitch` expression"));
-            }
-        }
-        self.or_expr()
+    /// Every nested expression is read through here: this is where the nesting of the
+    /// parser is counted.
+    pub(crate) fn expr_single(&mut self) -> Result<Parsed> {
+        self.enter()?;
+        let parsed = match self.single_kind()? {
+            Single::For => self.for_expr(),
+            Single::Quantified => self.quantified_expr(),
+            Single::If => self.if_expr(),
+            Single::Binary => self.binary(),
+        }?;
+        self.leave();
+        Ok(parsed)
     }
 
-    /// `$name in ExprSingle ("," $name in ExprSingle)*`, shared by \[5\] and \[6\].
-    fn bindings(&mut self) -> Result<Vec<Binding>> {
-        let mut bindings = Vec::new();
-        loop {
-            self.expect(&Tok::Dollar, "`$`")?;
-            let variable = self.qname(NameRole::NoNamespace, "a variable name")?;
-            self.expect_word("in")?;
-            let sequence = self.expr_single()?;
-            bindings.push(Binding { variable, sequence });
-            if *self.peek()? != Tok::Comma {
-                return Ok(bindings);
+    /// Which form of \[3\] `ExprSingle` starts at the current token.
+    fn single_kind(&mut self) -> Result<Single> {
+        let keyword = match self.peek()? {
+            Tok::Name {
+                prefix: None,
+                local,
+            } if matches!(
+                local.as_str(),
+                "for" | "some" | "every" | "let" | "if" | "typeswitch"
+            ) =>
+            {
+                local.clone()
             }
-            self.bump()?;
+            _ => return Ok(Single::Binary),
+        };
+        let next_is_dollar = *self.peek2()? == Tok::Dollar;
+        let next_is_paren = *self.peek2()? == Tok::LParen;
+        Ok(match keyword.as_str() {
+            "for" if next_is_dollar => Single::For,
+            "some" | "every" if next_is_dollar => Single::Quantified,
+            "let" if next_is_dollar => {
+                return Err(self.error_here(ErrorKind::Unsupported, "`let` expression (XPath 3.0)"));
+            }
+            "if" if next_is_paren => Single::If,
+            "typeswitch" if next_is_paren => {
+                return Err(self.error_here(ErrorKind::Unsupported, "`typeswitch` expression"));
+            }
+            _ => Single::Binary,
+        })
+    }
+
+    /// `$name in ExprSingle ("," $name in ExprSingle)*`, shared by \[5\] and \[6\], with
+    /// the depth of each binding sequence.
+    fn bindings(&mut self) -> Result<Bound> {
+        let mut bound = Bound::default();
+        loop {
+            let variable = self.binding_variable()?;
+            let sequence = self.expr_single()?;
+            if !self.binding_end(&mut bound, variable, sequence)? {
+                return Ok(bound);
+            }
         }
+    }
+
+    /// `$name in` of a binding.
+    fn binding_variable(&mut self) -> Result<QName> {
+        self.expect(&Tok::Dollar, "`$`")?;
+        let variable = self.qname(NameRole::NoNamespace, "a variable name")?;
+        self.expect_word("in")?;
+        Ok(variable)
+    }
+
+    /// Records a binding; whether another one follows (after a comma). Each binding is
+    /// one level deeper than the one before it: one too many is refused at once.
+    fn binding_end(
+        &mut self,
+        bound: &mut Bound,
+        variable: QName,
+        sequence: Parsed,
+    ) -> Result<bool> {
+        bound.bindings.push(Binding {
+            variable,
+            sequence: *sequence.expr,
+        });
+        bound.depths.push(sequence.depth);
+        let offset = self.offset()?;
+        let levels = u32::try_from(bound.depths.len()).unwrap_or(u32::MAX);
+        self.checked(levels.saturating_add(1), offset)?;
+        self.eat(&Tok::Comma)
+    }
+
+    /// The depth of a `for`, `some` or `every` expression: each binding is one level
+    /// over the next one, the last over the body (as `for $a in A, $b in B return C` is
+    /// `for $a in A return for $b in B return C`).
+    fn bound_depth(&self, depths: &[u32], body: u32, offset: usize) -> Result<u32> {
+        let mut depth = body;
+        for &sequence in depths.iter().rev() {
+            depth = self.above([depth, sequence], offset)?;
+        }
+        Ok(depth)
     }
 
     /// \[4\] `ForExpr ::= SimpleForClause "return" ExprSingle`, \[5\] `SimpleForClause`.
-    fn for_expr(&mut self) -> Result<Expr> {
-        self.bump()?;
-        let bindings = self.bindings()?;
+    fn for_expr(&mut self) -> Result<Parsed> {
+        let offset = self.bump()?.start;
+        let bound = self.bindings()?;
         self.expect_word("return")?;
-        let body = Box::new(self.expr_single()?);
-        Ok(Expr::For { bindings, body })
+        let body = self.expr_single()?;
+        self.for_end(bound, body, offset)
+    }
+
+    fn for_end(&self, bound: Bound, body: Parsed, offset: usize) -> Result<Parsed> {
+        let depth = self.bound_depth(&bound.depths, body.depth, offset)?;
+        let expr = Expr::For {
+            bindings: bound.bindings,
+            body: body.expr,
+        };
+        Ok(Parsed::new(expr, depth))
     }
 
     /// \[6\] `QuantifiedExpr ::= ("some" | "every") ... "satisfies" ExprSingle`.
-    fn quantified_expr(&mut self) -> Result<Expr> {
-        let quantifier = if self.bump()?.tok.is_word("some") {
+    fn quantified_expr(&mut self) -> Result<Parsed> {
+        let (quantifier, offset) = self.quantifier()?;
+        let bound = self.bindings()?;
+        self.expect_word("satisfies")?;
+        let satisfies = self.expr_single()?;
+        self.quantified_end(quantifier, bound, satisfies, offset)
+    }
+
+    fn quantifier(&mut self) -> Result<(Quantifier, usize)> {
+        let token = self.bump()?;
+        let quantifier = if token.tok.is_word("some") {
             Quantifier::Some
         } else {
             Quantifier::Every
         };
-        let bindings = self.bindings()?;
-        self.expect_word("satisfies")?;
-        let satisfies = Box::new(self.expr_single()?);
-        Ok(Expr::Quantified {
+        Ok((quantifier, token.start))
+    }
+
+    fn quantified_end(
+        &self,
+        quantifier: Quantifier,
+        bound: Bound,
+        satisfies: Parsed,
+        offset: usize,
+    ) -> Result<Parsed> {
+        let depth = self.bound_depth(&bound.depths, satisfies.depth, offset)?;
+        let expr = Expr::Quantified {
             quantifier,
-            bindings,
-            satisfies,
-        })
+            bindings: bound.bindings,
+            satisfies: satisfies.expr,
+        };
+        Ok(Parsed::new(expr, depth))
     }
 
     /// \[7\] `IfExpr ::= "if" "(" Expr ")" "then" ExprSingle "else" ExprSingle`.
-    fn if_expr(&mut self) -> Result<Expr> {
-        self.bump()?;
-        self.expect(&Tok::LParen, "`(`")?;
-        let condition = Box::new(self.expr()?);
-        self.expect(&Tok::RParen, "`)`")?;
-        self.expect_word("then")?;
-        let then = Box::new(self.expr_single()?);
+    fn if_expr(&mut self) -> Result<Parsed> {
+        let offset = self.if_start()?;
+        let condition = self.expr()?;
+        self.if_then()?;
+        let then = self.expr_single()?;
         self.expect_word("else")?;
-        let otherwise = Box::new(self.expr_single()?);
-        Ok(Expr::If {
-            condition,
-            then,
-            otherwise,
-        })
+        let otherwise = self.expr_single()?;
+        self.if_end([condition, then, otherwise], offset)
     }
 
-    /// \[8\] `OrExpr ::= AndExpr ( "or" AndExpr )*`
-    fn or_expr(&mut self) -> Result<Expr> {
-        let mut lhs = self.and_expr()?;
-        while self.eat_word("or")? {
-            let rhs = self.and_expr()?;
-            lhs = Expr::Or(Box::new(lhs), Box::new(rhs));
-        }
-        Ok(lhs)
+    /// `if (`; the offset of `if`.
+    fn if_start(&mut self) -> Result<usize> {
+        let offset = self.bump()?.start;
+        self.expect(&Tok::LParen, "`(`")?;
+        Ok(offset)
     }
 
-    /// \[9\] `AndExpr ::= ComparisonExpr ( "and" ComparisonExpr )*`
-    fn and_expr(&mut self) -> Result<Expr> {
-        let mut lhs = self.comparison_expr()?;
-        while self.eat_word("and")? {
-            let rhs = self.comparison_expr()?;
-            lhs = Expr::And(Box::new(lhs), Box::new(rhs));
-        }
-        Ok(lhs)
+    /// `) then`
+    fn if_then(&mut self) -> Result<()> {
+        self.expect(&Tok::RParen, "`)`")?;
+        self.expect_word("then")
     }
 
-    /// The comparison operator at the current token, if any. Node comparisons (\[24\]) are
-    /// refused.
-    fn comparison_op(&mut self) -> Result<Option<ComparisonOp>> {
+    fn if_end(&self, parts: [Parsed; 3], offset: usize) -> Result<Parsed> {
+        let depth = self.above(parts.iter().map(|p| p.depth), offset)?;
+        let [condition, then, otherwise] = parts;
+        let expr = Expr::If {
+            condition: condition.expr,
+            then: then.expr,
+            otherwise: otherwise.expr,
+        };
+        Ok(Parsed::new(expr, depth))
+    }
+
+    /// The binary operator at the current token, if any (productions \[8\] to \[14\]).
+    /// The operators outside the subset are refused: `intersect` and `except` (\[15\])
+    /// and the `union` keyword (\[14\]) here, node comparisons (\[24\]) by
+    /// [`Parser::binary`] where they would apply.
+    fn binary_op(&mut self) -> Result<Option<BinaryOp>> {
         use CompareKind::{Eq, Ge, Gt, Le, Lt, Ne};
+        let general = |kind| Some(BinaryOp::Comparison(ComparisonOp::General(kind)));
+        let value = |kind| Some(BinaryOp::Comparison(ComparisonOp::Value(kind)));
+        let arithmetic = |op| Some(BinaryOp::Arithmetic(op));
         let op = match self.peek()? {
-            Tok::Eq => ComparisonOp::General(Eq),
-            Tok::Ne => ComparisonOp::General(Ne),
-            Tok::Lt => ComparisonOp::General(Lt),
-            Tok::Le => ComparisonOp::General(Le),
-            Tok::Gt => ComparisonOp::General(Gt),
-            Tok::Ge => ComparisonOp::General(Ge),
-            Tok::Precedes | Tok::Follows => {
-                let found = self.peek()?.describe();
-                return Err(
-                    self.error_here(ErrorKind::Unsupported, format!("node comparison {found}"))
-                );
-            }
+            Tok::Pipe => Some(BinaryOp::Union),
+            Tok::Star => arithmetic(ArithmeticOp::Multiply),
+            Tok::Plus => arithmetic(ArithmeticOp::Add),
+            Tok::Minus => arithmetic(ArithmeticOp::Subtract),
+            Tok::Eq => general(Eq),
+            Tok::Ne => general(Ne),
+            Tok::Lt => general(Lt),
+            Tok::Le => general(Le),
+            Tok::Gt => general(Gt),
+            Tok::Ge => general(Ge),
+            Tok::Precedes | Tok::Follows => Some(BinaryOp::NodeComparison),
             Tok::Name {
                 prefix: None,
                 local,
             } => match local.as_str() {
-                "eq" => ComparisonOp::Value(Eq),
-                "ne" => ComparisonOp::Value(Ne),
-                "lt" => ComparisonOp::Value(Lt),
-                "le" => ComparisonOp::Value(Le),
-                "gt" => ComparisonOp::Value(Gt),
-                "ge" => ComparisonOp::Value(Ge),
-                "is" => {
-                    return Err(self.error_here(ErrorKind::Unsupported, "node comparison `is`"));
+                "intersect" | "except" => {
+                    let message = format!("`{local}` operator");
+                    return Err(self.error_here(ErrorKind::Unsupported, message));
                 }
-                _ => return Ok(None),
+                "union" => {
+                    return Err(self.error_here(
+                        ErrorKind::Unsupported,
+                        "`union` operator (only `|` is supported)",
+                    ));
+                }
+                "div" => arithmetic(ArithmeticOp::Divide),
+                "idiv" => arithmetic(ArithmeticOp::IntegerDivide),
+                "mod" => arithmetic(ArithmeticOp::Modulo),
+                "to" => Some(BinaryOp::Range),
+                "eq" => value(Eq),
+                "ne" => value(Ne),
+                "lt" => value(Lt),
+                "le" => value(Le),
+                "gt" => value(Gt),
+                "ge" => value(Ge),
+                "is" => Some(BinaryOp::NodeComparison),
+                "and" => Some(BinaryOp::And),
+                "or" => Some(BinaryOp::Or),
+                _ => None,
             },
-            _ => return Ok(None),
+            _ => None,
         };
-        Ok(Some(op))
+        Ok(op)
     }
 
-    /// \[10\] `ComparisonExpr ::= RangeExpr ( (ValueComp | GeneralComp | NodeComp) RangeExpr )?`
-    fn comparison_expr(&mut self) -> Result<Expr> {
-        let lhs = self.range_expr()?;
-        let Some(op) = self.comparison_op()? else {
-            return Ok(lhs);
+    /// Productions \[8\] `OrExpr` to \[14\] `UnionExpr`, read without recursion: operands
+    /// ([`Parser::operand`]) and operators in one loop, an operator applied as soon as a
+    /// looser one, or the end, follows it. Left-associative chains (`a + b - c`, `a or b
+    /// or c`) are as long as the text makes them; a second comparison or `to` at the same
+    /// level ends the expression, as the grammar says (`a = b = c` leaves `= c` unread).
+    fn binary(&mut self) -> Result<Parsed> {
+        let mut chain = Chain::default();
+        let first = self.operand()?;
+        chain.operands.push(first);
+        while self.chain_operator(&mut chain)? {
+            let operand = self.operand()?;
+            chain.operands.push(operand);
+        }
+        self.chain_end(chain)
+    }
+
+    /// After an operand of [`Parser::binary`]: reads the operator that follows, if any,
+    /// applying the operators before it that bind at least as tightly; whether an
+    /// operand follows.
+    fn chain_operator(&mut self, chain: &mut Chain) -> Result<bool> {
+        let Some(op) = self.binary_op()? else {
+            return Ok(false);
         };
-        self.bump()?;
-        let rhs = self.range_expr()?;
-        Ok(Expr::Comparison {
-            op,
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-        })
-    }
-
-    /// \[11\] `RangeExpr ::= AdditiveExpr ( "to" AdditiveExpr )?`
-    fn range_expr(&mut self) -> Result<Expr> {
-        let lhs = self.additive_expr()?;
-        if !self.eat_word("to")? {
-            return Ok(lhs);
-        }
-        let rhs = self.additive_expr()?;
-        Ok(Expr::Range(Box::new(lhs), Box::new(rhs)))
-    }
-
-    /// \[12\] `AdditiveExpr ::= MultiplicativeExpr ( ("+" | "-") MultiplicativeExpr )*`
-    fn additive_expr(&mut self) -> Result<Expr> {
-        let mut lhs = self.multiplicative_expr()?;
-        loop {
-            let op = match self.peek()? {
-                Tok::Plus => ArithmeticOp::Add,
-                Tok::Minus => ArithmeticOp::Subtract,
-                _ => return Ok(lhs),
-            };
-            self.bump()?;
-            let rhs = self.multiplicative_expr()?;
-            lhs = Expr::Arithmetic {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
-        }
-    }
-
-    /// \[13\] `MultiplicativeExpr ::= UnionExpr ( ("*" | "div" | "idiv" | "mod") UnionExpr )*`
-    fn multiplicative_expr(&mut self) -> Result<Expr> {
-        let mut lhs = self.union_expr()?;
-        loop {
-            let tok = self.peek()?;
-            let op = if *tok == Tok::Star {
-                ArithmeticOp::Multiply
-            } else if tok.is_word("div") {
-                ArithmeticOp::Divide
-            } else if tok.is_word("idiv") {
-                ArithmeticOp::IntegerDivide
-            } else if tok.is_word("mod") {
-                ArithmeticOp::Modulo
-            } else {
-                return Ok(lhs);
-            };
-            self.bump()?;
-            let rhs = self.union_expr()?;
-            lhs = Expr::Arithmetic {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
-        }
-    }
-
-    /// \[14\] `UnionExpr ::= IntersectExceptExpr ( ("union" | "|") IntersectExceptExpr )*`.
-    /// Only `|` is supported.
-    fn union_expr(&mut self) -> Result<Expr> {
-        let mut lhs = self.intersect_except_expr()?;
-        loop {
-            if self.peek()?.is_word("union") {
-                return Err(self.error_here(
-                    ErrorKind::Unsupported,
-                    "`union` operator (only `|` is supported)",
-                ));
+        let precedence = op.precedence();
+        while let Some(&(top, _)) = chain.operators.last() {
+            if top.precedence() < precedence {
+                break;
             }
-            if *self.peek()? != Tok::Pipe {
-                return Ok(lhs);
+            if top.precedence() == precedence && !op.is_associative() {
+                return Ok(false);
             }
-            self.bump()?;
-            let rhs = self.intersect_except_expr()?;
-            lhs = Expr::Union(Box::new(lhs), Box::new(rhs));
+            self.reduce(chain)?;
         }
+        if let BinaryOp::NodeComparison = op {
+            let found = match self.peek()? {
+                Tok::Name { .. } => "`is`".to_owned(),
+                other => other.describe(),
+            };
+            return Err(self.error_here(ErrorKind::Unsupported, format!("node comparison {found}")));
+        }
+        let offset = self.bump()?.start;
+        chain.operators.push((op, offset));
+        Ok(true)
     }
 
-    /// \[15\] `IntersectExceptExpr ::= InstanceofExpr ( ("intersect" | "except") InstanceofExpr )*`.
-    /// Neither operator is supported.
-    fn intersect_except_expr(&mut self) -> Result<Expr> {
-        let lhs = self.instanceof_expr()?;
-        for word in ["intersect", "except"] {
-            if self.peek()?.is_word(word) {
-                return Err(self.error_here(ErrorKind::Unsupported, format!("`{word}` operator")));
-            }
+    /// The end of [`Parser::binary`]: the operators left are applied.
+    fn chain_end(&self, mut chain: Chain) -> Result<Parsed> {
+        while !chain.operators.is_empty() {
+            self.reduce(&mut chain)?;
         }
-        Ok(lhs)
+        chain
+            .operands
+            .pop()
+            .ok_or_else(|| self.error_at(ErrorKind::Syntax, 0, "no operand"))
+    }
+
+    /// Applies the last operator to the last two operands.
+    fn reduce(&self, chain: &mut Chain) -> Result<()> {
+        let internal = || self.error_at(ErrorKind::Syntax, 0, "operator without operands");
+        let (op, offset) = chain.operators.pop().ok_or_else(internal)?;
+        let rhs = chain.operands.pop().ok_or_else(internal)?;
+        let lhs = chain.operands.pop().ok_or_else(internal)?;
+        let depth = self.above([lhs.depth, rhs.depth], offset)?;
+        let expr = op.build(lhs.expr, rhs.expr).ok_or_else(internal)?;
+        chain.operands.push(Parsed::new(expr, depth));
+        Ok(())
     }
 
     /// Whether the current and next tokens are the unprefixed names `first` and `second`.
@@ -487,69 +698,123 @@ impl<'a> Parser<'a> {
         Ok(self.peek()?.is_word(first) && self.peek2()?.is_word(second))
     }
 
-    /// \[16\] `InstanceofExpr ::= TreatExpr ( "instance" "of" SequenceType )?`
-    fn instanceof_expr(&mut self) -> Result<Expr> {
-        let operand = self.treat_expr()?;
-        if !self.at_words("instance", "of")? {
-            return Ok(operand);
-        }
-        self.bump()?;
-        self.bump()?;
-        let target = self.sequence_type()?;
-        Ok(Expr::InstanceOf {
-            operand: Box::new(operand),
-            target,
-        })
+    /// The operand of a binary operator: \[16\] `InstanceofExpr ::= TreatExpr ("instance"
+    /// "of" SequenceType)?`, \[17\] `TreatExpr ::= CastableExpr ("treat" "as"
+    /// SequenceType)?` (not supported), \[18\] `CastableExpr ::= CastExpr ("castable" "as"
+    /// SingleType)?`, \[19\] `CastExpr ::= UnaryExpr ("cast" "as" SingleType)?` and \[20\]
+    /// `UnaryExpr ::= ("-" | "+")* ValueExpr` (only `-`), without recursion.
+    fn operand(&mut self) -> Result<Parsed> {
+        let negations = self.negations()?;
+        let value = self.path_expr()?;
+        self.postfix(&negations, value)
     }
 
-    /// \[17\] `TreatExpr ::= CastableExpr ( "treat" "as" SequenceType )?`. Not supported.
-    fn treat_expr(&mut self) -> Result<Expr> {
-        let operand = self.castable_expr()?;
+    /// The `-` signs before a \[20\] `UnaryExpr`, by offset; `+` is refused. Each sign is
+    /// one level: one too many is refused at once.
+    fn negations(&mut self) -> Result<Vec<usize>> {
+        let mut negations = Vec::new();
+        loop {
+            match self.peek()? {
+                Tok::Minus => {
+                    let offset = self.bump()?.start;
+                    let levels = u32::try_from(negations.len()).unwrap_or(u32::MAX);
+                    self.checked(levels.saturating_add(2), offset)?;
+                    negations.push(offset);
+                }
+                Tok::Plus => return Err(self.error_here(ErrorKind::Unsupported, "unary `+`")),
+                _ => return Ok(negations),
+            }
+        }
+    }
+
+    /// The unary minus signs (`negations`) applied to `value`, then the `cast as`,
+    /// `castable as`, `treat as` and `instance of` that follow.
+    fn postfix(&mut self, negations: &[usize], value: Parsed) -> Result<Parsed> {
+        let mut operand = value;
+        for &offset in negations.iter().rev() {
+            let depth = self.above([operand.depth], offset)?;
+            operand = Parsed::new(Expr::Negate(operand.expr), depth);
+        }
+        if self.at_words("cast", "as")? {
+            let offset = self.bump()?.start;
+            self.bump()?;
+            let target = self.single_type()?;
+            let depth = self.above([operand.depth], offset)?;
+            let expr = Expr::Cast {
+                operand: operand.expr,
+                target,
+            };
+            operand = Parsed::new(expr, depth);
+        }
+        if self.at_words("castable", "as")? {
+            let offset = self.bump()?.start;
+            self.bump()?;
+            let target = self.single_type()?;
+            let depth = self.above([operand.depth], offset)?;
+            let expr = Expr::Castable {
+                operand: operand.expr,
+                target,
+            };
+            operand = Parsed::new(expr, depth);
+        }
         if self.at_words("treat", "as")? {
             return Err(self.error_here(ErrorKind::Unsupported, "`treat as` expression"));
         }
+        if self.at_words("instance", "of")? {
+            let offset = self.bump()?.start;
+            self.bump()?;
+            let target = self.sequence_type()?;
+            let depth = self.above([operand.depth], offset)?;
+            let expr = Expr::InstanceOf {
+                operand: operand.expr,
+                target,
+            };
+            operand = Parsed::new(expr, depth);
+        }
         Ok(operand)
     }
+}
 
-    /// \[18\] `CastableExpr ::= CastExpr ( "castable" "as" SingleType )?`
-    fn castable_expr(&mut self) -> Result<Expr> {
-        let operand = self.cast_expr()?;
-        if !self.at_words("castable", "as")? {
-            return Ok(operand);
-        }
-        self.bump()?;
-        self.bump()?;
-        let target = self.single_type()?;
-        Ok(Expr::Castable {
-            operand: Box::new(operand),
-            target,
-        })
-    }
+/// The form of a \[3\] `ExprSingle`.
+#[derive(Debug, Clone, Copy)]
+enum Single {
+    For,
+    Quantified,
+    If,
+    Binary,
+}
 
-    /// \[19\] `CastExpr ::= UnaryExpr ( "cast" "as" SingleType )?`
-    fn cast_expr(&mut self) -> Result<Expr> {
-        let operand = self.unary_expr()?;
-        if !self.at_words("cast", "as")? {
-            return Ok(operand);
-        }
-        self.bump()?;
-        self.bump()?;
-        let target = self.single_type()?;
-        Ok(Expr::Cast {
-            operand: Box::new(operand),
-            target,
-        })
-    }
+/// The items of a sequence being read, and the depth of the deepest.
+#[derive(Debug)]
+struct Items {
+    exprs: Vec<Expr>,
+    deepest: u32,
+}
 
-    /// \[20\] `UnaryExpr ::= ("-" | "+")* ValueExpr`. Only `-` is supported.
-    fn unary_expr(&mut self) -> Result<Expr> {
-        match self.peek()? {
-            Tok::Minus => {
-                self.bump()?;
-                Ok(Expr::Negate(Box::new(self.unary_expr()?)))
-            }
-            Tok::Plus => Err(self.error_here(ErrorKind::Unsupported, "unary `+`")),
-            _ => self.path_expr(),
+impl Items {
+    fn new(first: Parsed) -> Self {
+        Self {
+            deepest: first.depth,
+            exprs: vec![*first.expr],
         }
     }
+
+    fn push(&mut self, item: Parsed) {
+        self.deepest = self.deepest.max(item.depth);
+        self.exprs.push(*item.expr);
+    }
+}
+
+/// The bindings of a `for`, `some` or `every` being read, and the depth of each.
+#[derive(Debug, Default)]
+struct Bound {
+    bindings: Vec<Binding>,
+    depths: Vec<u32>,
+}
+
+/// The operands and operators of [`Parser::binary`] not yet applied.
+#[derive(Debug, Default)]
+struct Chain {
+    operands: Vec<Parsed>,
+    operators: Vec<(BinaryOp, usize)>,
 }

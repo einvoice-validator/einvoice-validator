@@ -3,7 +3,10 @@
 Parser and syntax tree for the XPath 2.0 subset that the official e-invoicing validation
 stylesheets use, and for the XSLT pieces built on it: match patterns, sequence types and
 attribute value templates. Only syntax is handled; nothing is evaluated. The subset is closed:
-a construct outside it is refused with an error naming it, never parsed as something else.
+a construct outside it is refused with an error naming it, never parsed as something else. An
+expression or pattern nested deeper than `MAX_DEPTH` (128 levels, chains of operators, steps
+and predicates included) is refused too, so that reading, compiling and evaluating it needs a
+bounded call stack.
 
 ```rust
 use einvoice_xpath::{parse_expr, NamespaceMap, XS_NAMESPACE};

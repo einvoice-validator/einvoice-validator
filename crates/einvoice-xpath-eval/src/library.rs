@@ -9,12 +9,12 @@ use einvoice_xdm::{AtomicType, AtomicValue, Integer, XPathRegex, ops, parse_doub
 
 use crate::compile::{CallData, Expr};
 use crate::error::{Error, ErrorCode, Result, err};
-use crate::eval::{Ctx, Iter, Run, from_vec, once, sort_nodes};
+use crate::eval::{Ctx, Iter, Run, What, from_vec, once, sort_nodes};
 use crate::functions::Builtin;
 use crate::item::Item;
 use crate::tree::{Node, NodeKind};
 
-const fn ordinal(n: usize) -> &'static str {
+pub(crate) const fn ordinal(n: usize) -> &'static str {
     match n {
         0 => "first",
         1 => "second",
@@ -133,11 +133,10 @@ fn distinct_equal(a: &AtomicValue, b: &AtomicValue, implicit_timezone: i16) -> b
 }
 
 impl<'a> Run<'a> {
-    /// A call to a built-in function.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one arm per function of the library; the longer ones are in their own methods"
-    )]
+    /// A call to a built-in function. The functions are evaluated in groups, each by a
+    /// function of its own, so that a call nested in the argument of another holds only
+    /// what its group needs on the call stack (that of a debug build keeps every local of
+    /// a function).
     pub(crate) fn call<'s>(
         &'s self,
         function: Builtin,
@@ -148,14 +147,82 @@ impl<'a> Run<'a> {
     where
         'a: 's,
     {
-        let f = function.name();
+        match function {
+            Builtin::Not
+            | Builtin::True
+            | Builtin::False
+            | Builtin::Boolean
+            | Builtin::Exists
+            | Builtin::Empty => Ok(boolean(self.boolean_function(function, args, ctx)?)),
+            Builtin::Count
+            | Builtin::Sum
+            | Builtin::Reverse
+            | Builtin::DistinctValues
+            | Builtin::StringJoin => self.sequence_function(function, args, ctx),
+            Builtin::NormalizeSpace
+            | Builtin::StringLength
+            | Builtin::String
+            | Builtin::Number
+            | Builtin::UpperCase
+            | Builtin::Round
+            | Builtin::Abs => self.value_function(function, args, ctx),
+            Builtin::Contains
+            | Builtin::StartsWith
+            | Builtin::EndsWith
+            | Builtin::SubstringBefore
+            | Builtin::SubstringAfter => self.substring_function(function, args, ctx),
+            Builtin::Substring
+            | Builtin::Concat
+            | Builtin::Translate
+            | Builtin::StringToCodepoints
+            | Builtin::CodepointsToString => self.string_function(function, args, ctx),
+            Builtin::Name
+            | Builtin::LocalName
+            | Builtin::NamespaceUri
+            | Builtin::DocumentUri
+            | Builtin::Root
+            | Builtin::BaseUri => self.node_function(function, args, ctx),
+            Builtin::Matches | Builtin::Replace | Builtin::Tokenize => {
+                self.regex_function(function, args, data, ctx)
+            }
+            Builtin::Last
+            | Builtin::Position
+            | Builtin::CurrentDateTime
+            | Builtin::Current
+            | Builtin::Document
+            | Builtin::SystemProperty => self.context_function(function, args, data, ctx),
+            Builtin::XsDecimal | Builtin::XsDate | Builtin::XsInteger | Builtin::XsString => {
+                self.constructor(function, &args[0], data, ctx)
+            }
+        }
+    }
+
+    /// `not`, `true`, `false`, `boolean`, `exists`, `empty`.
+    #[inline]
+    fn boolean_function(&self, function: Builtin, args: &[Expr], ctx: &Ctx) -> Result<bool> {
         Ok(match function {
-            Builtin::Not => boolean(!self.ebv(&args[0], ctx)?),
-            Builtin::True => boolean(true),
-            Builtin::False => boolean(false),
-            Builtin::Boolean => boolean(self.ebv(&args[0], ctx)?),
-            Builtin::Exists => boolean(self.non_empty(&args[0], ctx)?),
-            Builtin::Empty => boolean(!self.non_empty(&args[0], ctx)?),
+            Builtin::Not => !self.ebv(&args[0], ctx)?,
+            Builtin::True => true,
+            Builtin::Boolean => self.ebv(&args[0], ctx)?,
+            Builtin::Exists => self.non_empty(&args[0], ctx)?,
+            Builtin::Empty => !self.non_empty(&args[0], ctx)?,
+            _ => false,
+        })
+    }
+
+    /// `count`, `sum`, `reverse`, `distinct-values`, `string-join`: functions of a whole
+    /// sequence.
+    #[inline]
+    fn sequence_function<'s>(
+        &'s self,
+        function: Builtin,
+        args: &'s [Expr],
+        ctx: &Ctx,
+    ) -> Result<Iter<'s>>
+    where
+        'a: 's,
+    {
+        Ok(match function {
             Builtin::Count => {
                 let mut count = 0;
                 for item in self.seq(&args[0], ctx)? {
@@ -165,6 +232,37 @@ impl<'a> Run<'a> {
                 atomic(integer(count))
             }
             Builtin::Sum => atomic(ops::sum_lazily(self.atomized(&args[0], ctx)?)?),
+            Builtin::Reverse => {
+                let mut items = self.seq(&args[0], ctx)?.collect::<Result<Vec<_>>>()?;
+                items.reverse();
+                from_vec(items)
+            }
+            Builtin::DistinctValues => from_vec(self.distinct_values(&args[0], ctx)?),
+            _ => {
+                let mut parts = Vec::new();
+                for value in self.atomized(&args[0], ctx)? {
+                    parts.push(value?.to_string());
+                }
+                let separator = self
+                    .atomic_opt(&args[1], ctx, What::Argument(1, function.name()))?
+                    .ok_or_else(|| {
+                        Error::new(
+                            ErrorCode::Xpty0004,
+                            "An empty sequence is not allowed as the second argument of string-join()",
+                        )
+                    })?;
+                let separator = string_value(separator, function.name(), 1)?;
+                string(parts.join(&separator))
+            }
+        })
+    }
+
+    /// `normalize-space`, `string-length`, `string`, `number`, `upper-case`, `round`,
+    /// `abs`: functions of one value.
+    #[inline]
+    fn value_function<'s>(&self, function: Builtin, args: &[Expr], ctx: &Ctx) -> Result<Iter<'s>> {
+        let f = function.name();
+        Ok(match function {
             Builtin::NormalizeSpace => {
                 string(normalize_space(&self.string_or_focus(args, ctx, f)?))
             }
@@ -174,43 +272,63 @@ impl<'a> Run<'a> {
             Builtin::String => string(match args.first() {
                 None => focus_item(ctx, f)?.string_value().into_owned(),
                 Some(arg) => self
-                    .item_opt(arg, ctx, &format!("first argument of {f}()"))?
+                    .item_opt(arg, ctx, What::Argument(0, f))?
                     .map(|i| i.string_value().into_owned())
                     .unwrap_or_default(),
             }),
             Builtin::Number => {
                 let value = match args.first() {
                     None => Some(focus_item(ctx, f)?.atomize()),
-                    Some(arg) => self.atomic_opt(arg, ctx, &format!("first argument of {f}()"))?,
+                    Some(arg) => self.atomic_opt(arg, ctx, What::Argument(0, f))?,
                 };
                 atomic(AtomicValue::Double(
                     value.map_or(f64::NAN, |v| ops::number(&v)),
                 ))
             }
-            Builtin::Contains
-            | Builtin::StartsWith
-            | Builtin::EndsWith
-            | Builtin::SubstringBefore
-            | Builtin::SubstringAfter => {
-                let text = self.string_arg(&args[0], ctx, f, 0)?;
-                let part = self.string_arg(&args[1], ctx, f, 1)?;
-                match function {
-                    Builtin::Contains => boolean(text.contains(part.as_str())),
-                    Builtin::StartsWith => boolean(text.starts_with(part.as_str())),
-                    Builtin::EndsWith => boolean(text.ends_with(part.as_str())),
-                    Builtin::SubstringBefore => string(
-                        text.find(part.as_str())
-                            .filter(|_| !part.is_empty())
-                            .map(|i| text[..i].to_owned())
-                            .unwrap_or_default(),
-                    ),
-                    _ => string(
-                        text.find(part.as_str())
-                            .map(|i| text[i + part.len()..].to_owned())
-                            .unwrap_or_default(),
-                    ),
-                }
-            }
+            Builtin::UpperCase => string(self.string_arg(&args[0], ctx, f, 0)?.to_uppercase()),
+            _ => match self.atomic_opt(&args[0], ctx, What::Argument(0, f))? {
+                None => empty(),
+                Some(v) if function == Builtin::Round => atomic(ops::round(&v)?),
+                Some(v) => atomic(ops::abs(&v)?),
+            },
+        })
+    }
+
+    /// `contains`, `starts-with`, `ends-with`, `substring-before`, `substring-after`.
+    #[inline]
+    fn substring_function<'s>(
+        &self,
+        function: Builtin,
+        args: &[Expr],
+        ctx: &Ctx,
+    ) -> Result<Iter<'s>> {
+        let f = function.name();
+        let text = self.string_arg(&args[0], ctx, f, 0)?;
+        let part = self.string_arg(&args[1], ctx, f, 1)?;
+        Ok(match function {
+            Builtin::Contains => boolean(text.contains(part.as_str())),
+            Builtin::StartsWith => boolean(text.starts_with(part.as_str())),
+            Builtin::EndsWith => boolean(text.ends_with(part.as_str())),
+            Builtin::SubstringBefore => string(
+                text.find(part.as_str())
+                    .filter(|_| !part.is_empty())
+                    .map(|i| text[..i].to_owned())
+                    .unwrap_or_default(),
+            ),
+            _ => string(
+                text.find(part.as_str())
+                    .map(|i| text[i + part.len()..].to_owned())
+                    .unwrap_or_default(),
+            ),
+        })
+    }
+
+    /// `substring`, `concat`, `translate`, `string-to-codepoints`,
+    /// `codepoints-to-string`.
+    #[inline]
+    fn string_function<'s>(&self, function: Builtin, args: &[Expr], ctx: &Ctx) -> Result<Iter<'s>> {
+        let f = function.name();
+        Ok(match function {
             Builtin::Substring => {
                 let text = self.string_arg(&args[0], ctx, f, 0)?;
                 let start = self.double_arg(&args[1], ctx, f, 1)?;
@@ -223,9 +341,7 @@ impl<'a> Run<'a> {
             Builtin::Concat => {
                 let mut out = String::new();
                 for (i, arg) in args.iter().enumerate() {
-                    if let Some(value) =
-                        self.atomic_opt(arg, ctx, &format!("{} argument of {f}()", ordinal(i)))?
-                    {
+                    if let Some(value) = self.atomic_opt(arg, ctx, What::Argument(i, f))? {
                         out.push_str(&value.to_string());
                     }
                 }
@@ -236,28 +352,6 @@ impl<'a> Run<'a> {
                 &self.string_arg(&args[1], ctx, f, 1)?,
                 &self.string_arg(&args[2], ctx, f, 2)?,
             )),
-            Builtin::UpperCase => string(self.string_arg(&args[0], ctx, f, 0)?.to_uppercase()),
-            Builtin::Round | Builtin::Abs => {
-                match self.atomic_opt(&args[0], ctx, &format!("first argument of {f}()"))? {
-                    None => empty(),
-                    Some(v) if function == Builtin::Round => atomic(ops::round(&v)?),
-                    Some(v) => atomic(ops::abs(&v)?),
-                }
-            }
-            Builtin::Last => atomic(integer(context_size(ctx)?)),
-            Builtin::Position => {
-                focus_item(ctx, f)?;
-                atomic(integer(ctx.position))
-            }
-            Builtin::Name
-            | Builtin::LocalName
-            | Builtin::NamespaceUri
-            | Builtin::DocumentUri
-            | Builtin::Root
-            | Builtin::BaseUri => self.node_function(function, args, ctx)?,
-            Builtin::Matches | Builtin::Replace | Builtin::Tokenize => {
-                self.regex_function(function, args, data, ctx)?
-            }
             Builtin::StringToCodepoints => {
                 let text = self.string_arg(&args[0], ctx, f, 0)?;
                 from_vec(
@@ -270,30 +364,27 @@ impl<'a> Run<'a> {
                         .collect(),
                 )
             }
-            Builtin::CodepointsToString => string(self.codepoints_to_string(&args[0], ctx)?),
-            Builtin::StringJoin => {
-                let mut parts = Vec::new();
-                for value in self.atomized(&args[0], ctx)? {
-                    parts.push(value?.to_string());
-                }
-                let separator = self
-                    .atomic_opt(&args[1], ctx, "second argument of string-join()")?
-                    .ok_or_else(|| {
-                        Error::new(
-                            ErrorCode::Xpty0004,
-                            "An empty sequence is not allowed as the second argument of string-join()",
-                        )
-                    })?;
-                let separator = string_value(separator, f, 1)?;
-                string(parts.join(&separator))
-            }
-            Builtin::Reverse => {
-                let mut items = self.seq(&args[0], ctx)?.collect::<Result<Vec<_>>>()?;
-                items.reverse();
-                from_vec(items)
+            _ => string(self.codepoints_to_string(&args[0], ctx)?),
+        })
+    }
+
+    /// `last`, `position`, `current-dateTime`, `current`, `document`,
+    /// `system-property`: functions of the context.
+    #[inline]
+    fn context_function<'s>(
+        &self,
+        function: Builtin,
+        args: &[Expr],
+        data: &CallData,
+        ctx: &Ctx,
+    ) -> Result<Iter<'s>> {
+        Ok(match function {
+            Builtin::Last => atomic(integer(context_size(ctx)?)),
+            Builtin::Position => {
+                focus_item(ctx, function.name())?;
+                atomic(integer(ctx.position))
             }
             Builtin::CurrentDateTime => atomic(AtomicValue::DateTime(self.dc.current_date_time)),
-            Builtin::DistinctValues => from_vec(self.distinct_values(&args[0], ctx)?),
             Builtin::Current => once(self.current.clone().ok_or_else(|| {
                 Error::new(
                     ErrorCode::Xtde1360,
@@ -301,31 +392,40 @@ impl<'a> Run<'a> {
                 )
             })?),
             Builtin::Document => from_vec(self.document(&args[0], ctx)?),
-            Builtin::SystemProperty => match data {
+            _ => match data {
                 CallData::Property(name) => string(self.dc.host.system_property(name)),
                 _ => return err(ErrorCode::Internal, "system-property without its name"),
             },
-            Builtin::XsDecimal | Builtin::XsDate | Builtin::XsInteger | Builtin::XsString => {
-                let target = match function {
-                    Builtin::XsDecimal => AtomicType::Decimal,
-                    Builtin::XsDate => AtomicType::Date,
-                    Builtin::XsInteger => AtomicType::Integer,
-                    _ => AtomicType::String,
-                };
-                match self.atomic_opt(&args[0], ctx, &format!("first argument of {f}()"))? {
-                    None => empty(),
-                    // An argument statically typed xs:integer (Saxon-HE 12.10's
-                    // up-casting converter: trailing zeros stripped).
-                    Some(value) if matches!(data, CallData::Upcast) => {
-                        atomic(value.upcast(target)?)
-                    }
-                    // An argument statically typed xs:decimal: no cast (Saxon-HE 12.10
-                    // removes it), an xs:integer value stays one.
-                    Some(value) if matches!(data, CallData::Unchanged) => atomic(value),
-                    Some(value) => atomic(value.cast(target)?),
-                }
-            }
         })
+    }
+
+    /// The constructors `xs:decimal`, `xs:date`, `xs:integer`, `xs:string`.
+    #[inline]
+    fn constructor<'s>(
+        &self,
+        function: Builtin,
+        arg: &Expr,
+        data: &CallData,
+        ctx: &Ctx,
+    ) -> Result<Iter<'s>> {
+        let target = match function {
+            Builtin::XsDecimal => AtomicType::Decimal,
+            Builtin::XsDate => AtomicType::Date,
+            Builtin::XsInteger => AtomicType::Integer,
+            _ => AtomicType::String,
+        };
+        Ok(
+            match self.atomic_opt(arg, ctx, What::Argument(0, function.name()))? {
+                None => empty(),
+                // An argument statically typed xs:integer (Saxon-HE 12.10's
+                // up-casting converter: trailing zeros stripped).
+                Some(value) if matches!(data, CallData::Upcast) => atomic(value.upcast(target)?),
+                // An argument statically typed xs:decimal: no cast (Saxon-HE 12.10
+                // removes it), an xs:integer value stays one.
+                Some(value) if matches!(data, CallData::Unchanged) => atomic(value),
+                Some(value) => atomic(value.cast(target)?),
+            },
+        )
     }
 
     /// The string argument of a function with an optional one (`fn:string-length`,
@@ -339,7 +439,7 @@ impl<'a> Run<'a> {
 
     /// An `xs:string?` argument; the empty sequence gives the empty string.
     fn string_arg(&self, arg: &Expr, ctx: &Ctx, f: &str, n: usize) -> Result<String> {
-        match self.atomic_opt(arg, ctx, &format!("{} argument of {f}()", ordinal(n)))? {
+        match self.atomic_opt(arg, ctx, What::Argument(n, f))? {
             None => Ok(String::new()),
             Some(value) => string_value(value, f, n),
         }
@@ -347,8 +447,8 @@ impl<'a> Run<'a> {
 
     /// An `xs:double` argument (exactly one value).
     fn double_arg(&self, arg: &Expr, ctx: &Ctx, f: &str, n: usize) -> Result<f64> {
-        let what = format!("{} argument of {f}()", ordinal(n));
-        match self.atomic_opt(arg, ctx, &what)? {
+        let what = What::Argument(n, f);
+        match self.atomic_opt(arg, ctx, what)? {
             None => err(
                 ErrorCode::Xpty0004,
                 format!("An empty sequence is not allowed as the {what}"),
@@ -370,7 +470,7 @@ impl<'a> Run<'a> {
     fn node_arg(&self, args: &[Expr], ctx: &Ctx, f: &str) -> Result<Option<Node>> {
         let item = match args.first() {
             None => Some(focus_item(ctx, f)?),
-            Some(arg) => self.item_opt(arg, ctx, &format!("first argument of {f}()"))?,
+            Some(arg) => self.item_opt(arg, ctx, What::Argument(0, f))?,
         };
         match item {
             None => Ok(None),
@@ -456,7 +556,7 @@ impl<'a> Run<'a> {
         'a: 's,
     {
         let f = function.name();
-        let input = self.atomic_opt(&args[0], ctx, &format!("first argument of {f}()"))?;
+        let input = self.atomic_opt(&args[0], ctx, What::Argument(0, f))?;
         let input = match input {
             Some(value) => Some(string_value(value, f, 0)?),
             None => None,

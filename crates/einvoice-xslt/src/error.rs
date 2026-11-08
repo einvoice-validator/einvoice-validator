@@ -47,6 +47,13 @@ pub enum LoadErrorKind {
     },
     /// Any other static error of the stylesheet; the message names the XSLT error code.
     Invalid(String),
+    /// Instructions or literal result elements nested deeper than `max` levels
+    /// ([`MAX_NESTING`](crate::MAX_NESTING)): the stylesheet is refused rather than read,
+    /// prepared and run with a call stack in proportion to its depth.
+    TooDeep {
+        /// The maximum nesting.
+        max: u32,
+    },
 }
 
 /// One load error, with the line where it was found.
@@ -86,6 +93,10 @@ impl fmt::Display for LoadError {
                 error,
             } => write!(f, "{element}/@{attribute}: {error}"),
             LoadErrorKind::Invalid(message) => f.write_str(message),
+            LoadErrorKind::TooDeep { max } => write!(
+                f,
+                "instructions nested deeper than the maximum of {max} levels"
+            ),
         }
     }
 }

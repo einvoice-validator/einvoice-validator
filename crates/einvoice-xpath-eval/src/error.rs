@@ -5,6 +5,8 @@ use std::fmt;
 
 use einvoice_xdm::{ErrorCode as XdmCode, XdmError};
 
+use crate::limit::LimitExceeded;
+
 /// The error code of a failed compilation or evaluation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -59,6 +61,9 @@ pub enum ErrorCode {
     Unsupported,
     /// Not an XPath error: a broken invariant of this crate (a bug).
     Internal,
+    /// Not an XPath error: the evaluation went beyond a limit that keeps it within a
+    /// bounded call stack ([`Error::limit`]).
+    Limit,
 }
 
 impl ErrorCode {
@@ -90,6 +95,7 @@ impl ErrorCode {
             Self::Host => "HOST",
             Self::Unsupported => "UNSUPPORTED",
             Self::Internal => "INTERNAL",
+            Self::Limit => "LIMIT",
         }
     }
 
@@ -106,39 +112,61 @@ impl fmt::Display for ErrorCode {
     }
 }
 
-/// A failed compilation or evaluation.
+/// A failed compilation or evaluation. One pointer wide: the results of the
+/// evaluator, one on every level of its recursion, stay small.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Error {
+pub struct Error(Box<Inner>);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Inner {
     code: ErrorCode,
     message: String,
+    limit: Option<LimitExceeded>,
 }
 
 impl Error {
     /// A new error.
     #[must_use]
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
-        Self {
+        Self(Box::new(Inner {
             code,
             message: message.into(),
-        }
+            limit: None,
+        }))
+    }
+
+    /// The error of an evaluation beyond a limit ([`ErrorCode::Limit`]).
+    #[must_use]
+    pub fn limit_exceeded(limit: LimitExceeded) -> Self {
+        Self(Box::new(Inner {
+            code: ErrorCode::Limit,
+            message: limit.to_string(),
+            limit: Some(limit),
+        }))
+    }
+
+    /// The limit exceeded, for an [`ErrorCode::Limit`] error.
+    #[must_use]
+    pub fn limit(&self) -> Option<LimitExceeded> {
+        self.0.limit
     }
 
     /// The error code.
     #[must_use]
-    pub const fn code(&self) -> ErrorCode {
-        self.code
+    pub fn code(&self) -> ErrorCode {
+        self.0.code
     }
 
     /// The explanation.
     #[must_use]
     pub fn message(&self) -> &str {
-        &self.message
+        &self.0.message
     }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.code, self.message)
+        write!(f, "{}: {}", self.0.code, self.0.message)
     }
 }
 

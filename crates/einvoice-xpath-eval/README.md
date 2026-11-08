@@ -8,7 +8,9 @@ parsed by [`einvoice-xpath`](https://crates.io/crates/einvoice-xpath) compiled a
 static context (unknown functions and variables are errors at compile time), then evaluated
 lazily with the atomic values of [`einvoice-xdm`](https://crates.io/crates/einvoice-xdm).
 The evaluator reads no clock: the current date and time are given by the caller, so it also
-runs on `wasm32-unknown-unknown`.
+runs on `wasm32-unknown-unknown`. A host that evaluates expressions inside a recursion of its
+own bounds the stack of the whole with a `StackLimit`: the evaluation then ends with a
+`LIMIT` error rather than overflowing the stack.
 
 This crate is part of [einvoice-validator](https://github.com/einvoice-validator/einvoice-validator), which validates EN 16931 and Peppol BIS
 Billing 3.0 e-invoices against the official validation artefacts in pure Rust. It is checked

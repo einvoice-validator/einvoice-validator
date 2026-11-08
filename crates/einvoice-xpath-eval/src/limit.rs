@@ -5,6 +5,12 @@
 //! aborts the whole process. A parsed document is therefore refused when an element is
 //! nested deeper than a maximum depth ([`DEFAULT_MAX_DEPTH`] unless the caller sets
 //! another one), with a [`LimitExceeded::Depth`] error.
+//!
+//! Evaluating an expression recurses over its tree, whose depth is bounded by
+//! [`einvoice_xpath::MAX_DEPTH`]. A host that evaluates expressions inside a recursion of
+//! its own (the templates and functions of a stylesheet) bounds the stack of the whole
+//! with a [`StackLimit`] ([`DynamicContext::with_stack_limit`](crate::DynamicContext::with_stack_limit)):
+//! the evaluation then ends with a [`LimitExceeded::Stack`] error when it would use more.
 
 use std::fmt;
 
@@ -37,13 +43,68 @@ pub enum LimitExceeded {
         /// The maximum nesting.
         max: u32,
     },
-    /// The invocations in progress use more than `max` bytes of the call stack, measured
-    /// from the start of the transformation: a stylesheet whose templates or functions
-    /// need more stack per level than the nesting allows for.
+    /// The invocations in progress, and the expressions they evaluate, use more than `max`
+    /// bytes of the call stack, measured from the start of the transformation (a
+    /// [`StackLimit`]): a stylesheet whose templates or functions need more stack per
+    /// level than the nesting allows for.
     Stack {
         /// The maximum, in bytes.
         max: u32,
     },
+}
+
+/// A bound on the call stack: at most `max` bytes deeper than the position of the stack
+/// where it was taken ([`StackLimit::from_here`]). Stacks grow downwards on every
+/// supported target, the WebAssembly shadow stack included; the distance is taken
+/// either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StackLimit {
+    base: usize,
+    max: u32,
+}
+
+impl StackLimit {
+    /// A bound of `max` bytes below the current position of the stack.
+    #[must_use]
+    #[inline(never)]
+    pub fn from_here(max: u32) -> Self {
+        Self {
+            base: stack_position(),
+            max,
+        }
+    }
+
+    /// The bound, in bytes.
+    #[must_use]
+    pub const fn max(self) -> u32 {
+        self.max
+    }
+
+    /// The stack used between the position where the bound was taken and here.
+    #[must_use]
+    pub fn used(self) -> usize {
+        self.base.abs_diff(stack_position())
+    }
+
+    /// [`LimitExceeded::Stack`] when the stack used is beyond the bound.
+    ///
+    /// # Errors
+    ///
+    /// The stack used is beyond the bound.
+    pub fn check(self) -> Result<(), LimitExceeded> {
+        if u32::try_from(self.used()).map_or(true, |used| used > self.max) {
+            Err(LimitExceeded::Stack { max: self.max })
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// The position of the call stack: the address of a local of this function.
+#[inline(never)]
+fn stack_position() -> usize {
+    let marker = 0_u8;
+    std::hint::black_box(std::ptr::addr_of!(marker)).addr()
 }
 
 impl LimitExceeded {

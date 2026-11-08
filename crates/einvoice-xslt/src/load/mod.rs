@@ -45,6 +45,9 @@ pub(crate) struct Loader<'a, 'input> {
     errors: Vec<LoadError>,
     /// The distinct namespace sets seen so far, shared by the elements that have them.
     namespace_sets: Vec<Arc<[NamespaceBinding]>>,
+    /// How many sequence constructors contain the one being read (see
+    /// [`MAX_NESTING`](crate::MAX_NESTING)).
+    nesting: u32,
 }
 
 /// Loads a stylesheet from its text.
@@ -62,6 +65,7 @@ pub(crate) fn load(text: &str) -> Result<Stylesheet, LoadErrors> {
             .collect(),
         errors: Vec::new(),
         namespace_sets: Vec::new(),
+        nesting: 0,
     };
     let result = loader.stylesheet(doc.root_element());
     match result {

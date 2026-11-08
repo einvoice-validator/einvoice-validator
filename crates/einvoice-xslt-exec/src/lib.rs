@@ -74,8 +74,12 @@
 //! template rules, built-in rules, named templates and functions are invoked one inside
 //! another more than `max_nesting` deep ([`DEFAULT_MAX_NESTING`]) or use more than
 //! `max_stack` bytes of stack ([`DEFAULT_MAX_STACK`]), lazy values computed one inside
-//! another included: a `LIMIT` error
+//! another and the expressions being evaluated included: a `LIMIT` error
 //! ([`TransformError::limit`]) instead of a stack overflow, which would abort the process.
+//! The stylesheet itself is bounded when it is loaded: its instructions nest
+//! [`einvoice_xslt::MAX_NESTING`] deep at most, its expressions
+//! [`einvoice_xpath::MAX_DEPTH`] deep at most, so that loading and preparing it need a
+//! bounded stack too (a thread with the default 2 MiB stack, debug builds included).
 //! Walking a tree without template rules (copying a node, the path of a node in a
 //! warning) uses no recursion. With the defaults, the official stylesheets run on a
 //! document 256 deep on a thread with the default 2 MiB stack, debug builds included.
