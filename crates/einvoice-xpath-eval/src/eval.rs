@@ -724,9 +724,12 @@ impl<'a> Run<'a> {
             for (predicate, seen) in predicates.iter().zip(seen.iter_mut()) {
                 *seen += 1;
                 let holds = match predicate.kind {
+                    // The predicate's `n`th node: no other node gets past it, so the walk
+                    // ends with this one.
                     PredicateKind::Position(Some(n)) => {
-                        last = *seen == n;
-                        last
+                        let nth = *seen == n;
+                        last |= nth;
+                        nth
                     }
                     _ => self.predicate_holds(
                         predicate,

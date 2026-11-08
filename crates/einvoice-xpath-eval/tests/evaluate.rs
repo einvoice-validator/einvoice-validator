@@ -572,3 +572,20 @@ fn nodes_selected_in_place_are_those_of_the_evaluation() {
         ErrorCode::Xpdy0002
     );
 }
+
+#[test]
+fn a_positional_predicate_ends_the_walk_of_a_step() {
+    // The second x is never read: [1] lets only the first through, and [2] then finds
+    // none; reading it would raise FORG0001 (@v = 'a' compared with a number).
+    let doc = Document::parse(r#"<r><x v="1"/><x v="a"/></r>"#, None).unwrap();
+    let r = doc.root().children().next().unwrap();
+    for (text, expected) in [
+        ("exists(x[@v = 1][1][2])", "false"),
+        ("count(x[@v = 1][1][2])", "0"),
+        ("exists(x[@v = 1][1])", "true"),
+        ("count(x[@v = 1][1])", "1"),
+    ] {
+        assert_eq!(eval_at(text, &r), Ok(vec![expected.to_owned()]), "{text}");
+    }
+    assert_eq!(eval_at("count(x[@v = 1][2])", &r), Err(ErrorCode::Forg0001));
+}
