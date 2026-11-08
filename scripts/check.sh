@@ -423,7 +423,9 @@ job_peppol() {
 # target/ (checksums verified), then `cargo xtask <family>` extracts the
 # cases, runs Saxon-HE with every stylesheet and cross-checks the goldens with
 # the expectations (XML Mutate, accepted documents) against the committed
-# records. Without Java or without network access (and nothing cached yet),
+# records, then the equivalence test of the engine on the corpus
+# (tests/<family>_equivalence.rs of einvoice-xslt-exec, required).
+# Without Java or without network access (and nothing cached yet),
 # SKIPPED, except in CI, where it fails.
 #   fetched_family NAME SCRIPT
 fetched_family() {
@@ -452,7 +454,13 @@ fetched_family() {
         return
     fi
     [ "$status" -eq 0 ] || return 1
-    cargo xtask "$name"
+    cargo xtask "$name" || return 1
+    # The engine on the corpus: every stylesheet, every case (a release build: some
+    # ten thousand transformations).
+    local test=${name//-/_} variable
+    variable=EINVOICE_$(echo "$test" | tr '[:lower:]' '[:upper:]')_REQUIRED
+    env "$variable=1" cargo test --locked --release -p einvoice-xslt-exec \
+        --test "${test}_equivalence" -- --nocapture
 }
 job_facturx() { fetched_family facturx scripts/fetch-facturx.sh; }
 job_xrechnung() { fetched_family xrechnung scripts/fetch-xrechnung.sh; }

@@ -33,6 +33,10 @@ tracked tree, then checks them:
    Saxon-HE with both stylesheets on every case (`golden-cen/`, `golden-xrechnung/`),
    cross-checks the goldens with the expectations against `disagreements.tsv`, and writes
    `complete.txt`.
+3. The equivalence test of the engine, `tests/xrechnung_equivalence.rs` of `crates/einvoice-xslt-exec`
+   (required by `scripts/check.sh xrechnung`), runs every stylesheet on every case and mutation
+   case: the engine gives the Saxon-HE result on all of them (the same canonical SVRL, or the
+   error code Saxon-HE stops with).
 
 | Cases | Source | Count |
 |---|---|---|
@@ -49,12 +53,12 @@ XML Mutate 0.6 writes that name in a comment, so the document is not well-formed
 ## Reports with `svrl:metadata`
 
 Both stylesheets are compiled with SchXslt: each report starts with an `svrl:metadata` element
-(the processor, the compiler, the times of the compilation and of the run), which canonical
-form 1 (`../SVRL-CANONICAL.md`) does not represent. The oracle runs Saxon-HE with a fixed clock
-(`-now:2000-01-01T00:00:00Z`), checks that the report records that time, and keeps the element
-apart: the golden `<case id>.svrl.txt` is the canonical form of the rest of the report, and
-`<case id>.metadata.txt` holds the element, one line per element (`{namespace}local name`,
-then its attributes and its text). Two runs give the same goldens, byte for byte.
+(the processor, the compiler, the times of the compilation and of the run). The goldens are in
+version 2 of the canonical form (`../SVRL-CANONICAL.md`), which represents it, the time of the
+run written `{run-time}`. The oracle runs Saxon-HE with a fixed clock
+(`-now:2000-01-01T00:00:00Z`) and checks that the report records that time; the equivalence
+test gives the engine the same clock and checks it too. Two runs give the same goldens, byte for
+byte.
 
 ## Cross-checks
 

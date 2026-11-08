@@ -30,6 +30,10 @@ tracked tree, then checks them:
    layout and `cases.tsv` format as the committed corpora, see `../README.md`), applies the mutation catalogue `../mutations-cii.toml` to the CEN examples `CII_example5.xml`, `CII_example3.xml`, `CII_example2.xml`, `CII_business_example_Z.xml` and `XRechnung-O.xml` (808 mutation cases), runs
    Saxon-HE with each stylesheet on every case, cross-checks the goldens with the expectations
    against `disagreements.tsv`, and writes `complete.txt`.
+3. The equivalence test of the engine, `tests/fr_ctc_equivalence.rs` of `crates/einvoice-xslt-exec`
+   (required by `scripts/check.sh fr-ctc`), runs every stylesheet on every case and mutation
+   case: the engine gives the Saxon-HE result on all of them (the same canonical SVRL, or the
+   error code Saxon-HE stops with).
 
 | Stylesheet (package path) | Goldens |
 |---|---|

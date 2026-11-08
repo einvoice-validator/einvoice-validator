@@ -7,6 +7,8 @@
     reason = "shared by the equivalence test and the examples, each using a part"
 )]
 
+#[cfg(test)]
+pub(crate) mod fetched;
 pub(crate) mod peppol;
 
 use std::path::{Path, PathBuf};

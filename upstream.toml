@@ -216,12 +216,13 @@ pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 
 # The rule sets below are fetched at test time (scripts/fetch-facturx.sh,
 # fetch-xrechnung.sh, fetch-fr-ctc.sh): their corpora are built and
-# cross-checked against Saxon-HE, but the engine does not support them yet, so
-# they are "info" (a release's notes list the "high" ones as tested).
+# cross-checked against Saxon-HE, and the engine gives the Saxon-HE result on
+# every case, so they are "high" (a release's notes list them as tested); the
+# tools and the inputs their corpora are built from are "info".
 
 [[upstream]]
 name = "Factur-X"
-severity = "info"
+severity = "high"
 pinned = "1.09.2"
 source = "listing"
 url = "https://fnfe-mpe.org/factur-x/factur-x_en/"
@@ -274,7 +275,7 @@ pattern = 'Mustang validator (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
 
 [[upstream]]
 name = "XRechnung"
-severity = "info"
+severity = "high"
 pinned = "3.0.2"
 source = "listing"
 url = "https://xeinkauf.de/xrechnung/versionen-und-bundles/"
@@ -380,7 +381,7 @@ pattern = 'XML Mutate (?<v>[0-9]+(?:\.[0-9]+)+)'
 
 [[upstream]]
 name = "French e-invoicing rules (FNFE-MPE)"
-severity = "info"
+severity = "high"
 pinned = "1.4.0.04"
 source = "listing"
 url = "https://fnfe-mpe.org/ressources/"
