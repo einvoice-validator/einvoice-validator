@@ -1,17 +1,22 @@
-//! The xmllint oracle of this crate: validates every case of the oracle (the CEN UBL
-//! corpus, `tests/oracle/documents/` and the mutations of `tests/oracle/mutations.tsv`)
-//! with xmllint (libxml2) against the complete OASIS UBL 2.1 schema set, and compares
-//! xmllint's verdicts and errors with `tests/oracle/expected.tsv` (or writes them). It
-//! then runs this crate on every case, twice, and reports how it compares with
-//! xmllint, listing each disagreement and whether `tests/oracle/disagreements.tsv`
-//! explains it:
+//! The xmllint oracle of this crate, two suites:
 //!
-//! * with the schemas this crate ships ([`einvoice_xsd::Schema::ubl_2_1`]): every
-//!   difference must be documented, and every documented one must occur (as
-//!   `tests/oracle.rs` checks);
-//! * with the complete set, loaded with [`einvoice_xsd::Schema::load`]: the same,
-//!   except for the disagreements caused by the `XAdES` schemas not being shipped,
-//!   which must then not occur.
+//! * UBL: validates every case (the CEN UBL corpus, `tests/oracle/documents/` and the
+//!   mutations of `tests/oracle/mutations.tsv`) with xmllint (libxml2) against the
+//!   complete OASIS UBL 2.1 schema set, and compares xmllint's verdicts and errors
+//!   with `tests/oracle/expected.tsv` (or writes them). It then runs this crate on
+//!   every case, twice, and reports how it compares with xmllint, listing each
+//!   disagreement and whether `tests/oracle/disagreements.tsv` explains it:
+//!   * with the schemas this crate ships ([`einvoice_xsd::Schema::ubl_2_1`]): every
+//!     difference must be documented, and every documented one must occur (as
+//!     `tests/oracle.rs` checks);
+//!   * with the complete set, loaded with [`einvoice_xsd::Schema::load`]: the same,
+//!     except for the disagreements caused by the `XAdES` schemas not being shipped,
+//!     which must then not occur.
+//! * synthetic: the same with the synthetic schema set of
+//!   `tests/oracle/synthetic/schemas/` (value constraints, length facets, anonymous
+//!   complex types) and its documents, mutations and schema mutations, against
+//!   `tests/oracle/synthetic/expected.tsv` and `disagreements.tsv`; a schema
+//!   mutation's verdict is whether xmllint compiles the edited set.
 //!
 //! ```text
 //! cargo run -p einvoice-xsd --example xmllint-oracle             run xmllint, compare with expected.tsv
@@ -19,7 +24,7 @@
 //! ```
 //!
 //! xmllint is taken from `$XMLLINT`, else `xmllint` on the `PATH`. The goldens were
-//! produced with libxml2 2.9.14. Both entry points are loaded together, through a
+//! produced with libxml2 2.9.14. Both UBL entry points are loaded together, through a
 //! generated schema that imports `UBL-Invoice-2.1.xsd` and `UBL-CreditNote-2.1.xsd`
 //! (this crate does the same).
 //!
@@ -33,6 +38,8 @@
 
 #[path = "../tests/oracle/format.rs"]
 mod format;
+#[path = "../tests/oracle/xmllint.rs"]
+mod xmllint;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -63,60 +70,20 @@ fn run() -> Result<bool, String> {
         ["--write"] => true,
         _ => return Err("usage: xmllint-oracle [--write]".to_owned()),
     };
-    let cases = format::cases()?;
-    let xmllint = std::env::var("XMLLINT").unwrap_or_else(|_| "xmllint".to_owned());
-    let version = Command::new(&xmllint)
-        .arg("--version")
-        .output()
-        .map_err(|e| format!("cannot run {xmllint}: {e}"))?;
-    let version_text = String::from_utf8_lossy(&version.stderr);
-    println!(
-        "{}",
-        version_text
-            .lines()
-            .next()
-            .unwrap_or("xmllint: unknown version")
-    );
+    let program = xmllint::program();
+    println!("{}", xmllint::version(&program)?);
+    let ubl_ok = ubl(&program, write)?;
+    let synthetic_ok = synthetic(&program, write)?;
+    Ok(ubl_ok && synthetic_ok)
+}
 
+/// The UBL suite.
+fn ubl(program: &str, write: bool) -> Result<bool, String> {
+    let cases = format::cases()?;
     let full = full_set(&oracle_work_dir())?;
-    let observed = run_xmllint(&xmllint, &cases, &full)?;
-    let expected_path = format::oracle_dir().join("expected.tsv");
-    let mut ok = true;
-    if write {
-        std::fs::write(&expected_path, format::format_expected(&observed))
-            .map_err(|e| format!("{}: {e}", expected_path.display()))?;
-        println!("expected.tsv written: {} cases", observed.len());
-    } else {
-        let expected = format::parse_expected(&format::read(&expected_path)?)?;
-        let mut differences = 0;
-        for (case, result) in &observed {
-            if expected.get(case) != Some(result) {
-                differences += 1;
-                println!(
-                    "xmllint differs from expected.tsv: {case}: xmllint {} {:?}, expected {:?}",
-                    result.verdict,
-                    result.errors,
-                    expected.get(case)
-                );
-            }
-        }
-        let observed_ids: BTreeSet<&str> = observed.iter().map(|(c, _)| c.as_str()).collect();
-        for case in expected.keys() {
-            if !observed_ids.contains(case.as_str()) {
-                differences += 1;
-                println!("expected.tsv has a case that no longer exists: {case}");
-            }
-        }
-        if differences == 0 {
-            println!(
-                "xmllint agrees with expected.tsv on all {} cases",
-                observed.len()
-            );
-        } else {
-            println!("{differences} differences between xmllint and expected.tsv");
-            ok = false;
-        }
-    }
+    let schema = wrapper_schema(&oracle_work_dir(), &full)?;
+    let observed = xmllint::run(program, &cases, &schema, &oracle_work_dir())?;
+    let ok = check_expected(&format::oracle_dir().join("expected.tsv"), &observed, write)?;
     // This crate against what xmllint said just now, with the shipped schemas and
     // with the complete set.
     let documented = format::parse_disagreements(&format::read(
@@ -124,27 +91,173 @@ fn run() -> Result<bool, String> {
     )?)?;
     let observed_map: BTreeMap<String, Expected> = observed.iter().cloned().collect();
     let shipped = einvoice_xsd::Schema::ubl_2_1().map_err(|e| e.to_string())?;
-    let shipped_ok = compare(
+    let shipped_ok = report(
         "einvoice-xsd (shipped schemas) vs xmllint",
-        &shipped,
         &cases,
-        &observed_map,
+        &format::differences(&shipped, &cases, &observed_map)?,
         &documented,
-    )?;
+    );
     let complete = load_complete(&full)?;
     let with_xades: Vec<format::Disagreement> = documented
         .iter()
         .filter(|x| !format::caused_by_unshipped_xades(x))
         .cloned()
         .collect();
-    let complete_ok = compare(
+    let complete_ok = report(
         "einvoice-xsd (complete OASIS set) vs xmllint",
-        &complete,
         &cases,
-        &observed_map,
+        &format::differences(&complete, &cases, &observed_map)?,
         &with_xades,
-    )?;
+    );
     Ok(ok && shipped_ok && complete_ok)
+}
+
+/// The synthetic suite.
+fn synthetic(program: &str, write: bool) -> Result<bool, String> {
+    let (cases, schema_cases) = format::synthetic_cases()?;
+    let dir = oracle_work_dir().join("synthetic");
+    let entry = format::synthetic_dir()
+        .join("schemas")
+        .join(format::SYNTHETIC_ENTRY_POINT)
+        .canonicalize()
+        .map_err(|e| format!("synthetic schema set: {e}"))?;
+    let mut observed = xmllint::run(program, &cases, &entry, &dir)?;
+    for case in &schema_cases {
+        let set = dir.join(&case.id);
+        if set.exists() {
+            std::fs::remove_dir_all(&set).map_err(|e| format!("{}: {e}", set.display()))?;
+        }
+        std::fs::create_dir_all(&set).map_err(|e| format!("{}: {e}", set.display()))?;
+        for (path, text) in &case.files {
+            let target = set.join(path);
+            std::fs::write(&target, text).map_err(|e| format!("{}: {e}", target.display()))?;
+        }
+        let compiles = xmllint::compiles(program, &set.join(format::SYNTHETIC_ENTRY_POINT), &set)?;
+        observed.push((
+            case.id.clone(),
+            Expected {
+                verdict: if compiles { "loads" } else { "fails" }.to_owned(),
+                errors: Vec::new(),
+            },
+        ));
+    }
+    let ok = check_expected(
+        &format::synthetic_dir().join("expected.tsv"),
+        &observed,
+        write,
+    )?;
+    let documented = format::parse_disagreements(&format::read(
+        &format::synthetic_dir().join("disagreements.tsv"),
+    )?)?;
+    let observed_map: BTreeMap<String, Expected> = observed.iter().cloned().collect();
+    let files = format::synthetic_schema_files()?;
+    let schema = format::load_set(&files, format::SYNTHETIC_ENTRY_POINT)
+        .map_err(|e| format!("synthetic schema set: {e}"))?;
+    let all: Vec<Case> = cases
+        .iter()
+        .cloned()
+        .chain(schema_cases.iter().map(|c| Case {
+            id: c.id.clone(),
+            text: String::new(),
+        }))
+        .collect();
+    let synthetic_ok = report(
+        "einvoice-xsd (synthetic schemas) vs xmllint",
+        &all,
+        &format::synthetic_differences(&schema, &cases, &schema_cases, &observed_map)?,
+        &documented,
+    );
+    Ok(ok && synthetic_ok)
+}
+
+/// Writes xmllint's results to `path` (`--write`), or compares them with it and
+/// prints every difference. Whether they agree (always, when writing).
+fn check_expected(
+    path: &Path,
+    observed: &[(String, Expected)],
+    write: bool,
+) -> Result<bool, String> {
+    let name = path
+        .strip_prefix(format::crate_dir())
+        .unwrap_or(path)
+        .display()
+        .to_string();
+    if write {
+        std::fs::write(path, format::format_expected(observed))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("{name} written: {} cases", observed.len());
+        return Ok(true);
+    }
+    let expected = format::parse_expected(&format::read(path)?)?;
+    let mut differences = 0;
+    for (case, result) in observed {
+        if expected.get(case) != Some(result) {
+            differences += 1;
+            println!(
+                "xmllint differs from {name}: {case}: xmllint {} {:?}, expected {:?}",
+                result.verdict,
+                result.errors,
+                expected.get(case)
+            );
+        }
+    }
+    let observed_ids: BTreeSet<&str> = observed.iter().map(|(c, _)| c.as_str()).collect();
+    for case in expected.keys() {
+        if !observed_ids.contains(case.as_str()) {
+            differences += 1;
+            println!("{name} has a case that no longer exists: {case}");
+        }
+    }
+    if differences == 0 {
+        println!("xmllint agrees with {name} on all {} cases", observed.len());
+        Ok(true)
+    } else {
+        println!("{differences} differences between xmllint and {name}");
+        Ok(false)
+    }
+}
+
+/// Prints how this crate compares with xmllint on `cases` and whether
+/// `documented` explains each difference. Whether they match exactly (and no
+/// corpus case differs).
+fn report(
+    title: &str,
+    cases: &[Case],
+    differences: &[format::Difference],
+    documented: &[format::Disagreement],
+) -> bool {
+    let count = |kind: &str| differences.iter().filter(|d| d.kind == kind).count();
+    let verdicts = count("verdict");
+    let corpus = cases.iter().filter(|c| c.id.starts_with("corpus/")).count();
+    let corpus_differences = differences
+        .iter()
+        .filter(|d| d.case.starts_with("corpus/"))
+        .count();
+    println!(
+        "{title}: {} cases, {} same verdict ({} identical including errors), \
+         {verdicts} different verdicts, {} same verdict with different errors, {} refused as unsupported; \
+         corpus: {corpus} cases, {corpus_differences} differences",
+        cases.len(),
+        cases.len() - verdicts - count("unsupported"),
+        cases.len() - differences.len(),
+        count("errors"),
+        count("unsupported"),
+    );
+    for d in differences {
+        let explanation = documented
+            .iter()
+            .find(|x| x.case == d.case && x.kind == d.kind)
+            .map_or("UNDOCUMENTED", |x| x.explanation.as_str());
+        println!(
+            "  {} [{}] ours {} {:?} / xmllint {} {:?}: {explanation}",
+            d.case, d.kind, d.ours.verdict, d.ours.errors, d.xmllint.verdict, d.xmllint.errors
+        );
+    }
+    let problems = format::unexplained(differences, documented);
+    for problem in &problems {
+        println!("{problem}");
+    }
+    problems.is_empty() && corpus_differences == 0
 }
 
 /// Loads the complete set with this crate; every document must be loaded and no
@@ -180,50 +293,6 @@ fn load_complete(full: &FullSet) -> Result<einvoice_xsd::Schema, String> {
         ));
     }
     Ok(complete)
-}
-
-/// Runs this crate with `schema` on every case, prints how it compares with xmllint
-/// and whether `documented` explains each difference. Whether they match exactly.
-fn compare(
-    title: &str,
-    schema: &einvoice_xsd::Schema,
-    cases: &[Case],
-    observed: &BTreeMap<String, Expected>,
-    documented: &[format::Disagreement],
-) -> Result<bool, String> {
-    let differences = format::differences(schema, cases, observed)?;
-    let count = |kind: &str| differences.iter().filter(|d| d.kind == kind).count();
-    let verdicts = count("verdict");
-    let corpus = cases.iter().filter(|c| c.id.starts_with("corpus/")).count();
-    let corpus_differences = differences
-        .iter()
-        .filter(|d| d.case.starts_with("corpus/"))
-        .count();
-    println!(
-        "{title}: {} cases, {} same verdict ({} identical including errors), \
-         {verdicts} different verdicts, {} same verdict with different errors, {} refused as unsupported; \
-         corpus: {corpus} cases, {corpus_differences} differences",
-        cases.len(),
-        cases.len() - verdicts - count("unsupported"),
-        cases.len() - differences.len(),
-        count("errors"),
-        count("unsupported"),
-    );
-    for d in &differences {
-        let explanation = documented
-            .iter()
-            .find(|x| x.case == d.case && x.kind == d.kind)
-            .map_or("UNDOCUMENTED", |x| x.explanation.as_str());
-        println!(
-            "  {} [{}] ours {} {:?} / xmllint {} {:?}: {explanation}",
-            d.case, d.kind, d.ours.verdict, d.ours.errors, d.xmllint.verdict, d.xmllint.errors
-        );
-    }
-    let problems = format::unexplained(&differences, documented);
-    for problem in &problems {
-        println!("{problem}");
-    }
-    Ok(problems.is_empty() && corpus_differences == 0)
 }
 
 fn oracle_work_dir() -> PathBuf {
@@ -367,170 +436,4 @@ fn wrapper_schema(dir: &Path, full: &FullSet) -> Result<PathBuf, String> {
     let path = dir.join("ubl-2.1-entry-points.xsd");
     std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(path)
-}
-
-/// Runs xmllint once on all cases, each written to its own file.
-fn run_xmllint(
-    xmllint: &str,
-    cases: &[Case],
-    full: &FullSet,
-) -> Result<Vec<(String, Expected)>, String> {
-    let dir = oracle_work_dir();
-    let docs = dir.join("cases");
-    if docs.exists() {
-        std::fs::remove_dir_all(&docs).map_err(|e| format!("{}: {e}", docs.display()))?;
-    }
-    std::fs::create_dir_all(&docs).map_err(|e| format!("{}: {e}", docs.display()))?;
-    let schema = wrapper_schema(&dir, full)?;
-    let mut paths = Vec::new();
-    for (index, case) in cases.iter().enumerate() {
-        let path = docs.join(format!("case-{index:05}.xml"));
-        std::fs::write(&path, &case.text).map_err(|e| format!("{}: {e}", path.display()))?;
-        paths.push(path);
-    }
-    let output = Command::new(xmllint)
-        .arg("--noout")
-        .arg("--schema")
-        .arg(&schema)
-        .args(&paths)
-        .output()
-        .map_err(|e| format!("cannot run {xmllint}: {e}"))?;
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let log = dir.join("xmllint.log");
-    std::fs::write(&log, stderr.as_bytes()).map_err(|e| format!("{}: {e}", log.display()))?;
-    let by_path: BTreeMap<String, usize> = paths
-        .iter()
-        .enumerate()
-        .map(|(i, p)| (p.display().to_string(), i))
-        .collect();
-    let mut verdicts: Vec<Option<&str>> = vec![None; cases.len()];
-    // Raw messages: (case index, line, message). A message that quotes a value with
-    // line breaks continues on the following lines of the output.
-    let mut messages: Vec<(usize, u32, String)> = Vec::new();
-    let mut in_message = false;
-    let mut malformed = vec![false; cases.len()];
-    for line in stderr.lines() {
-        let Some((index, rest)) = split_path(line, &by_path) else {
-            if in_message && let Some(last) = messages.last_mut() {
-                last.2.push('\n');
-                last.2.push_str(line);
-            }
-            // Otherwise a context line after a parser error (source line, caret).
-            continue;
-        };
-        in_message = false;
-        if rest == " validates" {
-            verdicts[index] = Some("valid");
-        } else if rest == " fails to validate" {
-            verdicts[index] = Some("invalid");
-        } else if let Some(rest) = rest.strip_prefix(':') {
-            let (line_number, message) = rest
-                .split_once(": ")
-                .ok_or_else(|| format!("unrecognised xmllint output: {line}"))?;
-            let line_number: u32 = line_number
-                .parse()
-                .map_err(|_| format!("unrecognised xmllint output: {line}"))?;
-            if message.contains("parser error") || message.contains("namespace error") {
-                malformed[index] = true;
-            } else if let Some((_, message)) = message.split_once("Schemas validity error : ") {
-                messages.push((index, line_number, message.to_owned()));
-                in_message = true;
-            } else {
-                return Err(format!("unrecognised xmllint output: {line}"));
-            }
-        } else {
-            return Err(format!("unrecognised xmllint output: {line}"));
-        }
-    }
-    let mut errors: Vec<Vec<(u32, String)>> = vec![Vec::new(); cases.len()];
-    for (index, line_number, message) in &messages {
-        errors[*index].push((*line_number, classify(message)?));
-    }
-    let mut results = Vec::new();
-    for (index, case) in cases.iter().enumerate() {
-        let verdict = if malformed[index] {
-            "malformed"
-        } else {
-            verdicts[index].ok_or_else(|| format!("{}: no verdict from xmllint", case.id))?
-        };
-        if (verdict == "valid") != errors[index].is_empty() && verdict != "malformed" {
-            return Err(format!(
-                "{}: verdict {verdict} with errors {:?}",
-                case.id, errors[index]
-            ));
-        }
-        let mut list = std::mem::take(&mut errors[index]);
-        if verdict == "malformed" {
-            list.clear();
-        }
-        list.sort();
-        results.push((
-            case.id.clone(),
-            Expected {
-                verdict: verdict.to_owned(),
-                errors: list.into_iter().map(|(l, c)| format!("{l}:{c}")).collect(),
-            },
-        ));
-    }
-    Ok(results)
-}
-
-/// The case index of a line of xmllint output and the text after the file path.
-fn split_path<'a>(line: &'a str, by_path: &BTreeMap<String, usize>) -> Option<(usize, &'a str)> {
-    let end = line.find(".xml")? + ".xml".len();
-    let (path, rest) = line.split_at(end);
-    by_path.get(path).map(|&index| (index, rest))
-}
-
-/// The category of an xmllint schema validity error. Must stay in step with
-/// `einvoice_xsd::ErrorKind::category`.
-fn classify(message: &str) -> Result<String, String> {
-    let category = if message
-        .contains("No matching global declaration available for the validation root")
-    {
-        "root"
-    } else if message.contains("This element is not expected") {
-        "unexpected-element"
-    } else if message.contains("Missing child element(s)") {
-        "missing-element"
-    } else if message.contains("Character content other than whitespace is not allowed") {
-        "text-not-allowed"
-    } else if message.contains(
-        "Element content is not allowed, because the content type is a simple type definition",
-    ) || message
-        .contains("Element content is not allowed, because the type definition is simple")
-    {
-        "element-in-simple-content"
-    } else if message.contains("content is not allowed, because the content type is empty") {
-        "content-not-empty"
-    } else if message.contains(
-        "No matching global element declaration available, but demanded by the strict wildcard",
-    ) {
-        "strict-wildcard-element"
-    } else if message.contains(
-        "No matching global attribute declaration available, but demanded by the strict wildcard",
-    ) {
-        "strict-wildcard-attribute"
-    } else if message.contains("is not allowed.") && message.contains(", attribute '") {
-        "attribute-not-allowed"
-    } else if message.contains("is required but missing") {
-        "attribute-missing"
-    } else if message.contains("xsi:type")
-        || message.contains("attribute '{http://www.w3.org/2001/XMLSchema-instance}type'")
-    {
-        "xsi-type"
-    } else if message.contains("type definition is abstract") {
-        "abstract-type"
-    } else if message.contains("not 'nillable'") || message.contains("nillable") {
-        "not-nillable"
-    } else if message.contains("is not a valid value of") || message.contains("[facet '") {
-        if message.starts_with("Element '") && message.contains("', attribute '") {
-            "attribute-value"
-        } else {
-            "element-value"
-        }
-    } else {
-        return Err(format!("unclassified xmllint error: {message}"));
-    };
-    Ok(category.to_owned())
 }

@@ -1,0 +1,40 @@
+# Cases of the synthetic suite where this crate and xmllint (libxml2 2.9.14) disagree, each
+# with its cause. The test tests/oracle.rs fails on any difference not listed here and on any
+# listed one that no longer occurs. kind: verdict (validity, or for a schema case whether the
+# schema set loads, differs), errors (same verdict, different errors), unsupported (this crate
+# refuses the document, or the schema set, as unsupported). Spec references are to XML Schema
+# 1.0 Second Edition (Part 1: Structures, Part 2: Datatypes).
+case	kind	explanation
+mutation/element-fixed-decimal-shorter	verdict	1.5 and the fixed value 1.50 are the same xs:decimal. Part 1 cvc-elt.5.2.2.2.2 requires the actual value of an element with a fixed value constraint to be that value, compared in the value space (Part 2 2.2.1); libxml2 compares the element's text with the fixed value as strings, without whitespace processing (for attributes it compares values, as the attr-fixed-* cases show).
+mutation/element-fixed-decimal-padded	verdict	As element-fixed-decimal-shorter: +01.500 is the xs:decimal 1.5.
+mutation/element-fixed-decimal-spaces	verdict	As element-fixed-decimal-shorter: xs:decimal has whiteSpace collapse (Part 2 3.2.3), so the actual value of " 1.50 " is 1.5; libxml2 compares the text before whitespace processing.
+mutation/element-fixed-token-one-space	verdict	As element-fixed-decimal-shorter, for xs:token: the fixed value "a  b" and the text "a b" both collapse to the value "a b" (Part 2 3.3.2, whiteSpace collapse).
+mutation/element-fixed-token-padded	verdict	As element-fixed-token-one-space: " a  b " collapses to "a b".
+mutation/element-fixed-boolean-digit	verdict	As element-fixed-decimal-shorter, for xs:boolean: 1 and true are the same value (Part 2 3.2.2).
+mutation/element-fixed-boolean-padded	verdict	As element-fixed-boolean-digit: xs:boolean has whiteSpace collapse, so " true\n" is the value true.
+mutation/element-fixed-base64-spaced	verdict	As element-fixed-decimal-shorter, for xs:base64Binary: "QU JD" and "QUJD" encode the same octets (Part 2 3.2.16).
+mutation/element-fixed-uri-collapsed	verdict	As element-fixed-decimal-shorter, for xs:anyURI: it has whiteSpace collapse (Part 2 3.2.17), so "urn:a  b" is the value "urn:a b", the fixed value.
+mutation/element-fixed-simple-content-shorter	verdict	As element-fixed-decimal-shorter, for a complex type with simple content (an xs:decimal extension): 10 and the fixed value 10.0 are the same value.
+mutation/element-fixed-simple-content-xsi-type	verdict	As element-fixed-simple-content-shorter, with an xsi:type naming an extension of the declared type: 10 is the fixed value 10.0.
+mutation/global-fixed-padded	verdict	As element-fixed-token-padded, for a global element declaration: " SEALED " collapses to the fixed xs:token value SEALED.
+mutation/element-enumeration-too-long	errors	DDDD fails two facets of the derivation chain (maxLength 3 of the base type, then the enumeration of the type). This crate reports one error per invalid value, naming the first facet it fails; libxml2 reports one error per facet for the text of an element (for an attribute it stops at the first, as attr-fixed-length-type-too-long shows). Same verdict.
+mutation/element-fixed-child-element	errors	After a child element in simple content (reported by both), libxml2 also validates the value as the empty string and reports it as an invalid xs:decimal. This crate does not check the value of content already reported as invalid. Same verdict (as simple-content-child-and-value in the UBL suite).
+mutation/anonymous-simple-content-child	errors	As element-fixed-child-element, for an anonymous complex type with simple content.
+schema/attr-fixed-date	unsupported	A fixed value on an xs:date attribute. Comparing date and time values (instants with an optional timezone, Part 2 3.2.7 to 3.2.9) is not implemented, so a fixed value of these types is refused when the schema is loaded rather than compared wrongly. The CII-family schemas have no such constraint. A default value of these types is supported (attr-default-date).
+schema/attr-fixed-datetime	unsupported	As attr-fixed-date, for xs:dateTime.
+schema/element-fixed-date	unsupported	As attr-fixed-date, for an element declaration of type xs:date.
+schema/element-fixed-mixed-emptiable	unsupported	A fixed value on an element whose type has mixed content that may be empty: valid (Part 1 cos-valid-default 2.2.2), but this crate implements value constraints for simple content only (the CII-family schemas have no other).
+schema/element-default-any-type	unsupported	As element-fixed-mixed-emptiable: an element declared without a type is of type xs:anyType, whose content is mixed and may be empty.
+schema/anonymous-simple-type	unsupported	A local element declaration with an anonymous xs:simpleType: valid, but outside the supported subset (the CII-family schemas only have anonymous complex types).
+schema/anonymous-global-element	unsupported	A global element declaration with an anonymous complex type: valid, but outside the supported subset (the anonymous complex types of the CII-family schemas are all in local element declarations).
+schema/facet-huge	unsupported	A maxLength of 99999999999999999999999, a valid xs:nonNegativeInteger: this crate keeps lengths in a machine integer and refuses larger ones.
+schema/facet-on-anyuri	unsupported	maxLength applies to xs:anyURI (Part 2 4.1.5), but this crate implements the length facets for the types derived from xs:string only, which is what the CII-family schemas restrict.
+schema/facet-on-base64	unsupported	As facet-on-anyuri, for xs:base64Binary (whose length is counted in octets).
+schema/facet-length	unsupported	The length facet: valid, but outside the supported subset (minLength and maxLength only).
+schema/facet-fixed-attribute	unsupported	A maxLength facet with fixed="true": valid, but outside the supported subset (a fixed facet constrains further restrictions).
+schema/restriction-of-fixed-attribute	unsupported	A restriction redeclaring an attribute that has a fixed value in the base type. Part 1 derivation-ok-restriction 2.1.3 constrains the restricted attribute's value constraint; that check is not implemented, so such a restriction is refused. The CII-family schemas restrict no complex type.
+schema/facet-min-above-own-max	verdict	minLength 3 and maxLength 2 in one restriction: Part 2 4.3.2.4 (minLength-less-than-equal-to-maxLength) makes this an error. libxml2 compiles the schema (no value can then be valid).
+schema/facet-min-above-inherited-max	verdict	As facet-min-above-own-max, with maxLength 5 inherited from the base type and minLength 6 in the restriction: the facets of the restricted type include those of its base (Part 2 4.1.2 and 4.3.2.4). libxml2 compiles the schema.
+schema/facet-max-below-inherited-min	verdict	As facet-min-above-inherited-max, with minLength 2 inherited and maxLength 1 in the restriction.
+schema/facet-repeated	verdict	maxLength twice in one restriction: Part 2 4.1.3 (Single Facet Value) allows only pattern and enumeration to be repeated in one derivation step. libxml2 compiles the schema.
+schema/facet-repeated-min	verdict	As facet-repeated, for minLength.

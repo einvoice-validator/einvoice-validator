@@ -1,0 +1,252 @@
+# Written by `cargo run -p einvoice-xsd --example xmllint-oracle -- --write`: xmllint's
+# verdict and errors (line:category, sorted) for every case. Do not edit by hand.
+case	verdict	errors
+document/invoice-full	valid	
+document/invoice-min	valid	
+document/total	valid	
+mutation/attr-fixed-token-other	invalid	6:attribute-value
+mutation/attr-fixed-token-padded	valid	
+mutation/attr-fixed-token-case	invalid	6:attribute-value
+mutation/attr-fixed-absent	valid	
+mutation/attr-fixed-length-type-other	invalid	6:attribute-value
+mutation/attr-fixed-length-type-too-long	invalid	6:attribute-value
+mutation/attr-fixed-length-type-empty	invalid	6:attribute-value
+mutation/attr-default-other	valid	
+mutation/attr-default-absent	valid	
+mutation/attr-fixed-decimal-shorter	valid	
+mutation/attr-fixed-decimal-padded	valid	
+mutation/attr-fixed-decimal-other	invalid	30:attribute-value
+mutation/attr-fixed-decimal-invalid	invalid	30:attribute-value
+mutation/attr-fixed-decimal-spaces	valid	
+mutation/attr-fixed-integer-signed	valid	
+mutation/attr-fixed-integer-other	invalid	30:attribute-value
+mutation/attr-fixed-integer-decimal	invalid	30:attribute-value
+mutation/attr-fixed-boolean-digit	valid	
+mutation/attr-fixed-boolean-other	invalid	30:attribute-value
+mutation/attr-fixed-boolean-zero	invalid	30:attribute-value
+mutation/attr-fixed-boolean-padded	valid	
+mutation/attr-fixed-boolean-invalid	invalid	30:attribute-value
+mutation/attr-default-boolean-invalid	invalid	30:attribute-value
+mutation/attr-fixed-language-case	invalid	15:attribute-value
+mutation/attr-fixed-language-padded	valid	
+mutation/attr-fixed-language-other	invalid	15:attribute-value
+mutation/attr-fixed-string-trimmed	invalid	15:attribute-value
+mutation/attr-fixed-string-one-space	invalid	15:attribute-value
+mutation/attr-fixed-string-references	valid	
+mutation/attr-fixed-string-tab	invalid	15:attribute-value
+mutation/attr-fixed-normalized-tab	valid	
+mutation/attr-fixed-normalized-two-spaces	invalid	15:attribute-value
+mutation/attr-fixed-normalized-newline	valid	
+mutation/attr-fixed-token-collapsed	valid	
+mutation/attr-fixed-token-tabs	valid	
+mutation/attr-fixed-token-joined	invalid	15:attribute-value
+mutation/attr-fixed-ncname-other	invalid	15:attribute-value
+mutation/attr-fixed-ncname-padded	valid	
+mutation/attr-fixed-ncname-invalid	invalid	15:attribute-value
+mutation/attr-fixed-base64-spaced	valid	
+mutation/attr-fixed-base64-padded	valid	
+mutation/attr-fixed-base64-other	invalid	15:attribute-value
+mutation/attr-fixed-base64-invalid	invalid	15:attribute-value
+mutation/attr-fixed-uri-escaped	invalid	15:attribute-value
+mutation/attr-fixed-uri-collapsed	valid	
+mutation/attr-fixed-uri-case	invalid	15:attribute-value
+mutation/attr-default-length-short	invalid	15:attribute-value
+mutation/attr-default-length-long	invalid	15:attribute-value
+mutation/attr-default-length-spaces-count	valid	
+mutation/attr-default-length-spaces-long	invalid	15:attribute-value
+mutation/attr-default-length-multibyte	valid	
+mutation/attr-default-length-multibyte-long	invalid	15:attribute-value
+mutation/attr-length-normalized-tab	valid	
+mutation/attr-length-normalized-long	invalid	15:attribute-value
+mutation/attr-length-normalized-padded	invalid	15:attribute-value
+mutation/element-length-restricted-long	invalid	8:element-value
+mutation/element-length-restricted-collapsed	invalid	8:element-value
+mutation/element-length-restricted-padded	valid	
+mutation/element-length-restricted-one	valid	
+mutation/element-length-inherited-min	invalid	8:element-value
+mutation/element-length-inherited-min-spaces	invalid	8:element-value
+mutation/element-enumeration-other	valid	
+mutation/element-enumeration-too-long	invalid	7:element-value 7:element-value
+mutation/element-enumeration-not-listed	invalid	7:element-value
+mutation/element-string-length-short	invalid	9:element-value
+mutation/element-string-length-long	invalid	9:element-value
+mutation/element-string-length-spaces	valid	
+mutation/element-string-length-multibyte	valid	
+mutation/element-string-length-multibyte-long	invalid	9:element-value
+mutation/element-string-length-astral	valid	
+mutation/element-string-length-cdata	invalid	9:element-value
+mutation/element-string-length-comment	valid	
+mutation/element-normalized-length-tab	valid	
+mutation/element-normalized-length-spaces	invalid	10:element-value
+mutation/element-normalized-length-long	invalid	10:element-value
+mutation/element-zero-length-text	invalid	11:element-value
+mutation/element-zero-length-space	invalid	11:element-value
+mutation/element-zero-length-empty-tag	valid	
+mutation/element-content-length-long	invalid	6:element-value
+mutation/element-content-length-empty	invalid	6:element-value
+mutation/element-fixed-decimal-shorter	invalid	19:element-value
+mutation/element-fixed-decimal-padded	invalid	19:element-value
+mutation/element-fixed-decimal-spaces	invalid	19:element-value
+mutation/element-fixed-decimal-other	invalid	19:element-value
+mutation/element-fixed-decimal-invalid	invalid	19:element-value
+mutation/element-fixed-empty-tag	valid	
+mutation/element-fixed-empty-pair	valid	
+mutation/element-fixed-comment-only	valid	
+mutation/element-fixed-processing-instruction-only	valid	
+mutation/element-fixed-whitespace-only	invalid	19:element-value
+mutation/element-fixed-child-element	invalid	19:element-in-simple-content 19:element-value
+mutation/element-fixed-split-text	valid	
+mutation/element-fixed-entity	valid	
+mutation/element-default-integer-empty	valid	
+mutation/element-default-integer-whitespace	invalid	20:element-value
+mutation/element-default-integer-invalid	invalid	20:element-value
+mutation/element-default-integer-negative-zero	valid	
+mutation/element-fixed-token-one-space	invalid	21:element-value
+mutation/element-fixed-token-padded	invalid	21:element-value
+mutation/element-fixed-token-joined	invalid	21:element-value
+mutation/element-fixed-token-empty	valid	
+mutation/element-fixed-token-whitespace	invalid	21:element-value
+mutation/element-fixed-string-trimmed	invalid	22:element-value
+mutation/element-fixed-string-empty	valid	
+mutation/element-fixed-string-tab	invalid	22:element-value
+mutation/element-default-normalized-empty	valid	
+mutation/element-default-normalized-default-value	valid	
+mutation/element-fixed-boolean-digit	invalid	24:element-value
+mutation/element-fixed-boolean-padded	invalid	24:element-value
+mutation/element-fixed-boolean-other	invalid	24:element-value
+mutation/element-fixed-boolean-invalid	invalid	24:element-value
+mutation/element-fixed-base64-spaced	invalid	25:element-value
+mutation/element-fixed-base64-other	invalid	25:element-value
+mutation/element-fixed-uri-collapsed	invalid	26:element-value
+mutation/element-fixed-uri-escaped	invalid	26:element-value
+mutation/element-default-language-empty	valid	
+mutation/element-default-language-invalid	invalid	27:element-value
+mutation/element-default-length-type-empty	valid	
+mutation/element-default-length-type-long	invalid	28:element-value
+mutation/element-default-xsi-type-invalid-default	invalid	28:element-value
+mutation/element-default-xsi-type-valid-value	valid	
+mutation/element-default-xsi-type-valid-default	valid	
+mutation/element-default-date-empty	valid	
+mutation/element-default-date-whitespace	invalid	29:element-value
+mutation/element-fixed-simple-content-shorter	invalid	30:element-value
+mutation/element-fixed-simple-content-other	invalid	30:element-value
+mutation/element-fixed-simple-content-empty	valid	
+mutation/element-fixed-simple-content-missing-attribute	invalid	31:attribute-missing
+mutation/element-fixed-simple-content-two-errors	invalid	31:attribute-value 31:element-value
+mutation/element-default-simple-content-empty	valid	
+mutation/element-default-simple-content-xsi-type	valid	
+mutation/element-default-simple-content-xsi-type-empty	valid	
+mutation/element-fixed-simple-content-xsi-type	invalid	31:element-value
+mutation/anonymous-simple-content-missing-attribute	invalid	50:attribute-missing
+mutation/anonymous-simple-content-fixed-other	invalid	36:attribute-value
+mutation/anonymous-simple-content-default-invalid	invalid	36:attribute-value
+mutation/anonymous-simple-content-unknown-attribute	invalid	36:attribute-not-allowed
+mutation/anonymous-simple-content-child	invalid	36:element-in-simple-content 36:element-value
+mutation/anonymous-simple-content-invalid-value	invalid	36:element-value
+mutation/anonymous-element-only-fixed-other	invalid	37:attribute-value
+mutation/anonymous-element-only-fixed-absent	valid	
+mutation/anonymous-element-only-missing-child	invalid	38:unexpected-element
+mutation/anonymous-element-only-text	invalid	37:text-not-allowed
+mutation/anonymous-element-only-unexpected	invalid	41:unexpected-element
+mutation/anonymous-choice-other-branch	valid	
+mutation/anonymous-choice-both-branches	invalid	42:unexpected-element
+mutation/anonymous-choice-empty	invalid	41:missing-element
+mutation/anonymous-nested-fixed-other	invalid	42:attribute-value
+mutation/anonymous-nested-fixed-absent	valid	
+mutation/anonymous-nested-length	invalid	42:element-value
+mutation/anonymous-empty-fixed-other	invalid	45:attribute-value
+mutation/anonymous-empty-fixed-absent	valid	
+mutation/anonymous-empty-text	invalid	45:content-not-empty
+mutation/anonymous-empty-whitespace	invalid	45:content-not-empty
+mutation/anonymous-empty-child	invalid	45:content-not-empty
+mutation/anonymous-mixed-unexpected	invalid	46:unexpected-element
+mutation/anonymous-mixed-text-only	valid	
+mutation/anonymous-mixed-attribute	invalid	46:attribute-not-allowed
+mutation/anonymous-in-named-type-missing-format	invalid	13:attribute-missing
+mutation/anonymous-in-named-type-both	invalid	13:unexpected-element
+mutation/anonymous-in-named-type-wrong-namespace	invalid	13:unexpected-element
+mutation/type-attribute-default-length	invalid	35:attribute-value
+mutation/type-attribute-default-absent	valid	
+mutation/global-default-empty	valid	
+mutation/global-default-whitespace	invalid	52:element-value
+mutation/global-fixed-other	invalid	53:element-value
+mutation/global-fixed-empty	valid	
+mutation/global-fixed-padded	invalid	53:element-value
+mutation/global-fixed-case	invalid	53:element-value
+mutation/min-fixed-attribute-on-id	invalid	6:attribute-value
+mutation/min-settings-all-empty	valid	
+mutation/min-settings-all-whitespace	invalid	9:element-value 9:element-value 9:element-value 9:element-value 9:element-value 9:element-value 9:element-value 9:element-value 9:element-value
+mutation/total-with-value	valid	
+mutation/total-without-currency	invalid	4:attribute-missing
+mutation/total-whitespace	invalid	4:element-value
+mutation/total-fixed-attribute	valid	
+mutation/total-fixed-attribute-other	invalid	4:attribute-value
+schema/attr-fixed-not-a-value	fails	
+schema/attr-fixed-padded-value	loads	
+schema/attr-default-not-a-value	fails	
+schema/attr-default-and-fixed	fails	
+schema/attr-default-required	fails	
+schema/attr-default-optional	loads	
+schema/attr-fixed-required	loads	
+schema/attr-fixed-on-id	fails	
+schema/attr-default-on-id	fails	
+schema/attr-fixed-length-facet	fails	
+schema/attr-default-length-facet-whitespace	loads	
+schema/attr-default-enumeration	fails	
+schema/attr-fixed-date	loads	
+schema/attr-default-date	loads	
+schema/attr-fixed-datetime	loads	
+schema/element-fixed-not-a-value	fails	
+schema/element-default-not-a-value	fails	
+schema/element-default-padded-value	loads	
+schema/element-default-length-facet	fails	
+schema/element-default-and-fixed	fails	
+schema/element-fixed-on-id	fails	
+schema/element-fixed-element-only	fails	
+schema/element-default-empty-content	fails	
+schema/element-fixed-mixed-emptiable	loads	
+schema/element-default-any-type	loads	
+schema/element-fixed-date	loads	
+schema/element-default-date-not-a-value	fails	
+schema/element-fixed-simple-content-not-a-value	fails	
+schema/element-ref-with-fixed	fails	
+schema/element-ref-with-anonymous-type	fails	
+schema/anonymous-with-type-attribute	fails	
+schema/anonymous-named	fails	
+schema/anonymous-abstract	fails	
+schema/anonymous-block	fails	
+schema/anonymous-simple-type	loads	
+schema/anonymous-two-types	fails	
+schema/anonymous-global-element	loads	
+schema/anonymous-nondeterministic	fails	
+schema/facet-negative	fails	
+schema/facet-negative-zero	loads	
+schema/facet-plus-sign	loads	
+schema/facet-padded	loads	
+schema/facet-decimal-value	fails	
+schema/facet-huge	loads	
+schema/facet-on-decimal	fails	
+schema/facet-on-boolean	fails	
+schema/facet-on-anyuri	loads	
+schema/facet-on-base64	loads	
+schema/facet-length	loads	
+schema/facet-fixed-attribute	loads	
+schema/enumeration-above-base-length	fails	
+schema/enumeration-below-base-length	fails	
+schema/restriction-of-fixed-attribute	loads	
+schema/restriction-of-default-attribute	loads	
+schema/extension-repeats-fixed-attribute	fails	
+schema/facet-max-above-base	fails	
+schema/facet-max-equal-base	loads	
+schema/facet-max-below-base	loads	
+schema/facet-min-below-base	fails	
+schema/facet-min-equal-base	loads	
+schema/facet-min-above-base	loads	
+schema/facet-min-above-own-max	loads	
+schema/facet-min-above-inherited-max	loads	
+schema/facet-max-below-inherited-min	loads	
+schema/facet-repeated	loads	
+schema/facet-repeated-min	loads	
+schema/facet-string-family	loads	
+schema/facet-on-integer	fails	
+schema/facet-on-date	fails	

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic document written for the xmllint oracle of einvoice-xsd. -->
+<inv:Invoice xmlns:inv="urn:example:synthetic:invoice" xmlns:agg="urn:example:synthetic:aggregates"
+    xmlns:typ="urn:example:synthetic:types" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <inv:Header>
+    <agg:ID listID="ExampleList" listAgencyID="6" listVersionID="D22B" listURI="http://example.org/list">INV</agg:ID>
+    <agg:TypeCode>BB</agg:TypeCode>
+    <agg:ShortCode>XY</agg:ShortCode>
+    <agg:Label>abcd</agg:Label>
+    <agg:Line>a b</agg:Line>
+    <agg:Note></agg:Note>
+    <agg:Issued>
+      <typ:DateTimeString format="102">20240131</typ:DateTimeString>
+    </agg:Issued>
+    <agg:Text languageID="en" spaced=" a  b " line="a b" word="a b" name="n1" data="QUJD" uri="urn:a b" label="abc" short="xyz">First</agg:Text>
+    <agg:Text>Second</agg:Text>
+  </inv:Header>
+  <inv:Settings>
+    <agg:Version>1.50</agg:Version>
+    <agg:Count>3</agg:Count>
+    <agg:Profile>a  b</agg:Profile>
+    <agg:Padding> x </agg:Padding>
+    <agg:Mode>other</agg:Mode>
+    <agg:Strict>true</agg:Strict>
+    <agg:Blob>QUJD</agg:Blob>
+    <agg:Home>urn:a b</agg:Home>
+    <agg:Lang>fr</agg:Lang>
+    <agg:Code>XYZ</agg:Code>
+    <agg:Started>2024-02-01</agg:Started>
+    <agg:Amount currencyID="EUR" scale="2" rate="1.50" exact="true" rounded="1">10.0</agg:Amount>
+    <agg:Amount currencyID="EUR"/>
+    <agg:Rate currencyID="EUR">2.5</agg:Rate>
+    <agg:Short>XY</agg:Short>
+  </inv:Settings>
+  <inv:Line status="OK">
+    <agg:Quantity unitCode="C62" unitCodeListID="Rec20" precision="2">1.25</agg:Quantity>
+    <agg:Period kind="billing">
+      <agg:Start>
+        <typ:DateTime>2024-01-01T00:00:00</typ:DateTime>
+      </agg:Start>
+      <agg:End>
+        <agg:DateString format="102">0131</agg:DateString>
+      </agg:End>
+    </agg:Period>
+    <agg:Marker present="true"/>
+    <agg:Remark>Some <agg:Emphasis>mixed</agg:Emphasis> text</agg:Remark>
+    <agg:Any><anything at="all"/></agg:Any>
+  </inv:Line>
+  <inv:Line>
+    <agg:Quantity unitCode="H87">2</agg:Quantity>
+  </inv:Line>
+  <inv:Total currencyID="EUR">12.50</inv:Total>
+  <inv:Stamp>SEALED</inv:Stamp>
+</inv:Invoice>

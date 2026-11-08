@@ -1,0 +1,182 @@
+# Mutations of the synthetic documents in documents/: id, base document (file stem), then one
+# or more pairs of columns: text to find (must occur exactly once in the document being
+# edited, edits applied left to right) and its replacement. Escapes in the find and replacement columns:
+# \n newline, \t tab, \r carriage return, \\ backslash; \e alone is the empty string.
+id	base	find	replace	(find	replace)...
+attr-fixed-token-other	invoice-full	listID="ExampleList"	listID="OtherList"
+attr-fixed-token-padded	invoice-full	listID="ExampleList"	listID="  ExampleList "
+attr-fixed-token-case	invoice-full	listID="ExampleList"	listID="examplelist"
+attr-fixed-absent	invoice-full	listID="ExampleList" 	\e
+attr-fixed-length-type-other	invoice-full	listAgencyID="6"	listAgencyID="7"
+attr-fixed-length-type-too-long	invoice-full	listAgencyID="6"	listAgencyID="666"
+attr-fixed-length-type-empty	invoice-full	listAgencyID="6"	listAgencyID=""
+attr-default-other	invoice-full	listVersionID="D22B"	listVersionID="X"
+attr-default-absent	invoice-full	listVersionID="D22B" 	\e
+attr-fixed-decimal-shorter	invoice-full	rate="1.50"	rate="1.5"
+attr-fixed-decimal-padded	invoice-full	rate="1.50"	rate="+01.500"
+attr-fixed-decimal-other	invoice-full	rate="1.50"	rate="1.51"
+attr-fixed-decimal-invalid	invoice-full	rate="1.50"	rate="1,50"
+attr-fixed-decimal-spaces	invoice-full	rate="1.50"	rate=" 1.5 "
+attr-fixed-integer-signed	invoice-full	scale="2"	scale="+002"
+attr-fixed-integer-other	invoice-full	scale="2"	scale="-2"
+attr-fixed-integer-decimal	invoice-full	scale="2"	scale="2.0"
+attr-fixed-boolean-digit	invoice-full	exact="true"	exact="1"
+attr-fixed-boolean-other	invoice-full	exact="true"	exact="false"
+attr-fixed-boolean-zero	invoice-full	exact="true"	exact="0"
+attr-fixed-boolean-padded	invoice-full	exact="true"	exact=" true "
+attr-fixed-boolean-invalid	invoice-full	exact="true"	exact="TRUE"
+attr-default-boolean-invalid	invoice-full	rounded="1"	rounded="yes"
+attr-fixed-language-case	invoice-full	languageID="en"	languageID="EN"
+attr-fixed-language-padded	invoice-full	languageID="en"	languageID=" en "
+attr-fixed-language-other	invoice-full	languageID="en"	languageID="en-GB"
+attr-fixed-string-trimmed	invoice-full	spaced=" a  b "	spaced="a  b"
+attr-fixed-string-one-space	invoice-full	spaced=" a  b "	spaced=" a b "
+attr-fixed-string-references	invoice-full	spaced=" a  b "	spaced="&#32;a&#32;&#32;b&#32;"
+attr-fixed-string-tab	invoice-full	spaced=" a  b "	spaced=" a&#9; b "
+attr-fixed-normalized-tab	invoice-full	line="a b"	line="a&#9;b"
+attr-fixed-normalized-two-spaces	invoice-full	line="a b"	line="a  b"
+attr-fixed-normalized-newline	invoice-full	line="a b"	line="a&#10;b"
+attr-fixed-token-collapsed	invoice-full	word="a b"	word="  a    b  "
+attr-fixed-token-tabs	invoice-full	word="a b"	word="a&#9;&#9;b"
+attr-fixed-token-joined	invoice-full	word="a b"	word="ab"
+attr-fixed-ncname-other	invoice-full	name="n1"	name="n2"
+attr-fixed-ncname-padded	invoice-full	name="n1"	name=" n1 "
+attr-fixed-ncname-invalid	invoice-full	name="n1"	name="1n"
+attr-fixed-base64-spaced	invoice-full	data="QUJD"	data="Q U J D"
+attr-fixed-base64-padded	invoice-full	data="QUJD"	data=" QUJD "
+attr-fixed-base64-other	invoice-full	data="QUJD"	data="QUJE"
+attr-fixed-base64-invalid	invoice-full	data="QUJD"	data="QUJ"
+attr-fixed-uri-escaped	invoice-full	uri="urn:a b"	uri="urn:a%20b"
+attr-fixed-uri-collapsed	invoice-full	uri="urn:a b"	uri=" urn:a   b "
+attr-fixed-uri-case	invoice-full	uri="urn:a b"	uri="URN:a b"
+attr-default-length-short	invoice-full	label="abc"	label="a"
+attr-default-length-long	invoice-full	label="abc"	label="abcde"
+attr-default-length-spaces-count	invoice-full	label="abc"	label=" ab "
+attr-default-length-spaces-long	invoice-full	label="abc"	label="  ab  "
+attr-default-length-multibyte	invoice-full	label="abc"	label="éàüö"
+attr-default-length-multibyte-long	invoice-full	label="abc"	label="éàüöï"
+attr-length-normalized-tab	invoice-full	short="xyz"	short="x&#9;z"
+attr-length-normalized-long	invoice-full	short="xyz"	short="wxyz"
+attr-length-normalized-padded	invoice-full	short="xyz"	short=" xy "
+element-length-restricted-long	invoice-full	<agg:ShortCode>XY</agg:ShortCode>	<agg:ShortCode>XYZ</agg:ShortCode>
+element-length-restricted-collapsed	invoice-full	<agg:ShortCode>XY</agg:ShortCode>	<agg:ShortCode>\n  X Y \n</agg:ShortCode>
+element-length-restricted-padded	invoice-full	<agg:ShortCode>XY</agg:ShortCode>	<agg:ShortCode>  XY  </agg:ShortCode>
+element-length-restricted-one	invoice-full	<agg:ShortCode>XY</agg:ShortCode>	<agg:ShortCode>X</agg:ShortCode>
+element-length-inherited-min	invoice-full	<agg:ShortCode>XY</agg:ShortCode>	<agg:ShortCode></agg:ShortCode>
+element-length-inherited-min-spaces	invoice-full	<agg:ShortCode>XY</agg:ShortCode>	<agg:ShortCode>   </agg:ShortCode>
+element-enumeration-other	invoice-full	<agg:TypeCode>BB</agg:TypeCode>	<agg:TypeCode>CCC</agg:TypeCode>
+element-enumeration-too-long	invoice-full	<agg:TypeCode>BB</agg:TypeCode>	<agg:TypeCode>DDDD</agg:TypeCode>
+element-enumeration-not-listed	invoice-full	<agg:TypeCode>BB</agg:TypeCode>	<agg:TypeCode>D</agg:TypeCode>
+element-string-length-short	invoice-full	<agg:Label>abcd</agg:Label>	<agg:Label>a</agg:Label>
+element-string-length-long	invoice-full	<agg:Label>abcd</agg:Label>	<agg:Label>abcde</agg:Label>
+element-string-length-spaces	invoice-full	<agg:Label>abcd</agg:Label>	<agg:Label> ab </agg:Label>
+element-string-length-multibyte	invoice-full	<agg:Label>abcd</agg:Label>	<agg:Label>é€ü</agg:Label>
+element-string-length-multibyte-long	invoice-full	<agg:Label>abcd</agg:Label>	<agg:Label>é€üöä</agg:Label>
+element-string-length-astral	invoice-full	<agg:Label>abcd</agg:Label>	<agg:Label>😀😀😀😀</agg:Label>
+element-string-length-cdata	invoice-full	<agg:Label>abcd</agg:Label>	<agg:Label>ab<![CDATA[cd]]>e</agg:Label>
+element-string-length-comment	invoice-full	<agg:Label>abcd</agg:Label>	<agg:Label>ab<!-- c -->cd</agg:Label>
+element-normalized-length-tab	invoice-full	<agg:Line>a b</agg:Line>	<agg:Line>a\tb</agg:Line>
+element-normalized-length-spaces	invoice-full	<agg:Line>a b</agg:Line>	<agg:Line>a   b</agg:Line>
+element-normalized-length-long	invoice-full	<agg:Line>a b</agg:Line>	<agg:Line>abcd</agg:Line>
+element-zero-length-text	invoice-full	<agg:Note></agg:Note>	<agg:Note>x</agg:Note>
+element-zero-length-space	invoice-full	<agg:Note></agg:Note>	<agg:Note> </agg:Note>
+element-zero-length-empty-tag	invoice-full	<agg:Note></agg:Note>	<agg:Note/>
+element-content-length-long	invoice-full	>INV</agg:ID>	>INVO</agg:ID>
+element-content-length-empty	invoice-full	>INV</agg:ID>	></agg:ID>
+element-fixed-decimal-shorter	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version>1.5</agg:Version>
+element-fixed-decimal-padded	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version>+01.500</agg:Version>
+element-fixed-decimal-spaces	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version> 1.50 </agg:Version>
+element-fixed-decimal-other	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version>2</agg:Version>
+element-fixed-decimal-invalid	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version>x</agg:Version>
+element-fixed-empty-tag	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version/>
+element-fixed-empty-pair	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version></agg:Version>
+element-fixed-comment-only	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version><!-- none --></agg:Version>
+element-fixed-processing-instruction-only	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version><?pi x?></agg:Version>
+element-fixed-whitespace-only	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version> </agg:Version>
+element-fixed-child-element	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version><agg:X/></agg:Version>
+element-fixed-split-text	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version>1.<!-- c -->50</agg:Version>
+element-fixed-entity	invoice-full	<agg:Version>1.50</agg:Version>	<agg:Version>1&#46;50</agg:Version>
+element-default-integer-empty	invoice-full	<agg:Count>3</agg:Count>	<agg:Count/>
+element-default-integer-whitespace	invoice-full	<agg:Count>3</agg:Count>	<agg:Count>\n</agg:Count>
+element-default-integer-invalid	invoice-full	<agg:Count>3</agg:Count>	<agg:Count>three</agg:Count>
+element-default-integer-negative-zero	invoice-full	<agg:Count>3</agg:Count>	<agg:Count>-0</agg:Count>
+element-fixed-token-one-space	invoice-full	<agg:Profile>a  b</agg:Profile>	<agg:Profile>a b</agg:Profile>
+element-fixed-token-padded	invoice-full	<agg:Profile>a  b</agg:Profile>	<agg:Profile> a  b </agg:Profile>
+element-fixed-token-joined	invoice-full	<agg:Profile>a  b</agg:Profile>	<agg:Profile>ab</agg:Profile>
+element-fixed-token-empty	invoice-full	<agg:Profile>a  b</agg:Profile>	<agg:Profile/>
+element-fixed-token-whitespace	invoice-full	<agg:Profile>a  b</agg:Profile>	<agg:Profile> </agg:Profile>
+element-fixed-string-trimmed	invoice-full	<agg:Padding> x </agg:Padding>	<agg:Padding>x</agg:Padding>
+element-fixed-string-empty	invoice-full	<agg:Padding> x </agg:Padding>	<agg:Padding/>
+element-fixed-string-tab	invoice-full	<agg:Padding> x </agg:Padding>	<agg:Padding>\tx </agg:Padding>
+element-default-normalized-empty	invoice-full	<agg:Mode>other</agg:Mode>	<agg:Mode/>
+element-default-normalized-default-value	invoice-full	<agg:Mode>other</agg:Mode>	<agg:Mode>a\tb</agg:Mode>
+element-fixed-boolean-digit	invoice-full	<agg:Strict>true</agg:Strict>	<agg:Strict>1</agg:Strict>
+element-fixed-boolean-padded	invoice-full	<agg:Strict>true</agg:Strict>	<agg:Strict> true\n</agg:Strict>
+element-fixed-boolean-other	invoice-full	<agg:Strict>true</agg:Strict>	<agg:Strict>false</agg:Strict>
+element-fixed-boolean-invalid	invoice-full	<agg:Strict>true</agg:Strict>	<agg:Strict>yes</agg:Strict>
+element-fixed-base64-spaced	invoice-full	<agg:Blob>QUJD</agg:Blob>	<agg:Blob>QU JD</agg:Blob>
+element-fixed-base64-other	invoice-full	<agg:Blob>QUJD</agg:Blob>	<agg:Blob>QUJE</agg:Blob>
+element-fixed-uri-collapsed	invoice-full	<agg:Home>urn:a b</agg:Home>	<agg:Home>urn:a  b</agg:Home>
+element-fixed-uri-escaped	invoice-full	<agg:Home>urn:a b</agg:Home>	<agg:Home>urn:a%20b</agg:Home>
+element-default-language-empty	invoice-full	<agg:Lang>fr</agg:Lang>	<agg:Lang/>
+element-default-language-invalid	invoice-full	<agg:Lang>fr</agg:Lang>	<agg:Lang>e1</agg:Lang>
+element-default-length-type-empty	invoice-full	<agg:Code>XYZ</agg:Code>	<agg:Code/>
+element-default-length-type-long	invoice-full	<agg:Code>XYZ</agg:Code>	<agg:Code>WXYZ</agg:Code>
+element-default-xsi-type-invalid-default	invoice-full	<agg:Code>XYZ</agg:Code>	<agg:Code xsi:type="typ:ShortCodeContentType"/>
+element-default-xsi-type-valid-value	invoice-full	<agg:Code>XYZ</agg:Code>	<agg:Code xsi:type="typ:ShortCodeContentType">XY</agg:Code>
+element-default-xsi-type-valid-default	invoice-full	<agg:Short>XY</agg:Short>	<agg:Short xsi:type="typ:ShortCodeContentType"/>
+element-default-date-empty	invoice-full	<agg:Started>2024-02-01</agg:Started>	<agg:Started/>
+element-default-date-whitespace	invoice-full	<agg:Started>2024-02-01</agg:Started>	<agg:Started> </agg:Started>
+element-fixed-simple-content-shorter	invoice-full	rounded="1">10.0</agg:Amount>	rounded="1">10</agg:Amount>
+element-fixed-simple-content-other	invoice-full	rounded="1">10.0</agg:Amount>	rounded="1">11</agg:Amount>
+element-fixed-simple-content-empty	invoice-full	rounded="1">10.0</agg:Amount>	rounded="1"/>
+element-fixed-simple-content-missing-attribute	invoice-full	<agg:Amount currencyID="EUR"/>	<agg:Amount/>
+element-fixed-simple-content-two-errors	invoice-full	<agg:Amount currencyID="EUR"/>	<agg:Amount currencyID="EUR" scale="3">9</agg:Amount>
+element-default-simple-content-empty	invoice-full	<agg:Rate currencyID="EUR">2.5</agg:Rate>	<agg:Rate currencyID="EUR"/>
+element-default-simple-content-xsi-type	invoice-full	<agg:Rate currencyID="EUR">2.5</agg:Rate>	<agg:Rate currencyID="EUR" xsi:type="typ:ExtendedAmountType" note="n">2.5</agg:Rate>
+element-default-simple-content-xsi-type-empty	invoice-full	<agg:Rate currencyID="EUR">2.5</agg:Rate>	<agg:Rate currencyID="EUR" xsi:type="typ:ExtendedAmountType"/>
+element-fixed-simple-content-xsi-type	invoice-full	<agg:Amount currencyID="EUR"/>	<agg:Amount currencyID="EUR" xsi:type="typ:ExtendedAmountType">10</agg:Amount>
+anonymous-simple-content-missing-attribute	invoice-full	<agg:Quantity unitCode="H87">2</agg:Quantity>	<agg:Quantity>2</agg:Quantity>
+anonymous-simple-content-fixed-other	invoice-full	unitCodeListID="Rec20"	unitCodeListID="Rec21"
+anonymous-simple-content-default-invalid	invoice-full	precision="2"	precision="x"
+anonymous-simple-content-unknown-attribute	invoice-full	precision="2"	precision="2" other="x"
+anonymous-simple-content-child	invoice-full	>1.25</agg:Quantity>	><agg:X/></agg:Quantity>
+anonymous-simple-content-invalid-value	invoice-full	>1.25</agg:Quantity>	>1.2.5</agg:Quantity>
+anonymous-element-only-fixed-other	invoice-full	kind="billing"	kind="other"
+anonymous-element-only-fixed-absent	invoice-full	 kind="billing"	\e
+anonymous-element-only-missing-child	invoice-full	      <agg:Start>\n        <typ:DateTime>2024-01-01T00:00:00</typ:DateTime>\n      </agg:Start>\n	\e
+anonymous-element-only-text	invoice-full	<agg:Period kind="billing">	<agg:Period kind="billing">text
+anonymous-element-only-unexpected	invoice-full	      <agg:End>	      <agg:Unexpected/>\n      <agg:End>
+anonymous-choice-other-branch	invoice-full	<agg:DateString format="102">0131</agg:DateString>	<agg:Date>2024-01-31</agg:Date>
+anonymous-choice-both-branches	invoice-full	<agg:DateString format="102">0131</agg:DateString>	<agg:DateString format="102">0131</agg:DateString><agg:Date>2024-01-31</agg:Date>
+anonymous-choice-empty	invoice-full	<agg:DateString format="102">0131</agg:DateString>	\e
+anonymous-nested-fixed-other	invoice-full	<agg:DateString format="102">	<agg:DateString format="103">
+anonymous-nested-fixed-absent	invoice-full	<agg:DateString format="102">	<agg:DateString>
+anonymous-nested-length	invoice-full	>0131</agg:DateString>	>012345</agg:DateString>
+anonymous-empty-fixed-other	invoice-full	<agg:Marker present="true"/>	<agg:Marker present="0"/>
+anonymous-empty-fixed-absent	invoice-full	<agg:Marker present="true"/>	<agg:Marker/>
+anonymous-empty-text	invoice-full	<agg:Marker present="true"/>	<agg:Marker present="true">x</agg:Marker>
+anonymous-empty-whitespace	invoice-full	<agg:Marker present="true"/>	<agg:Marker present="true"> </agg:Marker>
+anonymous-empty-child	invoice-full	<agg:Marker present="true"/>	<agg:Marker present="true"><agg:X/></agg:Marker>
+anonymous-mixed-unexpected	invoice-full	 text</agg:Remark>	 text<agg:Other/></agg:Remark>
+anonymous-mixed-text-only	invoice-full	<agg:Remark>Some <agg:Emphasis>mixed</agg:Emphasis> text</agg:Remark>	<agg:Remark>only text</agg:Remark>
+anonymous-mixed-attribute	invoice-full	<agg:Remark>	<agg:Remark lang="en">
+anonymous-in-named-type-missing-format	invoice-full	<typ:DateTimeString format="102">	<typ:DateTimeString>
+anonymous-in-named-type-both	invoice-full	<typ:DateTimeString format="102">20240131</typ:DateTimeString>	<typ:DateTimeString format="102">20240131</typ:DateTimeString><typ:DateTime>2024-01-31T00:00:00</typ:DateTime>
+anonymous-in-named-type-wrong-namespace	invoice-full	<typ:DateTimeString format="102">20240131</typ:DateTimeString>	<agg:DateTimeString format="102">20240131</agg:DateTimeString>
+type-attribute-default-length	invoice-full	<inv:Line status="OK">	<inv:Line status="TOO">
+type-attribute-default-absent	invoice-full	<inv:Line status="OK">	<inv:Line>
+global-default-empty	invoice-full	<inv:Total currencyID="EUR">12.50</inv:Total>	<inv:Total currencyID="EUR"/>
+global-default-whitespace	invoice-full	<inv:Total currencyID="EUR">12.50</inv:Total>	<inv:Total currencyID="EUR"> </inv:Total>
+global-fixed-other	invoice-full	<inv:Stamp>SEALED</inv:Stamp>	<inv:Stamp>OPEN</inv:Stamp>
+global-fixed-empty	invoice-full	<inv:Stamp>SEALED</inv:Stamp>	<inv:Stamp/>
+global-fixed-padded	invoice-full	<inv:Stamp>SEALED</inv:Stamp>	<inv:Stamp> SEALED </inv:Stamp>
+global-fixed-case	invoice-full	<inv:Stamp>SEALED</inv:Stamp>	<inv:Stamp>sealed</inv:Stamp>
+min-fixed-attribute-on-id	invoice-min	<agg:ID>1</agg:ID>	<agg:ID listID="Other">1</agg:ID>
+min-settings-all-empty	invoice-min	  <Line>	  <Settings><agg:Version/><agg:Count/><agg:Profile/><agg:Padding/><agg:Mode/><agg:Strict/><agg:Blob/><agg:Home/><agg:Lang/><agg:Code/><agg:Started/><agg:Amount currencyID="EUR"/><agg:Rate currencyID="EUR"/><agg:Short/></Settings>\n  <Line>
+min-settings-all-whitespace	invoice-min	  <Line>	  <Settings><agg:Version> </agg:Version><agg:Count> </agg:Count><agg:Profile> </agg:Profile><agg:Padding> </agg:Padding><agg:Mode> </agg:Mode><agg:Strict> </agg:Strict><agg:Blob> </agg:Blob><agg:Home> </agg:Home><agg:Lang> </agg:Lang><agg:Code> </agg:Code></Settings>\n  <Line>
+total-with-value	total	currencyID="EUR"/>	currencyID="EUR">5</Total>
+total-without-currency	total	 currencyID="EUR"/>	/>
+total-whitespace	total	currencyID="EUR"/>	currencyID="EUR">\n</Total>
+total-fixed-attribute	total	currencyID="EUR"/>	currencyID="EUR" rate="1.5000"/>
+total-fixed-attribute-other	total	currencyID="EUR"/>	currencyID="EUR" rate="2"/>

@@ -3,9 +3,10 @@
 //!
 //! This is not a general XML Schema processor: it implements exactly the constructs
 //! that the schemas reachable from `UBL-Invoice-2.1.xsd` and `UBL-CreditNote-2.1.xsd`
-//! use (see the inventory below) and refuses any other construct when a schema set is
-//! loaded ([`LoadErrorKind::Unsupported`]), so that a schema it cannot handle is never
-//! half-checked.
+//! use (see the inventory below), and those that the schemas of the Cross Industry
+//! Invoice family add (see [CII-family schemas](#cii-family-schemas)), and refuses any
+//! other construct when a schema set is loaded ([`LoadErrorKind::Unsupported`]), so
+//! that a schema it cannot handle is never half-checked.
 //!
 //! ```
 //! let schema = einvoice_xsd::Schema::ubl_2_1()?;
@@ -69,12 +70,50 @@
 //!   `xsi:nil` refused since no declaration is nillable, `xsi:schemaLocation` and
 //!   `xsi:noNamespaceSchemaLocation` ignored as hints);
 //! * simple values: whitespace processing and the lexical space of every built-in
-//!   type the schemas use, the `enumeration` facet, and uniqueness of `xs:ID` values.
+//!   type the schemas use, the `enumeration`, `minLength` and `maxLength` facets
+//!   (lengths in characters, after whitespace processing, for the types derived from
+//!   `xs:string`), and uniqueness of `xs:ID` values;
+//! * value constraints (`default` and `fixed`) of element and attribute
+//!   declarations: a fixed value is compared with the value of the element or
+//!   attribute in the value space of its type (cvc-elt.5.2.2, cvc-attribute.4), so
+//!   that `1.5` matches a fixed `1.50` of an `xs:decimal` and `1` a fixed `true` of
+//!   an `xs:boolean`; an element with no character or element children takes its
+//!   declaration's default or fixed value, which is then valid (cvc-elt.5.1; with
+//!   `xsi:type`, it must be valid for the actual type). This crate reports validity
+//!   only and does not build the post-schema-validation infoset, so defaults are not
+//!   added to the document: an absent attribute with a default, or an empty element,
+//!   is simply valid.
 //!
 //! The decimal and integer types have no digit limit, dates follow the XML Schema
 //! 1.0 rules (no year zero, at least four year digits, timezones up to ±14:00,
 //! `24:00:00` as end of day), `anyURI` is checked as XML Schema 1.0 defines it
 //! (escaping per `XLink` 1.0 section 5.4, then RFC 2396 as amended by RFC 2732).
+//!
+//! # CII-family schemas
+//!
+//! [`Schema::load`] also loads the schema sets of the UN/CEFACT Cross Industry
+//! Invoice: CII D16B (the schemas of the CEN EN 16931 CII validation artefacts,
+//! with and without the coupled code lists), CII D22B (with and without code lists),
+//! and the five Factur-X (`ZUGFeRD`) profiles. They are not shipped with this crate.
+//! Over the UBL subset, they need:
+//!
+//! * `fixed` and `default` on `xs:attribute` (D16B, D22B, Factur-X EXTENDED);
+//! * anonymous `xs:complexType` in local element declarations (every set has some:
+//!   the `DateTimeString`, `DateString` or `IndicatorString` elements of the data
+//!   types, with simple content); any content the subset supports is accepted
+//!   there (simple, element-only, mixed or empty);
+//! * `minLength` and `maxLength` on restrictions of `xs:token` (D16B and D22B);
+//! * `enumeration` on restrictions of `xs:token`, imports of the code-list schemas
+//!   and finite `maxOccurs` above one (already in the subset).
+//!
+//! `fixed` and `default` on `xs:element` are supported the same way, although none
+//! of these schemas use them. What stays outside the subset, refused when the schema
+//! is loaded: anonymous simple types, anonymous complex types in global element
+//! declarations, a fixed value of a date or time type (comparing such values is not
+//! implemented; a default one is supported), a value constraint on an element with
+//! mixed content, the length facets on `xs:anyURI` and `xs:base64Binary`, the
+//! `length` facet, facets with `fixed="true"`, and a restriction redeclaring an
+//! attribute that has a fixed value in its base type.
 //!
 //! # Comparison with xmllint
 //!
@@ -86,6 +125,15 @@
 //! 1.0 and this crate does not, and the cases with `XAdES` content, which this crate
 //! validates laxly with the shipped schemas. The `xmllint-oracle` example also runs
 //! this crate with the complete set, where the second kind does not occur.
+//!
+//! A second suite does the same on a synthetic schema set in the style of the CII
+//! schemas (`tests/oracle/synthetic/`), covering value constraints, length facets
+//! and anonymous complex types, with mutations of its documents and of the schemas
+//! themselves (whether the edited set loads). Its listed differences are cases where
+//! libxml2 departs from XML Schema 1.0 (it compares the text of an element with a
+//! fixed value as a string, before whitespace processing, rather than its value;
+//! it accepts length facets that contradict each other), cases with more errors
+//! reported by libxml2 for the same verdict, and constructs refused as unsupported.
 //!
 //! # Licences
 //!

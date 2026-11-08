@@ -2,10 +2,17 @@
 //! `xmllint-oracle` example (which writes `expected.tsv`) and `tests/oracle.rs`
 //! (which checks this crate against it).
 //!
-//! Cases, in this order:
+//! The UBL suite (`tests/oracle/`, against the UBL 2.1 schemas), in this order:
 //! * `corpus/<case>`: every case of `corpus/cen-en16931-ubl-1.3.17/cases.tsv`;
 //! * `document/<stem>`: every file of `tests/oracle/documents/`;
 //! * `mutation/<id>`: every line of `tests/oracle/mutations.tsv`, applied to a document.
+//!
+//! The synthetic suite (`tests/oracle/synthetic/`, against the synthetic schemas of
+//! `schemas/` there), in this order:
+//! * `document/<stem>` and `mutation/<id>`, as above, from its `documents/` and
+//!   `mutations.tsv`;
+//! * `schema/<id>`: every line of its `schema-mutations.tsv`, applied to a schema
+//!   document of the set; the verdict is whether the edited set loads.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -111,7 +118,7 @@ pub(crate) fn apply(base: &str, edits: &[(String, String)]) -> Result<String, St
     Ok(text)
 }
 
-/// Every case, in a fixed order.
+/// Every case of the UBL suite, in a fixed order.
 pub(crate) fn cases() -> Result<Vec<Case>, String> {
     let root = workspace_root();
     let mut cases = Vec::new();
@@ -127,15 +134,125 @@ pub(crate) fn cases() -> Result<Vec<Case>, String> {
             text: read(&root.join(input))?,
         });
     }
+    documents_and_mutations(&oracle_dir(), &mut cases)?;
+    check_unique(cases.iter().map(|c| c.id.as_str()))?;
+    Ok(cases)
+}
 
-    let mut documents = BTreeMap::new();
-    let dir = oracle_dir().join("documents");
-    let mut entries: Vec<PathBuf> = std::fs::read_dir(&dir)
+/// The directory of the synthetic suite.
+pub(crate) fn synthetic_dir() -> PathBuf {
+    oracle_dir().join("synthetic")
+}
+
+/// The entry point of the synthetic schema set, relative to its `schemas/`.
+pub(crate) const SYNTHETIC_ENTRY_POINT: &str = "invoice.xsd";
+
+/// The documents of the synthetic schema set: path relative to `schemas/`, text;
+/// sorted by path.
+pub(crate) fn synthetic_schema_files() -> Result<Vec<(String, String)>, String> {
+    let dir = synthetic_dir().join("schemas");
+    let mut files = Vec::new();
+    for path in sorted_entries(&dir)? {
+        let name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| format!("bad file name {}", path.display()))?
+            .to_owned();
+        files.push((name, read(&path)?));
+    }
+    Ok(files)
+}
+
+/// Loads a schema set given as (path, text) pairs from its entry point.
+pub(crate) fn load_set(
+    files: &[(String, String)],
+    entry_point: &str,
+) -> Result<einvoice_xsd::Schema, einvoice_xsd::LoadError> {
+    let borrowed: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(p, t)| (p.as_str(), t.as_str()))
+        .collect();
+    einvoice_xsd::Schema::load(&borrowed, &[entry_point])
+}
+
+/// A synthetic schema set edited by one line of `schema-mutations.tsv`.
+#[derive(Debug, Clone)]
+pub(crate) struct SchemaCase {
+    pub(crate) id: String,
+    /// Every document of the set, edited.
+    pub(crate) files: Vec<(String, String)>,
+}
+
+/// The document cases of the synthetic suite (documents, then mutations) and its
+/// schema cases, each in a fixed order.
+pub(crate) fn synthetic_cases() -> Result<(Vec<Case>, Vec<SchemaCase>), String> {
+    let dir = synthetic_dir();
+    let mut cases = Vec::new();
+    documents_and_mutations(&dir, &mut cases)?;
+    let files = synthetic_schema_files()?;
+    let mut schema_cases = Vec::new();
+    for fields in rows(&read(&dir.join("schema-mutations.tsv"))?) {
+        let [id, file, edits @ ..] = fields.as_slice() else {
+            return Err(format!("bad schema mutation line {fields:?}"));
+        };
+        let edits = edit_pairs(id, edits)?;
+        let mut edited = files.clone();
+        let (_, text) = edited
+            .iter_mut()
+            .find(|(path, _)| path == file)
+            .ok_or_else(|| format!("schema mutation {id}: unknown schema document {file}"))?;
+        *text = apply(text, &edits).map_err(|e| format!("schema mutation {id}: {e}"))?;
+        schema_cases.push(SchemaCase {
+            id: format!("schema/{id}"),
+            files: edited,
+        });
+    }
+    check_unique(
+        cases
+            .iter()
+            .map(|c| c.id.as_str())
+            .chain(schema_cases.iter().map(|c| c.id.as_str())),
+    )?;
+    Ok((cases, schema_cases))
+}
+
+/// The files of a directory, sorted.
+fn sorted_entries(dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
         .map_err(|e| format!("{}: {e}", dir.display()))?
         .map(|entry| entry.map(|e| e.path()).map_err(|e| e.to_string()))
         .collect::<Result<_, _>>()?;
     entries.sort();
-    for path in entries {
+    Ok(entries)
+}
+
+/// The find and replace columns of a mutation, in pairs, unescaped.
+fn edit_pairs(id: &str, edits: &[&str]) -> Result<Vec<(String, String)>, String> {
+    if edits.is_empty() || !edits.len().is_multiple_of(2) {
+        return Err(format!(
+            "mutation {id}: find and replace columns must come in pairs"
+        ));
+    }
+    edits
+        .chunks(2)
+        .map(|pair| Ok((unescape(pair[0])?, unescape(pair[1])?)))
+        .collect()
+}
+
+fn check_unique<'a>(ids: impl Iterator<Item = &'a str>) -> Result<(), String> {
+    let mut seen = std::collections::BTreeSet::new();
+    for id in ids {
+        if !seen.insert(id) {
+            return Err(format!("duplicate case id {id}"));
+        }
+    }
+    Ok(())
+}
+
+/// Appends the cases of `dir/documents/` (sorted) and of `dir/mutations.tsv`.
+fn documents_and_mutations(dir: &Path, cases: &mut Vec<Case>) -> Result<(), String> {
+    let mut documents = BTreeMap::new();
+    for path in sorted_entries(&dir.join("documents"))? {
         let stem = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -149,20 +266,12 @@ pub(crate) fn cases() -> Result<Vec<Case>, String> {
         documents.insert(stem, text);
     }
 
-    let mutations = read(&oracle_dir().join("mutations.tsv"))?;
+    let mutations = read(&dir.join("mutations.tsv"))?;
     for fields in rows(&mutations) {
         let [id, base, edits @ ..] = fields.as_slice() else {
             return Err(format!("bad mutation line {fields:?}"));
         };
-        if edits.is_empty() || edits.len() % 2 != 0 {
-            return Err(format!(
-                "mutation {id}: find and replace columns must come in pairs"
-            ));
-        }
-        let edits: Vec<(String, String)> = edits
-            .chunks(2)
-            .map(|pair| Ok((unescape(pair[0])?, unescape(pair[1])?)))
-            .collect::<Result<_, String>>()?;
+        let edits = edit_pairs(id, edits)?;
         let base_text = documents
             .get(*base)
             .ok_or_else(|| format!("mutation {id}: unknown base document {base}"))?;
@@ -172,14 +281,7 @@ pub(crate) fn cases() -> Result<Vec<Case>, String> {
             text,
         });
     }
-
-    let mut seen = std::collections::BTreeSet::new();
-    for case in &cases {
-        if !seen.insert(case.id.as_str()) {
-            return Err(format!("duplicate case id {}", case.id));
-        }
-    }
-    Ok(cases)
+    Ok(())
 }
 
 pub(crate) const EXPECTED_HEADER: &str = "case\tverdict\terrors";
@@ -350,6 +452,21 @@ pub(crate) struct Difference {
     pub(crate) xmllint: Expected,
 }
 
+/// What this crate says about a schema case, in the form of `expected.tsv`:
+/// verdict `loads`, `fails` (an incorrect or missing schema document) or
+/// `unsupported`, no errors.
+pub(crate) fn observe_schema(case: &SchemaCase) -> Expected {
+    let verdict = match load_set(&case.files, SYNTHETIC_ENTRY_POINT) {
+        Ok(_) => "loads",
+        Err(e) if e.kind == einvoice_xsd::LoadErrorKind::Unsupported => "unsupported",
+        Err(_) => "fails",
+    };
+    Expected {
+        verdict: verdict.to_owned(),
+        errors: Vec::new(),
+    }
+}
+
 /// Runs this crate on every case and lists where it differs from `expected`.
 /// Fails if a case has no expected result or an expected result has no case.
 pub(crate) fn differences(
@@ -357,12 +474,45 @@ pub(crate) fn differences(
     cases: &[Case],
     expected: &BTreeMap<String, Expected>,
 ) -> Result<Vec<Difference>, String> {
+    let observed: Vec<(String, Expected)> = cases
+        .iter()
+        .map(|case| (case.id.clone(), observe(schema, case)))
+        .collect();
+    compare(&observed, expected)
+}
+
+/// As [`differences`], for the synthetic suite: its document cases validated
+/// with `schema` (the synthetic set), then its schema cases.
+pub(crate) fn synthetic_differences(
+    schema: &einvoice_xsd::Schema,
+    cases: &[Case],
+    schema_cases: &[SchemaCase],
+    expected: &BTreeMap<String, Expected>,
+) -> Result<Vec<Difference>, String> {
+    let observed: Vec<(String, Expected)> = cases
+        .iter()
+        .map(|case| (case.id.clone(), observe(schema, case)))
+        .chain(
+            schema_cases
+                .iter()
+                .map(|case| (case.id.clone(), observe_schema(case))),
+        )
+        .collect();
+    compare(&observed, expected)
+}
+
+/// Lists where the observations of this crate differ from `expected`. Fails if a
+/// case has no expected result or an expected result has no case.
+fn compare(
+    observed: &[(String, Expected)],
+    expected: &BTreeMap<String, Expected>,
+) -> Result<Vec<Difference>, String> {
     let mut out = Vec::new();
-    for case in cases {
+    for (case, ours) in observed {
         let xmllint = expected
-            .get(&case.id)
-            .ok_or_else(|| format!("{}: no expected result", case.id))?;
-        let ours = observe(schema, case);
+            .get(case)
+            .ok_or_else(|| format!("{case}: no expected result"))?;
+        let ours = ours.clone();
         let kind = if ours.verdict == "unsupported" {
             "unsupported"
         } else if ours.verdict != xmllint.verdict {
@@ -373,13 +523,13 @@ pub(crate) fn differences(
             continue;
         };
         out.push(Difference {
-            case: case.id.clone(),
+            case: case.clone(),
             kind: kind.to_owned(),
             ours,
             xmllint: xmllint.clone(),
         });
     }
-    let ids: std::collections::BTreeSet<&str> = cases.iter().map(|c| c.id.as_str()).collect();
+    let ids: std::collections::BTreeSet<&str> = observed.iter().map(|(c, _)| c.as_str()).collect();
     if let Some(stale) = expected.keys().find(|k| !ids.contains(k.as_str())) {
         return Err(format!(
             "{stale}: expected result for a case that does not exist"

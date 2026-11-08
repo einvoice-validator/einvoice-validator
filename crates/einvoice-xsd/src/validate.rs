@@ -31,8 +31,8 @@ use crate::automaton::{Automaton, State, Term};
 use crate::datatypes::{self, Builtin, UNIMPLEMENTED_BUILTINS, WhiteSpace};
 use crate::error::{DocumentError, ErrorKind, Report, ValidationError};
 use crate::model::{
-    ANY_TYPE, ComplexType, Content, ElementId, ProcessContents, Schema, TypeDef, TypeId, XS, XSI,
-    clark, namespace_name,
+    ANY_TYPE, ComplexType, ConstraintKind, Content, ElementId, ProcessContents, Schema, TypeDef,
+    TypeId, ValueConstraint, XS, XSI, clark, facet_problem, namespace_name, quote,
 };
 
 /// How a child element is to be validated.
@@ -54,6 +54,8 @@ enum FrameContent<'s, 'd> {
         type_id: TypeId,
         /// The text so far: a slice of the document while there is one text node.
         text: Cow<'d, str>,
+        /// The value constraint of the element's declaration, if any.
+        constraint: Option<&'s ValueConstraint>,
         stopped: bool,
     },
     Children {
@@ -142,17 +144,6 @@ enum ValueProblem {
     Invalid(String),
     /// A valid `xs:ID` that an earlier attribute or element of the document uses.
     DuplicateId(String),
-}
-
-/// Values quoted in messages are cut to this many characters.
-const MAX_QUOTED: usize = 80;
-
-fn quote(value: &str) -> String {
-    let mut out: String = value.chars().take(MAX_QUOTED).collect();
-    if value.chars().nth(MAX_QUOTED).is_some() {
-        out.push_str("...");
-    }
-    format!("{out:?}")
 }
 
 fn element_name(node: Node<'_, '_>) -> String {
@@ -317,10 +308,12 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             return Ok(None);
         }
         self.attributes(node, type_id);
+        let constraint = declaration.and_then(|id| schema.element_constraint(id));
         let content = match &schema.types[type_id] {
             TypeDef::Simple(_) => FrameContent::Simple {
                 type_id,
                 text: Cow::Borrowed(""),
+                constraint,
                 stopped: false,
             },
             TypeDef::Complex(complex) => match &complex.content {
@@ -328,6 +321,7 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                 Content::Simple(simple) => FrameContent::Simple {
                     type_id: *simple,
                     text: Cow::Borrowed(""),
+                    constraint,
                     stopped: false,
                 },
                 Content::ElementOnly(automaton) => FrameContent::Children {
@@ -438,7 +432,7 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             )));
         }
         let is_id = simple.builtin == Builtin::Id;
-        if !is_id && !schema.has_enumeration(type_id) {
+        if !is_id && !schema.has_facets(type_id) {
             return None;
         }
         let white_space = simple.builtin.white_space();
@@ -446,23 +440,12 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             Cow::Borrowed(raw) => datatypes::normalize(raw, white_space),
             Cow::Owned(raw) => Cow::Owned(datatypes::normalize(raw, white_space).into_owned()),
         };
-        let mut current = type_id;
-        while let TypeDef::Simple(step) = &schema.types[current] {
-            if let Some(values) = &step.enumeration
-                && !values.iter().any(|v| *v == value)
-            {
-                return Some(ValueProblem::Invalid(format!(
-                    "{} is not one of the values allowed by {}: {}",
-                    quote(raw),
-                    self.type_name(type_id),
-                    values
-                        .iter()
-                        .map(|v| quote(v))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )));
-            }
-            current = step.base;
+        if let Some(problem) = facet_problem(&schema.types, type_id, &value) {
+            return Some(ValueProblem::Invalid(format!(
+                "{} is {}",
+                quote(raw),
+                problem.describe(&self.type_name(type_id))
+            )));
         }
         if is_id && !self.ids.insert(value) {
             return Some(ValueProblem::DuplicateId(format!(
@@ -471,6 +454,38 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             )));
         }
         None
+    }
+
+    /// Whether two valid values of a simple type, before whitespace processing,
+    /// are the same value (Part 2, 2.2.1): the test of a fixed value constraint.
+    fn same_value(&self, type_id: TypeId, a: &str, b: &str) -> bool {
+        let TypeDef::Simple(simple) = &self.schema.types[type_id] else {
+            return false;
+        };
+        let builtin = simple.builtin;
+        let white_space = builtin.white_space();
+        let a = datatypes::normalize(a, white_space);
+        let b = datatypes::normalize(b, white_space);
+        // The loader refuses fixed values on the types without a value key.
+        match (builtin.value_key(&a), builtin.value_key(&b)) {
+            (Some(a), Some(b)) => a == b,
+            _ => false,
+        }
+    }
+
+    /// Why a value constraint of an element's declaration is not a valid value of
+    /// the simple type that the element's actual type gives its content, if it is
+    /// not (it is valid for the declared type: the loader checks it).
+    fn constraint_problem(&self, type_id: TypeId, value: &str) -> Option<String> {
+        let TypeDef::Simple(simple) = &self.schema.types[type_id] else {
+            return Some(format!("{} is not a simple type", self.type_name(type_id)));
+        };
+        if !simple.builtin.is_valid_raw(value) {
+            return Some(format!("not a valid value of {}", self.type_name(type_id)));
+        }
+        let processed = datatypes::normalize(value, simple.builtin.white_space());
+        facet_problem(&self.schema.types, type_id, &processed)
+            .map(|problem| problem.describe(&self.type_name(type_id)))
     }
 
     fn attributes(&mut self, node: Node<'d, 'i>, type_id: TypeId) {
@@ -496,7 +511,22 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             let name = || Some(clark(namespace, local));
             if let Some(attribute_use) = uses.iter().find(|u| u.name.matches(namespace, local)) {
                 match self.check_value(attribute_use.type_id, &Cow::Borrowed(attribute.value())) {
-                    None => {}
+                    None => {
+                        if let Some(fixed) = attribute_use.fixed.map(|f| schema.fixed_value(f))
+                            && !self.same_value(attribute_use.type_id, attribute.value(), fixed)
+                        {
+                            self.report_attribute(
+                                node,
+                                ErrorKind::InvalidAttributeValue,
+                                name(),
+                                format!(
+                                    "{} is not the fixed value {} of the attribute",
+                                    quote(attribute.value()),
+                                    quote(fixed)
+                                ),
+                            );
+                        }
+                    }
                     Some(ValueProblem::Invalid(problem)) => {
                         self.report_attribute(
                             node,
@@ -669,16 +699,55 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             FrameContent::Simple {
                 type_id,
                 text,
+                constraint,
                 stopped: false,
-            } => match self.check_value(type_id, &text) {
-                None => {}
-                Some(ValueProblem::Invalid(problem)) => {
-                    self.report(frame.node, ErrorKind::InvalidValue, problem);
+            } => {
+                if let Some(constraint) = constraint
+                    && text.is_empty()
+                {
+                    // cvc-elt.5.1: an element without any character or element
+                    // children takes the default or fixed value, which must be
+                    // valid for the actual type (an xsi:type may change it).
+                    if let Some(problem) = self.constraint_problem(type_id, &constraint.value) {
+                        self.report(
+                            frame.node,
+                            ErrorKind::InvalidValue,
+                            format!(
+                                "the {} value {} of the declaration is {problem}",
+                                constraint.kind.as_str(),
+                                quote(&constraint.value)
+                            ),
+                        );
+                    }
+                    return;
                 }
-                Some(ValueProblem::DuplicateId(problem)) => {
-                    self.report(frame.node, ErrorKind::DuplicateId, problem);
+                match self.check_value(type_id, &text) {
+                    None => {
+                        // cvc-elt.5.2.2.2.2: a fixed value is compared in the value
+                        // space.
+                        if let Some(constraint) = constraint
+                            && constraint.kind == ConstraintKind::Fixed
+                            && !self.same_value(type_id, &text, &constraint.value)
+                        {
+                            self.report(
+                                frame.node,
+                                ErrorKind::InvalidValue,
+                                format!(
+                                    "{} is not the fixed value {} of the declaration",
+                                    quote(&text),
+                                    quote(&constraint.value)
+                                ),
+                            );
+                        }
+                    }
+                    Some(ValueProblem::Invalid(problem)) => {
+                        self.report(frame.node, ErrorKind::InvalidValue, problem);
+                    }
+                    Some(ValueProblem::DuplicateId(problem)) => {
+                        self.report(frame.node, ErrorKind::DuplicateId, problem);
+                    }
                 }
-            },
+            }
             FrameContent::Children {
                 automaton,
                 state,

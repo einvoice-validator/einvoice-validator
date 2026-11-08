@@ -16,8 +16,9 @@ use crate::automaton::{Automaton, MAX_FINITE_OCCURS, Particle, ParticleTerm};
 use crate::datatypes::{self, Builtin, UNIMPLEMENTED_BUILTINS};
 use crate::error::{LoadError, LoadErrorKind};
 use crate::model::{
-    ANY_TYPE, AttributeUse, ComplexType, Content, ElementDecl, ElementId, NamespaceConstraint,
-    OmittedImport, ProcessContents, QName, Schema, SimpleType, TypeDef, TypeId, Wildcard, XS,
+    ANY_TYPE, AttributeUse, ComplexType, ConstraintKind, Content, ElementDecl, ElementId,
+    FixedValue, NamespaceConstraint, OmittedImport, ProcessContents, QName, Schema, SimpleType,
+    TypeDef, TypeId, ValueConstraint, Wildcard, XS, facet_problem, quote,
 };
 use crate::ubl::XADES_NAMESPACES;
 
@@ -75,6 +76,29 @@ fn resolve_location(base: &str, location: &str) -> Option<String> {
         }
     }
     Some(segments.join("/"))
+}
+
+/// The `default` or `fixed` value constraint of an element or attribute
+/// declaration, if it has one (both at once is an error: src-element.1,
+/// src-attribute.1).
+fn value_constraint(doc: &Doc<'_>, node: Node<'_, '_>) -> Result<Option<ValueConstraint>> {
+    let constraint = |kind, value: &str| {
+        Some(ValueConstraint {
+            kind,
+            value: value.into(),
+        })
+    };
+    match (node.attribute("default"), node.attribute("fixed")) {
+        (Some(_), Some(_)) => Err(error(
+            doc,
+            node,
+            LoadErrorKind::Invalid,
+            "the attributes default and fixed are mutually exclusive",
+        )),
+        (Some(value), None) => Ok(constraint(ConstraintKind::Default, value)),
+        (None, Some(value)) => Ok(constraint(ConstraintKind::Fixed, value)),
+        (None, None) => Ok(None),
+    }
 }
 
 fn parse_boolean(value: &str) -> Option<bool> {
@@ -167,6 +191,23 @@ struct Loader<'d, 'a> {
     state: Vec<BuildState>,
     /// Attribute uses whose type must turn out to be simple: (type, doc, node).
     simple_type_checks: Vec<(TypeId, usize, NodeId)>,
+    /// The value constraints of attribute declarations, checked once every type
+    /// is built.
+    attribute_constraints: Vec<PendingConstraint>,
+    /// The value constraints of element declarations, checked once every type is
+    /// built.
+    element_constraints: Vec<(ElementId, PendingConstraint)>,
+    /// The fixed values of attribute uses ([`FixedValue`]).
+    fixed_values: Vec<Box<str>>,
+}
+
+/// A value constraint whose validity can only be checked once the type it
+/// constrains is built: the declared type, the constraint, and where it is.
+struct PendingConstraint {
+    type_id: TypeId,
+    constraint: ValueConstraint,
+    doc: usize,
+    node: NodeId,
 }
 
 /// Loads a schema set. `files` maps paths (relative, `/`-separated) to schema
@@ -185,6 +226,9 @@ pub(crate) fn load(files: &[(&str, &str)], entry_points: &[&str]) -> Result<Sche
         element_sources: Vec::new(),
         state: Vec::new(),
         simple_type_checks: Vec::new(),
+        attribute_constraints: Vec::new(),
+        element_constraints: Vec::new(),
+        fixed_values: Vec::new(),
     };
     loader.add_builtins();
     loader.collect_globals()?;
@@ -194,12 +238,15 @@ pub(crate) fn load(files: &[(&str, &str)], entry_points: &[&str]) -> Result<Sche
     }
     loader.resolve_global_elements()?;
     loader.check_simple_types()?;
+    let element_constraints = loader.check_value_constraints()?;
     let mut schema = Schema {
         types: loader.types,
         elements: loader.elements,
         global_elements: by_namespace_key(loader.global_elements),
         global_types: by_namespace_key(loader.global_types),
         documents: docs.iter().map(|d| d.path.clone()).collect(),
+        element_constraints,
+        fixed_values: loader.fixed_values,
         omitted_imports: omitted,
     };
     schema.shrink_to_fit();
@@ -398,6 +445,133 @@ fn schema_doc(path: String, xml: roxmltree::Document<'_>) -> Result<Doc<'_>> {
     Ok(doc)
 }
 
+/// The facets of one restriction step of a simple type.
+struct Facets {
+    /// Whitespace-processed as the base type processes its values.
+    enumeration: Vec<String>,
+    min_length: Option<usize>,
+    max_length: Option<usize>,
+}
+
+/// The facets of an `xs:restriction` of a simple type whose built-in type is
+/// `builtin`: `enumeration`, `minLength` and `maxLength` only.
+fn facets(doc: &Doc<'_>, restriction: Node<'_, '_>, builtin: Builtin) -> Result<Facets> {
+    let mut out = Facets {
+        enumeration: Vec::new(),
+        min_length: None,
+        max_length: None,
+    };
+    for facet in children(doc, restriction)? {
+        let kind = facet.tag_name().name();
+        if !matches!(kind, "enumeration" | "minLength" | "maxLength") {
+            return Err(error(
+                doc,
+                facet,
+                LoadErrorKind::Unsupported,
+                format!("facet xs:{kind}"),
+            ));
+        }
+        check_attributes(doc, facet, &["value"])?;
+        if !children(doc, facet)?.is_empty() {
+            return Err(error(
+                doc,
+                facet,
+                LoadErrorKind::Invalid,
+                format!("content in xs:{kind}"),
+            ));
+        }
+        let value = facet.attribute("value").ok_or_else(|| {
+            error(
+                doc,
+                facet,
+                LoadErrorKind::Invalid,
+                format!("xs:{kind} without value"),
+            )
+        })?;
+        if kind == "enumeration" {
+            out.enumeration
+                .push(datatypes::normalize(value, builtin.white_space()).into_owned());
+            continue;
+        }
+        let slot = if kind == "minLength" {
+            &mut out.min_length
+        } else {
+            &mut out.max_length
+        };
+        if slot.is_some() {
+            // Part 2, 4.1.3, Single Facet Value: only the pattern and enumeration
+            // facets may be repeated in one derivation step.
+            return Err(error(
+                doc,
+                facet,
+                LoadErrorKind::Invalid,
+                format!("xs:{kind} twice in one restriction"),
+            ));
+        }
+        *slot = Some(length_facet(doc, facet, kind, value, builtin)?);
+    }
+    Ok(out)
+}
+
+/// The value of a `minLength` or `maxLength` facet of a restriction of a type
+/// whose built-in type is `builtin`: an `xs:nonNegativeInteger` (Part 2, 4.3.2 and
+/// 4.3.3), for a type the facet applies to.
+fn length_facet(
+    doc: &Doc<'_>,
+    facet: Node<'_, '_>,
+    kind: &str,
+    value: &str,
+    builtin: Builtin,
+) -> Result<usize> {
+    if !builtin.has_length() {
+        // The length facets apply to anyURI and base64Binary too (Part 2, 4.1.5,
+        // Applicable Facets), which this crate does not restrict that way; not to
+        // the other types.
+        let applies = matches!(builtin, Builtin::AnyUri | Builtin::Base64Binary);
+        return Err(error(
+            doc,
+            facet,
+            if applies {
+                LoadErrorKind::Unsupported
+            } else {
+                LoadErrorKind::Invalid
+            },
+            format!(
+                "xs:{kind} on a type derived from xs:{}{}",
+                builtin.name(),
+                if applies {
+                    ""
+                } else {
+                    ", to which it does not apply"
+                }
+            ),
+        ));
+    }
+    let collapsed = datatypes::normalize(value, datatypes::WhiteSpace::Collapse);
+    // nonNegativeInteger: an optional sign, `-` only for zero, then digits.
+    let digits = match collapsed.strip_prefix('-') {
+        Some(rest) if !rest.is_empty() && rest.bytes().all(|b| b == b'0') => rest,
+        Some(_) => "",
+        None => collapsed.strip_prefix('+').unwrap_or(&collapsed),
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(error(
+            doc,
+            facet,
+            LoadErrorKind::Invalid,
+            format!("xs:{kind} value {value:?} is not a nonNegativeInteger"),
+        ));
+    }
+    digits.parse().map_err(|_| {
+        error(
+            doc,
+            facet,
+            LoadErrorKind::Unsupported,
+            format!("xs:{kind} value {value:?}: lengths above {}", usize::MAX),
+        )
+    })
+}
+
 fn occurs(doc: &Doc<'_>, node: Node<'_, '_>) -> Result<(u32, Option<u32>)> {
     let parse = |name: &str, value: &str| -> Result<u32> {
         let value = value.trim();
@@ -494,6 +668,8 @@ impl<'d, 'a> Loader<'d, 'a> {
                     base,
                     builtin,
                     enumeration: None,
+                    min_length: None,
+                    max_length: None,
                 }),
                 BuildState::Built,
             );
@@ -546,6 +722,8 @@ impl<'d, 'a> Loader<'d, 'a> {
                                 base: ANY_TYPE,
                                 builtin: Builtin::AnySimpleType,
                                 enumeration: None,
+                                min_length: None,
+                                max_length: None,
                             });
                             let id = self.push_type(placeholder, BuildState::Pending);
                             if !self.register_type(&name, id) {
@@ -741,35 +919,11 @@ impl<'d, 'a> Loader<'d, 'a> {
             ));
         };
         let builtin = base_def.builtin;
-        let mut enumeration = Vec::new();
-        for facet in children(d, restriction)? {
-            if !is_xs(facet, "enumeration") {
-                return Err(error(
-                    d,
-                    facet,
-                    LoadErrorKind::Unsupported,
-                    format!("facet xs:{}", facet.tag_name().name()),
-                ));
-            }
-            check_attributes(d, facet, &["value"])?;
-            if !children(d, facet)?.is_empty() {
-                return Err(error(
-                    d,
-                    facet,
-                    LoadErrorKind::Invalid,
-                    "content in xs:enumeration",
-                ));
-            }
-            let value = facet.attribute("value").ok_or_else(|| {
-                error(
-                    d,
-                    facet,
-                    LoadErrorKind::Invalid,
-                    "xs:enumeration without value",
-                )
-            })?;
-            enumeration.push(datatypes::normalize(value, builtin.white_space()).into_owned());
-        }
+        let Facets {
+            enumeration,
+            min_length,
+            max_length,
+        } = facets(d, restriction, builtin)?;
         let string_based = matches!(
             builtin,
             Builtin::String | Builtin::NormalizedString | Builtin::Token
@@ -782,12 +936,88 @@ impl<'d, 'a> Loader<'d, 'a> {
                 format!("enumeration on a type derived from xs:{}", builtin.name()),
             ));
         }
+        self.check_length_restriction(doc, restriction, base, min_length, max_length)?;
+        // Part 2, 4.3.5.4: every enumerated value is a value of the base type.
+        for value in &enumeration {
+            if let Some(problem) = facet_problem(&self.types, base, value) {
+                let base_name = self.type_name(base);
+                return Err(error(
+                    self.doc(doc),
+                    restriction,
+                    LoadErrorKind::Invalid,
+                    format!(
+                        "the enumerated value {} is {}",
+                        quote(value),
+                        problem.describe(&base_name)
+                    ),
+                ));
+            }
+        }
         Ok(SimpleType {
             name,
             base,
             builtin,
             enumeration: (!enumeration.is_empty()).then_some(enumeration),
+            min_length,
+            max_length,
         })
+    }
+
+    /// The name of a type for a message.
+    fn type_name(&self, type_id: TypeId) -> String {
+        self.types[type_id]
+            .name()
+            .map_or_else(|| "an anonymous type".to_owned(), ToString::to_string)
+    }
+
+    /// Checks the length facets of a restriction step against each other and
+    /// against those it inherits from its base (Part 2, 4.3.2.4 and 4.3.3.4:
+    /// `minLength` at most `maxLength`, `minLength` not below the base's,
+    /// `maxLength` not above it).
+    fn check_length_restriction(
+        &self,
+        doc: usize,
+        restriction: Node<'_, '_>,
+        base: TypeId,
+        min_length: Option<usize>,
+        max_length: Option<usize>,
+    ) -> Result<()> {
+        let mut base_min = None;
+        let mut base_max = None;
+        let mut current = base;
+        while let TypeDef::Simple(step) = &self.types[current] {
+            base_min = base_min.or(step.min_length);
+            base_max = base_max.or(step.max_length);
+            current = step.base;
+        }
+        let invalid = |message: String| {
+            Err(error(
+                self.doc(doc),
+                restriction,
+                LoadErrorKind::Invalid,
+                message,
+            ))
+        };
+        if let (Some(min), Some(base_min)) = (min_length, base_min)
+            && min < base_min
+        {
+            return invalid(format!(
+                "minLength {min} is less than the minLength {base_min} of the base type"
+            ));
+        }
+        if let (Some(max), Some(base_max)) = (max_length, base_max)
+            && max > base_max
+        {
+            return invalid(format!(
+                "maxLength {max} is greater than the maxLength {base_max} of the base type"
+            ));
+        }
+        if let (Some(min), Some(max)) = (min_length.or(base_min), max_length.or(base_max))
+            && min > max
+        {
+            return invalid(format!("minLength {min} is greater than maxLength {max}"));
+        }
+        Ok(())
     }
 
     fn complex_type(
@@ -938,7 +1168,7 @@ impl<'d, 'a> Loader<'d, 'a> {
 
     fn attribute(&mut self, doc: usize, node: Node<'_, '_>) -> Result<AttributeUse> {
         let d = self.doc(doc);
-        check_attributes(d, node, &["name", "type", "use"])?;
+        check_attributes(d, node, &["name", "type", "use", "default", "fixed"])?;
         if !children(d, node)?.is_empty() {
             return Err(error(
                 d,
@@ -980,8 +1210,49 @@ impl<'d, 'a> Loader<'d, 'a> {
                 "xs:attribute without a type",
             )
         })?;
+        let constraint = value_constraint(d, node)?;
+        if required
+            && let Some(ValueConstraint {
+                kind: ConstraintKind::Default,
+                ..
+            }) = constraint
+        {
+            // src-attribute.2.
+            return Err(error(
+                d,
+                node,
+                LoadErrorKind::Invalid,
+                "an attribute with a default value must have use=\"optional\"",
+            ));
+        }
         let type_id = self.resolve_type(doc, node, type_name)?;
         self.simple_type_checks.push((type_id, doc, node.id()));
+        let fixed = match &constraint {
+            Some(ValueConstraint {
+                kind: ConstraintKind::Fixed,
+                value,
+            }) => {
+                let fixed = FixedValue::new(self.fixed_values.len()).ok_or_else(|| {
+                    error(
+                        self.doc(doc),
+                        node,
+                        LoadErrorKind::Unsupported,
+                        "more than 2^32 - 1 fixed attribute values",
+                    )
+                })?;
+                self.fixed_values.push(value.clone());
+                Some(fixed)
+            }
+            _ => None,
+        };
+        if let Some(constraint) = constraint {
+            self.attribute_constraints.push(PendingConstraint {
+                type_id,
+                constraint,
+                doc,
+                node: node.id(),
+            });
+        }
         Ok(AttributeUse {
             name: QName {
                 namespace,
@@ -989,6 +1260,7 @@ impl<'d, 'a> Loader<'d, 'a> {
             },
             type_id,
             required,
+            fixed,
         })
     }
 
@@ -1073,24 +1345,65 @@ impl<'d, 'a> Loader<'d, 'a> {
     /// declaration (a new element declaration).
     fn local_element(&mut self, doc: usize, node: Node<'_, '_>) -> Result<Particle> {
         let d = self.doc(doc);
-        check_attributes(d, node, &["name", "type", "ref", "minOccurs", "maxOccurs"])?;
-        if let Some(&child) = children(d, node)?.first() {
-            return Err(error(
-                d,
-                child,
-                LoadErrorKind::Unsupported,
-                format!("xs:{} in a local xs:element", child.tag_name().name()),
-            ));
-        }
+        check_attributes(
+            d,
+            node,
+            &[
+                "name",
+                "type",
+                "ref",
+                "minOccurs",
+                "maxOccurs",
+                "default",
+                "fixed",
+            ],
+        )?;
+        // The only content supported: one anonymous xs:complexType.
+        let anonymous = match children(d, node)?[..] {
+            [] => None,
+            [child] if is_xs(child, "complexType") => Some(child),
+            [first, ref rest @ ..] => {
+                let child = match rest.first() {
+                    Some(&second) if is_xs(first, "complexType") => second,
+                    _ => first,
+                };
+                let is_type = |n: Node<'_, '_>| is_xs(n, "complexType") || is_xs(n, "simpleType");
+                if is_type(first) && is_type(child) && first != child {
+                    // At most one anonymous type (the schema for schemas).
+                    return Err(error(
+                        d,
+                        child,
+                        LoadErrorKind::Invalid,
+                        "a local xs:element with two anonymous types",
+                    ));
+                }
+                return Err(error(
+                    d,
+                    child,
+                    LoadErrorKind::Unsupported,
+                    format!("xs:{} in a local xs:element", child.tag_name().name()),
+                ));
+            }
+        };
         let (min, max) = occurs(d, node)?;
         let id = match (node.attribute("ref"), node.attribute("name")) {
             (Some(reference), None) => {
-                if node.attribute("type").is_some() {
+                // src-element.2.2: a reference has no type and no value constraint
+                // of its own.
+                if node.attribute("type").is_some() || anonymous.is_some() {
                     return Err(error(
                         d,
                         node,
                         LoadErrorKind::Invalid,
-                        "xs:element with both ref and type",
+                        "xs:element with both ref and a type",
+                    ));
+                }
+                if node.attribute("default").is_some() || node.attribute("fixed").is_some() {
+                    return Err(error(
+                        d,
+                        node,
+                        LoadErrorKind::Invalid,
+                        "xs:element with both ref and a value constraint",
                     ));
                 }
                 let name = self.resolve_qname(doc, node, reference)?;
@@ -1100,25 +1413,7 @@ impl<'d, 'a> Loader<'d, 'a> {
                     .copied()
                     .ok_or_else(|| self.unresolved(doc, node, "element", &name))?
             }
-            (None, Some(local)) => {
-                let namespace = if d.qualified_elements {
-                    d.target.clone()
-                } else {
-                    None
-                };
-                let type_id = match node.attribute("type") {
-                    Some(t) => self.resolve_type(doc, node, t)?,
-                    None => ANY_TYPE,
-                };
-                self.elements.push(ElementDecl {
-                    name: QName {
-                        namespace,
-                        local: local.to_owned(),
-                    },
-                    type_id,
-                });
-                self.elements.len() - 1
-            }
+            (None, Some(local)) => self.local_declaration(doc, node, local, anonymous)?,
             _ => {
                 return Err(error(
                     d,
@@ -1133,6 +1428,79 @@ impl<'d, 'a> Loader<'d, 'a> {
             min,
             max,
         })
+    }
+
+    /// A local element declaration named `local`, typed by its `type` attribute, by
+    /// its anonymous complex type `anonymous`, or else `xs:anyType`.
+    fn local_declaration(
+        &mut self,
+        doc: usize,
+        node: Node<'_, '_>,
+        local: &str,
+        anonymous: Option<Node<'_, '_>>,
+    ) -> Result<ElementId> {
+        let d = self.doc(doc);
+        let namespace = if d.qualified_elements {
+            d.target.clone()
+        } else {
+            None
+        };
+        let constraint = value_constraint(d, node)?;
+        let type_id = match (node.attribute("type"), anonymous) {
+            (Some(_), Some(_)) => {
+                // src-element.3.
+                return Err(error(
+                    d,
+                    node,
+                    LoadErrorKind::Invalid,
+                    "xs:element with both a type attribute and an anonymous type",
+                ));
+            }
+            (Some(t), None) => self.resolve_type(doc, node, t)?,
+            (None, Some(definition)) => self.anonymous_complex_type(doc, definition)?,
+            (None, None) => ANY_TYPE,
+        };
+        self.elements.push(ElementDecl {
+            name: QName {
+                namespace,
+                local: local.to_owned(),
+            },
+            type_id,
+        });
+        let id = self.elements.len() - 1;
+        if let Some(constraint) = constraint {
+            self.element_constraints.push((
+                id,
+                PendingConstraint {
+                    type_id,
+                    constraint,
+                    doc,
+                    node: node.id(),
+                },
+            ));
+        }
+        Ok(id)
+    }
+
+    /// The anonymous complex type of a local element declaration, built and added
+    /// to the type table.
+    fn anonymous_complex_type(&mut self, doc: usize, node: Node<'_, '_>) -> Result<TypeId> {
+        let d = self.doc(doc);
+        // A local complex type has no name, and no abstract, final or block (the
+        // schema for schemas, localComplexType).
+        for attribute in ["name", "abstract", "final", "block"] {
+            if node.attribute(attribute).is_some() {
+                return Err(error(
+                    d,
+                    node,
+                    LoadErrorKind::Invalid,
+                    format!("attribute {attribute} on a local xs:complexType"),
+                ));
+            }
+        }
+        check_attributes(d, node, &["mixed"])?;
+        let definition = self.complex_type(doc, node, None)?;
+        Ok(self.push_type(TypeDef::Complex(definition), BuildState::Built))
     }
 
     fn content(
@@ -1375,7 +1743,7 @@ impl<'d, 'a> Loader<'d, 'a> {
         for &(id, doc, node_id) in &sources {
             let node = self.node(doc, node_id);
             let d = self.doc(doc);
-            check_attributes(d, node, &["name", "type"])?;
+            check_attributes(d, node, &["name", "type", "default", "fixed"])?;
             if let Some(&child) = children(d, node)?.first() {
                 return Err(error(
                     d,
@@ -1384,6 +1752,7 @@ impl<'d, 'a> Loader<'d, 'a> {
                     format!("xs:{} in a global xs:element", child.tag_name().name()),
                 ));
             }
+            let constraint = value_constraint(d, node)?;
             let docs = self.docs;
             let node = docs[doc]
                 .xml
@@ -1393,8 +1762,132 @@ impl<'d, 'a> Loader<'d, 'a> {
                 let type_id = self.resolve_type(doc, node, type_name)?;
                 self.elements[id].type_id = type_id;
             }
+            if let Some(constraint) = constraint {
+                self.element_constraints.push((
+                    id,
+                    PendingConstraint {
+                        type_id: self.elements[id].type_id,
+                        constraint,
+                        doc,
+                        node: node_id,
+                    },
+                ));
+            }
         }
         self.element_sources = sources;
+        Ok(())
+    }
+
+    /// Checks every value constraint, now that the types are built, and returns
+    /// those of element declarations, sorted by element.
+    fn check_value_constraints(&mut self) -> Result<Vec<(ElementId, ValueConstraint)>> {
+        for pending in std::mem::take(&mut self.attribute_constraints) {
+            self.check_constraint(&pending, pending.type_id)?;
+        }
+        let mut constraints = Vec::new();
+        for (id, pending) in std::mem::take(&mut self.element_constraints) {
+            let d = self.doc(pending.doc);
+            let node = self.node(pending.doc, pending.node);
+            // e-props-correct.2 and cos-valid-default.2: the type must have
+            // simple content, or mixed content that may be empty.
+            let simple = match &self.types[pending.type_id] {
+                TypeDef::Simple(_) => pending.type_id,
+                TypeDef::Complex(ComplexType {
+                    content: Content::Simple(simple),
+                    ..
+                }) => *simple,
+                TypeDef::Complex(ComplexType {
+                    content: Content::Mixed(automaton),
+                    ..
+                }) if automaton.accepts(None) => {
+                    return Err(error(
+                        d,
+                        node,
+                        LoadErrorKind::Unsupported,
+                        format!(
+                            "a {} value on an element with mixed content",
+                            pending.constraint.kind.as_str()
+                        ),
+                    ));
+                }
+                TypeDef::Complex(_) => {
+                    return Err(error(
+                        d,
+                        node,
+                        LoadErrorKind::Invalid,
+                        format!(
+                            "a {} value on an element whose type has neither simple content nor mixed content that may be empty",
+                            pending.constraint.kind.as_str()
+                        ),
+                    ));
+                }
+            };
+            self.check_constraint(&pending, simple)?;
+            constraints.push((id, pending.constraint));
+        }
+        constraints.sort_by_key(|(id, _)| *id);
+        Ok(constraints)
+    }
+
+    /// Checks a value constraint against the simple type it constrains (the type
+    /// of an attribute, the simple content of an element): the value must be valid
+    /// for it (a-props-correct.2, e-props-correct.2), and the type must not be
+    /// derived from `xs:ID` (a-props-correct.3, e-props-correct.4). A fixed value on
+    /// a date or time type is refused: comparing such values is not implemented. An
+    /// attribute whose type is not simple is reported by [`Self::check_simple_types`].
+    fn check_constraint(&self, pending: &PendingConstraint, simple: TypeId) -> Result<()> {
+        let TypeDef::Simple(definition) = &self.types[simple] else {
+            return Ok(());
+        };
+        let d = self.doc(pending.doc);
+        let node = self.node(pending.doc, pending.node);
+        let kind = pending.constraint.kind.as_str();
+        let builtin = definition.builtin;
+        if builtin == Builtin::Id {
+            return Err(error(
+                d,
+                node,
+                LoadErrorKind::Invalid,
+                format!("a {kind} value on a type derived from xs:ID"),
+            ));
+        }
+        if pending.constraint.kind == ConstraintKind::Fixed && !builtin.has_value_key() {
+            return Err(error(
+                d,
+                node,
+                LoadErrorKind::Unsupported,
+                format!(
+                    "a fixed value on a type derived from xs:{}: comparing its values is not implemented",
+                    builtin.name()
+                ),
+            ));
+        }
+        let value = &pending.constraint.value;
+        let type_name = self.type_name(simple);
+        if !builtin.is_valid_raw(value) {
+            return Err(error(
+                d,
+                node,
+                LoadErrorKind::Invalid,
+                format!(
+                    "the {kind} value {} is not a valid value of {type_name}",
+                    quote(value)
+                ),
+            ));
+        }
+        let processed = datatypes::normalize(value, builtin.white_space());
+        if let Some(problem) = facet_problem(&self.types, simple, &processed) {
+            return Err(error(
+                d,
+                node,
+                LoadErrorKind::Invalid,
+                format!(
+                    "the {kind} value {} is {}",
+                    quote(value),
+                    problem.describe(&type_name)
+                ),
+            ));
+        }
         Ok(())
     }
 
@@ -1430,7 +1923,22 @@ fn restrict_attributes(
     let mut attributes = base.to_vec();
     for attribute in own {
         match attributes.iter_mut().find(|a| a.name == attribute.name) {
-            Some(slot) => *slot = attribute,
+            Some(slot) => {
+                if slot.fixed.is_some() {
+                    // derivation-ok-restriction 2.1.3 requires the restriction to
+                    // keep the base's fixed value; that check is not implemented.
+                    return Err(error(
+                        doc,
+                        node,
+                        LoadErrorKind::Unsupported,
+                        format!(
+                            "restriction of attribute {}, which has a fixed value in the base type",
+                            attribute.name
+                        ),
+                    ));
+                }
+                *slot = attribute;
+            }
             None => {
                 return Err(error(
                     doc,
@@ -1486,10 +1994,25 @@ mod tests {
             r#"<xs:element name="e"><xs:complexType/></xs:element>"#,
             r#"<xs:complexType name="c"><xs:all/></xs:complexType>"#,
             r###"<xs:complexType name="c"><xs:sequence><xs:any namespace="##local"/></xs:sequence></xs:complexType>"###,
-            r#"<xs:complexType name="c"><xs:attribute name="a" type="xs:string" default="x"/></xs:complexType>"#,
+            r#"<xs:complexType name="c"><xs:attribute name="a" type="xs:string" use="prohibited"/></xs:complexType>"#,
             r#"<xs:complexType name="c"><xs:attribute ref="t:a"/></xs:complexType>"#,
             r#"<xs:complexType name="c"><xs:complexContent><xs:extension base="xs:anyType"/></xs:complexContent></xs:complexType>"#,
-            r#"<xs:simpleType name="s"><xs:restriction base="xs:string"><xs:maxLength value="3"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:string"><xs:length value="3"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:string"><xs:maxLength value="3" fixed="true"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:anyURI"><xs:maxLength value="3"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:string"><xs:maxLength value="99999999999999999999999"/></xs:restriction></xs:simpleType>"#,
+            // Fixed values of the date and time types are not compared.
+            r#"<xs:element name="e" type="xs:date" fixed="2024-01-01"/>"#,
+            r#"<xs:complexType name="c"><xs:attribute name="a" type="xs:time" fixed="10:00:00"/></xs:complexType>"#,
+            // Value constraints on mixed content.
+            r#"<xs:element name="e" fixed="x"/>"#,
+            r#"<xs:complexType name="c" mixed="true"/><xs:element name="e" type="t:c" default="x"/>"#,
+            // Restricting an attribute that has a fixed value.
+            r#"<xs:complexType name="b"><xs:simpleContent><xs:extension base="xs:token"><xs:attribute name="a" type="xs:token" fixed="x"/></xs:extension></xs:simpleContent></xs:complexType><xs:complexType name="c"><xs:simpleContent><xs:restriction base="t:b"><xs:attribute name="a" type="xs:token" fixed="x"/></xs:restriction></xs:simpleContent></xs:complexType>"#,
+            // Anonymous simple types, anything but one anonymous complex type.
+            r#"<xs:complexType name="c"><xs:sequence><xs:element name="e"><xs:simpleType><xs:restriction base="xs:string"/></xs:simpleType></xs:element></xs:sequence></xs:complexType>"#,
+            r#"<xs:complexType name="c"><xs:sequence><xs:element name="e"><xs:complexType/><xs:key name="k"/></xs:element></xs:sequence></xs:complexType>"#,
+            r#"<xs:complexType name="c"><xs:sequence><xs:element name="e"><xs:complexType id="x"/></xs:element></xs:sequence></xs:complexType>"#,
             r#"<xs:simpleType name="s"><xs:list itemType="xs:string"/></xs:simpleType>"#,
             r#"<xs:simpleType name="s"><xs:restriction base="xs:float"/></xs:simpleType>"#,
             r#"<xs:simpleType name="s"><xs:restriction base="xs:decimal"><xs:enumeration value="1"/></xs:restriction></xs:simpleType>"#,
@@ -1511,10 +2034,100 @@ mod tests {
             r#"<xs:element name="e"/><xs:complexType name="c"><xs:sequence><xs:element ref="t:e" minOccurs="0"/><xs:element ref="t:e"/></xs:sequence></xs:complexType>"#,
             r#"<xs:complexType name="c"><xs:sequence minOccurs="2" maxOccurs="1"/></xs:complexType>"#,
             r#"<xs:complexType name="c"><xs:attribute name="a" type="t:c"/></xs:complexType>"#,
+            // Value constraints: both at once, default on a required attribute, not
+            // a valid value of the type or of its facets, on an ID, on a type
+            // without simple content, on a reference.
+            r#"<xs:element name="e" type="xs:token" default="a" fixed="a"/>"#,
+            r#"<xs:complexType name="c"><xs:attribute name="a" type="xs:token" default="a" fixed="a"/></xs:complexType>"#,
+            r#"<xs:complexType name="c"><xs:attribute name="a" type="xs:token" default="a" use="required"/></xs:complexType>"#,
+            r#"<xs:element name="e" type="xs:decimal" fixed="x"/>"#,
+            r#"<xs:complexType name="c"><xs:attribute name="a" type="xs:boolean" default="yes"/></xs:complexType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:token"><xs:maxLength value="2"/></xs:restriction></xs:simpleType><xs:complexType name="c"><xs:attribute name="a" type="t:s" fixed="abc"/></xs:complexType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:token"><xs:enumeration value="x"/></xs:restriction></xs:simpleType><xs:element name="e" type="t:s" default="y"/>"#,
+            r#"<xs:element name="e" type="xs:ID" fixed="a"/>"#,
+            r#"<xs:complexType name="c"><xs:attribute name="a" type="xs:ID" default="a"/></xs:complexType>"#,
+            r#"<xs:complexType name="c"><xs:sequence><xs:element name="x"/></xs:sequence></xs:complexType><xs:element name="e" type="t:c" fixed="a"/>"#,
+            r#"<xs:complexType name="c"/><xs:element name="e" type="t:c" default="a"/>"#,
+            r#"<xs:complexType name="c" mixed="true"><xs:sequence><xs:element name="x"/></xs:sequence></xs:complexType><xs:element name="e" type="t:c" fixed="a"/>"#,
+            r#"<xs:element name="e" type="xs:token"/><xs:complexType name="c"><xs:sequence><xs:element ref="t:e" fixed="a"/></xs:sequence></xs:complexType>"#,
+            // Length facets: not a nonNegativeInteger, on a type they do not apply
+            // to, repeated, minLength above maxLength, loosening the base's.
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:token"><xs:maxLength value="-1"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:token"><xs:maxLength value="1.0"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:decimal"><xs:maxLength value="2"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:token"><xs:maxLength value="2"/><xs:maxLength value="3"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:token"><xs:minLength value="3"/><xs:maxLength value="2"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="b"><xs:restriction base="xs:token"><xs:maxLength value="2"/></xs:restriction></xs:simpleType><xs:simpleType name="s"><xs:restriction base="t:b"><xs:maxLength value="3"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="b"><xs:restriction base="xs:token"><xs:minLength value="2"/></xs:restriction></xs:simpleType><xs:simpleType name="s"><xs:restriction base="t:b"><xs:minLength value="1"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="b"><xs:restriction base="xs:token"><xs:minLength value="2"/></xs:restriction></xs:simpleType><xs:simpleType name="s"><xs:restriction base="t:b"><xs:maxLength value="1"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="b"><xs:restriction base="xs:token"><xs:maxLength value="2"/></xs:restriction></xs:simpleType><xs:simpleType name="s"><xs:restriction base="t:b"><xs:enumeration value="abc"/></xs:restriction></xs:simpleType>"#,
+            // Anonymous complex types: with a type attribute, named, abstract.
+            r#"<xs:complexType name="c"><xs:sequence><xs:element name="e" type="xs:token"><xs:complexType/></xs:element></xs:sequence></xs:complexType>"#,
+            r#"<xs:complexType name="c"><xs:sequence><xs:element name="e"><xs:complexType name="d"/></xs:element></xs:sequence></xs:complexType>"#,
+            r#"<xs:complexType name="c"><xs:sequence><xs:element name="e"><xs:complexType abstract="true"/></xs:element></xs:sequence></xs:complexType>"#,
+            r#"<xs:complexType name="c"><xs:sequence><xs:element name="e"><xs:complexType block="extension"/></xs:element></xs:sequence></xs:complexType>"#,
+            r#"<xs:element name="e" type="xs:token"/><xs:complexType name="c"><xs:sequence><xs:element ref="t:e"><xs:complexType/></xs:element></xs:sequence></xs:complexType>"#,
         ] {
             let schema = format!("{HEAD}{body}</xs:schema>");
             assert_eq!(kind_of(&schema), LoadErrorKind::Invalid, "{body}");
         }
+    }
+
+    #[test]
+    fn value_constraints_length_facets_and_anonymous_types() {
+        let schema = load_one(&format!(
+            r#"{HEAD}
+            <xs:simpleType name="code"><xs:restriction base="xs:token"><xs:minLength value=" 1 "/><xs:maxLength value="+3"/></xs:restriction></xs:simpleType>
+            <xs:simpleType name="short"><xs:restriction base="t:code"><xs:maxLength value="2"/><xs:enumeration value="ab"/><xs:enumeration value="c"/></xs:restriction></xs:simpleType>
+            <xs:complexType name="amount"><xs:simpleContent><xs:extension base="xs:decimal">
+                <xs:attribute name="unit" type="t:code" fixed="EUR"/>
+                <xs:attribute name="scale" type="xs:integer" default="2"/>
+            </xs:extension></xs:simpleContent></xs:complexType>
+            <xs:element name="root"/>
+            <xs:element name="total" type="t:amount" default="0"/>
+            <xs:complexType name="r"><xs:sequence>
+                <xs:element name="when" minOccurs="0"><xs:complexType><xs:choice>
+                    <xs:element name="text"><xs:complexType><xs:simpleContent><xs:extension base="xs:string"><xs:attribute name="format" type="xs:token" use="required"/></xs:extension></xs:simpleContent></xs:complexType></xs:element>
+                    <xs:element name="date" type="xs:date" default="2024-01-01"/>
+                </xs:choice></xs:complexType></xs:element>
+                <xs:element name="flag" type="xs:boolean" fixed="true" minOccurs="0"/>
+                <xs:element name="code" type="t:short" minOccurs="0"/>
+            </xs:sequence></xs:complexType>
+            <xs:element name="doc" type="t:r"/>
+            </xs:schema>"#
+        ))
+        .unwrap();
+        // anyType, the 16 built-ins, three named types and the two anonymous ones.
+        assert_eq!(schema.type_count(), 1 + 16 + 4 + 2);
+        let total = schema.global_element(Some("urn:t"), "total").unwrap();
+        let constraint = schema.element_constraint(total).unwrap();
+        assert_eq!(
+            (constraint.kind, &*constraint.value),
+            (ConstraintKind::Default, "0")
+        );
+        assert!(
+            schema
+                .element_constraint(schema.global_element(Some("urn:t"), "root").unwrap())
+                .is_none()
+        );
+        // Three element declarations have a constraint: total, date and flag.
+        assert_eq!(schema.element_constraints.len(), 3);
+        assert!(
+            schema
+                .element_constraints
+                .windows(2)
+                .all(|w| w[0].0 < w[1].0)
+        );
+        let short = schema.global_type(Some("urn:t"), "short").unwrap();
+        let TypeDef::Simple(short) = &schema.types[short] else {
+            panic!("short is simple");
+        };
+        assert_eq!((short.min_length, short.max_length), (None, Some(2)));
+        let code = schema.global_type(Some("urn:t"), "code").unwrap();
+        let TypeDef::Simple(code) = &schema.types[code] else {
+            panic!("code is simple");
+        };
+        assert_eq!((code.min_length, code.max_length), (Some(1), Some(3)));
     }
 
     #[test]

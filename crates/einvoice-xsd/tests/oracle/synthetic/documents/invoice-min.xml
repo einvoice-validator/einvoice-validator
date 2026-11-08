@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic document written for the xmllint oracle of einvoice-xsd: the smallest valid
+     invoice. -->
+<Invoice xmlns="urn:example:synthetic:invoice" xmlns:agg="urn:example:synthetic:aggregates" xmlns:typ="urn:example:synthetic:types">
+  <Header>
+    <agg:ID>1</agg:ID>
+    <agg:Issued><typ:DateTime>2024-01-01T00:00:00Z</typ:DateTime></agg:Issued>
+  </Header>
+  <Line>
+    <agg:Quantity unitCode="C62">1</agg:Quantity>
+  </Line>
+</Invoice>

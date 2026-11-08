@@ -19,6 +19,12 @@ The two ETSI XAdES schemas of the OASIS package are not redistributable and not 
 XAdES content (in UBL extensions and signatures) is validated laxly; the crate documentation
 says what that means. The verdicts are compared with xmllint (libxml2) in the test suite.
 
+`Schema::load` also loads the schemas of the UN/CEFACT Cross Industry Invoice family, which are
+not embedded: CII D16B and D22B and the Factur-X / ZUGFeRD profiles. For them the supported
+subset includes `fixed` and `default` values (fixed values compared in the value space of their
+type), anonymous complex types in local element declarations, and the `minLength` and
+`maxLength` facets; the crate documentation lists what remains outside it.
+
 This crate is part of [einvoice-validator](https://github.com/einvoice-validator/einvoice-validator), which validates EN 16931 and Peppol BIS
 Billing 3.0 e-invoices against the official validation artefacts in pure Rust.
 Documentation: <https://docs.rs/einvoice-xsd>.

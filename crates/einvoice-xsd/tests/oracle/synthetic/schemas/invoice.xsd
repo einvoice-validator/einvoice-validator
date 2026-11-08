@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic schema written for the xmllint oracle of einvoice-xsd: the entry point, in
+     the style of a CII message (one document element, aggregates in their own
+     namespace), plus two global elements with value constraints. -->
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:inv="urn:example:synthetic:invoice"
+    xmlns:agg="urn:example:synthetic:aggregates" xmlns:typ="urn:example:synthetic:types"
+    targetNamespace="urn:example:synthetic:invoice" elementFormDefault="qualified" version="1">
+  <xsd:import namespace="urn:example:synthetic:aggregates" schemaLocation="aggregates.xsd"/>
+  <xsd:import namespace="urn:example:synthetic:types" schemaLocation="types.xsd"/>
+  <xsd:element name="Invoice" type="inv:InvoiceType"/>
+  <xsd:element name="Total" type="typ:AmountType" default="0.00"/>
+  <xsd:element name="Stamp" type="xsd:token" fixed="SEALED"/>
+  <xsd:complexType name="InvoiceType">
+    <xsd:sequence>
+      <xsd:element name="Header" type="agg:HeaderType"/>
+      <xsd:element name="Settings" type="agg:SettingsType" minOccurs="0"/>
+      <xsd:element name="Line" type="agg:LineType" maxOccurs="unbounded"/>
+      <xsd:element ref="inv:Total" minOccurs="0"/>
+      <xsd:element ref="inv:Stamp" minOccurs="0"/>
+    </xsd:sequence>
+  </xsd:complexType>
+</xsd:schema>

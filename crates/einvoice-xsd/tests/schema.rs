@@ -306,6 +306,135 @@ fn custom_schema_set() {
     );
 }
 
+/// A schema set in the style of the CII schemas: fixed and default values, length
+/// facets, anonymous complex types.
+fn cii_style() -> Schema {
+    let schema = r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:t="urn:t" targetNamespace="urn:t" elementFormDefault="qualified">
+        <xs:simpleType name="Code"><xs:restriction base="xs:token"><xs:minLength value="1"/><xs:maxLength value="3"/></xs:restriction></xs:simpleType>
+        <xs:simpleType name="Short"><xs:restriction base="t:Code"><xs:maxLength value="2"/></xs:restriction></xs:simpleType>
+        <xs:complexType name="CodeType"><xs:simpleContent><xs:extension base="t:Code">
+            <xs:attribute name="listID" type="xs:token" fixed="List"/>
+            <xs:attribute name="rate" type="xs:decimal" fixed="1.50"/>
+            <xs:attribute name="version" type="xs:token" default="D16B"/>
+        </xs:extension></xs:simpleContent></xs:complexType>
+        <xs:complexType name="Root"><xs:sequence>
+            <xs:element name="code" type="t:CodeType" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="amount" type="xs:decimal" fixed="1.50" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="count" type="t:Code" default="ABC" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="when" minOccurs="0"><xs:complexType><xs:choice>
+                <xs:element name="text"><xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+                    <xs:attribute name="format" type="xs:token" use="required"/>
+                </xs:extension></xs:simpleContent></xs:complexType></xs:element>
+                <xs:element name="date" type="xs:date"/>
+            </xs:choice></xs:complexType></xs:element>
+        </xs:sequence></xs:complexType>
+        <xs:element name="doc" type="t:Root"/>
+    </xs:schema>"#;
+    Schema::load(&[("s.xsd", schema)], &["s.xsd"]).unwrap()
+}
+
+#[test]
+fn value_constraints_length_facets_and_anonymous_types() {
+    let schema = cii_style();
+    let errors = |body: &str| -> Vec<(ErrorKind, String, Option<String>, String)> {
+        let document = format!(
+            r#"<doc xmlns="urn:t" xmlns:t="urn:t" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">{body}</doc>"#
+        );
+        schema
+            .validate(&document)
+            .unwrap()
+            .errors
+            .into_iter()
+            .map(|e| (e.kind, e.element, e.attribute, e.message))
+            .collect()
+    };
+    // Equal values with other lexical forms, absent attributes and empty elements
+    // with a value constraint are valid.
+    let valid = r#"<code listID=" List " rate="+01.5">AB</code><code version="X">A</code>
+        <amount>1.5</amount><amount> 1.500 </amount><amount/><amount><!-- c --></amount>
+        <count/><count></count><count>  AB  </count>
+        <when><text format="102">20240101</text></when>"#;
+    assert_eq!(errors(valid), []);
+    let code = "{urn:t}code".to_owned();
+    assert_eq!(
+        errors(r#"<code listID="Other" rate="1.51">AB</code>"#),
+        [
+            (
+                ErrorKind::InvalidAttributeValue,
+                code.clone(),
+                Some("listID".to_owned()),
+                r#""Other" is not the fixed value "List" of the attribute"#.to_owned()
+            ),
+            (
+                ErrorKind::InvalidAttributeValue,
+                code.clone(),
+                Some("rate".to_owned()),
+                r#""1.51" is not the fixed value "1.50" of the attribute"#.to_owned()
+            ),
+        ]
+    );
+    assert_eq!(
+        errors("<amount>2</amount>"),
+        [(
+            ErrorKind::InvalidValue,
+            "{urn:t}amount".to_owned(),
+            None,
+            r#""2" is not the fixed value "1.50" of the declaration"#.to_owned()
+        )]
+    );
+    // Whitespace is content: the element takes no value constraint.
+    assert_eq!(
+        errors("<amount> </amount><count> </count>")
+            .iter()
+            .map(|e| e.0)
+            .collect::<Vec<_>>(),
+        [ErrorKind::InvalidValue, ErrorKind::InvalidValue]
+    );
+    // Length facets, counted in characters after whitespace processing.
+    assert_eq!(
+        errors("<code>ABCD</code><count>éàü</count><count>éàüö</count>"),
+        [
+            (
+                ErrorKind::InvalidValue,
+                code,
+                None,
+                r#""ABCD" is 4 characters long, more than the maximum length 3 of {urn:t}Code"#
+                    .to_owned()
+            ),
+            (
+                ErrorKind::InvalidValue,
+                "{urn:t}count".to_owned(),
+                None,
+                r#""éàüö" is 4 characters long, more than the maximum length 3 of {urn:t}Code"#
+                    .to_owned()
+            ),
+        ]
+    );
+    // cvc-elt.5.1.1: with xsi:type, the default must be valid for the actual type.
+    assert_eq!(
+        errors(r#"<count xsi:type="t:Short"/><count xsi:type="t:Short">AB</count>"#),
+        [(
+            ErrorKind::InvalidValue,
+            "{urn:t}count".to_owned(),
+            None,
+            r#"the default value "ABC" of the declaration is 3 characters long, more than the maximum length 2 of {urn:t}Short"#
+                .to_owned()
+        )]
+    );
+    // Anonymous complex types: content models and attributes.
+    assert_eq!(
+        errors("<when><text>x</text><date>2024-01-01</date></when><when/>")
+            .iter()
+            .map(|e| e.0)
+            .collect::<Vec<_>>(),
+        [
+            ErrorKind::MissingAttribute,
+            ErrorKind::UnexpectedElement,
+            ErrorKind::UnexpectedElement
+        ]
+    );
+}
+
 #[test]
 fn error_kind_names_are_stable() {
     let names: Vec<&str> = [

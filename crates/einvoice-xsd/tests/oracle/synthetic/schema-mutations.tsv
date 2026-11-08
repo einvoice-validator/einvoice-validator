@@ -1,0 +1,74 @@
+# Mutations of the synthetic schema set in schemas/: id, schema document (file name), then
+# one or more pairs of columns: text to find (must occur exactly once in that document as
+# edited so far) and its replacement, with the escapes of mutations.tsv. The verdict of a
+# case is whether the edited set loads (xmllint: compiles), from the entry point invoice.xsd.
+id	file	find	replace	(find	replace)...
+attr-fixed-not-a-value	types.xsd	name="rate" type="xsd:decimal" fixed="1.50"	name="rate" type="xsd:decimal" fixed="x"
+attr-fixed-padded-value	types.xsd	fixed="ExampleList"	fixed=" ExampleList "
+attr-default-not-a-value	types.xsd	name="rounded" type="xsd:boolean" default="0"	name="rounded" type="xsd:boolean" default="2"
+attr-default-and-fixed	types.xsd	fixed="ExampleList"	fixed="ExampleList" default="ExampleList"
+attr-default-required	types.xsd	default="D16B"	default="D16B" use="required"
+attr-default-optional	types.xsd	default="D16B"	default="D16B" use="optional"
+attr-fixed-required	aggregates.xsd	fixed="Rec20"	fixed="Rec20" use="required"
+attr-fixed-on-id	types.xsd	name="name" type="xsd:NCName" fixed="n1"	name="name" type="xsd:ID" fixed="n1"
+attr-default-on-id	types.xsd	name="name" type="xsd:NCName" fixed="n1"	name="name" type="xsd:ID" default="n1"
+attr-fixed-length-facet	types.xsd	type="typ:ShortCodeContentType" fixed="6"	type="typ:ShortCodeContentType" fixed="666"
+attr-default-length-facet-whitespace	types.xsd	type="typ:LabelContentType" default="ab"	type="typ:LabelContentType" default=" ab "
+attr-default-enumeration	aggregates.xsd	type="typ:ShortCodeContentType" default="OK"	type="typ:ListedCodeContentType" default="OK"
+attr-fixed-date	types.xsd	<xsd:attribute name="short" type="typ:LineContentType"/>	<xsd:attribute name="short" type="typ:LineContentType"/><xsd:attribute name="on" type="xsd:date" fixed="2024-01-01"/>
+attr-default-date	types.xsd	<xsd:attribute name="short" type="typ:LineContentType"/>	<xsd:attribute name="short" type="typ:LineContentType"/><xsd:attribute name="on" type="xsd:date" default="2024-01-01"/>
+attr-fixed-datetime	types.xsd	<xsd:attribute name="short" type="typ:LineContentType"/>	<xsd:attribute name="short" type="typ:LineContentType"/><xsd:attribute name="at" type="xsd:dateTime" fixed="2024-01-01T00:00:00Z"/>
+element-fixed-not-a-value	aggregates.xsd	type="xsd:decimal" fixed="1.50"	type="xsd:decimal" fixed="1,50"
+element-default-not-a-value	aggregates.xsd	type="xsd:integer" default="1"	type="xsd:integer" default="1.0"
+element-default-padded-value	aggregates.xsd	type="xsd:integer" default="1"	type="xsd:integer" default=" 1 "
+element-default-length-facet	aggregates.xsd	type="typ:CodeContentType" default="ABC"	type="typ:CodeContentType" default="ABCD"
+element-default-and-fixed	invoice.xsd	fixed="SEALED"	fixed="SEALED" default="SEALED"
+element-fixed-on-id	invoice.xsd	type="xsd:token" fixed="SEALED"	type="xsd:ID" fixed="SEALED"
+element-fixed-element-only	invoice.xsd	<xsd:element name="Invoice" type="inv:InvoiceType"/>	<xsd:element name="Invoice" type="inv:InvoiceType" fixed="x"/>
+element-default-empty-content	aggregates.xsd	<xsd:element name="Marker" minOccurs="0">	<xsd:element name="Marker" minOccurs="0" default="x">
+element-fixed-mixed-emptiable	aggregates.xsd	<xsd:element name="Remark" minOccurs="0">	<xsd:element name="Remark" minOccurs="0" fixed="x">
+element-default-any-type	aggregates.xsd	<xsd:element name="Any" minOccurs="0"/>	<xsd:element name="Any" minOccurs="0" default="x"/>
+element-fixed-date	aggregates.xsd	default="2024-01-01"	fixed="2024-01-01"
+element-default-date-not-a-value	aggregates.xsd	default="2024-01-01"	default="2024-02-30"
+element-fixed-simple-content-not-a-value	aggregates.xsd	fixed="10.0"	fixed="ten"
+element-ref-with-fixed	invoice.xsd	<xsd:element ref="inv:Stamp" minOccurs="0"/>	<xsd:element ref="inv:Stamp" minOccurs="0" fixed="SEALED"/>
+element-ref-with-anonymous-type	invoice.xsd	<xsd:element ref="inv:Stamp" minOccurs="0"/>	<xsd:element ref="inv:Stamp" minOccurs="0"><xsd:complexType/></xsd:element>
+anonymous-with-type-attribute	aggregates.xsd	<xsd:element name="Marker" minOccurs="0">	<xsd:element name="Marker" minOccurs="0" type="xsd:string">
+anonymous-named	aggregates.xsd	<xsd:complexType>\n          <xsd:attribute name="present"	<xsd:complexType name="Marker">\n          <xsd:attribute name="present"
+anonymous-abstract	aggregates.xsd	<xsd:complexType>\n          <xsd:attribute name="present"	<xsd:complexType abstract="true">\n          <xsd:attribute name="present"
+anonymous-block	aggregates.xsd	<xsd:complexType>\n          <xsd:attribute name="present"	<xsd:complexType block="extension">\n          <xsd:attribute name="present"
+anonymous-simple-type	aggregates.xsd	<xsd:element name="Any" minOccurs="0"/>	<xsd:element name="Any" minOccurs="0"><xsd:simpleType><xsd:restriction base="xsd:token"/></xsd:simpleType></xsd:element>
+anonymous-two-types	aggregates.xsd	<xsd:element name="Any" minOccurs="0"/>	<xsd:element name="Any" minOccurs="0"><xsd:complexType/><xsd:complexType/></xsd:element>
+anonymous-global-element	invoice.xsd	<xsd:element name="Stamp" type="xsd:token" fixed="SEALED"/>	<xsd:element name="Stamp"><xsd:complexType/></xsd:element>
+anonymous-nondeterministic	aggregates.xsd	<xsd:element name="Emphasis" type="xsd:string" minOccurs="0" maxOccurs="unbounded"/>	<xsd:element name="Emphasis" type="xsd:string" minOccurs="0"/><xsd:element name="Emphasis" type="xsd:string"/>
+facet-negative	types.xsd	<xsd:maxLength value="0"/>	<xsd:maxLength value="-1"/>
+facet-negative-zero	types.xsd	<xsd:maxLength value="0"/>	<xsd:maxLength value="-0"/>
+facet-plus-sign	types.xsd	<xsd:maxLength value="0"/>	<xsd:maxLength value="+0"/>
+facet-padded	types.xsd	<xsd:maxLength value="0"/>	<xsd:maxLength value=" 0 "/>
+facet-decimal-value	types.xsd	<xsd:maxLength value="0"/>	<xsd:maxLength value="0.0"/>
+facet-huge	types.xsd	<xsd:maxLength value="0"/>	<xsd:maxLength value="99999999999999999999999"/>
+facet-on-decimal	types.xsd	</xsd:schema>	<xsd:simpleType name="Bad"><xsd:restriction base="xsd:decimal"><xsd:maxLength value="2"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-on-boolean	types.xsd	</xsd:schema>	<xsd:simpleType name="Bad"><xsd:restriction base="xsd:boolean"><xsd:minLength value="2"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-on-anyuri	types.xsd	</xsd:schema>	<xsd:simpleType name="Bad"><xsd:restriction base="xsd:anyURI"><xsd:maxLength value="2"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-on-base64	types.xsd	</xsd:schema>	<xsd:simpleType name="Bad"><xsd:restriction base="xsd:base64Binary"><xsd:maxLength value="2"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-length	types.xsd	<xsd:maxLength value="0"/>	<xsd:length value="0"/>
+facet-fixed-attribute	types.xsd	<xsd:maxLength value="0"/>	<xsd:maxLength value="0" fixed="true"/>
+enumeration-above-base-length	types.xsd	<xsd:enumeration value="CCC"/>	<xsd:enumeration value="CCCC"/>
+enumeration-below-base-length	types.xsd	<xsd:enumeration value="A"/>	<xsd:enumeration value=""/>
+restriction-of-fixed-attribute	types.xsd	</xsd:schema>	<xsd:complexType name="Restricted"><xsd:simpleContent><xsd:restriction base="typ:CodeType"><xsd:attribute name="listID" type="xsd:token" fixed="ExampleList"/></xsd:restriction></xsd:simpleContent></xsd:complexType>\n</xsd:schema>
+restriction-of-default-attribute	types.xsd	</xsd:schema>	<xsd:complexType name="Restricted"><xsd:simpleContent><xsd:restriction base="typ:CodeType"><xsd:attribute name="listVersionID" type="xsd:token" fixed="D16B"/></xsd:restriction></xsd:simpleContent></xsd:complexType>\n</xsd:schema>
+extension-repeats-fixed-attribute	types.xsd	<xsd:attribute name="note" type="xsd:string"/>	<xsd:attribute name="note" type="xsd:string"/><xsd:attribute name="scale" type="xsd:integer" fixed="2"/>
+facet-max-above-base	types.xsd	</xsd:schema>	<xsd:simpleType name="Base"><xsd:restriction base="xsd:token"><xsd:minLength value="2"/><xsd:maxLength value="5"/></xsd:restriction></xsd:simpleType><xsd:simpleType name="Derived"><xsd:restriction base="typ:Base"><xsd:maxLength value="6"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-max-equal-base	types.xsd	</xsd:schema>	<xsd:simpleType name="Base"><xsd:restriction base="xsd:token"><xsd:minLength value="2"/><xsd:maxLength value="5"/></xsd:restriction></xsd:simpleType><xsd:simpleType name="Derived"><xsd:restriction base="typ:Base"><xsd:maxLength value="5"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-max-below-base	types.xsd	</xsd:schema>	<xsd:simpleType name="Base"><xsd:restriction base="xsd:token"><xsd:minLength value="2"/><xsd:maxLength value="5"/></xsd:restriction></xsd:simpleType><xsd:simpleType name="Derived"><xsd:restriction base="typ:Base"><xsd:maxLength value="3"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-min-below-base	types.xsd	</xsd:schema>	<xsd:simpleType name="Base"><xsd:restriction base="xsd:token"><xsd:minLength value="2"/><xsd:maxLength value="5"/></xsd:restriction></xsd:simpleType><xsd:simpleType name="Derived"><xsd:restriction base="typ:Base"><xsd:minLength value="1"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-min-equal-base	types.xsd	</xsd:schema>	<xsd:simpleType name="Base"><xsd:restriction base="xsd:token"><xsd:minLength value="2"/><xsd:maxLength value="5"/></xsd:restriction></xsd:simpleType><xsd:simpleType name="Derived"><xsd:restriction base="typ:Base"><xsd:minLength value="2"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-min-above-base	types.xsd	</xsd:schema>	<xsd:simpleType name="Base"><xsd:restriction base="xsd:token"><xsd:minLength value="2"/><xsd:maxLength value="5"/></xsd:restriction></xsd:simpleType><xsd:simpleType name="Derived"><xsd:restriction base="typ:Base"><xsd:minLength value="3"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-min-above-own-max	types.xsd	</xsd:schema>	<xsd:simpleType name="Base"><xsd:restriction base="xsd:token"><xsd:minLength value="3"/><xsd:maxLength value="2"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-min-above-inherited-max	types.xsd	</xsd:schema>	<xsd:simpleType name="Base"><xsd:restriction base="xsd:token"><xsd:maxLength value="5"/></xsd:restriction></xsd:simpleType><xsd:simpleType name="Derived"><xsd:restriction base="typ:Base"><xsd:minLength value="6"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-max-below-inherited-min	types.xsd	</xsd:schema>	<xsd:simpleType name="Base"><xsd:restriction base="xsd:token"><xsd:minLength value="2"/></xsd:restriction></xsd:simpleType><xsd:simpleType name="Derived"><xsd:restriction base="typ:Base"><xsd:maxLength value="1"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-repeated	types.xsd	</xsd:schema>	<xsd:simpleType name="Base"><xsd:restriction base="xsd:token"><xsd:maxLength value="4"/><xsd:maxLength value="4"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-repeated-min	types.xsd	</xsd:schema>	<xsd:simpleType name="Base"><xsd:restriction base="xsd:string"><xsd:minLength value="1"/><xsd:minLength value="2"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-string-family	types.xsd	</xsd:schema>	<xsd:simpleType name="A"><xsd:restriction base="xsd:language"><xsd:maxLength value="5"/></xsd:restriction></xsd:simpleType><xsd:simpleType name="B"><xsd:restriction base="xsd:Name"><xsd:maxLength value="5"/></xsd:restriction></xsd:simpleType><xsd:simpleType name="C"><xsd:restriction base="xsd:NCName"><xsd:minLength value="1"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-on-integer	types.xsd	</xsd:schema>	<xsd:simpleType name="Bad"><xsd:restriction base="xsd:integer"><xsd:minLength value="1"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>
+facet-on-date	types.xsd	</xsd:schema>	<xsd:simpleType name="Bad"><xsd:restriction base="xsd:date"><xsd:maxLength value="10"/></xsd:restriction></xsd:simpleType>\n</xsd:schema>

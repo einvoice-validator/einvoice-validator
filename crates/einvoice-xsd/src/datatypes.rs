@@ -144,6 +144,67 @@ impl Builtin {
         }
     }
 
+    /// Whether the length facets (`minLength`, `maxLength`) apply to the type and
+    /// this crate implements them: the types derived from `xs:string`, whose length
+    /// is counted in characters (Part 2, 4.3.1). They also apply to `xs:anyURI` and
+    /// `xs:base64Binary`, which the supported schemas never restrict that way; they
+    /// do not apply to the other types here.
+    pub(crate) fn has_length(self) -> bool {
+        matches!(
+            self,
+            Self::String
+                | Self::NormalizedString
+                | Self::Token
+                | Self::Language
+                | Self::Name
+                | Self::NcName
+                | Self::Id
+        )
+    }
+
+    /// The value of a lexical form, already whitespace-processed and valid, as a
+    /// key: two valid lexical forms of the type denote the same value (Part 2,
+    /// 2.2.1: equality in the value space) exactly when their keys are equal.
+    /// `None` for the date and time types, whose values (instants with an optional
+    /// timezone) this crate does not compare: a value constraint on them is
+    /// refused when the schema is loaded.
+    pub(crate) fn value_key(self, value: &str) -> Option<std::borrow::Cow<'_, str>> {
+        use std::borrow::Cow;
+        match self {
+            // The string types and anyURI: the value is the string itself (anyURI
+            // values are not URI-normalised: Part 2, 3.2.17 defines no equality
+            // beyond identity of the strings).
+            Self::AnySimpleType
+            | Self::String
+            | Self::NormalizedString
+            | Self::Token
+            | Self::Language
+            | Self::Name
+            | Self::NcName
+            | Self::Id
+            | Self::AnyUri => Some(Cow::Borrowed(value)),
+            Self::Decimal | Self::Integer => Some(Cow::Owned(canonical_decimal(value))),
+            Self::Boolean => Some(Cow::Borrowed(match value {
+                "true" | "1" => "true",
+                _ => "false",
+            })),
+            // The lexical space admits one encoding per octet sequence (the bits
+            // a padded group leaves unused must be zero), up to the spaces between
+            // characters.
+            Self::Base64Binary => Some(if value.contains(' ') {
+                Cow::Owned(value.replace(' ', ""))
+            } else {
+                Cow::Borrowed(value)
+            }),
+            Self::Date | Self::DateTime | Self::Time => None,
+        }
+    }
+
+    /// Whether [`Self::value_key`] compares the values of the type.
+    pub(crate) fn has_value_key(self) -> bool {
+        !matches!(self, Self::Date | Self::DateTime | Self::Time)
+    }
+
     /// Whether `raw`, before whitespace processing, is in the lexical space once
     /// processed: `self.is_valid(&normalize(raw, self.white_space()))`, without
     /// building the processed value when the check does not need it (the string
@@ -252,6 +313,33 @@ pub(crate) fn is_decimal(value: &str) -> bool {
                 && !(int.is_empty() && frac.is_empty())
         }
     }
+}
+
+/// The canonical representation of a valid `xs:decimal` lexical form (Part 2,
+/// 3.2.3.2), with no digit limit: no `+`, no leading zeros before the point, no
+/// trailing zeros after it, no point for an integral value, and `0` for zero
+/// (whatever its sign).
+pub(crate) fn canonical_decimal(value: &str) -> String {
+    let (negative, unsigned) = match value.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, value.strip_prefix('+').unwrap_or(value)),
+    };
+    let (int, frac) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    let int = int.trim_start_matches('0');
+    let frac = frac.trim_end_matches('0');
+    if int.is_empty() && frac.is_empty() {
+        return "0".to_owned();
+    }
+    let mut out = String::with_capacity(int.len() + frac.len() + 3);
+    if negative {
+        out.push('-');
+    }
+    out.push_str(if int.is_empty() { "0" } else { int });
+    if !frac.is_empty() {
+        out.push('.');
+        out.push_str(frac);
+    }
+    out
 }
 
 /// `[\-+]?[0-9]+`
@@ -478,6 +566,81 @@ mod tests {
     }
 
     #[test]
+    fn canonical_decimals() {
+        for (value, canonical) in [
+            ("0", "0"),
+            ("-0", "0"),
+            ("+0.000", "0"),
+            (".0", "0"),
+            ("0.", "0"),
+            ("1.50", "1.5"),
+            ("+01.500", "1.5"),
+            ("-001", "-1"),
+            ("-.5", "-0.5"),
+            ("5.", "5"),
+            ("100", "100"),
+            ("10.010", "10.01"),
+            (
+                "000123456789012345678901234567890.000",
+                "123456789012345678901234567890",
+            ),
+        ] {
+            assert_eq!(canonical_decimal(value), canonical, "{value}");
+        }
+    }
+
+    #[test]
+    fn value_keys() {
+        let key = |builtin: Builtin, value: &str| {
+            builtin.value_key(value).map(std::borrow::Cow::into_owned)
+        };
+        assert_eq!(key(Builtin::Boolean, "1"), key(Builtin::Boolean, "true"));
+        assert_eq!(key(Builtin::Boolean, "0"), key(Builtin::Boolean, "false"));
+        assert_ne!(key(Builtin::Boolean, "0"), key(Builtin::Boolean, "true"));
+        assert_eq!(key(Builtin::Integer, "+002"), key(Builtin::Integer, "2"));
+        assert_eq!(key(Builtin::Decimal, "1.5"), key(Builtin::Decimal, "1.50"));
+        assert_eq!(
+            key(Builtin::Base64Binary, "Q U J D"),
+            key(Builtin::Base64Binary, "QUJD")
+        );
+        // Strings are compared as they are: whitespace processing comes first.
+        assert_ne!(key(Builtin::String, " a"), key(Builtin::String, "a"));
+        assert_ne!(key(Builtin::Language, "EN"), key(Builtin::Language, "en"));
+        assert_ne!(key(Builtin::AnyUri, "a%20b"), key(Builtin::AnyUri, "a b"));
+        for builtin in [Builtin::Date, Builtin::DateTime, Builtin::Time] {
+            assert!(!builtin.has_value_key());
+            assert_eq!(builtin.value_key("2024-01-01"), None);
+        }
+        for builtin in Builtin::ALL {
+            assert_eq!(
+                builtin.has_value_key(),
+                builtin.value_key("").is_some(),
+                "{builtin:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn length_facets_apply_to_the_string_types() {
+        let with_length: Vec<Builtin> = Builtin::ALL
+            .into_iter()
+            .filter(|b| b.has_length())
+            .collect();
+        assert_eq!(
+            with_length,
+            [
+                Builtin::String,
+                Builtin::NormalizedString,
+                Builtin::Token,
+                Builtin::Language,
+                Builtin::Name,
+                Builtin::NcName,
+                Builtin::Id
+            ]
+        );
+    }
+
+    #[test]
     fn integers() {
         for ok in ["0", "-0", "+42", "1234567890123456789012345"] {
             assert!(is_integer(ok), "{ok}");
@@ -692,6 +855,49 @@ mod tests {
         #[test]
         fn base64_in_one_pass(value in "[A-Da-dQgwU0-3+/= !\t\n\r-]{0,16}") {
             proptest::prop_assert_eq!(is_base64(&value), reference_base64(&value));
+        }
+
+        #[test]
+        fn decimal_keys_are_numeric_equality(
+            a in "[+-]?[0-9]{0,6}(\\.[0-9]{0,6})?",
+            b in "[+-]?[0-9]{0,6}(\\.[0-9]{0,6})?",
+        ) {
+            proptest::prop_assume!(is_decimal(&a) && is_decimal(&b));
+            // Reference: the value scaled by 10^6, exact in an i64.
+            let scaled = |value: &str| -> i64 {
+                let negative = value.starts_with('-');
+                let unsigned = value.trim_start_matches(['+', '-']);
+                let (int, frac) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+                let int: i64 = if int.is_empty() { 0 } else { int.parse().unwrap() };
+                let frac: i64 = format!("{frac:0<6}").parse().unwrap();
+                let magnitude = int * 1_000_000 + frac;
+                if negative { -magnitude } else { magnitude }
+            };
+            proptest::prop_assert_eq!(
+                canonical_decimal(&a) == canonical_decimal(&b),
+                scaled(&a) == scaled(&b),
+                "{} {}", a, b
+            );
+            // The canonical form is itself a valid decimal with the same value.
+            proptest::prop_assert!(is_decimal(&canonical_decimal(&a)));
+            proptest::prop_assert_eq!(scaled(&canonical_decimal(&a)), scaled(&a));
+        }
+
+        #[test]
+        fn decimal_keys_ignore_zeros_and_plus(
+            negative: bool,
+            int in "[0-9]{0,4}",
+            frac in "[0-9]{0,4}",
+            lead in 0_usize..3,
+            trail in 0_usize..3,
+            plus: bool,
+        ) {
+            proptest::prop_assume!(!int.is_empty() || !frac.is_empty());
+            let sign = if negative { "-" } else { "" };
+            let a = format!("{sign}{int}.{frac}");
+            let other_sign = if negative { "-" } else if plus { "+" } else { "" };
+            let b = format!("{other_sign}{}{int}.{frac}{}", "0".repeat(lead), "0".repeat(trail));
+            proptest::prop_assert_eq!(canonical_decimal(&a), canonical_decimal(&b));
         }
 
         #[test]

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic schema written for the xmllint oracle of einvoice-xsd: aggregates whose
+     local elements have fixed and default values and anonymous complex types. -->
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:agg="urn:example:synthetic:aggregates"
+    xmlns:typ="urn:example:synthetic:types" targetNamespace="urn:example:synthetic:aggregates"
+    elementFormDefault="qualified" version="1">
+  <xsd:import namespace="urn:example:synthetic:types" schemaLocation="types.xsd"/>
+  <xsd:complexType name="HeaderType">
+    <xsd:sequence>
+      <xsd:element name="ID" type="typ:CodeType"/>
+      <xsd:element name="TypeCode" type="typ:ListedCodeContentType" minOccurs="0"/>
+      <xsd:element name="ShortCode" type="typ:ShortCodeContentType" minOccurs="0"/>
+      <xsd:element name="Label" type="typ:LabelContentType" minOccurs="0"/>
+      <xsd:element name="Line" type="typ:LineContentType" minOccurs="0"/>
+      <xsd:element name="Note" type="typ:NoteContentType" minOccurs="0"/>
+      <xsd:element name="Issued" type="typ:DateTimeType"/>
+      <xsd:element name="Text" type="typ:TextType" minOccurs="0" maxOccurs="unbounded"/>
+    </xsd:sequence>
+  </xsd:complexType>
+  <xsd:complexType name="SettingsType">
+    <xsd:sequence>
+      <xsd:element name="Version" type="xsd:decimal" fixed="1.50" minOccurs="0"/>
+      <xsd:element name="Count" type="xsd:integer" default="1" minOccurs="0"/>
+      <xsd:element name="Profile" type="xsd:token" fixed="a  b" minOccurs="0"/>
+      <xsd:element name="Padding" type="xsd:string" fixed=" x " minOccurs="0"/>
+      <xsd:element name="Mode" type="xsd:normalizedString" default="a&#9;b" minOccurs="0"/>
+      <xsd:element name="Strict" type="xsd:boolean" fixed="true" minOccurs="0"/>
+      <xsd:element name="Blob" type="xsd:base64Binary" fixed="QUJD" minOccurs="0"/>
+      <xsd:element name="Home" type="xsd:anyURI" fixed="urn:a b" minOccurs="0"/>
+      <xsd:element name="Lang" type="xsd:language" default="en" minOccurs="0"/>
+      <xsd:element name="Code" type="typ:CodeContentType" default="ABC" minOccurs="0"/>
+      <xsd:element name="Started" type="xsd:date" default="2024-01-01" minOccurs="0"/>
+      <xsd:element name="Amount" type="typ:AmountType" fixed="10.0" minOccurs="0" maxOccurs="unbounded"/>
+      <xsd:element name="Rate" type="typ:AmountType" default="1" minOccurs="0"/>
+      <xsd:element name="Short" type="typ:CodeContentType" default="AB" minOccurs="0"/>
+    </xsd:sequence>
+  </xsd:complexType>
+  <xsd:complexType name="LineType">
+    <xsd:sequence>
+      <xsd:element name="Quantity">
+        <xsd:complexType>
+          <xsd:simpleContent>
+            <xsd:extension base="xsd:decimal">
+              <xsd:attribute name="unitCode" type="typ:CodeContentType" use="required"/>
+              <xsd:attribute name="unitCodeListID" type="xsd:token" fixed="Rec20"/>
+              <xsd:attribute name="precision" type="xsd:integer" default="0"/>
+            </xsd:extension>
+          </xsd:simpleContent>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="Period" minOccurs="0">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="Start" type="typ:DateTimeType"/>
+            <xsd:element name="End" minOccurs="0">
+              <xsd:complexType>
+                <xsd:choice>
+                  <xsd:element name="DateString">
+                    <xsd:complexType>
+                      <xsd:simpleContent>
+                        <xsd:extension base="typ:LabelContentType">
+                          <xsd:attribute name="format" type="xsd:token" fixed="102"/>
+                        </xsd:extension>
+                      </xsd:simpleContent>
+                    </xsd:complexType>
+                  </xsd:element>
+                  <xsd:element name="Date" type="xsd:date"/>
+                </xsd:choice>
+              </xsd:complexType>
+            </xsd:element>
+          </xsd:sequence>
+          <xsd:attribute name="kind" type="xsd:token" fixed="billing"/>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="Marker" minOccurs="0">
+        <xsd:complexType>
+          <xsd:attribute name="present" type="xsd:boolean" fixed="1"/>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="Remark" minOccurs="0">
+        <xsd:complexType mixed="true">
+          <xsd:sequence>
+            <xsd:element name="Emphasis" type="xsd:string" minOccurs="0" maxOccurs="unbounded"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="Any" minOccurs="0"/>
+    </xsd:sequence>
+    <xsd:attribute name="status" type="typ:ShortCodeContentType" default="OK"/>
+  </xsd:complexType>
+</xsd:schema>

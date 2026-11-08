@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic schema written for the xmllint oracle of einvoice-xsd: data types in the
+     style of the UN/CEFACT CII schemas (simple types restricting xs:token with length
+     facets, simple-content types whose supplementary attributes have fixed and default
+     values). -->
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:typ="urn:example:synthetic:types"
+    targetNamespace="urn:example:synthetic:types" elementFormDefault="qualified" version="1">
+  <xsd:simpleType name="CodeContentType">
+    <xsd:restriction base="xsd:token">
+      <xsd:minLength value="1"/>
+      <xsd:maxLength value="3"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+  <xsd:simpleType name="ShortCodeContentType">
+    <xsd:restriction base="typ:CodeContentType">
+      <xsd:maxLength value="2"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+  <xsd:simpleType name="ListedCodeContentType">
+    <xsd:restriction base="typ:CodeContentType">
+      <xsd:enumeration value="A"/>
+      <xsd:enumeration value="BB"/>
+      <xsd:enumeration value="CCC"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+  <xsd:simpleType name="LabelContentType">
+    <xsd:restriction base="xsd:string">
+      <xsd:minLength value="2"/>
+      <xsd:maxLength value="4"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+  <xsd:simpleType name="LineContentType">
+    <xsd:restriction base="xsd:normalizedString">
+      <xsd:maxLength value="3"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+  <xsd:simpleType name="NoteContentType">
+    <xsd:restriction base="xsd:string">
+      <xsd:maxLength value="0"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+  <xsd:complexType name="CodeType">
+    <xsd:simpleContent>
+      <xsd:extension base="typ:CodeContentType">
+        <xsd:attribute name="listID" type="xsd:token" fixed="ExampleList"/>
+        <xsd:attribute name="listAgencyID" type="typ:ShortCodeContentType" fixed="6"/>
+        <xsd:attribute name="listVersionID" type="xsd:token" default="D16B"/>
+        <xsd:attribute name="listURI" type="xsd:anyURI"/>
+      </xsd:extension>
+    </xsd:simpleContent>
+  </xsd:complexType>
+  <xsd:complexType name="AmountType">
+    <xsd:simpleContent>
+      <xsd:extension base="xsd:decimal">
+        <xsd:attribute name="currencyID" type="typ:CodeContentType" use="required"/>
+        <xsd:attribute name="scale" type="xsd:integer" fixed="2"/>
+        <xsd:attribute name="rate" type="xsd:decimal" fixed="1.50"/>
+        <xsd:attribute name="exact" type="xsd:boolean" fixed="true"/>
+        <xsd:attribute name="rounded" type="xsd:boolean" default="0"/>
+      </xsd:extension>
+    </xsd:simpleContent>
+  </xsd:complexType>
+  <xsd:complexType name="ExtendedAmountType">
+    <xsd:simpleContent>
+      <xsd:extension base="typ:AmountType">
+        <xsd:attribute name="note" type="xsd:string"/>
+      </xsd:extension>
+    </xsd:simpleContent>
+  </xsd:complexType>
+  <xsd:complexType name="TextType">
+    <xsd:simpleContent>
+      <xsd:extension base="xsd:string">
+        <xsd:attribute name="languageID" type="xsd:language" fixed="en"/>
+        <xsd:attribute name="spaced" type="xsd:string" fixed=" a  b "/>
+        <xsd:attribute name="line" type="xsd:normalizedString" fixed="a&#9;b"/>
+        <xsd:attribute name="word" type="xsd:token" fixed="a  b"/>
+        <xsd:attribute name="name" type="xsd:NCName" fixed="n1"/>
+        <xsd:attribute name="data" type="xsd:base64Binary" fixed="QUJD"/>
+        <xsd:attribute name="uri" type="xsd:anyURI" fixed="urn:a b"/>
+        <xsd:attribute name="label" type="typ:LabelContentType" default="ab"/>
+        <xsd:attribute name="short" type="typ:LineContentType"/>
+      </xsd:extension>
+    </xsd:simpleContent>
+  </xsd:complexType>
+  <xsd:complexType name="DateTimeType">
+    <xsd:choice>
+      <xsd:element name="DateTimeString">
+        <xsd:complexType>
+          <xsd:simpleContent>
+            <xsd:extension base="xsd:string">
+              <xsd:attribute name="format" type="xsd:string" use="required"/>
+            </xsd:extension>
+          </xsd:simpleContent>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="DateTime" type="xsd:dateTime"/>
+    </xsd:choice>
+  </xsd:complexType>
+</xsd:schema>

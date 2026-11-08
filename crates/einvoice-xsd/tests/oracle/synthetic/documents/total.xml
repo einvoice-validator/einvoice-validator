@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic document written for the xmllint oracle of einvoice-xsd: a global element
+     with a default value as the document element, empty. -->
+<Total xmlns="urn:example:synthetic:invoice" currencyID="EUR"/>

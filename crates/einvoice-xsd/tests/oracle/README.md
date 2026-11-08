@@ -33,8 +33,55 @@ downloaded from `docs.oasis-open.org`; SHA-256 checked either way), runs xmllint
 every case (`$XMLLINT`, else `xmllint`), checks or rewrites `expected.tsv`, and prints how this
 crate compares, case by case, twice: with the shipped schemas, where every listed disagreement
 must occur, and with the complete set, where the XAdES ones must not and every other one must.
+It then does the same for the synthetic suite below.
 
 ```sh
-cargo run --release -p einvoice-xsd --example xmllint-oracle             # check expected.tsv against xmllint
-cargo run --release -p einvoice-xsd --example xmllint-oracle -- --write  # rewrite expected.tsv
+cargo run --release -p einvoice-xsd --example xmllint-oracle             # check both expected.tsv against xmllint
+cargo run --release -p einvoice-xsd --example xmllint-oracle -- --write  # rewrite them
+```
+
+The `xmllint.rs` module runs xmllint and reads its verdicts and errors; the example and the
+local check below share it.
+
+## Synthetic suite
+
+`synthetic/` is a second suite of the same kind, for the constructs that the schemas of the
+Cross Industry Invoice family add to those of UBL. Its schema set, `synthetic/schemas/`, is
+written for this project in the style of those schemas (an entry point, aggregates, data types
+in their own namespace): `fixed` and `default` values on attributes and elements of every
+built-in type that allows them, length facets on the string types (through several restriction
+steps, with an enumeration), anonymous complex types in local element declarations (simple,
+element-only with a choice, mixed and empty content, nested), and `xsi:type` on elements with
+a value constraint.
+
+| file | content |
+|---|---|
+| `schemas/` | the synthetic schema set; entry point `invoice.xsd` |
+| `documents/` | synthetic documents valid for it |
+| `mutations.tsv` | edits of those documents, in the format of `../mutations.tsv` |
+| `schema-mutations.tsv` | edits of one schema document each: id, file, then find and replace pairs; the verdict of such a case is whether the edited set loads (`loads` or `fails`; xmllint compiles it, this crate can also say `unsupported`) |
+| `expected.tsv` | xmllint's verdict and errors for every case |
+| `disagreements.tsv` | every case where this crate differs from xmllint, with the reason: libxml2 departs from XML Schema 1.0, reports more errors for the same verdict, or the construct is refused as unsupported |
+
+The cases are, in order: every file of `documents/` (`document/<stem>`), every mutation
+(`mutation/<id>`), every schema mutation (`schema/<id>`). `tests/oracle.rs` checks them as it
+checks the UBL suite; the example runs xmllint on them with the schema set as it is in the
+repository, each schema mutation written to `target/xsd-oracle/synthetic/schema/<id>/`.
+
+## Schema sets outside the repository
+
+The test `extra_schema_sets_agree_with_xmllint` of `tests/oracle.rs` compares this crate with
+xmllint on schema sets that are not part of the repository, such as the CII D16B and D22B
+schemas and the Factur-X profiles, and on documents of their own. It runs only when
+`EINVOICE_XSD_EXTRA_SETS` names a manifest of them, and needs xmllint; otherwise it prints
+`SKIPPED` and passes. The manifest is a tab-separated file, one set per line: a name, the
+directory of the schema set (every `.xsd` below it is given to this crate), the entry point
+relative to that directory, then one or more directories of documents (every `.xml` below them
+whose document element is in the target namespace of the entry point); relative paths are
+relative to the manifest; `#` starts a comment. Every set must load with this crate and compile
+with xmllint, and both must agree on the verdict and the errors of every document; the test
+prints, for each set, the number of documents, of valid ones and of agreements.
+
+```sh
+EINVOICE_XSD_EXTRA_SETS=/path/to/sets.tsv cargo test --release -p einvoice-xsd --test oracle extra_schema_sets -- --nocapture
 ```
