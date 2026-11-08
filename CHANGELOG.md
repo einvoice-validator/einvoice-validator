@@ -12,6 +12,37 @@ against.
 
 ### Added
 
+- The engine runs the Factur-X 1.09.2, XRechnung 3.0.2 and French (FNFE-MPE 1.4.0.04) rule
+  sets as Saxon-HE 12.10 does (#24, #26, #27, #28): on every case and mutation case of their
+  corpora, every stylesheet gives the Saxon-HE result (4250, 6388 and 8483 runs), checked by
+  the new equivalence tests `facturx_equivalence`, `xrechnung_equivalence` and
+  `fr_ctc_equivalence` of `einvoice-xslt-exec` (required by `scripts/check.sh facturx`,
+  `xrechnung` and `fr-ctc`) and by `cargo xtask engine-status` through `einvoice-validate`.
+  `upstream.toml` lists the three rule sets as tested (`high`).
+- Stylesheets compiled by SchXslt (#30): nodes constructed in a sequence (an `xsl:function`
+  body, a variable or parameter with `as`) are new parentless elements, attributes, text nodes
+  (zero-length ones included) and comments, as Saxon-HE constructs them; `xsl:call-template`,
+  `xsl:apply-templates` and `xsl:next-match` there too; constructed elements keep their
+  namespaces when copied; `/` on a tree without document node is `XPDY0050`;
+  `system-property()` with a prefixed name.
+- XSLT 3.0 parenthesized patterns as Saxon-HE 12.10 reads them (#24): `(A | B)` alone is
+  `A | B`, a path ending with `(A | B)` is a union, `(A | B)[p]/c` and `(a | b)/(c | d)/e` match
+  as written; a predicate statically non-numeric (a boolean variable) is not positional.
+- `fn:empty` (#24).
+- Rule-set bundles, manifest format 2 (#24): `[[resource]]` tables list the files the
+  stylesheets read with `document()` (path and SHA-256, checked when the bundle is loaded);
+  `document()` reads them, by their URI relative to the stylesheet's (`file:` in a directory,
+  `bundle:/` in memory), and nothing else (`FODC0002`). `RuleSet::resources`,
+  `ResourceEntry`. The fetch scripts write format 2 bundles with the Factur-X code lists.
+- Version 2 of the canonical SVRL form (`einvoice-svrl`, `corpus/SVRL-CANONICAL.md`):
+  `svrl:metadata` and its foreign elements, the time of the run written `{run-time}`;
+  `einvoice_svrl::run_time`. Reports without `svrl:metadata` stay in version 1.
+- API ergonomics (#31): `StylesheetReport::fired_rules`, the number of fired rules;
+  `ValidateOptions::fail_closed`, under which a finding without flag or with a flag other than
+  `fatal` and `warning` is fatal (`Severity::from_flag_fail_closed`); `Validator` is `Clone`,
+  sharing the loaded rule set.
+- `cargo xtask engine-status` raises the maximum depth for a case deeper than the default, as
+  the equivalence tests do, and writes format 2 bundles with the resources of a stylesheet.
 - Third-party notices (#22): `einvoice-validate --licences` prints, after the licences of the
   embedded works, the notice of every crate from crates.io compiled into the binary (version,
   licence expression and the licence used, authors, licence text from the crate's package); the
@@ -94,8 +125,27 @@ against.
   0.5.
 - The oracle runs Saxon-HE with a fixed clock (`-now:2000-01-01T00:00:00Z`), so that SchXslt
   reports, which record the time of their run in `svrl:metadata`, are the same on every run;
-  that element, which the canonical form does not represent, is checked and kept apart in
-  `<case id>.metadata.txt`. The goldens of the vendored corpora are unchanged.
+  their goldens are in version 2 of the canonical form. The goldens of the vendored corpora are
+  unchanged.
+- The oracle runs again, alone, a mutation case on which the run of all of them stops with a
+  dynamic error, and takes that run for its golden: Saxon-HE keeps what its
+  `LearningEvaluator` learns of the variables in the compiled stylesheet, over every document
+  of a run, so that a later document can fail where alone it would not. The committed goldens
+  are unchanged.
+- `einvoice-xpath`: `PatternAlternative::Parenthesized` is gone; a path pattern's steps are
+  `PathStep`s, axis steps or parenthesized ones (#24). `NamespaceBinding` moves from
+  `einvoice-xslt` (which re-exports it) to `einvoice-xpath`.
+- `einvoice-xpath-eval`: `Host::call_function` takes its arguments as `Argument`s, evaluated
+  when the host asks for them, and the dynamic context; `StaticContext::variable_reference`
+  tells a reference in a loop.
+- `einvoice-xslt-exec`: local variables, template parameter defaults and the parameters of
+  `xsl:call-template` and stylesheet functions are evaluated when Saxon-HE 12.10 evaluates them
+  (inlined when referred to once outside a loop, as its `LearningEvaluator` learns otherwise,
+  where they are bound when Saxon's count of their references says so): an error in a value
+  nothing reads is no longer raised where Saxon does not raise it. A lazy value computed inside
+  another counts in the stack limit.
+- `einvoice-validator`: `StylesheetReport::canonical_svrl` gives version 2 for a report with
+  `svrl:metadata`.
 - The oracle accepts the stack frames Saxon-HE prints after an error raised in a stylesheet
   function or a named template (`In function ...`, `In template ...`).
 - The licence expressions of `einvoice-validator` and `einvoice-cli` name the terms of the OASIS
