@@ -1,7 +1,7 @@
 [package]
 name = "einvoice-validator"
 description = "Validate EN 16931 and Peppol BIS Billing 3.0 e-invoices against the official validation artefacts, in pure Rust"
-keywords = ["peppol", "en16931", "einvoice", "ubl", "schematron"]
+keywords = ["peppol", "en16931", "ubl", "cii", "schematron"]
 categories = ["finance", "parser-implementations", "wasm"]
 version.workspace = true
 edition.workspace = true
@@ -10,16 +10,19 @@ repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/einvoice-validator"
 readme = "README.md"
-# The code is MIT; the CEN EN 16931 stylesheet vendored in bundles/cen-ubl/ and embedded
-# by the default feature `cen-ubl` is EUPL-1.2 (bundles/cen-ubl/README.md). Texts in
-# LICENSES/.
+# The code is MIT; the CEN EN 16931 stylesheets vendored in bundles/cen-ubl/ and
+# bundles/cen-cii/ and embedded by the default features `cen-ubl` and `cen-cii` are
+# EUPL-1.2 (the README of each bundle). Texts in LICENSES/.
 license = "MIT AND EUPL-1.2"
 
 [features]
-default = ["cen-ubl"]
+default = ["cen-ubl", "cen-cii"]
 # Embeds the official CEN EN 16931 UBL 1.3.17 stylesheet (EUPL-1.2, about 900 kB) and
 # provides the built-in rule set `cen-ubl`.
 cen-ubl = []
+# Embeds the official CEN EN 16931 CII 1.3.17 stylesheet (EUPL-1.2, about 730 kB) and
+# provides the built-in rule set `cen-cii`.
+cen-cii = []
 
 [dependencies]
 einvoice-svrl = { path = "../einvoice-svrl", version = "0.1.0" }

@@ -10,10 +10,11 @@ use crate::json::Json;
 pub(crate) const JSON_FORMAT_VERSION: u64 = 1;
 
 /// One validated document: its name as given on the command line (`-` for standard
-/// input) and the result.
+/// input), the name of the rule set it was validated with, and the result.
 #[derive(Debug)]
 pub(crate) struct Outcome {
     pub(crate) name: String,
+    pub(crate) rule_set: String,
     pub(crate) result: Result<Report, Error>,
 }
 
@@ -398,6 +399,7 @@ pub(crate) fn json(outcome: &Outcome) -> Json {
     }
     Json::Object(vec![
         ("path", Json::string(&outcome.name)),
+        ("rule_set", Json::string(&outcome.rule_set)),
         ("status", Json::string(status.as_str())),
         ("error", error),
         (

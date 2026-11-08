@@ -54,7 +54,7 @@ fn version() {
     assert_eq!(
         r.stdout,
         format!(
-            "einvoice-validate {}\nBuilt-in rule sets:\n  cen-ubl  CEN EN 16931 UBL 1.3.17, with the ubl-2.1 schema\n",
+            "einvoice-validate {}\nBuilt-in rule sets:\n  cen-ubl  CEN EN 16931 UBL 1.3.17, with the ubl-2.1 schema\n  cen-cii  CEN EN 16931 CII 1.3.17\n",
             common::VERSION
         )
     );
@@ -198,6 +198,9 @@ fn json_golden() {
     assert_eq!(report.get("format_version").number(), 1);
     assert_eq!(report.get("exit_code").number(), 1);
     let documents = report.get("documents").array();
+    for document in documents {
+        assert_eq!(document.get("rule_set").str(), Some("cen-ubl"));
+    }
     assert_eq!(documents[0].get("status").str(), Some("valid"));
     assert_eq!(documents[1].get("status").str(), Some("invalid"));
     assert_eq!(

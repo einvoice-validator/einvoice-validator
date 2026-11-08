@@ -22,6 +22,7 @@
   "documents": [
     {
       "path": "artefacts/cen-en16931-ubl-1.3.17/ubl/examples/ubl-tc434-example1.xml",
+      "rule_set": "cen-ubl",
       "status": "valid",
       "error": null,
       "counts": {
@@ -38,6 +39,7 @@
     },
     {
       "path": "corpus/cen-en16931-ubl-1.3.17/vefa/Invoice-unit-UBL/BR-02.002.xml",
+      "rule_set": "cen-ubl",
       "status": "invalid",
       "error": null,
       "counts": {
@@ -207,6 +209,7 @@
     },
     {
       "path": "corpus/cen-en16931-ubl-1.3.17/vefa/CreditNote-unit-UBL/BR-10.001.xml",
+      "rule_set": "cen-ubl",
       "status": "invalid",
       "error": null,
       "counts": {

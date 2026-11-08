@@ -43,9 +43,13 @@
 //! against first, and the stylesheets to run, each with the SHA-256 of its file, which
 //! is checked when the bundle is loaded. [`RuleSet`] is the manifest, parsed.
 //!
-//! - Built in ([`BUILTIN_RULE_SETS`], [`Validator::builtin`]): `cen-ubl`, the CEN
-//!   EN 16931 validation artefacts for UBL, release 1.3.17, embedded unmodified (feature
-//!   `cen-ubl`, on by default; the artefacts are under the EUPL-1.2).
+//! - Built in ([`BUILTIN_RULE_SETS`], [`Validator::builtin`]), embedded unmodified, each
+//!   behind a feature of its name, on by default (the artefacts are under the EUPL-1.2):
+//!   `cen-ubl`, the CEN EN 16931 validation artefacts for UBL, release 1.3.17, with the
+//!   UBL 2.1 schemas; `cen-cii`, the same release for UN/CEFACT CII D16B, without an XML
+//!   schema (the CII D16B schemas are not embedded: documents are checked for
+//!   well-formedness, then by the stylesheet). [`Syntax::detect`] tells from the root
+//!   element which of the two a document is for.
 //! - From a directory ([`Validator::from_bundle_dir`]): the manifest is
 //!   `<dir>/bundle.toml` ([`MANIFEST_FILE`]), and the paths it gives are relative to
 //!   `<dir>`. This is how rule sets whose artefacts cannot be redistributed are used:
@@ -85,8 +89,8 @@
 //!
 //! # Licences
 //!
-//! The code is MIT. The built-in rule set `cen-ubl` embeds the CEN stylesheet, under the
-//! EUPL-1.2, and [`einvoice_xsd`] embeds the OASIS UBL 2.1 schemas, which keep their own
+//! The code is MIT. The built-in rule sets `cen-ubl` and `cen-cii` embed the CEN
+//! stylesheets, under the EUPL-1.2, and [`einvoice_xsd`] embeds the OASIS UBL 2.1 schemas, which keep their own
 //! terms (OASIS, UN/CEFACT, W3C). [`licences()`] returns the full text of every licence
 //! of what this build embeds, for programs that must show them to their users.
 //!
@@ -99,6 +103,7 @@
 //! bug.
 
 mod builtin;
+mod detect;
 mod error;
 mod licences;
 mod manifest;
@@ -106,6 +111,7 @@ mod report;
 mod validator;
 
 pub use builtin::BUILTIN_RULE_SETS;
+pub use detect::Syntax;
 pub use error::{Error, ErrorKind};
 pub use licences::{Licence, licences};
 pub use manifest::{MANIFEST_FILE, MANIFEST_FORMAT, RuleSet, SchemaId, StylesheetEntry};

@@ -14,7 +14,9 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 
-use einvoice_validator::{BUILTIN_RULE_SETS, Error, RuleSet, ValidateOptions, Validator, file_uri};
+use einvoice_validator::{
+    BUILTIN_RULE_SETS, Error, RuleSet, Syntax, ValidateOptions, Validator, file_uri,
+};
 
 use crate::args::{Command, Format, Input, Options, Rules, UsageError};
 use crate::json::Json;
@@ -98,7 +100,7 @@ const MIT_COVERS: &str = "the code of einvoice-validate (crate einvoice-cli) and
 
 /// The licence notices of everything the binary embeds, with their full texts: the
 /// code (MIT), then the other licences `einvoice_validator::licences` lists for this
-/// build (the CEN stylesheet of the built-in rule set, the UBL 2.1 schemas).
+/// build (the CEN stylesheets of the built-in rule sets, the UBL 2.1 schemas).
 fn licences() -> String {
     let licences = einvoice_validator::licences();
     let mut out = format!(
@@ -138,14 +140,16 @@ Arguments:
   FILE...              Documents to validate; - reads standard input.
 
 Options:
-  -r, --rules NAME     Built-in rule set (default: {default}).
+  -r, --rules NAME     Built-in rule set. Default: chosen for each document from
+                       its root element: cen-ubl for a UBL Invoice or CreditNote,
+                       cen-cii for a CII CrossIndustryInvoice, {default} otherwise.
   -b, --bundle DIR     Rule-set bundle in DIR (DIR/bundle.toml), instead of --rules.
   -f, --format FORMAT  Output format: text (default), json or svrl.
   -j, --jobs N         Validate N documents at a time (default: 1).
   -h, --help           Print this help.
   -V, --version        Print the version and the built-in rule sets.
       --licences       Print the licences of everything embedded in this program
-                       (its code, the CEN stylesheet, the UBL 2.1 schemas), with
+                       (its code, the CEN stylesheets, the UBL 2.1 schemas), with
                        their full texts. Also --licenses.
 
 Built-in rule sets:
@@ -173,20 +177,6 @@ Exit status (the highest that applies):
 }
 
 fn run(options: &Options) -> u8 {
-    let validator = match &options.rules {
-        Rules::Builtin(name) => Validator::builtin(name),
-        Rules::Bundle(dir) => Validator::from_bundle_dir(dir),
-    };
-    let validator = match validator {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("{NAME}: {e}");
-            return render::load_exit_code(&e);
-        }
-    };
-    let colour = options.format == Format::Text
-        && std::io::stdout().is_terminal()
-        && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty());
     let mut stdin = None;
     if options.inputs.contains(&Input::Stdin) {
         let mut bytes = Vec::new();
@@ -197,12 +187,28 @@ fn run(options: &Options) -> u8 {
                 .map(|_| bytes),
         );
     }
-    let mut writer = Output::new(options.format, validator.rule_set(), Style { colour });
+    // The rule set of each input, by its index in `validators`.
+    let (validators, assigned) = match load(options, stdin.as_ref()) {
+        Ok(loaded) => loaded,
+        Err(e) => {
+            eprintln!("{NAME}: {e}");
+            return render::load_exit_code(&e);
+        }
+    };
+    let colour = options.format == Format::Text
+        && std::io::stdout().is_terminal()
+        && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty());
+    // The rule set of the report as a whole: the first document's.
+    let first = assigned.first().copied().unwrap_or(0);
+    let Some(head) = validators.get(first) else {
+        eprintln!("{NAME}: internal error: no rule set loaded");
+        return 3;
+    };
+    let mut writer = Output::new(options.format, head.rule_set(), Style { colour });
     let mut code = 0;
-    let failed = writer
-        .start()
-        .err()
-        .or_else(|| validate_all(&validator, options, stdin.as_ref(), &mut writer).err());
+    let failed = writer.start().err().or_else(|| {
+        validate_all(&validators, &assigned, options, stdin.as_ref(), &mut writer).err()
+    });
     if let Some(e) = failed {
         return code.max(output_failed(&e));
     }
@@ -218,10 +224,76 @@ fn run(options: &Options) -> u8 {
     }
 }
 
-/// Validates every input on `options.jobs` threads and writes the results in the order
-/// of the command line as they become available.
+/// The rule sets the run needs, loaded once, and for each input the index of its own:
+/// the one named by `--rules` or `--bundle`, or, without them, the built-in rule set of
+/// the syntax each document's root element names ([`Syntax::detect`]), else
+/// [`args::DEFAULT_RULES`].
+fn load(
+    options: &Options,
+    stdin: Option<&std::io::Result<Vec<u8>>>,
+) -> Result<(Vec<Validator>, Vec<usize>), Error> {
+    let names: Vec<&str> = match &options.rules {
+        Rules::Builtin(name) => {
+            return Ok((
+                vec![Validator::builtin(name)?],
+                vec![0; options.inputs.len()],
+            ));
+        }
+        Rules::Bundle(dir) => {
+            return Ok((
+                vec![Validator::from_bundle_dir(dir)?],
+                vec![0; options.inputs.len()],
+            ));
+        }
+        Rules::Detect => options
+            .inputs
+            .iter()
+            .map(|input| {
+                let syntax = match input {
+                    Input::Stdin => stdin
+                        .and_then(|r| r.as_ref().ok())
+                        .and_then(|bytes| Syntax::detect(bytes)),
+                    Input::File(path) => detect_file(path),
+                };
+                syntax.map_or(args::DEFAULT_RULES, Syntax::builtin_rule_set)
+            })
+            .collect(),
+    };
+    let mut loaded: Vec<(&str, Validator)> = Vec::new();
+    let mut assigned = Vec::with_capacity(names.len());
+    for name in names {
+        let index = if let Some(index) = loaded.iter().position(|(n, _)| *n == name) {
+            index
+        } else {
+            loaded.push((name, Validator::builtin(name)?));
+            loaded.len() - 1
+        };
+        assigned.push(index);
+    }
+    Ok((loaded.into_iter().map(|(_, v)| v).collect(), assigned))
+}
+
+/// The syntax of the document in the file at `path`, from its start (the whole file
+/// when the start is not enough); `None` when it cannot be read, as the validation then
+/// reports.
+fn detect_file(path: &std::path::Path) -> Option<Syntax> {
+    const HEAD: u64 = 64 << 10;
+    let mut head = Vec::new();
+    let file = std::fs::File::open(path).ok()?;
+    file.take(HEAD).read_to_end(&mut head).ok()?;
+    match Syntax::detect(&head) {
+        Some(syntax) => Some(syntax),
+        None if head.len() as u64 == HEAD => Syntax::detect(&std::fs::read(path).ok()?),
+        None => None,
+    }
+}
+
+/// Validates every input on `options.jobs` threads, each with the rule set `assigned`
+/// to it in `validators`, and writes the results in the order of the command line as
+/// they become available.
 fn validate_all(
-    validator: &Validator,
+    validators: &[Validator],
+    assigned: &[usize],
     options: &Options,
     stdin: Option<&std::io::Result<Vec<u8>>>,
     writer: &mut Output,
@@ -240,6 +312,10 @@ fn validate_all(
                     while !stop.load(Ordering::Relaxed) {
                         let index = next.fetch_add(1, Ordering::Relaxed);
                         let Some(input) = options.inputs.get(index) else {
+                            break;
+                        };
+                        let Some(validator) = assigned.get(index).and_then(|&v| validators.get(v))
+                        else {
                             break;
                         };
                         let outcome = validate(validator, input, stdin);
@@ -266,7 +342,14 @@ fn validate_all(
                 written += 1;
             }
         }
-        Ok(())
+        if written == options.inputs.len() {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(format!(
+                "internal error: {written} of {} documents validated",
+                options.inputs.len()
+            )))
+        }
     })
 }
 
@@ -275,6 +358,7 @@ fn validate(
     input: &Input,
     stdin: Option<&std::io::Result<Vec<u8>>>,
 ) -> Outcome {
+    let rule_set = validator.rule_set().name().to_owned();
     match input {
         Input::Stdin => {
             let result = match stdin {
@@ -290,6 +374,7 @@ fn validate(
             };
             Outcome {
                 name: "-".to_owned(),
+                rule_set,
                 result,
             }
         }
@@ -308,7 +393,11 @@ fn validate(
                     // The validation keeps the buffer rather than copying its text.
                     validator.validate_owned_with(bytes, &options)
                 });
-            Outcome { name, result }
+            Outcome {
+                name,
+                rule_set,
+                result,
+            }
         }
     }
 }

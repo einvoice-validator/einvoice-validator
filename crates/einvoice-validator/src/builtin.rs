@@ -3,10 +3,12 @@
 use crate::Error;
 
 /// The names of the built-in rule sets of this build (each is a cargo feature of the
-/// same name, `cen-ubl` on by default).
+/// same name, `cen-ubl` and `cen-cii` on by default).
 pub const BUILTIN_RULE_SETS: &[&str] = &[
     #[cfg(feature = "cen-ubl")]
     "cen-ubl",
+    #[cfg(feature = "cen-cii")]
+    "cen-cii",
 ];
 
 /// The files of a bundle: path in the manifest, content.
@@ -23,6 +25,16 @@ pub(crate) fn get(name: &str) -> Result<(&'static str, Files), Error> {
             &[(
                 "ubl/xslt/EN16931-UBL-validation.xslt",
                 include_bytes!("../bundles/cen-ubl/ubl/xslt/EN16931-UBL-validation.xslt"),
+            )],
+        )),
+        #[cfg(feature = "cen-cii")]
+        // Vendored in the crate (bundles/cen-cii/README.md), from
+        // cen-en16931-cii-1.3.17.
+        "cen-cii" => Ok((
+            include_str!("../bundles/cen-cii/bundle.toml"),
+            &[(
+                "cii/xslt/EN16931-CII-validation.xslt",
+                include_bytes!("../bundles/cen-cii/cii/xslt/EN16931-CII-validation.xslt"),
             )],
         )),
         _ => Err(Error::bundle(format!(

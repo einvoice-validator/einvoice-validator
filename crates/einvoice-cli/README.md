@@ -3,7 +3,7 @@
 Command-line validation of e-invoices against the official EN 16931 validation artefacts,
 with the [`einvoice-validator`](https://crates.io/crates/einvoice-validator) library: for each
 document, the XML check (UTF-8, well-formed, no document type declaration), the XML schema of
-the rule set (UBL 2.1), then the official compiled Schematron stylesheets of the rule set,
+the rule set (UBL 2.1; none for CII), then the official compiled Schematron stylesheets of the rule set,
 executed with the behaviour of Saxon-HE. It is part of
 [einvoice-validator](https://github.com/einvoice-validator/einvoice-validator).
 
@@ -18,7 +18,8 @@ cargo install --locked --path crates/einvoice-cli
 ```
 
 ```sh
-einvoice-validate invoice.xml
+einvoice-validate invoice.xml                       # cen-ubl or cen-cii, from the root element
+einvoice-validate --rules cen-cii invoice.xml
 einvoice-validate --format json invoices/*.xml > report.json
 einvoice-validate --format svrl - < invoice.xml
 einvoice-validate --bundle ./my-bundle invoice.xml
@@ -38,13 +39,13 @@ einvoice-validate --bundle target/peppol/peppol-bis-billing-ubl-3.0.22 invoice.x
 | Option | Meaning |
 |---|---|
 | `FILE...` | Documents to validate, in that order; `-` reads standard input (at most once). After `--`, every argument is a file. |
-| `-r`, `--rules NAME` | Built-in rule set. Default and only one today: `cen-ubl`, the CEN EN 16931 UBL validation artefacts 1.3.17 with the UBL 2.1 schemas. |
+| `-r`, `--rules NAME` | Built-in rule set: `cen-ubl`, the CEN EN 16931 UBL validation artefacts 1.3.17 with the UBL 2.1 schemas, or `cen-cii`, the CEN EN 16931 CII (UN/CEFACT D16B) validation artefacts 1.3.17, without an XML schema (the CII schemas are not embedded). Without `--rules` and `--bundle`, each document is validated with the rule set of its root element: `cen-ubl` for a UBL `Invoice` or `CreditNote` (namespaces `urn:oasis:names:specification:ubl:schema:xsd:Invoice-2` and `...:CreditNote-2`), `cen-cii` for a `CrossIndustryInvoice` in `urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100`, and `cen-ubl` for any other document, one that is not XML, or a file that cannot be read. Only the root element is read for that, before the document is validated. |
 | `-b`, `--bundle DIR` | A rule-set bundle: `DIR/bundle.toml` and the stylesheets it names (see the documentation of the `einvoice-validator` crate for the manifest format). Excludes `--rules`. |
 | `-f`, `--format FORMAT` | `text` (default), `json` or `svrl`. |
 | `-j`, `--jobs N` | Validate N documents at a time, on N threads sharing one loaded rule set (default 1). The output keeps the order of the command line. |
 | `-h`, `--help` | The help, then exit 0. |
 | `-V`, `--version` | The version and the built-in rule sets, then exit 0. |
-| `--licences`, `--licenses` | The licences of everything embedded in the binary, each with what it covers and its full text, then exit 0: MIT for the code, EUPL-1.2 for the CEN stylesheet of the built-in rule set, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1 schemas. |
+| `--licences`, `--licenses` | The licences of everything embedded in the binary, each with what it covers and its full text, then exit 0: MIT for the code, EUPL-1.2 for the CEN stylesheets of the built-in rule sets, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1 schemas. |
 
 Options take their value as `--format json`, `--format=json`, `-f json` or `-fjson`. An option
 given twice is a usage error.
@@ -97,7 +98,7 @@ members are always present and in the order below. The format is identified by `
   "format": "einvoice-validate",
   "format_version": 1,
   "tool": { "name": "einvoice-validate", "version": string },
-  "rule_set": {
+  "rule_set": {                        the rule set of the first document
     "name": string,                    "cen-ubl"
     "title": string,                   "CEN EN 16931 UBL"
     "version": string,                 "1.3.17"
@@ -109,6 +110,7 @@ members are always present and in the order below. The format is identified by `
   "documents": [                       one per FILE, in command-line order
     {
       "path": string,                  the FILE as given; "-" for standard input
+      "rule_set": string,              the name of the rule set it was validated with
       "status": "valid" | "invalid" | "error",
       "error": null | {                set when there is no complete report
         "kind": "io" | "bundle" | "not-xml" | "unsupported" | "transform" | "internal",
@@ -166,8 +168,8 @@ conditions a stylesheet reported (ambiguous template rule matches), as Saxon-HE 
 
 ## Licence
 
-`MIT AND EUPL-1.2`: the code is MIT, and the built-in `cen-ubl` rule set embeds the CEN
-EN 16931 validation stylesheet, which is under the EUPL-1.2 (see `bundles/cen-ubl/` of the
-`einvoice-validator` crate). The texts are in `LICENSES/`. The binary also embeds the OASIS
+`MIT AND EUPL-1.2`: the code is MIT, and the built-in `cen-ubl` and `cen-cii` rule sets embed
+the CEN EN 16931 validation stylesheets, which are under the EUPL-1.2 (see `bundles/cen-ubl/`
+and `bundles/cen-cii/` of the `einvoice-validator` crate). The texts are in `LICENSES/`. The binary also embeds the OASIS
 UBL 2.1 schemas of the `einvoice-xsd` crate, which keep their own terms (OASIS, UN/CEFACT,
 W3C). `einvoice-validate --licences` prints every one of these licences in full.

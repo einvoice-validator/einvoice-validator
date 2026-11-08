@@ -4,7 +4,8 @@ use std::ffi::{OsStr, OsString};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
-/// The built-in rule set used without `--rules` or `--bundle`.
+/// The built-in rule set used without `--rules` or `--bundle` for a document whose root
+/// element names no known syntax (see [`Rules::Detect`]).
 pub(crate) const DEFAULT_RULES: &str = "cen-ubl";
 
 /// What the command line asks for.
@@ -21,6 +22,10 @@ pub(crate) enum Command {
 pub(crate) enum Rules {
     Builtin(String),
     Bundle(PathBuf),
+    /// Neither `--rules` nor `--bundle`: for each document, the built-in rule set of the
+    /// syntax its root element names (`einvoice_validator::Syntax`), else
+    /// [`DEFAULT_RULES`].
+    Detect,
 }
 
 /// The output format.
@@ -100,7 +105,7 @@ impl Seen {
             }
             (_, Some(dir)) => Rules::Bundle(dir),
             (Some(name), None) => Rules::Builtin(name),
-            (None, None) => Rules::Builtin(DEFAULT_RULES.to_owned()),
+            (None, None) => Rules::Detect,
         };
         if inputs.is_empty() {
             return Err(usage(
@@ -223,7 +228,7 @@ mod tests {
     #[test]
     fn defaults() {
         let o = options(&["a.xml"]);
-        assert_eq!(o.rules, Rules::Builtin("cen-ubl".to_owned()));
+        assert_eq!(o.rules, Rules::Detect);
         assert_eq!(o.format, Format::Text);
         assert_eq!(o.jobs.get(), 1);
         assert_eq!(o.inputs, [Input::File("a.xml".into())]);

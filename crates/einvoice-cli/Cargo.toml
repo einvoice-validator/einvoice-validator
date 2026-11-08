@@ -11,7 +11,7 @@ homepage.workspace = true
 documentation = "https://docs.rs/einvoice-cli"
 readme = "README.md"
 # The code is MIT; built with the default features, the binary embeds the CEN EN 16931
-# stylesheet of einvoice-validator's built-in rule set, which is EUPL-1.2. Texts in
+# stylesheets of einvoice-validator's built-in rule sets, which are EUPL-1.2. Texts in
 # LICENSES/.
 license = "MIT AND EUPL-1.2"
 

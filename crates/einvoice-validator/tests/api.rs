@@ -81,10 +81,56 @@ fn a_validator_can_be_shared_between_threads() {
     shared::<Error>();
 }
 
+#[test]
+fn the_builtin_rule_sets() {
+    let mut expected = Vec::new();
+    if cfg!(feature = "cen-ubl") {
+        expected.push("cen-ubl");
+    }
+    if cfg!(feature = "cen-cii") {
+        expected.push("cen-cii");
+    }
+    assert_eq!(BUILTIN_RULE_SETS, expected);
+}
+
+#[cfg(feature = "cen-cii")]
+#[test]
+fn the_builtin_cii_rule_set() {
+    let validator = Validator::cen_cii().unwrap();
+    let rule_set = validator.rule_set();
+    assert_eq!(rule_set, &RuleSet::builtin("cen-cii").unwrap());
+    assert_eq!(
+        (rule_set.name(), rule_set.title(), rule_set.version()),
+        ("cen-cii", "CEN EN 16931 CII", "1.3.17")
+    );
+    assert_eq!(rule_set.schema(), None);
+    let [stylesheet] = rule_set.stylesheets() else {
+        panic!("one stylesheet")
+    };
+    assert_eq!(stylesheet.path(), "cii/xslt/EN16931-CII-validation.xslt");
+    let sums = std::fs::read_to_string(common::join(
+        &common::workspace_root(),
+        "artefacts/cen-en16931-cii-1.3.17/SHA256SUMS",
+    ))
+    .unwrap();
+    let line = format!("{}  {}", stylesheet.sha256(), stylesheet.path());
+    assert!(sums.lines().any(|l| l == line), "{line}");
+    // A minimal CII document: no schema, so only the CEN rules report what is missing.
+    let report = validator
+        .validate(
+            br#"<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"/>"#,
+        )
+        .unwrap();
+    assert_eq!(report.verdict(), Verdict::Invalid);
+    assert_eq!(report.schema_errors, []);
+    assert_eq!(report.rule_set.name, "cen-cii");
+    assert_eq!(report.rule_set.schema, None);
+    assert!(report.findings().any(|f| f.id.as_deref() == Some("BR-01")));
+}
+
 #[cfg(feature = "cen-ubl")]
 #[test]
 fn the_builtin_rule_set() {
-    assert_eq!(BUILTIN_RULE_SETS, ["cen-ubl"]);
     let rule_set = cen().rule_set();
     assert_eq!(rule_set, &RuleSet::builtin("cen-ubl").unwrap());
     assert_eq!(

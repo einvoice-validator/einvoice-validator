@@ -94,6 +94,18 @@ impl Validator {
         Self::builtin("cen-ubl")
     }
 
+    /// The built-in rule set `cen-cii`: the CEN EN 16931 validation artefacts for UN/CEFACT
+    /// CII D16B, release 1.3.17 (EUPL-1.2), embedded unmodified, without an XML schema
+    /// (the CII D16B schemas are not embedded).
+    ///
+    /// # Errors
+    ///
+    /// None in practice (a test loads it); the error is returned rather than hidden.
+    #[cfg(feature = "cen-cii")]
+    pub fn cen_cii() -> Result<Self, Error> {
+        Self::builtin("cen-cii")
+    }
+
     /// Loads a bundle from memory: its manifest and its files, by their paths in the
     /// manifest. Files not named by the manifest are ignored.
     ///
