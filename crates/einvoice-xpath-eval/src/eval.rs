@@ -21,7 +21,7 @@ use crate::error::{Error, ErrorCode, Result, err};
 use crate::functions::Builtin;
 use crate::item::Item;
 use crate::library::ordinal;
-use crate::tree::{Node, NodeAxis, NodeKind};
+use crate::tree::{Document, Node, NodeAxis, NodeKind};
 
 /// A lazily produced sequence.
 pub(crate) type Iter<'s> = Box<dyn Iterator<Item = Result<Item>> + 's>;
@@ -227,6 +227,9 @@ impl CompiledExpr {
             current: context.current.clone(),
         };
         let ctx = initial(context);
+        if let Some(nodes) = run.nodes_in_place(&self.expr, &ctx)? {
+            return Ok(nodes);
+        }
         run.seq(&self.expr, &ctx)?.collect()
     }
 
@@ -630,8 +633,82 @@ impl<'a> Run<'a> {
                 args,
                 ..
             } => self.ebv(&args[0], ctx),
+            // A sequence of nodes is true when it has one.
+            Expr::Step(step) if simple(step) => Ok(Self::first_of_step(step, ctx)?.is_some()),
             _ => ebv_of(self.seq(expr, ctx)?),
         }
+    }
+
+    /// The value of a [`simple`] step, or of the union of two (`@*|*`), read from the
+    /// tree in place of the sequences [`Run::seq`] would build: the same nodes in
+    /// document order, and the same error for a context item that is not a node (that
+    /// of the first operand). `None` for other expressions.
+    fn nodes_in_place(&self, expr: &Expr, ctx: &Ctx) -> Result<Option<Vec<Item>>> {
+        let (first, second) = match expr {
+            Expr::Step(step) if simple(step) => (step, None),
+            Expr::Union { lhs, rhs, .. } => match (&**lhs, &**rhs) {
+                (Expr::Step(a), Expr::Step(b)) if simple(a) && simple(b) => (a, Some(b)),
+                _ => return Ok(None),
+            },
+            _ => return Ok(None),
+        };
+        self.dc.check_stack()?;
+        let node = focus_node(ctx, Some(first.axis))?;
+        let doc = node.document();
+        let item = |index: u32| Item::Node(Node::new(Rc::clone(doc), index));
+        let Some(second) = second else {
+            return Ok(Some(
+                step_nodes(doc, node.index(), first).map(item).collect(),
+            ));
+        };
+        let mut left = step_nodes(doc, node.index(), first).peekable();
+        let mut right = step_nodes(doc, node.index(), second).peekable();
+        let mut nodes = Vec::new();
+        loop {
+            let next = match (left.peek(), right.peek()) {
+                (None, None) => break,
+                (Some(&l), None) => {
+                    left.next();
+                    l
+                }
+                (None, Some(&r)) => {
+                    right.next();
+                    r
+                }
+                (Some(&l), Some(&r)) => {
+                    if l <= r {
+                        left.next();
+                    }
+                    if r <= l {
+                        right.next();
+                    }
+                    l.min(r)
+                }
+            };
+            nodes.push(item(next));
+        }
+        Ok(Some(nodes))
+    }
+
+    /// The index of the first node of a [`simple`] step from the context node: the step
+    /// evaluated in place, as [`Run::step`] would deliver it.
+    #[inline]
+    fn first_of_step(step: &Step, ctx: &Ctx) -> Result<Option<u32>> {
+        let node = focus_node(ctx, Some(step.axis))?;
+        Ok(step_nodes(node.document(), node.index(), step).next())
+    }
+
+    /// The first two nodes of a [`simple`] step from the context node.
+    #[inline]
+    fn two_of_step(step: &Step, ctx: &Ctx) -> Result<(Option<Node>, bool)> {
+        let node = focus_node(ctx, Some(step.axis))?;
+        let doc = node.document();
+        let mut matching = step_nodes(doc, node.index(), step);
+        let Some(first) = matching.next() else {
+            return Ok((None, false));
+        };
+        let more = matching.next().is_some();
+        Ok((Some(Node::new(Rc::clone(doc), first)), more))
     }
 
     /// `some` (`every` false) or `every` `$v in sequence satisfies satisfies`.
@@ -680,8 +757,15 @@ impl<'a> Run<'a> {
     /// Whether `expr` has an item (`fn:exists`), reading at most one: the operands of a
     /// union are tried in turn, as Saxon does.
     pub(crate) fn non_empty(&self, expr: &Expr, ctx: &Ctx) -> Result<bool> {
-        if let Expr::Union { lhs, rhs, .. } = expr {
-            return Ok(self.has_node(lhs, ctx, "first")? || self.has_node(rhs, ctx, "second")?);
+        match expr {
+            Expr::Union { lhs, rhs, .. } => {
+                return Ok(self.has_node(lhs, ctx, "first")? || self.has_node(rhs, ctx, "second")?);
+            }
+            Expr::Step(step) if simple(step) => {
+                self.dc.check_stack()?;
+                return Ok(Self::first_of_step(step, ctx)?.is_some());
+            }
+            _ => {}
         }
         Ok(self.seq(expr, ctx)?.next().transpose()?.is_some())
     }
@@ -755,6 +839,33 @@ impl<'a> Run<'a> {
 
     /// At most one item of `expr`; `XPTY0004` when there are more.
     pub(crate) fn item_opt(&self, expr: &Expr, ctx: &Ctx, what: What<'_>) -> Result<Option<Item>> {
+        // The forms that need no sequence to be built.
+        match expr {
+            Expr::Literal(value) => {
+                self.dc.check_stack()?;
+                return Ok(Some(Item::Atomic(value.clone())));
+            }
+            Expr::ContextItem => {
+                self.dc.check_stack()?;
+                return context_item(ctx).map(Some);
+            }
+            Expr::Local(depth) => {
+                self.dc.check_stack()?;
+                return local(ctx, *depth).map(Some);
+            }
+            Expr::Step(step) if simple(step) => {
+                self.dc.check_stack()?;
+                let (first, more) = Self::two_of_step(step, ctx)?;
+                if more {
+                    return err(
+                        ErrorCode::Xpty0004,
+                        format!("A sequence of more than one item is not allowed as the {what}"),
+                    );
+                }
+                return Ok(first.map(Item::Node));
+            }
+            _ => {}
+        }
         let mut items = self.seq(expr, ctx)?;
         let Some(first) = items.next() else {
             return Ok(None);
@@ -1177,8 +1288,26 @@ fn context_item(ctx: &Ctx) -> Result<Item> {
         .ok_or_else(|| Error::new(ErrorCode::Xpdy0002, "The context item is absent"))
 }
 
+/// The indices of the nodes a step selects from the node at `from` by its axis and node
+/// test, in axis order (its predicates aside).
+fn step_nodes<'d>(doc: &'d Document, from: u32, step: &'d Step) -> impl Iterator<Item = u32> + 'd {
+    let mut cursor = doc.cursor(from, step.axis);
+    std::iter::from_fn(move || cursor.next(doc)).filter(move |&i| step.test.matches(doc, i))
+}
+
+/// A step without predicates on an axis read in document order: its nodes can be read
+/// in place, without building a sequence.
+fn simple(step: &Step) -> bool {
+    step.predicates.is_empty() && (!step.axis.is_reverse() || step.axis == NodeAxis::Parent)
+}
+
 /// The context item of an axis step on `axis`, or of `/` (`None`).
 fn context_node(ctx: &Ctx, axis: Option<NodeAxis>) -> Result<Node> {
+    focus_node(ctx, axis).cloned()
+}
+
+/// The context item of an axis step on `axis`, or of `/` (`None`), borrowed.
+fn focus_node(ctx: &Ctx, axis: Option<NodeAxis>) -> Result<&Node> {
     let what = || match axis {
         Some(axis) => format!("the axis step {}::", axis_name(axis)),
         None => "the root expression /".to_owned(),
@@ -1196,7 +1325,7 @@ fn context_node(ctx: &Ctx, axis: Option<NodeAxis>) -> Result<Node> {
                 v.atomic_type()
             ),
         ),
-        Some(Item::Node(node)) => Ok(node.clone()),
+        Some(Item::Node(node)) => Ok(node),
     }
 }
 
