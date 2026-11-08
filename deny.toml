@@ -48,6 +48,20 @@ exceptions = [
         "LicenseRef-UN-CEFACT-Copyright-Notice",
         "W3C-19980720",
     ] },
+    { crate = "einvoice-wasm", allow = [
+        "EUPL-1.2",
+        "LicenseRef-OASIS-Copyright-Notice",
+        "LicenseRef-UN-CEFACT-Copyright-Notice",
+        "W3C-19980720",
+    ] },
+    # unicode-ident is "(MIT OR Apache-2.0) AND Unicode-3.0" (its tables derive from the
+    # Unicode Character Database). In the graph only for building einvoice-wasm: the
+    # wasm-bindgen macros (wasm-bindgen-macro-support, through proc-macro2 and syn) run
+    # on the build machine and use it, and so do the identifier checks of
+    # wasm-bindgen-shared, which only those macros call. None of its code is in the
+    # WebAssembly module (no unicode_ident symbol among the function names of a release
+    # build). Allowed for that crate only.
+    { crate = "unicode-ident", allow = ["Unicode-3.0"] },
 ]
 
 [bans]
