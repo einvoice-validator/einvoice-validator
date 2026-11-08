@@ -60,11 +60,11 @@ This crate is part of [einvoice-validator](https://github.com/einvoice-validator
 
 ## Licence
 
-`MIT AND EUPL-1.2`: the code is MIT, and the default features `cen-ubl` and `cen-cii` embed the
-CEN EN 16931 stylesheets, vendored unmodified in `bundles/cen-ubl/` and `bundles/cen-cii/`,
-which are under the EUPL-1.2.
-Built with `default-features = false`, the crate embeds no rule set. Through
-`einvoice-xsd`, a program also embeds the OASIS UBL 2.1 schemas, which keep their own terms
-(OASIS, UN/CEFACT, W3C). The texts are in `LICENSES/` of each crate, and
-`einvoice_validator::licences()` returns all of them, for programs that must show them to
-their users.
+`MIT AND EUPL-1.2 AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720`:
+the code is MIT; the default features `cen-ubl` and `cen-cii` embed the CEN EN 16931
+stylesheets, vendored unmodified in `bundles/cen-ubl/` and `bundles/cen-cii/`, which are under
+the EUPL-1.2 (built with `default-features = false`, the crate embeds no rule set); and
+through `einvoice-xsd`, every program built with the crate embeds the OASIS UBL 2.1 schemas,
+which keep their own terms (OASIS, UN/CEFACT, W3C). The texts are in `LICENSES/`, and
+`einvoice_validator::licences()` returns those of what a build embeds, for programs that must
+show them to their users.

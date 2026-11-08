@@ -12,8 +12,10 @@ documentation = "https://docs.rs/einvoice-validator"
 readme = "README.md"
 # The code is MIT; the CEN EN 16931 stylesheets vendored in bundles/cen-ubl/ and
 # bundles/cen-cii/ and embedded by the default features `cen-ubl` and `cen-cii` are
-# EUPL-1.2 (the README of each bundle). Texts in LICENSES/.
-license = "MIT AND EUPL-1.2"
+# EUPL-1.2 (the README of each bundle); every build embeds the OASIS UBL 2.1 schemas of
+# einvoice-xsd, which keep the terms in their own headers (OASIS, UN/CEFACT, W3C). Texts
+# in LICENSES/.
+license = "MIT AND EUPL-1.2 AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720"
 
 [features]
 default = ["cen-ubl", "cen-cii"]
@@ -34,6 +36,8 @@ roxmltree = "0.21.2"
 sha2 = "0.11.1"
 
 [dev-dependencies]
+# Not published: without a version, cargo leaves it out of the published manifest.
+einvoice-testkit = { path = "../einvoice-testkit" }
 peak_alloc = "0.3.0"
 
 # Its random source (getrandom) does not build for wasm32-unknown-unknown, where the

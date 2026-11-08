@@ -95,6 +95,7 @@ name = "einvoice-cli"
 version = "0.2.0"
 dependencies = [
  "einvoice-svrl",
+ "einvoice-testkit",
  "einvoice-validator",
  "proptest",
  "sha2",
@@ -108,10 +109,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "einvoice-testkit"
+version = "0.2.0"
+
+[[package]]
 name = "einvoice-validator"
 version = "0.2.0"
 dependencies = [
  "einvoice-svrl",
+ "einvoice-testkit",
  "einvoice-xpath-eval",
  "einvoice-xsd",
  "einvoice-xslt",

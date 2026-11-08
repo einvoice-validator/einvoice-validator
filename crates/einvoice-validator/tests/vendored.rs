@@ -3,14 +3,18 @@
 //! the vendored files, is byte-identical to the copy in `artefacts/`, and is what the
 //! built-in rule set embeds;
 //! the licence expression of the crate names exactly the texts in `LICENSES/`, which are
-//! the repository's MIT licence and the EUPL-1.2 text published with the artefacts.
+//! the repository's MIT licence, the EUPL-1.2 text published with the artefacts and the
+//! terms of the UBL 2.1 schemas of einvoice-xsd, and `licences()` lists every term of
+//! the workspace crates this build is built from (`cargo tree`, with the features of the
+//! build), its MIT entry naming exactly those crates.
 
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use einvoice_testkit::workspace::{self, Crate, Features};
 use sha2::{Digest, Sha256};
 
 fn crate_dir() -> PathBuf {
@@ -175,19 +179,56 @@ fn licences_dir() -> PathBuf {
     crate_dir().join("LICENSES")
 }
 
+/// The terms of the licence expression, in the order of `licences()` with the default
+/// features.
+const TERMS: [&str; 5] = [
+    "MIT",
+    "EUPL-1.2",
+    "LicenseRef-OASIS-Copyright-Notice",
+    "LicenseRef-UN-CEFACT-Copyright-Notice",
+    "W3C-19980720",
+];
+
+/// The features of this build of the crate.
+fn features() -> Vec<&'static str> {
+    let mut features = Vec::new();
+    if cfg!(feature = "cen-ubl") {
+        features.push("cen-ubl");
+    }
+    if cfg!(feature = "cen-cii") {
+        features.push("cen-cii");
+    }
+    features
+}
+
+/// The workspace crates this build of the crate is built from, itself included.
+fn built_from() -> Vec<Crate> {
+    let features = features();
+    workspace::dependencies(env!("CARGO_PKG_NAME"), Features::Only(&features)).unwrap()
+}
+
 #[test]
 fn licence_expression_names_exactly_the_shipped_texts() {
-    let mut declared: Vec<&str> = env!("CARGO_PKG_LICENSE").split(" AND ").collect();
-    declared.sort_unstable();
-    assert_eq!(declared, ["EUPL-1.2", "MIT"]);
+    let declared: BTreeSet<&str> = env!("CARGO_PKG_LICENSE").split(" AND ").collect();
+    assert_eq!(declared, BTreeSet::from(TERMS));
     let mut shipped = Vec::new();
     files_under(&licences_dir(), &licences_dir(), &mut shipped);
-    let mut shipped: Vec<String> = shipped
+    let shipped: BTreeSet<String> = shipped
         .into_iter()
         .map(|file| file.strip_suffix(".txt").unwrap().to_owned())
         .collect();
-    shipped.sort();
-    assert_eq!(declared, shipped);
+    assert_eq!(
+        declared,
+        shipped.iter().map(String::as_str).collect::<BTreeSet<_>>()
+    );
+    // With the default features: the EUPL-1.2 of its own stylesheets, and every term of
+    // the crates it is built from.
+    let defaults = workspace::dependencies(env!("CARGO_PKG_NAME"), Features::Default).unwrap();
+    let mut terms = BTreeSet::from(["EUPL-1.2"]);
+    for c in &defaults {
+        terms.extend(c.license_terms().unwrap());
+    }
+    assert_eq!(terms, declared);
 }
 
 #[test]
@@ -206,36 +247,35 @@ fn licence_texts_are_the_published_ones() {
         read(licences_dir().join("EUPL-1.2.txt")),
         read(artefacts_dir("cen-en16931-cii-1.3.17").join("LICENSE.txt"))
     );
+    // The terms of the UBL 2.1 schemas: einvoice-xsd's texts.
+    for id in &TERMS[2..] {
+        assert_eq!(
+            read(licences_dir().join(format!("{id}.txt"))),
+            read(crate_dir().join(format!("../einvoice-xsd/LICENSES/{id}.txt"))),
+            "{id}"
+        );
+    }
 }
 
 #[test]
 fn embedded_licences_are_the_shipped_texts() {
     let licences = einvoice_validator::licences();
     let ids: Vec<&str> = licences.iter().map(|l| l.id).collect();
-    let mut expected = vec!["MIT"];
-    if cfg!(any(feature = "cen-ubl", feature = "cen-cii")) {
-        expected.push("EUPL-1.2");
-    }
-    expected.extend([
-        "LicenseRef-OASIS-Copyright-Notice",
-        "LicenseRef-UN-CEFACT-Copyright-Notice",
-        "W3C-19980720",
-    ]);
+    let expected: Vec<&str> = TERMS
+        .into_iter()
+        .filter(|id| *id != "EUPL-1.2" || cfg!(any(feature = "cen-ubl", feature = "cen-cii")))
+        .collect();
     assert_eq!(ids, expected);
     let text =
         |path: PathBuf| std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
     for licence in &licences {
         assert!(!licence.covers.is_empty(), "{}", licence.id);
-        match licence.id {
-            "MIT" | "EUPL-1.2" => assert_eq!(
-                licence.text,
-                text(licences_dir().join(format!("{}.txt", licence.id)))
-            ),
-            _ => assert_eq!(
-                licence.text,
-                text(crate_dir().join(format!("../einvoice-xsd/LICENSES/{}.txt", licence.id)))
-            ),
-        }
+        assert_eq!(
+            licence.text,
+            text(licences_dir().join(format!("{}.txt", licence.id))),
+            "{}",
+            licence.id
+        );
     }
     // The EUPL-1.2 entry names every built-in rule set whose stylesheet it covers.
     if let Some(eupl) = licences.iter().find(|l| l.id == "EUPL-1.2") {
@@ -243,22 +283,50 @@ fn embedded_licences_are_the_shipped_texts() {
             assert!(eupl.covers.contains(name), "{name}: {}", eupl.covers);
         }
     }
-    // The MIT entry stands for every crate of the project this one is built from: each
-    // ships that same text and is named.
-    let mit = &licences[0];
-    let mut crates = 0;
-    for entry in std::fs::read_dir(crate_dir().join("..")).unwrap() {
-        let name = entry.unwrap().file_name().into_string().unwrap();
-        if name == "einvoice-validator" || name == "einvoice-cli" {
-            continue;
+}
+
+#[test]
+fn embedded_licences_cover_exactly_the_crates_built_from() {
+    let licences = einvoice_validator::licences();
+    let ids: BTreeSet<&str> = licences.iter().map(|l| l.id).collect();
+    let crates = built_from();
+    // Every term of every crate this build is built from is listed (this crate's own
+    // expression is that of its default features, checked above).
+    for c in crates.iter().filter(|c| c.name != env!("CARGO_PKG_NAME")) {
+        for term in c.license_terms().unwrap() {
+            assert!(
+                ids.contains(term),
+                "{}: {term} is not in licences()",
+                c.name
+            );
         }
-        crates += 1;
-        assert!(mit.covers.contains(&name), "{name}: {}", mit.covers);
+    }
+    // The MIT entry stands for the code of this crate and of exactly the crates of the
+    // project it is built from: each is named and ships that same text.
+    let mit = &licences[0];
+    assert!(
+        mit.covers
+            .starts_with("the code of einvoice-validator and of the crates of the project "),
+        "{}",
+        mit.covers
+    );
+    let others: Vec<&str> = crates
+        .iter()
+        .map(|c| c.name.as_str())
+        .filter(|name| *name != env!("CARGO_PKG_NAME"))
+        .collect();
+    assert_eq!(
+        workspace::named_crates(mit.covers).unwrap(),
+        others,
+        "{}",
+        mit.covers
+    );
+    for c in &crates {
         assert_eq!(
             mit.text,
-            text(crate_dir().join(format!("../{name}/LICENSES/MIT.txt"))),
-            "{name}"
+            std::fs::read_to_string(c.dir.join("LICENSES/MIT.txt")).unwrap(),
+            "{}",
+            c.name
         );
     }
-    assert_eq!(crates, 7);
 }

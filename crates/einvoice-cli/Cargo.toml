@@ -10,10 +10,11 @@ repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/einvoice-cli"
 readme = "README.md"
-# The code is MIT; built with the default features, the binary embeds the CEN EN 16931
-# stylesheets of einvoice-validator's built-in rule sets, which are EUPL-1.2. Texts in
-# LICENSES/.
-license = "MIT AND EUPL-1.2"
+# The code is MIT; the binary embeds the CEN EN 16931 stylesheets of einvoice-validator's
+# built-in rule sets (default features), which are EUPL-1.2, and the OASIS UBL 2.1
+# schemas of einvoice-xsd, which keep the terms in their own headers (OASIS, UN/CEFACT,
+# W3C). Texts in LICENSES/.
+license = "MIT AND EUPL-1.2 AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720"
 
 [[bin]]
 name = "einvoice-validate"
@@ -24,6 +25,8 @@ einvoice-validator = { path = "../einvoice-validator", version = "0.2.0" }
 
 [dev-dependencies]
 einvoice-svrl = { path = "../einvoice-svrl", version = "0.2.0" }
+# Not published: without a version, cargo leaves it out of the published manifest.
+einvoice-testkit = { path = "../einvoice-testkit" }
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 sha2 = "0.11.1"
 

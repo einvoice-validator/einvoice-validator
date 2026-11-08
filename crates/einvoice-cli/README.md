@@ -169,8 +169,10 @@ conditions a stylesheet reported (ambiguous template rule matches), as Saxon-HE 
 
 ## Licence
 
-`MIT AND EUPL-1.2`: the code is MIT, and the built-in `cen-ubl` and `cen-cii` rule sets embed
-the CEN EN 16931 validation stylesheets, which are under the EUPL-1.2 (see `bundles/cen-ubl/`
-and `bundles/cen-cii/` of the `einvoice-validator` crate). The texts are in `LICENSES/`. The binary also embeds the OASIS
-UBL 2.1 schemas of the `einvoice-xsd` crate, which keep their own terms (OASIS, UN/CEFACT,
-W3C). `einvoice-validate --licences` prints every one of these licences in full.
+`MIT AND EUPL-1.2 AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720`:
+the code is MIT; the built-in `cen-ubl` and `cen-cii` rule sets embed the CEN EN 16931
+validation stylesheets, which are under the EUPL-1.2 (see `bundles/cen-ubl/` and
+`bundles/cen-cii/` of the `einvoice-validator` crate), and the binary embeds the OASIS UBL 2.1
+schemas of the `einvoice-xsd` crate, which keep their own terms (OASIS, UN/CEFACT, W3C). The
+texts are in `LICENSES/`. `einvoice-validate --licences` prints every one of these licences in
+full.
