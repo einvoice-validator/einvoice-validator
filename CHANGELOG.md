@@ -10,6 +10,50 @@ against.
 
 ## [Unreleased]
 
+### Added
+
+- CEN EN 16931 for UN/CEFACT CII D16B, release 1.3.17 (#12): the artefacts vendored
+  unmodified in `artefacts/cen-en16931-cii-1.3.17/` (EUPL-1.2; the CII D16B schemas of the
+  source archive are not vendored), and their corpus in `corpus/cen-en16931-cii-1.3.17/`: the
+  15 examples and the 9 VEFA tests of the release (the VEFA cross-check agrees on all 9), 808
+  mutation cases from the new catalogue `corpus/mutations-cii.toml` (the rule families of the
+  UBL catalogue, the charge indicator in every lexical form, and the element or attribute of
+  each `not(X)` rule of CII-SR and CII-DT), with their Saxon-HE 12.10 goldens. 785 of the 810
+  assert ids of the stylesheet fail in at least one case (21 in the upstream cases alone); the
+  corpus README lists why the 25 others cannot.
+- Built-in rule set `cen-cii` (feature `cen-cii`, on by default): the CEN CII stylesheet
+  embedded unmodified (`bundles/cen-cii/`), `Validator::cen_cii`. It has no XML schema:
+  documents are checked for well-formedness, then by the stylesheet. On the 24 cases and the
+  808 mutation cases the engine, the library and `einvoice-validate` give what Saxon-HE gives.
+- `einvoice_validator::Syntax`: `Syntax::detect` tells from a document's root element whether it
+  is a UBL invoice or credit note or a CII invoice, and `builtin_rule_set` names its built-in
+  rule set.
+- `einvoice-validate --rules cen-cii`; without `--rules` or `--bundle`, each document is
+  validated with the built-in rule set of its root element (`cen-ubl` for UBL, `cen-cii` for
+  CII, `cen-ubl` otherwise, as before). The JSON report names the rule set of each document
+  (`documents[].rule_set`, an addition to format version 1); its `rule_set` is the first
+  document's.
+- `einvoice-xpath`, `einvoice-xpath-eval`: the `cast as` expression (with and without `?`),
+  which the CII stylesheet uses (`udt:Indicator cast as xs:boolean`), evaluated as Saxon-HE
+  12.10 does, checked by probes of `einvoice-xslt-exec` against Saxon-HE.
+
+### Changed
+
+- CI and the fetch scripts retry failed downloads (curl, Maven, cargo, rustup, apt) and cache the
+  tool archives and Saxon-HE jars, checked against their pinned checksums.
+- `einvoice-xsd`: validation copies no values out of the document; on the largest CEN document
+  (3.3 MB) its peak above the input drops from 9.4 MiB to 53 KiB and the whole job's peak from
+  12.6 MiB to 3.3 MiB (document given as a buffer); the compiled UBL 2.1 schema retains 0.9 MiB
+  instead of 1.7 MiB; validating the corpus takes 23 % less time in this stage (#18).
+- The mutation catalogue is chosen per rule set (`corpus/mutations.toml` for UBL,
+  `corpus/mutations-cii.toml` for CII); `einvoice_validator::licences()` names both CEN
+  stylesheets in its EUPL-1.2 entry.
+
+### Fixed
+
+- The release notes no longer repeat the version of a rule set whose name ends with one (Peppol
+  BIS Billing 3.0.22): optional `release-name` in `upstream.toml` (#23).
+
 ## [0.1.0] - 2026-11-08
 
 Tested against the official rule sets: CEN EN 16931 validation artefacts 1.3.17, Peppol BIS Billing 3.0 3.0.22.

@@ -81,6 +81,54 @@ pattern = 'en16931-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 file = "crates/einvoice-validator/src/builtin.rs"
 pattern = 'cen-en16931-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 
+[[upstream.pin]]
+file = "artefacts/cen-en16931-cii-1.3.17/README.md"
+pattern = 'validation-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "artefacts/cen-en16931-cii-1.3.17/README.md"
+pattern = 'en16931-cii-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "corpus/cen-en16931-cii-1.3.17/README.md"
+pattern = 'validation-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "xtask/src/ruleset.rs"
+pattern = 'cen-en16931-cii-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/bundles/cen-cii/bundle.toml"
+pattern = 'version = "(?<v>[0-9]+(?:\.[0-9]+)*)"'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/bundles/cen-cii/README.md"
+pattern = 'validation-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/bundles/cen-cii/README.md"
+pattern = 'en16931-cii-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/src/builtin.rs"
+pattern = 'cen-en16931-cii-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xslt-exec/tests/common/mod.rs"
+pattern = 'cen-en16931-cii-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "crates/einvoice-xslt-exec/tests/cii_equivalence.rs"
+pattern = 'CII (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/tests/cii_corpus.rs"
+pattern = 'cen-en16931-cii-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "crates/einvoice-cli/tests/cii.rs"
+pattern = 'cen-en16931-cii-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
 [[upstream]]
 name = "Peppol BIS Billing 3.0"
 severity = "high"
@@ -298,6 +346,10 @@ pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
 
 [[upstream.pin]]
 file = "corpus/cen-en16931-ubl-1.3.17/README.md"
+pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
+
+[[upstream.pin]]
+file = "corpus/cen-en16931-cii-1.3.17/README.md"
 pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
 
 [[upstream.pin]]
