@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use einvoice_xpath_eval::{Clock, DEFAULT_MAX_DEPTH, LimitExceeded};
 use einvoice_xslt::LoadErrorKind;
@@ -22,6 +23,7 @@ pub struct ValidateOptions<'a> {
     clock: Option<Clock>,
     max_depth: u32,
     max_stack: u32,
+    fail_closed: bool,
 }
 
 impl Default for ValidateOptions<'_> {
@@ -41,7 +43,19 @@ impl<'a> ValidateOptions<'a> {
             clock: None,
             max_depth: DEFAULT_MAX_DEPTH,
             max_stack: DEFAULT_MAX_STACK,
+            fail_closed: false,
         }
+    }
+
+    /// Fail closed: a finding whose flag is neither `fatal` nor `warning`, or that has
+    /// none, is of severity [`Severity::Fatal`](crate::Severity::Fatal) (it makes the
+    /// document invalid) instead of [`Severity::Other`](crate::Severity::Other). Off by
+    /// default. For rule sets whose flags the caller does not know in advance: an
+    /// unflagged rule then rejects the document, as the Factur-X rules mean it.
+    #[must_use]
+    pub const fn fail_closed(mut self, fail_closed: bool) -> Self {
+        self.fail_closed = fail_closed;
+        self
     }
 
     /// The maximum element depth of the document, and of any document a stylesheet
@@ -107,13 +121,14 @@ pub fn file_uri(path: &Path) -> Option<String> {
 /// A rule set ready to validate documents: its schema loaded and its stylesheets
 /// prepared, once. Validating a document only reads it, so one `Validator` serves any
 /// number of documents, from any number of threads at once (`Send + Sync`); nothing of
-/// the rule set is copied per document.
-#[derive(Debug)]
+/// the rule set is copied per document. A clone shares the loaded rule set (it is
+/// reference-counted): cloning is cheap, and the clones can be moved to other threads.
+#[derive(Debug, Clone)]
 pub struct Validator {
     rule_set: RuleSet,
-    schema: Option<einvoice_xsd::Schema>,
+    schema: Option<Arc<einvoice_xsd::Schema>>,
     /// The prepared stylesheets, in the order of `rule_set.stylesheets()`.
-    stylesheets: Vec<Executable>,
+    stylesheets: Arc<[Executable]>,
 }
 
 impl Validator {
@@ -214,8 +229,8 @@ impl Validator {
         };
         Ok(Self {
             rule_set,
-            schema,
-            stylesheets,
+            schema: schema.map(Arc::new),
+            stylesheets: stylesheets.into(),
         })
     }
 
@@ -338,7 +353,7 @@ impl Validator {
             .rule_set
             .stylesheets()
             .iter()
-            .zip(&self.stylesheets)
+            .zip(self.stylesheets.iter())
             .enumerate()
         {
             let source = if index + 1 == count {
@@ -355,6 +370,7 @@ impl Validator {
                     result.output,
                     result.warnings,
                     options.document_uri,
+                    options.fail_closed,
                 )?,
                 Err(e) => match transform_error(entry, &e) {
                     // The schema errors already make the document invalid: the verdict

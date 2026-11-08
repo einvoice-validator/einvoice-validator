@@ -46,7 +46,8 @@ pub enum Severity {
     Fatal,
     /// `flag="warning"`: reported, the document still conforms.
     Warning,
-    /// Any other flag, or none: reported, the document still conforms.
+    /// Any other flag, or none: reported, the document still conforms (unless the
+    /// validation fails closed: [`ValidateOptions::fail_closed`](crate::ValidateOptions::fail_closed)).
     Other,
 }
 
@@ -58,6 +59,16 @@ impl Severity {
             Some("fatal") => Self::Fatal,
             Some("warning") => Self::Warning,
             _ => Self::Other,
+        }
+    }
+
+    /// The severity a Schematron flag stands for when failing closed: as
+    /// [`Severity::from_flag`], but any other flag, or none, is [`Severity::Fatal`].
+    #[must_use]
+    pub fn from_flag_fail_closed(flag: Option<&str>) -> Self {
+        match Self::from_flag(flag) {
+            Self::Other => Self::Fatal,
+            severity => severity,
         }
     }
 
@@ -144,6 +155,9 @@ pub struct StylesheetReport {
     pub svrl: String,
     /// Its failed asserts and successful reports, in report order.
     pub findings: Vec<Finding>,
+    /// The number of rules that fired (its `svrl:fired-rule` elements): none means the
+    /// stylesheet matched nothing in the document (a document of another syntax, ...).
+    pub fired_rules: usize,
     /// Recoverable conditions the transformation reported (ambiguous rule matches,
     /// dynamic errors raised while matching a pattern, after which the rule did not
     /// match), as the reference engine reports them: each distinct message once.
@@ -170,8 +184,9 @@ pub struct StylesheetFailure {
 
 impl StylesheetReport {
     /// The SVRL report in the canonical text form of the `einvoice-svrl` crate (version
-    /// 1), in which the document's URI is written `{document}`: the form the expected
-    /// results of the reference engine are stored in.
+    /// 1, or 2 for a report with `svrl:metadata`), in which the document's URI is written
+    /// `{document}`: the form the expected results of the reference engine are stored
+    /// in.
     ///
     /// # Errors
     ///
@@ -197,10 +212,11 @@ impl StylesheetReport {
         svrl: String,
         warnings: Vec<String>,
         document_uri: Option<&str>,
+        fail_closed: bool,
     ) -> Result<Self, Error> {
         // A stylesheet that does not write SVRL is not a validation stylesheet: the
         // bundle is wrong.
-        let findings = findings(&svrl).map_err(|m| {
+        let (findings, fired_rules) = findings(&svrl, fail_closed).map_err(|m| {
             Error::bundle(format!(
                 "stylesheet {}: its result is not an SVRL report: {m}",
                 entry.name()
@@ -212,6 +228,7 @@ impl StylesheetReport {
             sha256: entry.sha256().to_owned(),
             svrl,
             findings,
+            fired_rules,
             warnings,
             failure: None,
             document_uri: document_uri.map(str::to_owned),
@@ -229,6 +246,7 @@ impl StylesheetReport {
             sha256: entry.sha256().to_owned(),
             svrl: String::new(),
             findings: Vec::new(),
+            fired_rules: 0,
             warnings: Vec::new(),
             failure: Some(failure),
             document_uri: document_uri.map(str::to_owned),
@@ -302,8 +320,9 @@ impl Report {
 }
 
 /// The failed asserts and successful reports of an SVRL report, with the context of the
-/// last fired rule and the id of the last active pattern before each.
-fn findings(svrl: &str) -> Result<Vec<Finding>, String> {
+/// last fired rule and the id of the last active pattern before each, and the number of
+/// fired rules. `fail_closed`: see [`Severity::from_flag_fail_closed`].
+fn findings(svrl: &str, fail_closed: bool) -> Result<(Vec<Finding>, usize), String> {
     let options = ParsingOptions {
         allow_dtd: false,
         nodes_limit: u32::MAX,
@@ -315,6 +334,7 @@ fn findings(svrl: &str) -> Result<Vec<Finding>, String> {
         return Err("the root is not svrl:schematron-output".to_owned());
     }
     let mut out = Vec::new();
+    let mut fired_rules = 0;
     let mut pattern: Option<String> = None;
     let mut context: Option<String> = None;
     for child in root.children().filter(Node::is_element) {
@@ -329,6 +349,7 @@ fn findings(svrl: &str) -> Result<Vec<Finding>, String> {
                 continue;
             }
             "fired-rule" => {
+                fired_rules += 1;
                 context = attribute("context");
                 continue;
             }
@@ -346,10 +367,15 @@ fn findings(svrl: &str) -> Result<Vec<Finding>, String> {
             })
             .collect();
         let flag = attribute("flag");
+        let severity = if fail_closed {
+            Severity::from_flag_fail_closed(flag.as_deref())
+        } else {
+            Severity::from_flag(flag.as_deref())
+        };
         out.push(Finding {
             kind,
             id: attribute("id"),
-            severity: Severity::from_flag(flag.as_deref()),
+            severity,
             flag,
             role: attribute("role"),
             location: attribute("location").unwrap_or_default(),
@@ -359,7 +385,7 @@ fn findings(svrl: &str) -> Result<Vec<Finding>, String> {
             text: einvoice_svrl::normalize_space(&text),
         });
     }
-    Ok(out)
+    Ok((out, fired_rules))
 }
 
 fn is_svrl(node: Node<'_, '_>, name: &str) -> bool {
@@ -386,7 +412,8 @@ mod tests {
   <svrl:fired-rule context="/z"/>
   <svrl:failed-assert location="/" test="d"/>
 </svrl:schematron-output>"#;
-        let f = findings(svrl).unwrap();
+        let (f, fired_rules) = findings(svrl, false).unwrap();
+        assert_eq!(fired_rules, 2);
         assert_eq!(f.len(), 3);
         assert_eq!(f[0].kind, FindingKind::FailedAssert);
         assert_eq!(f[0].id.as_deref(), Some("R-1"));
@@ -402,12 +429,18 @@ mod tests {
         assert_eq!(f[2].severity, Severity::Other);
         assert_eq!(f[2].id, None);
         assert_eq!(f[2].context.as_deref(), Some("/z"));
+        let (closed, _) = findings(svrl, true).unwrap();
+        let severities: Vec<Severity> = closed.iter().map(|f| f.severity).collect();
+        assert_eq!(
+            severities,
+            [Severity::Fatal, Severity::Warning, Severity::Fatal]
+        );
     }
 
     #[test]
     fn refuses_what_is_not_svrl() {
-        assert!(findings("<a/>").is_err());
-        assert!(findings("<a").is_err());
+        assert!(findings("<a/>", false).is_err());
+        assert!(findings("<a", false).is_err());
     }
 
     #[test]
@@ -416,5 +449,18 @@ mod tests {
         assert_eq!(Severity::from_flag(Some("warning")), Severity::Warning);
         assert_eq!(Severity::from_flag(Some("information")), Severity::Other);
         assert_eq!(Severity::from_flag(None), Severity::Other);
+        assert_eq!(
+            Severity::from_flag_fail_closed(Some("fatal")),
+            Severity::Fatal
+        );
+        assert_eq!(
+            Severity::from_flag_fail_closed(Some("warning")),
+            Severity::Warning
+        );
+        assert_eq!(
+            Severity::from_flag_fail_closed(Some("information")),
+            Severity::Fatal
+        );
+        assert_eq!(Severity::from_flag_fail_closed(None), Severity::Fatal);
     }
 }
