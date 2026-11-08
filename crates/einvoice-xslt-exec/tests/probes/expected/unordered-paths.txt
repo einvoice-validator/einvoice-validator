@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:f="urn:f" xmlns:xs="http://www.w3.org/2001/XMLSchema"><if>yes</if><exists>true</exists><empty>false</empty><not>false</not><boolean>true</boolean><or>true</or><and>true</and><cond>1</cond><eq>true</eq><eq-right>true</eq-right><predicate>1</predicate><nested>true</nested></out>

@@ -230,6 +230,14 @@ impl CompiledExpr {
         if let Some(nodes) = run.nodes_in_place(&self.expr, &ctx)? {
             return Ok(nodes);
         }
+        if walkable(&self.expr, Order::Kept) {
+            let mut nodes = Vec::new();
+            run.walk(&self.expr, &ctx, Order::Kept, &mut |node| {
+                nodes.push(Item::Node(node));
+                Ok(false)
+            })?;
+            return Ok(nodes);
+        }
         run.seq(&self.expr, &ctx)?.collect()
     }
 
@@ -635,8 +643,108 @@ impl<'a> Run<'a> {
             } => self.ebv(&args[0], ctx),
             // A sequence of nodes is true when it has one.
             Expr::Step(step) if simple(step) => Ok(Self::first_of_step(step, ctx)?.is_some()),
+            _ if walkable(expr, Order::Free) => {
+                self.walk(expr, ctx, Order::Free, &mut |_| Ok(true))
+            }
             _ => ebv_of(self.seq(expr, ctx)?),
         }
+    }
+
+    /// Calls `f` on each node of `expr`, which must be [`walkable`], in the order and
+    /// with the errors of its sequence ([`Run::seq`]), until `f` returns `true` (then
+    /// `true`). The steps are walked on the tree and their predicates evaluated in
+    /// turn for each node, without the lazy sequences of the general evaluation: a
+    /// node reaches a predicate when it passed the ones before, which count the nodes
+    /// they see; a predicate `[n]` ends the walk once its `n`th node is through.
+    pub(crate) fn walk(
+        &self,
+        expr: &Expr,
+        ctx: &Ctx,
+        order: Order,
+        f: &mut dyn FnMut(Node) -> Result<bool>,
+    ) -> Result<bool> {
+        self.dc.check_stack()?;
+        match expr {
+            Expr::Step(step) => self.walk_step(step, ctx, f),
+            Expr::Path { lhs, rhs, .. } => {
+                let mut position = 0;
+                let mut each = |item: Item| -> Result<bool> {
+                    position += 1;
+                    match item {
+                        Item::Node(node) => {
+                            let focus = ctx.with_focus(Item::Node(node), position, None);
+                            self.walk(rhs, &focus, order, f)
+                        }
+                        Item::Atomic(value) => err(
+                            ErrorCode::Xpty0019,
+                            format!(
+                                "Required item type of first operand of '/' is node(); supplied value has item type {}",
+                                value.atomic_type()
+                            ),
+                        ),
+                    }
+                };
+                if walkable(lhs, order) {
+                    return self.walk(lhs, ctx, order, &mut |node| each(Item::Node(node)));
+                }
+                for item in self.seq(lhs, ctx)? {
+                    if each(item?)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            _ => err(ErrorCode::Internal, "not a walkable expression"),
+        }
+    }
+
+    /// [`Run::walk`] for an axis step.
+    fn walk_step(
+        &self,
+        step: &Step,
+        ctx: &Ctx,
+        f: &mut dyn FnMut(Node) -> Result<bool>,
+    ) -> Result<bool> {
+        let node = focus_node(ctx, Some(step.axis))?;
+        let doc = node.document();
+        let predicates = &step.predicates;
+        if predicates
+            .iter()
+            .any(|p| p.kind == PredicateKind::Position(None))
+        {
+            return Ok(false);
+        }
+        // The nodes each predicate has seen ([`MAX_WALKED_PREDICATES`] at most).
+        let mut seen = [0_usize; MAX_WALKED_PREDICATES];
+        for index in step_nodes(doc, node.index(), step) {
+            let candidate = Node::new(Rc::clone(doc), index);
+            let mut passes = true;
+            let mut last = false;
+            for (predicate, seen) in predicates.iter().zip(seen.iter_mut()) {
+                *seen += 1;
+                let holds = match predicate.kind {
+                    PredicateKind::Position(Some(n)) => {
+                        last = *seen == n;
+                        last
+                    }
+                    _ => self.predicate_holds(
+                        predicate,
+                        &ctx.with_focus(Item::Node(candidate.clone()), *seen, None),
+                    )?,
+                };
+                if !holds {
+                    passes = false;
+                    break;
+                }
+            }
+            if passes && f(candidate)? {
+                return Ok(true);
+            }
+            if last {
+                return Ok(false);
+            }
+        }
+        Ok(false)
     }
 
     /// The value of a [`simple`] step, or of the union of two (`@*|*`), read from the
@@ -765,6 +873,9 @@ impl<'a> Run<'a> {
                 self.dc.check_stack()?;
                 return Ok(Self::first_of_step(step, ctx)?.is_some());
             }
+            _ if walkable(expr, Order::Free) => {
+                return self.walk(expr, ctx, Order::Free, &mut |_| Ok(true));
+            }
             _ => {}
         }
         Ok(self.seq(expr, ctx)?.next().transpose()?.is_some())
@@ -864,6 +975,23 @@ impl<'a> Run<'a> {
                 }
                 return Ok(first.map(Item::Node));
             }
+            _ if walkable(expr, Order::Kept) => {
+                let mut first = None;
+                let more = self.walk(expr, ctx, Order::Kept, &mut |node| {
+                    if first.is_some() {
+                        return Ok(true);
+                    }
+                    first = Some(node);
+                    Ok(false)
+                })?;
+                if more {
+                    return err(
+                        ErrorCode::Xpty0004,
+                        format!("A sequence of more than one item is not allowed as the {what}"),
+                    );
+                }
+                return Ok(first.map(Item::Node));
+            }
             _ => {}
         }
         let mut items = self.seq(expr, ctx)?;
@@ -929,6 +1057,12 @@ impl<'a> Run<'a> {
         let Some(b) = self.atomic_opt(rhs, ctx, What::Text(GENERAL_OPERAND))? else {
             return Ok(false);
         };
+        if walkable(lhs, Order::Free) {
+            let tz = self.dc.implicit_timezone;
+            return self.walk(lhs, ctx, Order::Free, &mut |node| {
+                Ok(ops::general_compare(&node.typed_value(), op, &b, tz)?)
+            });
+        }
         for a in self.atomized(lhs, ctx)? {
             if ops::general_compare(&a?, op, &b, self.dc.implicit_timezone)? {
                 return Ok(true);
@@ -949,6 +1083,12 @@ impl<'a> Run<'a> {
         let Some(a) = self.atomic_opt(lhs, ctx, What::Text(GENERAL_OPERAND))? else {
             return Ok(false);
         };
+        if walkable(rhs, Order::Free) {
+            let tz = self.dc.implicit_timezone;
+            return self.walk(rhs, ctx, Order::Free, &mut |node| {
+                Ok(ops::general_compare(&a, op, &node.typed_value(), tz)?)
+            });
+        }
         for b in self.atomized(rhs, ctx)? {
             if ops::general_compare(&a, op, &b?, self.dc.implicit_timezone)? {
                 return Ok(true);
@@ -1293,6 +1433,56 @@ fn context_item(ctx: &Ctx) -> Result<Item> {
 fn step_nodes<'d>(doc: &'d Document, from: u32, step: &'d Step) -> impl Iterator<Item = u32> + 'd {
     let mut cursor = doc.cursor(from, step.axis);
     std::iter::from_fn(move || cursor.next(doc)).filter(move |&i| step.test.matches(doc, i))
+}
+
+/// The most predicates of a step [`Run::walk`] walks.
+const MAX_WALKED_PREDICATES: usize = 4;
+
+/// What a consumer of a node sequence needs of its order, as Saxon-HE 12.10 decides
+/// whether to sort a path (`Expression.unordered`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Order {
+    /// Document order without duplicates: the sequence as it is.
+    Kept,
+    /// Neither order nor duplicates matter (an effective boolean value, `exists`,
+    /// `empty`, an operand of a general comparison): a path whose nodes would be sorted
+    /// is read unsorted, as Saxon reads it there, lazily, its left operand in its own
+    /// order, so that the nodes after the one that decides are never evaluated.
+    Free,
+}
+
+/// Whether [`Run::walk`] can walk `expr` for a consumer needing `order`: an axis step on
+/// an axis read in document order whose predicates do not read the context size (at
+/// most [`MAX_WALKED_PREDICATES`]), or a path whose right operand is such a step and
+/// does not read the context size: of nodes in document order, or with [`Order::Free`]
+/// one whose nodes would be sorted, if its left operand is walkable or is not an axis
+/// step or a path (its left operand is read as a sequence when it is not walkable). Its
+/// items are nodes.
+pub(crate) fn walkable(expr: &Expr, order: Order) -> bool {
+    match expr {
+        Expr::Step(step) => {
+            (!step.axis.is_reverse() || step.axis == NodeAxis::Parent)
+                && step.predicates.len() <= MAX_WALKED_PREDICATES
+                && step.predicates.iter().all(|p| !p.uses_last)
+        }
+        Expr::Path {
+            lhs,
+            rhs,
+            mode,
+            rhs_uses_last: false,
+        } => {
+            let step = matches!(&**rhs, Expr::Step(_)) && walkable(rhs, order);
+            match (mode, order) {
+                (PathMode::Ordered, _) => step,
+                (PathMode::Sort, Order::Free) => {
+                    step && (walkable(lhs, order)
+                        || !matches!(&**lhs, Expr::Step(_) | Expr::Path { .. }))
+                }
+                _ => false,
+            }
+        }
+        _ => false,
+    }
 }
 
 /// A step without predicates on an axis read in document order: its nodes can be read

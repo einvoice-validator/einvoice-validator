@@ -9,7 +9,7 @@ use einvoice_xdm::{AtomicType, AtomicValue, Integer, XPathRegex, ops, parse_doub
 
 use crate::compile::{CallData, Expr};
 use crate::error::{Error, ErrorCode, Result, err};
-use crate::eval::{Ctx, Iter, Run, What, from_vec, once, sort_nodes};
+use crate::eval::{Ctx, Iter, Order, Run, What, from_vec, once, sort_nodes, walkable};
 use crate::functions::Builtin;
 use crate::item::Item;
 use crate::tree::{Node, NodeKind};
@@ -223,6 +223,14 @@ impl<'a> Run<'a> {
         'a: 's,
     {
         Ok(match function {
+            Builtin::Count if walkable(&args[0], Order::Kept) => {
+                let mut count = 0;
+                self.walk(&args[0], ctx, Order::Kept, &mut |_| {
+                    count += 1;
+                    Ok(false)
+                })?;
+                atomic(integer(count))
+            }
             Builtin::Count => {
                 let mut count = 0;
                 for item in self.seq(&args[0], ctx)? {
