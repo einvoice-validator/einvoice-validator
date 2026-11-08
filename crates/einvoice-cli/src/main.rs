@@ -5,6 +5,7 @@
 mod args;
 mod json;
 mod render;
+mod rules;
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -15,7 +16,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 
 use einvoice_validator::{
-    BUILTIN_RULE_SETS, Error, RuleSet, Syntax, ValidateOptions, Validator, file_uri, pdf,
+    BUILTIN_RULE_SETS, Error, FetchedRuleSet, RuleSet, Syntax, ValidateOptions, Validator,
+    file_uri, pdf,
 };
 
 use crate::args::{Command, Format, Input, Options, Rules, UsageError};
@@ -59,6 +61,7 @@ fn main() -> ExitCode {
         Ok(Command::Version) => print(&version()),
         Ok(Command::Licences) => print(&licences()),
         Ok(Command::Validate(options)) => run(&options),
+        Ok(Command::Rules(command)) => rules::run(&command),
     };
     ExitCode::from(code)
 }
@@ -99,6 +102,41 @@ fn builtin_list() -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The fetched rule sets, by family: one line per family.
+fn fetched_list() -> String {
+    let Ok(all) = einvoice_validator::fetched_rule_sets() else {
+        return "  (the catalogue does not load)".to_owned();
+    };
+    let mut lines: Vec<(String, Vec<&str>)> = Vec::new();
+    for r in all {
+        let head = format!("{} {}", r.family_title(), r.version());
+        match lines.iter_mut().find(|(h, _)| *h == head) {
+            Some((_, names)) => names.push(r.name()),
+            None => lines.push((head, vec![r.name()])),
+        }
+    }
+    let mut out = Vec::new();
+    for (head, names) in lines {
+        // Wrapped at 80 columns, under the family.
+        let mut line = format!("  {head}:");
+        for name in names {
+            if line.len() + name.len() + 2 > 80 {
+                out.push(format!("{line},"));
+                line = format!("    {name}");
+            } else if line.ends_with(':') {
+                line = format!("{line} {name}");
+            } else {
+                line = format!("{line}, {name}");
+            }
+        }
+        out.push(line);
+    }
+    out.join(
+        "
+",
+    )
 }
 
 fn version() -> String {
@@ -164,6 +202,7 @@ Validates e-invoices against the official EN 16931 validation artefacts: XML
 well-formedness, the XML schema, then the official compiled Schematron rules.
 
 Usage: {NAME} [OPTIONS] FILE...
+       {NAME} rules list|fetch|path|clear
 
 Arguments:
   FILE...              Documents to validate; - reads standard input. A PDF file
@@ -171,9 +210,14 @@ Arguments:
                        invoice XML it embeds.
 
 Options:
-  -r, --rules NAME     Built-in rule set. Default: chosen for each document from
+  -r, --rules NAME     Rule set: built in, or fetched on demand and read from the
+                       cache (see below). Default: chosen for each document from
                        its root element: cen-ubl for a UBL Invoice or CreditNote,
                        cen-cii for a CII CrossIndustryInvoice, {default} otherwise.
+      --fetch          Allow --rules to download a fetched rule set that is not
+                       in the cache (otherwise that is an error saying how to
+                       fetch it). Nothing is ever downloaded without it or the
+                       rules fetch command.
   -b, --bundle DIR     Rule-set bundle in DIR (DIR/bundle.toml), instead of --rules.
   -f, --format FORMAT  Output format: text (default), json or svrl.
   -j, --jobs N         Validate N documents at a time (default: 1).
@@ -188,6 +232,34 @@ Options:
 
 Built-in rule sets:
 {builtins}
+
+Rule sets fetched on demand (not redistributed with this program: downloaded
+from their publishers at pinned URLs, checked against pinned SHA-256, built into
+the cache, only when asked; then used offline, checked on every load):
+{fetched}
+  Aliases: peppol, and xrechnung (xrechnung-ubl or xrechnung-cii, from each
+  document's root element).
+
+Commands:
+  rules list           The rule sets, their versions and sources, and which ones
+                       the cache holds.
+  rules fetch NAME...  Download and build NAME (a rule set, an alias, or a family:
+                       factur-x, xrechnung, fr-ctc, peppol) with the other rule
+                       sets of its family. --all: every family. --from DIR: take
+                       the published files from DIR when it has them (by their
+                       file names, checked all the same). Peppol BIS Billing is
+                       published as Schematron only: building it compiles it with
+                       ph-schematron, which needs Java and access to Maven Central.
+  rules path [NAME]    Print the cache directory, or the bundle directory of NAME
+                       (usable with --bundle).
+  rules clear          Remove everything this program put in the cache.
+
+Environment:
+  EINVOICE_VALIDATOR_CACHE   The cache directory. Default: XDG_CACHE_HOME or
+                             ~/.cache (Linux), ~/Library/Caches (macOS),
+                             %LOCALAPPDATA% (Windows), with einvoice-validator/.
+  EINVOICE_VALIDATOR_MIRROR  Fetch https://HOST/PATH from MIRROR/HOST/PATH instead.
+  JAVA, JAVA_HOME            The Java runtime that compiles the Peppol Schematron.
 
 Output formats:
   text  One line per document with its verdict, then its schema errors and its
@@ -208,6 +280,7 @@ Exit status (the highest that applies):
 ",
         default = args::DEFAULT_RULES,
         builtins = builtin_list(),
+        fetched = fetched_list(),
         json = render::JSON_FORMAT_VERSION,
         max_depth = einvoice_validator::DEFAULT_MAX_DEPTH,
     )
@@ -229,6 +302,9 @@ fn run(options: &Options) -> u8 {
         Ok(loaded) => loaded,
         Err(e) => {
             eprintln!("{NAME}: {e}");
+            if let Some(hint) = rules::hint(&e) {
+                eprintln!("{hint}");
+            }
             return render::load_exit_code(&e);
         }
     };
@@ -261,20 +337,85 @@ fn run(options: &Options) -> u8 {
     }
 }
 
+/// The rule sets of a run, and for each input the index of its own.
+type Loaded = (Vec<Validator>, Vec<usize>);
+
+/// The syntax of each input, from its root element (or the invoice XML of a PDF file).
+fn syntaxes(options: &Options, stdin: Option<&std::io::Result<Vec<u8>>>) -> Vec<Option<Syntax>> {
+    options
+        .inputs
+        .iter()
+        .map(|input| match input {
+            Input::Stdin => stdin
+                .and_then(|r| r.as_ref().ok())
+                .and_then(|bytes| detect(bytes)),
+            Input::File(path) => detect_file(path),
+        })
+        .collect()
+}
+
+/// The rule sets for `--rules NAME` of a rule set fetched on demand (or an alias), from
+/// the cache: for an alias of one rule set per syntax (`xrechnung`), the one of each
+/// document's syntax. `None` when NAME is no fetched rule set.
+fn load_fetched(
+    name: &str,
+    options: &Options,
+    stdin: Option<&std::io::Result<Vec<u8>>>,
+) -> Result<Option<Loaded>, Error> {
+    let Some(single) = einvoice_validator::fetched_rule_set(name, None)? else {
+        return Ok(None);
+    };
+    let by_syntax = |s| einvoice_validator::fetched_rule_set(name, Some(s));
+    let per_syntax = [Syntax::Ubl, Syntax::Cii]
+        .into_iter()
+        .map(by_syntax)
+        .collect::<Result<Vec<_>, Error>>()?
+        .iter()
+        .any(|r| r.is_some_and(|r| r.name() != single.name()));
+    let targets: Vec<&FetchedRuleSet> = if per_syntax {
+        syntaxes(options, stdin)
+            .into_iter()
+            .map(|syntax| Ok(einvoice_validator::fetched_rule_set(name, syntax)?.unwrap_or(single)))
+            .collect::<Result<_, Error>>()?
+    } else {
+        vec![single; options.inputs.len()]
+    };
+    let mut loaded: Vec<(&str, Validator)> = Vec::new();
+    let mut assigned = Vec::with_capacity(targets.len());
+    for target in targets {
+        let index = if let Some(index) = loaded.iter().position(|(n, _)| *n == target.name()) {
+            index
+        } else {
+            loaded.push((target.name(), rules::load(target, options.fetch)?));
+            loaded.len() - 1
+        };
+        assigned.push(index);
+    }
+    Ok(Some((
+        loaded.into_iter().map(|(_, v)| v).collect(),
+        assigned,
+    )))
+}
+
 /// The rule sets the run needs, loaded once, and for each input the index of its own:
-/// the one named by `--rules` or `--bundle`, or, without them, the built-in rule set of
-/// the syntax each document's root element names ([`Syntax::detect`]), else
-/// [`args::DEFAULT_RULES`].
+/// the one named by `--rules` (built in, or fetched on demand and read from the cache)
+/// or `--bundle`, or, without them, the built-in rule set of the syntax each document's
+/// root element names ([`Syntax::detect`]), else [`args::DEFAULT_RULES`].
 fn load(
     options: &Options,
     stdin: Option<&std::io::Result<Vec<u8>>>,
 ) -> Result<(Vec<Validator>, Vec<usize>), Error> {
     let names: Vec<&str> = match &options.rules {
-        Rules::Builtin(name) => {
+        Rules::Named(name) if BUILTIN_RULE_SETS.contains(&name.as_str()) => {
             return Ok((
                 vec![Validator::builtin(name)?],
                 vec![0; options.inputs.len()],
             ));
+        }
+        Rules::Named(name) => {
+            return load_fetched(name, options, stdin)?.ok_or_else(|| Error::Bundle {
+                message: rules::unknown(name),
+            });
         }
         Rules::Bundle(dir) => {
             return Ok((
@@ -282,18 +423,9 @@ fn load(
                 vec![0; options.inputs.len()],
             ));
         }
-        Rules::Detect => options
-            .inputs
-            .iter()
-            .map(|input| {
-                let syntax = match input {
-                    Input::Stdin => stdin
-                        .and_then(|r| r.as_ref().ok())
-                        .and_then(|bytes| detect(bytes)),
-                    Input::File(path) => detect_file(path),
-                };
-                syntax.map_or(args::DEFAULT_RULES, Syntax::builtin_rule_set)
-            })
+        Rules::Detect => syntaxes(options, stdin)
+            .into_iter()
+            .map(|syntax| syntax.map_or(args::DEFAULT_RULES, Syntax::builtin_rule_set))
             .collect(),
     };
     let mut loaded: Vec<(&str, Validator)> = Vec::new();

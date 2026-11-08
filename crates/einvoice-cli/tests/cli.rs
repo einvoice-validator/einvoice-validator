@@ -34,6 +34,15 @@ fn help() {
             "-b, --bundle DIR",
             "-f, --format FORMAT",
             "-j, --jobs N",
+            "--fetch",
+            "rules list",
+            "rules fetch NAME...",
+            "rules path [NAME]",
+            "rules clear",
+            "EINVOICE_VALIDATOR_CACHE",
+            "EINVOICE_VALIDATOR_MIRROR",
+            "factur-x-en16931",
+            "peppol-bis-billing-ubl",
             "cen-ubl  CEN EN 16931 UBL 1.3.17, with the ubl-2.1 schema",
             "NO_COLOR",
             "format_version 1",
@@ -84,11 +93,12 @@ fn usage_errors_exit_with_2() {
 
 #[test]
 fn unknown_rule_set_exits_with_2() {
-    let r = run(&["--rules", "peppol", VALID], None);
+    let r = run(&["--rules", "bogus", VALID], None);
     assert_eq!(r.code, 2);
     assert_eq!(r.stdout, "");
     assert!(
-        r.stderr.contains("no built-in rule set named \"peppol\""),
+        r.stderr
+            .contains("no rule set named \"bogus\" (built in: cen-ubl, cen-cii; "),
         "{}",
         r.stderr
     );

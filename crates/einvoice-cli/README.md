@@ -26,21 +26,63 @@ einvoice-validate --format svrl - < invoice.xml
 einvoice-validate --bundle ./my-bundle invoice.xml
 ```
 
-Peppol BIS Billing 3.0 is used as a bundle: its files may not be redistributed, so
-`scripts/fetch-peppol.sh` (in a clone of the repository) downloads the pinned release, compiles
-its two stylesheets and writes the `bundle.toml` that names them:
+## Rule sets fetched on demand
+
+Factur-X (each profile), XRechnung (UBL and CII), the French rules (each set of stylesheets
+of the FNFE-MPE package) and Peppol BIS Billing 3.0 may not be redistributed, so the binary
+does not embed them: it downloads them from their publishers when, and only when, asked, at
+pinned URLs, checks each file against its pinned SHA-256 (SHA-512 for Apache Maven), builds
+their bundles in the cache and uses them from there, offline, checking every file on every
+load.
 
 ```sh
-scripts/fetch-peppol.sh
-einvoice-validate --bundle target/peppol/peppol-bis-billing-ubl-3.0.22 invoice.xml
+einvoice-validate rules list                        # every rule set, its source, cached or not
+einvoice-validate rules fetch xrechnung factur-x    # families, aliases or rule-set names
+einvoice-validate --rules xrechnung invoice.xml     # xrechnung-ubl or xrechnung-cii, by document
+einvoice-validate --rules factur-x-en16931 --fetch invoice.pdf   # fetch in this run if missing
+einvoice-validate rules path factur-x-en16931       # the bundle directory (for --bundle)
+einvoice-validate rules clear
 ```
+
+| Family | Rule sets | Published by, fetched from |
+|---|---|---|
+| `factur-x` | `factur-x-minimum`, `factur-x-basic-wl`, `factur-x-basic`, `factur-x-en16931`, `factur-x-extended` | the compiled stylesheets and code lists of Factur-X 1.09.2 as the Mustang validator ships them (`org.mustangproject:validator`, Maven Central) |
+| `xrechnung` | `xrechnung-ubl`, `xrechnung-cii` (alias `xrechnung`: the one of each document's syntax) | the KoSIT validator configuration for XRechnung 3.0.2 (projekte.kosit.org): the EN 16931 rules, then the XRechnung rules |
+| `fr-ctc` | `fr-ctc-cii-en16931`, `fr-ctc-cii-extended-ctc-fr`, `fr-ctc-ubl-en16931`, `fr-ctc-ubl-extended-ctc-fr`, `fr-ctc-cdar`, each also as `...-warning`; `fr-ctc-factur-x-basic-wl`, `fr-ctc-factur-x-en16931`, `fr-ctc-factur-x-extended`; `fr-ctc-flux10` | the FNFE-MPE package "Schematrons FR CTC" 1.4.0.04 (fnfe-mpe.org) |
+| `peppol` | `peppol-bis-billing-ubl` (alias `peppol`) | the Peppol BIS Billing 3.0.22 release (OpenPeppol), published as Schematron only: compiled with ph-schematron 10.3.1 as the reference validators do, which needs **Java** and network access to Maven Central (Apache Maven 3.9.16 runs it with strict checksums and a private local repository in the cache) |
+
+A family is fetched as a whole: its rule sets come from the same files. `rules fetch` takes
+rule-set names, aliases (`peppol`, `xrechnung`), families or `--all`, and `--from DIR` (any
+number of times) to take a published file from a local directory instead of downloading it,
+under the file name `rules list` gives (checked all the same). Validating with a rule set that
+is not in the cache is an error saying how to fetch it (exit status 2); `--fetch` allows the
+download in that run. The bundles are byte for byte those the repository's
+`scripts/fetch-*.sh` write: in a clone, `scripts/fetch-peppol.sh` builds the same Peppol bundle
+in `target/peppol/peppol-bis-billing-ubl-3.0.22/`, usable with `--bundle`.
+
+The download is HTTPS only (rustls, with the Mozilla root certificates), follows at most five
+redirects and never from HTTPS to plain HTTP, tries a file five times with a doubling delay on
+an I/O error and on HTTP 408, 429 and 5xx (honouring `Retry-After`), resumes an interrupted
+download, and refuses a file over 64 MiB; archives are read in memory, refusing absolute
+paths, `..`, links and oversized entries. Requests name the project in their `User-Agent`.
+
+| Variable | Meaning |
+|---|---|
+| `EINVOICE_VALIDATOR_CACHE` | The cache directory. Default: `$XDG_CACHE_HOME/einvoice-validator`, else `~/.cache/einvoice-validator` (Linux and others), `~/Library/Caches/einvoice-validator` (macOS), `%LOCALAPPDATA%\einvoice-validator\cache` (Windows). `rules clear` removes only what the tool put there. |
+| `EINVOICE_VALIDATOR_MIRROR` | A mirror of the publishers' files: `https://HOST/PATH` is fetched as `MIRROR/HOST/PATH` (an `https://` URL, or `http://` to a loopback address). The digests are checked all the same. |
+| `JAVA`, `JAVA_HOME` | The Java runtime that compiles the Peppol Schematron (default: `java` on the `PATH`). |
+
+Built without the default feature `fetch` (`cargo install einvoice-cli --no-default-features`),
+the binary has no network code: it still lists the rule sets and validates with those already
+in the cache.
 
 ## Options
 
 | Option | Meaning |
 |---|---|
 | `FILE...` | Documents to validate, in that order; `-` reads standard input (at most once). After `--`, every argument is a file. A file (or standard input) that starts with `%PDF-` is a PDF: see [PDF files](#pdf-files). |
-| `-r`, `--rules NAME` | Built-in rule set: `cen-ubl`, the CEN EN 16931 UBL validation artefacts 1.3.17 with the UBL 2.1 schemas, or `cen-cii`, the CEN EN 16931 CII (UN/CEFACT D16B) validation artefacts 1.3.17, without an XML schema (the CII schemas are not embedded). Without `--rules` and `--bundle`, each document is validated with the rule set of its root element: `cen-ubl` for a UBL `Invoice` or `CreditNote` (namespaces `urn:oasis:names:specification:ubl:schema:xsd:Invoice-2` and `...:CreditNote-2`), `cen-cii` for a `CrossIndustryInvoice` in `urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100`, and `cen-ubl` for any other document, one that is not XML, or a file that cannot be read. Only the root element is read for that, before the document is validated. |
+| `-r`, `--rules NAME` | A rule set fetched on demand, from the cache (see [Rule sets fetched on demand](#rule-sets-fetched-on-demand)), or a built-in rule set: `cen-ubl`, the CEN EN 16931 UBL validation artefacts 1.3.17 with the UBL 2.1 schemas, or `cen-cii`, the CEN EN 16931 CII (UN/CEFACT D16B) validation artefacts 1.3.17, without an XML schema (the CII schemas are not embedded). Without `--rules` and `--bundle`, each document is validated with the rule set of its root element: `cen-ubl` for a UBL `Invoice` or `CreditNote` (namespaces `urn:oasis:names:specification:ubl:schema:xsd:Invoice-2` and `...:CreditNote-2`), `cen-cii` for a `CrossIndustryInvoice` in `urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100`, and `cen-ubl` for any other document, one that is not XML, or a file that cannot be read. Only the root element is read for that, before the document is validated. |
+| `--fetch` | With `--rules` naming a rule set fetched on demand that is not in the cache: fetch it first (otherwise an error says how). Nothing is downloaded without it or `rules fetch`. |
 | `-b`, `--bundle DIR` | A rule-set bundle: `DIR/bundle.toml` and the stylesheets and resources it names (see the documentation of the `einvoice-validator` crate for the manifest format). Excludes `--rules`. |
 | `-f`, `--format FORMAT` | `text` (default), `json` or `svrl`. |
 | `-j`, `--jobs N` | Validate N documents at a time, on N threads sharing one loaded rule set (default 1). The output keeps the order of the command line. |
@@ -62,6 +104,10 @@ The highest code that applies to the run:
 | 1 | At least one document is invalid: schema errors, fatal findings, or not well-formed XML. |
 | 2 | Usage error; a document that cannot be read, a PDF file included (malformed, without an embedded file named as an invoice or with several, XMP metadata that is not well-formed); a bundle that cannot be read or is not valid (manifest, missing file, SHA-256 mismatch, stylesheet that is not SVRL-producing XSLT). |
 | 3 | A construct the engine does not support (in a document: an encoding other than UTF-8, a document type declaration; in a PDF file: encryption, a PDF feature outside the subset read, a limit of the PDF reader; in a rule set: XSLT or XPath outside the supported subset), a document beyond a limit (an element nested deeper than `--max-depth`; a stylesheet whose templates or functions recurse beyond the nesting or the stack allowed), a dynamic error raised by a stylesheet on a document, or an internal error. |
+
+The `rules` commands exit with 0 when they succeed and 2 otherwise (a usage error, a rule set
+that cannot be fetched, `rules path` of a rule set not in the cache), after saying why on
+standard error.
 
 When the rule set cannot be loaded, nothing is written to standard output; the reason goes
 to standard error and the exit status is 2 or 3. Otherwise every document is reported, even

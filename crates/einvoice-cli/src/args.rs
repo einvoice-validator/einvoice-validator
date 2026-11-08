@@ -17,12 +17,32 @@ pub(crate) enum Command {
     Version,
     Licences,
     Validate(Options),
+    /// `rules ...`: the rule sets fetched on demand and their cache.
+    Rules(RulesCommand),
+}
+
+/// A `rules` subcommand.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RulesCommand {
+    /// `rules list`: every rule set, built in or fetched, and whether it is cached.
+    List,
+    /// `rules fetch NAME...` or `rules fetch --all`, with `--from DIR` (repeatable).
+    Fetch {
+        names: Vec<String>,
+        all: bool,
+        from: Vec<PathBuf>,
+    },
+    /// `rules path [NAME]`: the cache directory, or the bundle directory of NAME.
+    Path(Option<String>),
+    /// `rules clear`: empties the cache.
+    Clear,
 }
 
 /// Where the rule set comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Rules {
-    Builtin(String),
+    /// `--rules NAME`: a built-in rule set, a fetched one (from the cache) or an alias.
+    Named(String),
     Bundle(PathBuf),
     /// Neither `--rules` nor `--bundle`: for each document, the built-in rule set of the
     /// syntax its root element names (`einvoice_validator::Syntax`), else
@@ -56,6 +76,8 @@ pub(crate) struct Options {
     pub(crate) jobs: NonZeroUsize,
     /// The maximum element depth of a document (`--max-depth`).
     pub(crate) max_depth: u32,
+    /// `--fetch`: a fetched rule set that is not in the cache may be downloaded.
+    pub(crate) fetch: bool,
     pub(crate) inputs: Vec<Input>,
 }
 
@@ -71,6 +93,7 @@ struct Seen {
     format: Option<Format>,
     jobs: Option<NonZeroUsize>,
     max_depth: Option<u32>,
+    fetch: bool,
 }
 
 impl Seen {
@@ -124,7 +147,7 @@ impl Seen {
                 return Err(usage("--rules and --bundle exclude each other".to_owned()));
             }
             (_, Some(dir)) => Rules::Bundle(dir),
-            (Some(name), None) => Rules::Builtin(name),
+            (Some(name), None) => Rules::Named(name),
             (None, None) => Rules::Detect,
         };
         if inputs.is_empty() {
@@ -142,14 +165,19 @@ impl Seen {
             format: self.format.unwrap_or(Format::Text),
             jobs: self.jobs.unwrap_or(NonZeroUsize::MIN),
             max_depth: self.max_depth.unwrap_or(DEFAULT_MAX_DEPTH),
+            fetch: self.fetch,
             inputs,
         }))
     }
 }
 
 /// Parses the arguments (without the program name). `--help`, `--version` and
-/// `--licences` win over anything after them.
+/// `--licences` win over anything after them. A first argument `rules` is the
+/// `rules` command (a file of that name is given as `./rules` or after `--`).
 pub(crate) fn parse(args: &[OsString]) -> Result<Command, UsageError> {
+    if args.first().is_some_and(|a| a == "rules") {
+        return parse_rules(&args[1..]);
+    }
     let mut seen = Seen::default();
     let mut inputs = Vec::new();
     let mut only_files = false;
@@ -178,6 +206,16 @@ pub(crate) fn parse(args: &[OsString]) -> Result<Command, UsageError> {
             (name, (!rest.is_empty()).then_some(rest))
         };
         match name {
+            "--fetch" => {
+                if inline.is_some() {
+                    return Err(usage("--fetch takes no value".to_owned()));
+                }
+                if seen.fetch {
+                    return Err(usage("--fetch given twice".to_owned()));
+                }
+                seen.fetch = true;
+                continue;
+            }
             "-h" | "--help" | "-V" | "--version" | "--licences" | "--licenses" => {
                 if inline.is_some() {
                     return Err(usage(format!("{name} takes no value")));
@@ -202,6 +240,85 @@ pub(crate) fn parse(args: &[OsString]) -> Result<Command, UsageError> {
         seen.set(name, &value)?;
     }
     seen.finish(inputs)
+}
+
+/// Parses the arguments of `rules` (after it).
+fn parse_rules(args: &[OsString]) -> Result<Command, UsageError> {
+    fn text(arg: &OsString) -> Result<&str, UsageError> {
+        arg.to_str().ok_or_else(|| {
+            usage(format!(
+                "rules: {} is not valid Unicode",
+                arg.to_string_lossy()
+            ))
+        })
+    }
+    let Some((sub, rest)) = args.split_first() else {
+        return Err(usage(
+            "rules: expected list, fetch, path or clear".to_owned(),
+        ));
+    };
+    if rest.iter().any(|a| a == "-h" || a == "--help") || sub == "-h" || sub == "--help" {
+        return Ok(Command::Help);
+    }
+    let none = |name: &str| -> Result<(), UsageError> {
+        match rest.first() {
+            Some(extra) => Err(usage(format!(
+                "rules {name}: unexpected argument {}",
+                extra.to_string_lossy()
+            ))),
+            None => Ok(()),
+        }
+    };
+    match text(sub)? {
+        "list" => none("list").map(|()| Command::Rules(RulesCommand::List)),
+        "clear" => none("clear").map(|()| Command::Rules(RulesCommand::Clear)),
+        "path" => match rest {
+            [] => Ok(Command::Rules(RulesCommand::Path(None))),
+            [name] => Ok(Command::Rules(RulesCommand::Path(Some(
+                text(name)?.to_owned(),
+            )))),
+            [_, extra, ..] => Err(usage(format!(
+                "rules path: unexpected argument {}",
+                extra.to_string_lossy()
+            ))),
+        },
+        "fetch" => {
+            let (mut names, mut all, mut from) = (Vec::new(), false, Vec::new());
+            let mut rest = rest.iter();
+            while let Some(arg) = rest.next() {
+                let arg_text = text(arg)?;
+                if arg_text == "--all" {
+                    if all {
+                        return Err(usage("rules fetch: --all given twice".to_owned()));
+                    }
+                    all = true;
+                } else if arg_text == "--from" {
+                    let dir = rest
+                        .next()
+                        .ok_or_else(|| usage("rules fetch: --from needs a value".to_owned()))?;
+                    from.push(PathBuf::from(dir));
+                } else if let Some(dir) = arg_text.strip_prefix("--from=") {
+                    from.push(PathBuf::from(dir));
+                } else if arg_text.starts_with('-') {
+                    return Err(usage(format!("rules fetch: unknown option {arg_text}")));
+                } else {
+                    names.push(arg_text.to_owned());
+                }
+            }
+            match (all, names.is_empty()) {
+                (true, false) => Err(usage(
+                    "rules fetch: --all and rule-set names exclude each other".to_owned(),
+                )),
+                (false, true) => Err(usage(
+                    "rules fetch: name the rule sets to fetch, or --all".to_owned(),
+                )),
+                _ => Ok(Command::Rules(RulesCommand::Fetch { names, all, from })),
+            }
+        }
+        other => Err(usage(format!(
+            "rules: unknown command {other:?} (expected list, fetch, path or clear)"
+        ))),
+    }
 }
 
 fn input(arg: &OsStr) -> Input {
@@ -306,6 +423,98 @@ mod tests {
         let o = options(&["--bundle", "dir", "--format=svrl", "x"]);
         assert_eq!(o.rules, Rules::Bundle("dir".into()));
         assert_eq!(o.format, Format::Svrl);
+    }
+
+    #[test]
+    fn fetch_option() {
+        assert!(!options(&["a"]).fetch);
+        let o = options(&["--rules", "peppol", "--fetch", "a"]);
+        assert!(o.fetch);
+        assert_eq!(o.rules, Rules::Named("peppol".to_owned()));
+        assert_eq!(error(&["--fetch=1", "a"]), "--fetch takes no value");
+        assert_eq!(error(&["--fetch", "--fetch", "a"]), "--fetch given twice");
+    }
+
+    #[test]
+    fn rules_command() {
+        let rules = |args: &[&str]| match run(args) {
+            Ok(Command::Rules(c)) => c,
+            other => panic!("{args:?}: {other:?}"),
+        };
+        assert_eq!(rules(&["rules", "list"]), RulesCommand::List);
+        assert_eq!(rules(&["rules", "clear"]), RulesCommand::Clear);
+        assert_eq!(rules(&["rules", "path"]), RulesCommand::Path(None));
+        assert_eq!(
+            rules(&["rules", "path", "peppol"]),
+            RulesCommand::Path(Some("peppol".to_owned()))
+        );
+        assert_eq!(
+            rules(&[
+                "rules",
+                "fetch",
+                "peppol",
+                "--from",
+                "d1",
+                "xrechnung",
+                "--from=d2"
+            ]),
+            RulesCommand::Fetch {
+                names: vec!["peppol".to_owned(), "xrechnung".to_owned()],
+                all: false,
+                from: vec!["d1".into(), "d2".into()],
+            }
+        );
+        assert_eq!(
+            rules(&["rules", "fetch", "--all"]),
+            RulesCommand::Fetch {
+                names: Vec::new(),
+                all: true,
+                from: Vec::new(),
+            }
+        );
+        assert_eq!(run(&["rules", "--help"]), Ok(Command::Help));
+        assert_eq!(run(&["rules", "fetch", "x", "-h"]), Ok(Command::Help));
+        // Only as the first argument: elsewhere it is a file.
+        assert_eq!(
+            options(&["a", "rules"]).inputs,
+            [Input::File("a".into()), Input::File("rules".into())]
+        );
+        assert_eq!(
+            options(&["--", "rules"]).inputs,
+            [Input::File("rules".into())]
+        );
+        let cases: [(&[&str], &str); 9] = [
+            (&["rules"], "rules: expected list, fetch, path or clear"),
+            (
+                &["rules", "x"],
+                "rules: unknown command \"x\" (expected list, fetch, path or clear)",
+            ),
+            (&["rules", "list", "x"], "rules list: unexpected argument x"),
+            (
+                &["rules", "path", "a", "b"],
+                "rules path: unexpected argument b",
+            ),
+            (
+                &["rules", "fetch"],
+                "rules fetch: name the rule sets to fetch, or --all",
+            ),
+            (
+                &["rules", "fetch", "--all", "--all"],
+                "rules fetch: --all given twice",
+            ),
+            (
+                &["rules", "fetch", "--all", "a"],
+                "rules fetch: --all and rule-set names exclude each other",
+            ),
+            (
+                &["rules", "fetch", "a", "--from"],
+                "rules fetch: --from needs a value",
+            ),
+            (&["rules", "fetch", "-x"], "rules fetch: unknown option -x"),
+        ];
+        for (args, expected) in cases {
+            assert_eq!(error(args), expected, "{args:?}");
+        }
     }
 
     #[test]

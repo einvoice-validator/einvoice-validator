@@ -209,6 +209,10 @@ fn every_third_party_crate_compiled_in_has_its_notice_and_licence_text() {
         "sha2",
         "miniz_oxide",
         "memchr",
+        // The HTTPS client of `rules fetch` (default feature `fetch`).
+        "rustls",
+        "ring",
+        "webpki-roots",
     ] {
         assert!(names.contains(name), "{name}: {names:?}");
     }
@@ -230,8 +234,31 @@ fn every_third_party_crate_compiled_in_has_its_notice_and_licence_text() {
             c.chosen.join(" AND ")
         );
         assert!(section.starts_with(&heading), "{}: {section}", c.name);
-        // MIT where there is a choice, and the text of each licence chosen.
-        assert!(c.chosen.contains(&"MIT".to_owned()), "{}", c.name);
+        // MIT where there is a choice, and the text of each licence chosen. Without an
+        // MIT alternative (the HTTPS client of the feature `fetch`: ring, rustls-webpki,
+        // untrusted, subtle, webpki-roots), the licences the crate offers.
+        let mit_offered = notices::alternatives(&c.license)
+            .unwrap()
+            .iter()
+            .any(|terms| terms.len() == 1 && terms.contains("MIT"));
+        if mit_offered {
+            assert_eq!(c.chosen, ["MIT"], "{}", c.name);
+        } else {
+            assert!(
+                [
+                    "ring",
+                    "rustls-webpki",
+                    "untrusted",
+                    "subtle",
+                    "webpki-roots"
+                ]
+                .contains(&c.name.as_str()),
+                "{}: {} offers no MIT alternative",
+                c.name,
+                c.license
+            );
+            assert!(!c.chosen.is_empty(), "{}", c.name);
+        }
         assert_eq!(c.texts.len(), c.chosen.len(), "{}", c.name);
         for t in &c.texts {
             assert!(

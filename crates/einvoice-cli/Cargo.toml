@@ -20,6 +20,13 @@ license = "MIT AND EUPL-1.2 AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef
 name = "einvoice-validate"
 path = "src/main.rs"
 
+[features]
+default = ["fetch"]
+# `rules fetch` and `--fetch`: downloads the rule sets that are not redistributed from
+# their publishers (einvoice-validator's feature `fetch`). Without it, the cache is
+# still read.
+fetch = ["einvoice-validator/fetch"]
+
 [dependencies]
 einvoice-validator = { path = "../einvoice-validator", version = "0.2.0", features = ["pdf"] }
 

@@ -6,6 +6,7 @@
 )]
 
 pub(crate) mod json;
+pub(crate) mod server;
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -123,6 +124,15 @@ impl JsonBatches {
 /// `inputs`, in as many runs as it takes for each command line to stay within
 /// [`COMMAND_LINE_BUDGET`], and parses each run's report. The inputs keep their order.
 pub(crate) fn run_json_batches(args: &[&str], inputs: &[&str]) -> JsonBatches {
+    run_json_batches_env(args, inputs, &[])
+}
+
+/// [`run_json_batches`] with the environment variables `env` set.
+pub(crate) fn run_json_batches_env(
+    args: &[&str],
+    inputs: &[&str],
+    env: &[(&str, &str)],
+) -> JsonBatches {
     let length = |arg: &str| arg.len() + 3;
     let fixed = length(env!("CARGO_BIN_EXE_einvoice-validate"))
         + args.iter().map(|a| length(a)).sum::<usize>();
@@ -146,8 +156,8 @@ pub(crate) fn run_json_batches(args: &[&str], inputs: &[&str]) -> JsonBatches {
         .map(|batch| {
             let mut command: Vec<&str> = args.to_vec();
             command.extend(batch);
-            let r = run(&command, None);
-            let report = json::parse(&r.stdout).unwrap();
+            let r = run_env(&command, None, env);
+            let report = json::parse(&r.stdout).unwrap_or_else(|e| panic!("{e}: {}", r.stderr));
             (r, report)
         })
         .collect();
@@ -300,11 +310,21 @@ pub(crate) fn golden_of(golden_dir: &str, id: &str) -> Golden {
 
 /// Compares one document of a JSON report with the goldens of its stylesheets
 /// (`(stylesheet name, golden directory)`, in the order they run). Returns the problems.
+///
+/// Without schema errors, a stylesheet that Saxon-HE stopped with an error makes the
+/// whole document an error (no partial verdict): the first such stylesheet, in the order
+/// they run, gives the error, and the findings of the others are not compared, whether
+/// they run before it or after. With schema errors, the stylesheet errors are reported
+/// with the findings of the others.
 pub(crate) fn check_mutation_document(
     id: &str,
     document: &json::Value,
     stylesheets: &[(&str, &str)],
 ) -> Vec<String> {
+    let goldens: Vec<(&str, Golden)> = stylesheets
+        .iter()
+        .map(|(name, dir)| (*name, golden_of(dir, id)))
+        .collect();
     let mut problems = Vec::new();
     let schema_errors = document.get("counts").get("schema_errors").number();
     let status = document.get("status").str().unwrap();
@@ -320,11 +340,13 @@ pub(crate) fn check_mutation_document(
         })
         .collect();
     let mut fatal = false;
-    let mut stopped = None;
-    for (name, dir) in stylesheets {
-        match golden_of(dir, id) {
+    let stopped = goldens.iter().find_map(|(name, golden)| match golden {
+        Golden::Error(code) => Some((*name, code.clone())),
+        Golden::Findings(_) => None,
+    });
+    for (name, golden) in &goldens {
+        match golden {
             Golden::Error(code) => {
-                stopped.get_or_insert((*name, code.clone()));
                 if schema_errors > 0 && !errors.contains(&(*name, code.as_str())) {
                     problems.push(format!(
                         "{id}: {name}: expected stylesheet error {code}, got {errors:?}"
@@ -350,7 +372,7 @@ pub(crate) fn check_mutation_document(
                         )
                     })
                     .collect();
-                if ours != expected || errors.iter().any(|(s, _)| s == name) {
+                if ours != *expected || errors.iter().any(|(s, _)| s == name) {
                     problems.push(format!(
                         "{id}: {name}: findings differ (stylesheet errors {errors:?})"
                     ));
@@ -363,6 +385,7 @@ pub(crate) fn check_mutation_document(
             let message = document.get("error").get("message").str().unwrap_or("");
             if document.get("error").get("kind").str() != Some("transform")
                 || !message.contains(code.as_str())
+                || !message.starts_with(&format!("stylesheet {name}"))
             {
                 problems.push(format!(
                     "{id}: {name}: expected a transform error {code}, got {message:?}"
