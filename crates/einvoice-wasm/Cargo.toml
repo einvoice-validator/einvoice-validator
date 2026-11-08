@@ -13,8 +13,11 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["cen-ubl"]
+default = ["cen-ubl", "cen-cii"]
+# The built-in rule sets of einvoice-validator: the CEN EN 16931 stylesheets for UBL
+# (about 900 kB) and for CII (about 730 kB), EUPL-1.2.
 cen-ubl = ["einvoice-validator/cen-ubl"]
+cen-cii = ["einvoice-validator/cen-cii"]
 
 [dependencies]
 einvoice-validator = { path = "../einvoice-validator", version = "0.2.0", default-features = false }

@@ -2,7 +2,7 @@
 //! document of the JSON format of `einvoice-validate` (version 1), the raw SVRL reports,
 //! the rule set, the licences, and the details of an error.
 
-use einvoice_validator::{Error, Report, RuleSet, Severity, Verdict};
+use einvoice_validator::{Error, LimitExceeded, Report, RuleSet, Severity, Verdict};
 
 use crate::json::Json;
 
@@ -260,6 +260,21 @@ pub(crate) fn error_details(error: &Error) -> Vec<(&'static str, Json)> {
             out.push(("code", Json::string(code)));
             out.push(("line", Json::line(*line)));
         }
+        Error::Limit { limit, .. } => {
+            let name = match limit {
+                LimitExceeded::Depth { line, column, .. } => {
+                    out.push(("line", Json::line(Some(*line))));
+                    out.push(("column", Json::line(Some(*column))));
+                    "depth"
+                }
+                LimitExceeded::Nesting { .. } => "nesting",
+                LimitExceeded::Stack { .. } => "stack",
+                // A limit of a later version of the library.
+                _ => "other",
+            };
+            out.insert(1, ("limit", Json::string(name)));
+            out.push(("max", Json::line(Some(limit.max()))));
+        }
         Error::Checksum { path, .. } => out.push(("path", Json::string(path))),
         Error::Io { path, .. } => out.push(("path", Json::string(path.display().to_string()))),
         _ => {}
@@ -492,7 +507,42 @@ mod tests {
                 r#""W3C-19980720""#
             ]
         );
-        assert_eq!(builtin_rule_sets().text(), r#"["cen-ubl"]"#);
+        // The rule sets of the features of this build: both by default.
+        let names: Vec<String> = features().iter().map(|f| format!("{f:?}")).collect();
+        assert_eq!(builtin_rule_sets().text(), format!("[{}]", names.join(",")));
+        if cfg!(all(feature = "cen-ubl", feature = "cen-cii")) {
+            assert_eq!(builtin_rule_sets().text(), r#"["cen-ubl","cen-cii"]"#);
+        }
+    }
+
+    #[test]
+    fn limits_are_errors_with_their_details() {
+        let validator = Validator::cen_ubl().unwrap();
+        let clock = Clock::from_unix_millis(0, 0).unwrap();
+        let options = ValidateOptions::new().clock(clock).max_depth(2);
+        let result = validator.validate_with(b"<a>\n <b>\n  <c/></b></a>", &options);
+        let e = report(validator.rule_set(), None, result).unwrap_err();
+        assert_eq!(e.kind().as_str(), "unsupported");
+        assert_eq!(
+            Json::Object(error_details(&e)).text(),
+            r#"{"kind":"unsupported","limit":"depth","line":3,"column":3,"max":2}"#
+        );
+        let stack = Error::Limit {
+            limit: LimitExceeded::Stack { max: 655_360 },
+            message: "m".to_owned(),
+        };
+        assert_eq!(
+            Json::Object(error_details(&stack)).text(),
+            r#"{"kind":"unsupported","limit":"stack","max":655360}"#
+        );
+        let nesting = Error::Limit {
+            limit: LimitExceeded::Nesting { max: 576 },
+            message: "m".to_owned(),
+        };
+        assert_eq!(
+            Json::Object(error_details(&nesting)).text(),
+            r#"{"kind":"unsupported","limit":"nesting","max":576}"#
+        );
     }
 
     /// The features of this build of the crate.
@@ -500,6 +550,9 @@ mod tests {
         let mut features = Vec::new();
         if cfg!(feature = "cen-ubl") {
             features.push("cen-ubl");
+        }
+        if cfg!(feature = "cen-cii") {
+            features.push("cen-cii");
         }
         features
     }

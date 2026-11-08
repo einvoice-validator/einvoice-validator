@@ -2,6 +2,43 @@
 // corpus (corpus/SVRL-CANONICAL.md), and their comparison with a report of the package.
 // Shared by the Node.js tests and the browser test; no dependency on Node.js.
 
+/**
+ * The corpora run through the package: their directory in the repository, the built-in
+ * rule set of their documents, and the fewest cases each must have (cases.tsv and
+ * mutations.tsv together).
+ */
+export const CORPORA = [
+  { dir: "corpus/cen-en16931-ubl-1.3.17", ruleSet: "cen-ubl", minimum: 1600 },
+  { dir: "corpus/cen-en16931-cii-1.3.17", ruleSet: "cen-cii", minimum: 800 },
+];
+
+/** The clock of the corpus runs, as in the Rust tests. */
+const NOW = 1_789_000_123_456;
+
+/** The largest value of the option maxDepth. */
+export const MAX_DEPTH = 400;
+
+/** The cases nested deeper than the default maximum depth, 256, in every corpus. */
+export const DEEP_CASES = ["mutations/long/deep-nesting.xml"];
+
+/**
+ * Validates a corpus document as the Rust tests do: with the default maximum depth, then,
+ * when that refuses it, with the largest (the library's tests raise it the same way).
+ * Returns `{ report, thrown, raised }`, `raised` telling whether the maximum was raised.
+ */
+export function validateCase(validator, document) {
+  try {
+    return { report: validator.validate(document, { now: NOW }), raised: false };
+  } catch (e) {
+    if (e.limit !== "depth") return { thrown: e, raised: false };
+  }
+  try {
+    return { report: validator.validate(document, { now: NOW, maxDepth: MAX_DEPTH }), raised: true };
+  } catch (e) {
+    return { thrown: e, raised: true };
+  }
+}
+
 /** Reads a quoted value of a canonical SVRL line, from index `i` (on the opening quote). */
 function quoted(line, i) {
   if (line[i] !== '"') throw new Error(`expected a quote at ${i}: ${line}`);

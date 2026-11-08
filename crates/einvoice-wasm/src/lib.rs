@@ -5,8 +5,8 @@
 //! The JavaScript API, as its TypeScript declarations give it:
 //!
 //! ```ts
-//! const validator = new Validator("cen-ubl");       // or Validator.builtin("cen-ubl")
-//! const report = validator.validate(bytes, { documentUri, now, timezoneMinutes });
+//! const validator = new Validator("cen-ubl");       // "cen-cii", or Validator.builtin(name)
+//! const report = validator.validate(bytes, { documentUri, now, timezoneMinutes, maxDepth });
 //! report.status;                                     // "valid" | "invalid"
 //! report.findings;                                   // [{ id, flag, severity, location, text, ... }]
 //! validator.validateSvrl(bytes);                     // [{ stylesheet, version, sha256, svrl }]
@@ -26,6 +26,12 @@
 //! timezone) is JavaScript's: `Date.now()` when a validation starts, in UTC, unless the
 //! options give `now` (a `Date` or milliseconds since the Unix epoch) and
 //! `timezoneMinutes` (minutes east of UTC).
+//!
+//! A document with an element nested deeper than `maxDepth` (by default 256, the
+//! library's [`DEFAULT_MAX_DEPTH`](einvoice_validator::DEFAULT_MAX_DEPTH); at most 400,
+//! a bound set by the native stacks of JavaScript engines, which the module cannot
+//! measure: Chrome's Web Workers overflow on about 600 levels) is refused with an error
+//! of kind `unsupported` whose `limit` is `depth`.
 //!
 //! On other targets the crate builds too, so that its conversions are tested natively;
 //! its exported functions call JavaScript and only work in WebAssembly.
@@ -55,7 +61,8 @@ pub struct Validator {
 #[wasm_bindgen]
 impl Validator {
     /// The built-in rule set `name` (see `builtinRuleSets()`): `"cen-ubl"`, the CEN
-    /// EN 16931 validation artefacts for UBL, release 1.3.17.
+    /// EN 16931 validation artefacts for UBL, release 1.3.17, with the UBL 2.1 schemas;
+    /// `"cen-cii"`, the same release for UN/CEFACT CII D16B, without an XML schema.
     ///
     /// # Errors
     ///
@@ -110,7 +117,10 @@ impl Validator {
     /// # Errors
     ///
     /// Throws an `EinvoiceValidatorError` with a `kind`: `unsupported` for an encoding
-    /// other than UTF-8, a document type declaration or a construct the engine refuses;
+    /// other than UTF-8, a document type declaration or a construct the engine refuses,
+    /// and for a document beyond a limit (with `limit`: `depth`, an element nested deeper
+    /// than `maxDepth`, with its `line` and `column`; `nesting` or `stack`, stylesheets
+    /// recursing beyond what that depth or the stack allows);
     /// `transform` when a stylesheet raises a dynamic error on a document without schema
     /// errors (with `stylesheet`, `code` and `line`); `bundle` or `internal` for a bug.
     /// Throws a `TypeError` or `RangeError` (kind `argument`) for a document that is not
@@ -217,22 +227,37 @@ fn install_panic_hook() {
 struct Options {
     document_uri: Option<String>,
     clock: Clock,
+    max_depth: u32,
 }
 
 /// The names of the members of the options object.
-const OPTION_NAMES: [&str; 3] = ["documentUri", "now", "timezoneMinutes"];
+const OPTION_NAMES: [&str; 4] = ["documentUri", "now", "timezoneMinutes", "maxDepth"];
 
 /// The extreme value of a JavaScript `Date`, in milliseconds from the Unix epoch.
 const MAX_DATE_MILLIS: f64 = 8.64e15;
 
+/// The largest `maxDepth`. The stylesheets recurse once or twice per element level, and
+/// a WebAssembly engine runs the module's functions on its own native stack, beside the
+/// module's stack in linear memory, which is the only one the library measures
+/// ([`ValidateOptions::max_stack`]). Some engines' native stack ends first. Measured
+/// with the built-in rule sets on documents nested that deep (the package as built by
+/// `npm.sh`): in V8, a Chrome Web Worker overflows beyond 600 levels (a `RangeError`,
+/// after which the module's memory is no longer consistent), Chrome's main thread beyond
+/// 1200 and Node.js beyond 1300; Firefox reaches the library's stack limit beyond 1400,
+/// as it should. 400 keeps a margin of half of itself below the smallest, and bounds the
+/// nesting of template and function invocations for any document
+/// ([`max_nesting_for_depth`](einvoice_validator::max_nesting_for_depth): 864).
+const MAX_DEPTH: u32 = 400;
+
 impl Options {
-    /// Reads `{ documentUri?, now?, timezoneMinutes? }` (`undefined` or `null` for all
-    /// the defaults); a member set to `undefined` or `null` takes its default. Other
-    /// members are refused, so that a misspelt option is not silently ignored.
+    /// Reads `{ documentUri?, now?, timezoneMinutes?, maxDepth? }` (`undefined` or `null`
+    /// for all the defaults); a member set to `undefined` or `null` takes its default.
+    /// Other members are refused, so that a misspelt option is not silently ignored.
     fn read(value: &JsValue) -> Result<Self, JsValue> {
         let mut document_uri = None;
         let mut now = None;
         let mut timezone = 0;
+        let mut max_depth = einvoice_validator::DEFAULT_MAX_DEPTH;
         if !value.is_undefined() && !value.is_null() {
             if !value.is_object() {
                 return Err(argument_error(
@@ -287,6 +312,24 @@ impl Options {
                         )
                     })?;
             }
+            if let Some(v) = get("maxDepth")? {
+                let Some(depth) = v.as_f64() else {
+                    return Err(argument_error(
+                        ArgumentError::Type,
+                        "the option maxDepth must be a number",
+                    ));
+                };
+                max_depth = integer(depth, 1.0, f64::from(MAX_DEPTH))
+                    .and_then(|d| u32::try_from(d).ok())
+                    .ok_or_else(|| {
+                        argument_error(
+                            ArgumentError::Range,
+                            &format!(
+                                "the option maxDepth must be a whole number from 1 to {MAX_DEPTH}, not {depth}"
+                            ),
+                        )
+                    })?;
+            }
         }
         let millis = match now {
             Some(millis) => millis,
@@ -303,11 +346,14 @@ impl Options {
         Ok(Self {
             document_uri,
             clock,
+            max_depth,
         })
     }
 
     fn validate_options(&self) -> ValidateOptions<'_> {
-        let options = ValidateOptions::new().clock(self.clock);
+        let options = ValidateOptions::new()
+            .clock(self.clock)
+            .max_depth(self.max_depth);
         match &self.document_uri {
             Some(uri) => options.document_uri(uri),
             None => options,

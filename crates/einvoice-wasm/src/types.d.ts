@@ -25,6 +25,15 @@ export interface ValidateOptions {
    * `-new Date().getTimezoneOffset()` for the local timezone). 0 (UTC) by default.
    */
   timezoneMinutes?: number | null;
+  /**
+   * The maximum element depth of the document, the document element being at depth 1: a
+   * whole number from 1 to 400, by default 256 (libxml2's default). A document with an
+   * element nested deeper is refused with an `EinvoiceValidatorError` of kind
+   * `unsupported` and `limit` `"depth"`. The stylesheets recurse once or twice per level
+   * on the JavaScript engine's native stack, whose size the module cannot know: 400 keeps
+   * a margin below the smallest measured (a Web Worker in Chrome, about 600 levels).
+   */
+  maxDepth?: number | null;
 }
 
 /** A stylesheet of a rule set. */
@@ -41,7 +50,7 @@ export interface StylesheetInfo {
 
 /** A rule set, as the JSON report of `einvoice-validate` gives it. */
 export interface RuleSetInfo {
-  /** Its short name: `"cen-ubl"`. */
+  /** Its short name: `"cen-ubl"`, `"cen-cii"`. */
   name: string;
   /** Its title: `"CEN EN 16931 UBL"`. */
   title: string;
@@ -78,13 +87,26 @@ export interface EinvoiceValidatorError extends Error {
    * `not-xml`: a document that is not well-formed XML (thrown by `validateSvrl` only;
    * `validate` reports it as an invalid document); `unsupported`: an encoding other
    * than UTF-8, a document type declaration, or a construct the engine refuses rather
-   * than answering differently from the reference engine; `transform`: a dynamic error
-   * raised by a stylesheet on the document; `internal`: a bug.
+   * than answering differently from the reference engine, and a document beyond a limit
+   * (`limit` set); `transform`: a dynamic error raised by a stylesheet on the document;
+   * `internal`: a bug.
    */
   kind: Exclude<ErrorKind, "argument">;
-  /** `not-xml`: the 1-based line. `transform`: the line of the stylesheet, or null. */
+  /**
+   * `unsupported`, for a document beyond a limit: `"depth"`, an element nested deeper
+   * than the option `maxDepth`; `"nesting"` or `"stack"`, templates and functions of the
+   * stylesheets invoked one inside another beyond the nesting that depth allows, or
+   * beyond the stack of the module.
+   */
+  limit?: "depth" | "nesting" | "stack" | "other";
+  /** With `limit`: its value (bytes for `"stack"`). */
+  max?: number;
+  /**
+   * `not-xml` and the `limit` `"depth"`: the 1-based line. `transform`: the line of the
+   * stylesheet, or null.
+   */
   line?: number | null;
-  /** `not-xml`: the 1-based column. */
+  /** `not-xml` and the `limit` `"depth"`: the 1-based column. */
   column?: number;
   /** `transform`: the stylesheet, by its name in the rule set. */
   stylesheet?: string;

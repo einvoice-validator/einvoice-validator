@@ -12,14 +12,15 @@ package's own README is [`npm/README.md`](npm/README.md).
   declarations.
 - `npm/`: what the package adds to the output of `wasm-bindgen`: `package.json`, the README,
   and the Node.js entry point (`node.mjs`, which instantiates the module synchronously).
-- `js-tests/`: the Node.js tests (`node:test`: the API, and every case of the CEN corpus
+- `js-tests/`: the Node.js tests (`node:test`: the API, and every case of the CEN UBL and CII corpora
   against the Saxon-HE goldens), the TypeScript declarations check, and the browser test
-  (the same corpus in headless Chrome and Firefox, served from 127.0.0.1).
+  (the same corpora in headless Chrome and Firefox, served from 127.0.0.1, and the largest
+  `maxDepth` on the main thread and in a Web Worker).
 - `npm.sh`: builds, tests and packs the package.
 
 ```sh
 crates/einvoice-wasm/npm.sh tools   # pinned wasm-bindgen-cli (crates.io, --locked) and wasm-opt (binaryen, SHA-256 checked)
-crates/einvoice-wasm/npm.sh build   # target/npm/einvoice-validator/: opt-level z, LTO, wasm-opt -Oz
+crates/einvoice-wasm/npm.sh build   # target/npm/einvoice-validator/: opt-level 3, LTO, wasm-opt -O3
 crates/einvoice-wasm/npm.sh test    # Node.js tests, TypeScript check, browser test, on the packed package
 crates/einvoice-wasm/npm.sh pack    # npm pack --dry-run
 ```
@@ -33,6 +34,7 @@ JavaScript and only run in WebAssembly.
 ## Licence
 
 `MIT AND EUPL-1.2 AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720`:
-the code is MIT; the module embeds the CEN EN 16931 stylesheet of the built-in rule set
-`cen-ubl` (EUPL-1.2) and the OASIS UBL 2.1 schemas (their own terms). The package ships the
-texts in `LICENSES/`, copied from `einvoice-validator` and `einvoice-xsd`.
+the code is MIT; the module embeds the CEN EN 16931 stylesheets of the built-in rule sets
+`cen-ubl` and `cen-cii` (EUPL-1.2, the features of those names, on by default) and the OASIS
+UBL 2.1 schemas (their own terms). The package ships the texts in `LICENSES/`, copied from
+`einvoice-validator`.

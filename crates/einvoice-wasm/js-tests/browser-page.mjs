@@ -1,10 +1,18 @@
 // The browser test, run in the page that js-tests/browser.mjs serves: the package as a
 // browser loads it (the web entry point, the module fetched by init()), the API checks,
-// then every case of the CEN corpus against the Saxon-HE goldens. The result is posted
-// back to the server.
+// then every case of the CEN UBL and CII corpora against the Saxon-HE goldens, each with
+// its built-in rule set. The result is posted back to the server.
 import init, { Validator, builtinRuleSets, version } from "/pkg/einvoice_validator.js";
 
-import { compare, corpusCases, parseGolden } from "/tests/golden.mjs";
+import {
+  CORPORA,
+  DEEP_CASES,
+  MAX_DEPTH,
+  compare,
+  corpusCases,
+  parseGolden,
+  validateCase,
+} from "/tests/golden.mjs";
 
 const CEN = "corpus/cen-en16931-ubl-1.3.17";
 const log = [];
@@ -38,7 +46,7 @@ async function run() {
   log.push(`${navigator.userAgent}`);
   log.push(`init() ${(t1 - t0).toFixed(0)} ms, new Validator("cen-ubl") ${(t2 - t1).toFixed(0)} ms`);
   check("version", typeof version() === "string" && version().length > 0);
-  check("builtinRuleSets", JSON.stringify(builtinRuleSets()) === '["cen-ubl"]');
+  check("builtinRuleSets", JSON.stringify(builtinRuleSets()) === '["cen-ubl","cen-cii"]');
 
   const example = validator.validate(
     await fetchBytes("artefacts/cen-en16931-ubl-1.3.17/ubl/examples/ubl-tc434-example1.xml"),
@@ -71,20 +79,95 @@ async function run() {
     check("invalid Date", e instanceof RangeError && e.kind === "argument", `${e}`);
   }
 
+  try {
+    validator.validate(new TextEncoder().encode(`<a>${"<b>".repeat(300)}${"</b>".repeat(300)}</a>`));
+    check("too deep throws", false);
+  } catch (e) {
+    check("too deep", e.name === "EinvoiceValidatorError" && e.kind === "unsupported" && e.limit === "depth", `${e}`);
+  }
+  validator.free();
+
+  // The largest maximum depth, on the main thread and in a Web Worker (whose stack is
+  // smaller in Chrome): a report, never the engine's stack overflow.
+  for (const result of deepest()) check(`main thread: ${result.name}`, result.ok, result.detail);
+  for (const result of await inWorker()) check(`worker: ${result.name}`, result.ok, result.detail);
+
   await progress(`API checks done, ${failures.length} failures`);
+  const deep = [];
+  for (const corpus of CORPORA) await runCorpus(corpus, deep);
+  check("only the known deep cases needed a larger maximum depth", JSON.stringify(deep) === JSON.stringify(DEEP_CASES), JSON.stringify(deep));
+}
+
+/** Documents `MAX_DEPTH` deep, validated with that maximum by each built-in rule set. */
+function deepest() {
+  const shapes = [
+    ["cen-ubl", '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">', "<a>", "</a>", "</Invoice>"],
+    [
+      "cen-cii",
+      '<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100">',
+      '<x:a xmlns:x="urn:x">',
+      "</x:a>",
+      "</rsm:CrossIndustryInvoice>",
+    ],
+  ];
+  const out = [];
+  for (const [ruleSet, open, start, end, close] of shapes) {
+    const validator = new Validator(ruleSet);
+    const text = open + start.repeat(MAX_DEPTH - 1) + end.repeat(MAX_DEPTH - 1) + close;
+    try {
+      const report = validator.validate(new TextEncoder().encode(text), { maxDepth: MAX_DEPTH, now: 0 });
+      out.push({ name: `${ruleSet} ${MAX_DEPTH} deep`, ok: report.status === "invalid", detail: report.status });
+    } catch (e) {
+      out.push({ name: `${ruleSet} ${MAX_DEPTH} deep`, ok: false, detail: `${e.name}: ${e.message}` });
+    }
+    validator.free();
+  }
+  return out;
+}
+
+/** `deepest()` in a module Web Worker that imports the package. */
+async function inWorker() {
+  const source = `
+    import init, { Validator } from "${location.origin}/pkg/einvoice_validator.js";
+    import { MAX_DEPTH } from "${location.origin}/tests/golden.mjs";
+    ${deepest.toString()}
+    try {
+      await init();
+      postMessage(deepest());
+    } catch (e) {
+      postMessage([{ name: "worker", ok: false, detail: String(e) }]);
+    }
+  `;
+  const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+  const worker = new Worker(url, { type: "module" });
+  try {
+    return await new Promise((resolve) => {
+      worker.onmessage = (message) => resolve(message.data);
+      worker.onerror = (e) => resolve([{ name: "worker", ok: false, detail: e.message }]);
+    });
+  } finally {
+    worker.terminate();
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Every case of a corpus with its built-in rule set, against the Saxon-HE goldens. */
+async function runCorpus({ dir, ruleSet, minimum }, deep) {
+  const validator = new Validator(ruleSet);
   const cases = [];
   const golden = new Map();
   const [casesTsv, mutationsTsv, goldenList] = await Promise.all([
-    fetchText(`${CEN}/cases.tsv`),
-    fetchText(`${CEN}/mutations.tsv`),
+    fetchText(`${dir}/cases.tsv`),
+    fetchText(`${dir}/mutations.tsv`),
     // The list of the golden files, from the server (they are not listed elsewhere).
-    fetch(`/goldens/${CEN}`).then((r) => {
-      if (!r.ok) throw new Error(`/goldens/${CEN}: HTTP ${r.status}`);
+    fetch(`/goldens/${dir}`).then((r) => {
+      if (!r.ok) throw new Error(`/goldens/${dir}: HTTP ${r.status}`);
       return r.text();
     }),
   ]);
   const goldens = new Set(goldenList.split("\n"));
-  cases.push(...corpusCases(casesTsv, mutationsTsv, CEN, (path) => goldens.has(path)));
+  cases.push(...corpusCases(casesTsv, mutationsTsv, dir, (path) => goldens.has(path)));
+  check(`${dir}: at least ${minimum} cases`, cases.length >= minimum, `${cases.length}`);
   // Sixteen requests at a time.
   for (let i = 0; i < cases.length; i += 16) {
     await Promise.all(
@@ -94,29 +177,24 @@ async function run() {
       }),
     );
   }
-  await progress(`${cases.length} corpus cases fetched`);
+  await progress(`${dir}: ${cases.length} corpus cases fetched`);
   let validating = 0;
   let differing = 0;
   for (const c of cases) {
     const { document, expected } = golden.get(c.id);
-    let report;
-    let thrown;
     const start = performance.now();
-    try {
-      report = validator.validate(document, { now: 1_789_000_123_456 });
-    } catch (e) {
-      thrown = e;
-    }
+    const { report, thrown, raised } = validateCase(validator, document);
     validating += performance.now() - start;
+    if (raised) deep.push(c.id);
     const differences = compare(expected, report, thrown);
     if (differences.length > 0) {
       differing += 1;
-      if (differing <= 10) failures.push(`${c.id}: ${differences.join("; ")}`);
+      if (differing <= 10) failures.push(`${dir}: ${c.id}: ${differences.join("; ")}`);
     }
   }
-  if (differing > 10) failures.push(`... ${differing} cases differ from Saxon-HE in all`);
+  if (differing > 10) failures.push(`${dir}: ... ${differing} cases differ from Saxon-HE in all`);
   log.push(
-    `${cases.length} corpus cases, ${cases.length - differing} as Saxon-HE: ` +
+    `${dir} (${ruleSet}): ${cases.length} corpus cases, ${cases.length - differing} as Saxon-HE: ` +
       `${(validating / 1000).toFixed(2)} s, ${(validating / cases.length).toFixed(2)} ms per document`,
   );
   validator.free();

@@ -25,6 +25,8 @@ const EXAMPLE = "artefacts/cen-en16931-ubl-1.3.17/ubl/examples/ubl-tc434-example
 const BR_02 = `${CEN}/vefa/Invoice-unit-UBL/BR-02.002.xml`;
 const BR_CO_10 = `${CEN}/vefa/Invoice-unit-UBL/BR-CO-10.008.xml`;
 const DUPLICATE = `${CEN}/mutations/duplicates/invoice-number.xml`;
+const CII = "corpus/cen-en16931-cii-1.3.17";
+const CII_EXAMPLE = "artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_example1.xml";
 const MALFORMED = new TextEncoder().encode(
   '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">\n  <a></Invoice>',
 );
@@ -49,7 +51,26 @@ function thrown(f) {
 test("the package is ready on import, init() resolves at once", async () => {
   await init();
   assert.equal(version(), packageJson.version);
-  assert.deepEqual(builtinRuleSets(), ["cen-ubl"]);
+  assert.deepEqual(builtinRuleSets(), ["cen-ubl", "cen-cii"]);
+});
+
+test("an official CII example is valid with the built-in rule set cen-cii", () => {
+  const cii = new Validator("cen-cii");
+  try {
+    assert.equal(cii.ruleSet.name, "cen-cii");
+    assert.equal(cii.ruleSet.version, "1.3.17");
+    assert.equal(cii.ruleSet.schema, null);
+    assert.equal(cii.ruleSet.stylesheets.length, 1);
+    const report = cii.validate(read(CII_EXAMPLE));
+    assert.equal(report.status, "valid", JSON.stringify(report.findings.filter((f) => f.severity === "fatal")));
+    assert.equal(report.rule_set.name, "cen-cii");
+    assert.deepEqual(
+      compare(parseGolden(read(`${CII}/golden/examples/CII_example1.xml.svrl.txt`).toString()), report),
+      [],
+    );
+  } finally {
+    cii.free();
+  }
 });
 
 test("an official CEN example is valid", () => {
@@ -168,7 +189,7 @@ test("an unknown rule-set name is a bundle error", () => {
     assert.ok(e instanceof Error);
     assert.equal(e.name, "EinvoiceValidatorError");
     assert.equal(e.kind, "bundle");
-    assert.match(e.message, /no built-in rule set named .*\(built in: cen-ubl\)/);
+    assert.match(e.message, /no built-in rule set named .*\(built in: cen-ubl, cen-cii\)/);
   }
   const e = thrown(() => new Validator(42));
   assert.ok(e instanceof TypeError);
@@ -231,7 +252,9 @@ test("the options and the clock", () => {
     { now: 0 },
     { now: Date.now(), timezoneMinutes: -300 },
     { timezoneMinutes: 840 },
-    { documentUri: null, now: undefined, timezoneMinutes: null },
+    { documentUri: null, now: undefined, timezoneMinutes: null, maxDepth: null },
+    { maxDepth: 256 },
+    { maxDepth: 400 },
   ]) {
     assert.equal(validator.validate(bytes, options).status, "valid", JSON.stringify(options));
   }
@@ -248,11 +271,76 @@ test("the options and the clock", () => {
     [{ timezoneMinutes: "60" }, TypeError],
     [{ timezoneMinutes: 841 }, RangeError],
     [{ timezoneMinutes: 0.5 }, RangeError],
+    [{ maxDepth: "256" }, TypeError],
+    [{ maxDepth: 0 }, RangeError],
+    [{ maxDepth: -1 }, RangeError],
+    [{ maxDepth: 1.5 }, RangeError],
+    [{ maxDepth: 401 }, RangeError],
+    [{ maxDepth: 100_000 }, RangeError],
+    [{ maxDepth: Number.POSITIVE_INFINITY }, RangeError],
+    [{ maxdepth: 10 }, TypeError],
   ]) {
     const e = thrown(() => validator.validate(bytes, options));
     assert.ok(e instanceof Class, `${JSON.stringify(options)}: ${e}`);
     assert.equal(e.kind, "argument", JSON.stringify(options));
   }
+});
+
+/** The largest value of the option maxDepth. */
+const MAX_DEPTH = 400;
+
+/** A UBL Invoice element with elements nested inside it, `depth` deep in all, one per line. */
+function nested(depth) {
+  const open = '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">\n';
+  return new TextEncoder().encode(
+    open + "<a>\n".repeat(depth - 1) + "</a>".repeat(depth - 1) + "</Invoice>",
+  );
+}
+
+/** A CII CrossIndustryInvoice element with elements nested inside it, `depth` deep in all. */
+function nestedCii(depth) {
+  const open =
+    '<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100">\n';
+  return new TextEncoder().encode(
+    open + '<x:a xmlns:x="urn:x">\n'.repeat(depth - 1) + "</x:a>".repeat(depth - 1) + "</rsm:CrossIndustryInvoice>",
+  );
+}
+
+test("the option maxDepth bounds the depth of the document, at most 400", () => {
+  // Beyond the default maximum, 256: refused at the first element too deep.
+  let e = thrown(() => validator.validate(nested(257)));
+  assert.equal(e.name, "EinvoiceValidatorError");
+  assert.equal(e.kind, "unsupported");
+  assert.equal(e.limit, "depth");
+  assert.equal(e.max, 256);
+  assert.equal(e.line, 257);
+  assert.equal(e.column, 1);
+  assert.match(e.message, /^limit exceeded: /);
+  // At the maximum, a report.
+  assert.equal(validator.validate(nested(256)).status, "invalid");
+  // A larger maximum.
+  assert.equal(validator.validate(nested(257), { maxDepth: 257 }).status, "invalid");
+  // A smaller one.
+  e = thrown(() => validator.validate(nested(3), { maxDepth: 2 }));
+  assert.equal(e.limit, "depth");
+  assert.equal(e.max, 2);
+  assert.equal(e.line, 3);
+  // The largest maximum, 400: a document that deep is validated with either rule set,
+  // within the engine's stack, and one level more is refused.
+  assert.equal(validator.validate(nested(MAX_DEPTH), { maxDepth: MAX_DEPTH }).status, "invalid");
+  const cii = new Validator("cen-cii");
+  try {
+    assert.equal(cii.validate(nestedCii(MAX_DEPTH), { maxDepth: MAX_DEPTH }).status, "invalid");
+  } finally {
+    cii.free();
+  }
+  e = thrown(() => validator.validate(nested(MAX_DEPTH + 1), { maxDepth: MAX_DEPTH }));
+  assert.equal(e.limit, "depth");
+  assert.equal(e.max, MAX_DEPTH);
+  assert.equal(validator.validate(read(EXAMPLE)).status, "valid");
+  // validateSvrl takes the option too.
+  e = thrown(() => validator.validateSvrl(nested(3), { maxDepth: 2 }));
+  assert.equal(e.limit, "depth");
 });
 
 test("the document must be a Uint8Array", () => {

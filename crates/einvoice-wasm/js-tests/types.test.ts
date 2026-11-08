@@ -20,7 +20,15 @@ export async function check(bytes: Uint8Array): Promise<string[]> {
   const same: Validator = Validator.builtin("cen-ubl");
   same.free();
   const ruleSet: RuleSetInfo = validator.ruleSet;
-  const options: ValidateOptions = { documentUri: "urn:x", now: new Date(), timezoneMinutes: 60 };
+  const cii: Validator = new Validator("cen-cii");
+  const ciiSchema: string | null = cii.ruleSet.schema;
+  cii.free();
+  const options: ValidateOptions = {
+    documentUri: "urn:x",
+    now: new Date(),
+    timezoneMinutes: 60,
+    maxDepth: 1000,
+  };
   const report: Report = validator.validate(bytes, options);
   const status: "valid" | "invalid" = report.status;
   const formatVersion: 1 = report.format_version;
@@ -38,7 +46,12 @@ export async function check(bytes: Uint8Array): Promise<string[]> {
     const error = e as EinvoiceValidatorError;
     const kind: "io" | "bundle" | "not-xml" | "unsupported" | "transform" | "internal" = error.kind;
     texts.push(kind, error.message);
+    const limit: "depth" | "nesting" | "stack" | "other" | undefined = error.limit;
+    const max: number | undefined = error.max;
+    texts.push(String(limit), String(max));
   }
+  // @ts-expect-error: maxDepth is a number.
+  validator.validate(bytes, { maxDepth: "256" });
   // @ts-expect-error: the document is bytes, not a string.
   validator.validate("<Invoice/>");
   // @ts-expect-error: an unknown option.
@@ -49,6 +62,7 @@ export async function check(bytes: Uint8Array): Promise<string[]> {
     version(),
     ...builtinRuleSets(),
     ruleSet.version,
+    String(ciiSchema),
     status,
     String(formatVersion),
     ...severities,
