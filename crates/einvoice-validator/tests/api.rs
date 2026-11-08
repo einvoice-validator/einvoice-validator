@@ -16,8 +16,8 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use einvoice_validator::{
-    BUILTIN_RULE_SETS, Clock, Error, ErrorKind, FindingKind, MANIFEST_FILE, RuleSet, SchemaId,
-    Severity, ValidateOptions, Validator, Verdict, file_uri,
+    BUILTIN_RULE_SETS, Clock, Error, ErrorKind, FindingKind, MANIFEST_FILE, NoScenario, RuleSet,
+    SchemaId, Severity, ValidateOptions, Validator, Verdict, file_uri,
 };
 use sha2::{Digest, Sha256};
 
@@ -989,4 +989,180 @@ fn stylesheets_read_the_resources_of_their_bundle() {
         Err(Error::Limit { .. }) => {}
         other => panic!("{other:?}"),
     }
+}
+
+/// A format 2 manifest of two stylesheets, `a` (failed assert `A-1` flagged `fatal`
+/// unless the root has `ok`) and `b` (`B-1`, flagged `warning`), with `schema` and the
+/// scenarios `scenarios`.
+fn selecting_manifest(schema: &str, scenarios: &str) -> (String, [(&'static str, Vec<u8>); 2]) {
+    let a = svrl_stylesheet("A-1", "fatal").into_bytes();
+    let b = svrl_stylesheet("B-1", "warning").into_bytes();
+    let manifest = format!(
+        "format = 2\nname = \"sel\"\ntitle = \"Selection\"\nversion = \"1\"\n{schema}\n[[stylesheet]]\nname = \"a\"\npath = \"a.xsl\"\nsha256 = \"{}\"\n\n[[stylesheet]]\nname = \"b\"\npath = \"b.xsl\"\nsha256 = \"{}\"\n{scenarios}",
+        sha256(&a),
+        sha256(&b)
+    );
+    (manifest, [("a.xsl", a), ("b.xsl", b)])
+}
+
+/// The scenarios of [`selecting_manifest`], as a KoSIT configuration writes them: the
+/// identifier of a UBL invoice, read as the string value of `cbc:CustomizationID` or as
+/// its text node children, or an attribute that may not be an integer.
+const SELECTING_SCENARIOS: &str = "
+[[scenario]]
+name = \"Both\"
+namespaces = \"cbc=urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2 i=urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\"
+match = \"exists(/i:Invoice/cbc:CustomizationID[ . = 'urn:both'])\"
+stylesheets = \"a b\"
+other = \"A-1\"
+
+[[scenario]]
+name = \"B then A\"
+namespaces = \"cbc=urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2 i=urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\"
+match = \"exists(/i:Invoice[cbc:CustomizationID/text() = 'urn:ba'])\"
+stylesheets = \"b a\"
+
+[[scenario]]
+name = \"B alone\"
+namespaces = \"xs=http://www.w3.org/2001/XMLSchema\"
+match = \"xs:integer(/*/@n) = 1\"
+stylesheets = \"b\"
+";
+
+fn ubl(ids: &[&str], ok: bool) -> String {
+    let ids = ids.iter().fold(String::new(), |mut out, id| {
+        let _ = write!(out, "<cbc:CustomizationID>{id}</cbc:CustomizationID>");
+        out
+    });
+    format!(
+        "<Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2' xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'{}>{ids}</Invoice>",
+        if ok { " ok='1'" } else { "" }
+    )
+}
+
+/// A rule set that selects by scenario: the one scenario whose `match` expression is
+/// true runs its stylesheets, in its order, with its levels; a document that matches
+/// none, or several, is invalid and nothing runs on it, as the KoSIT validator rejects
+/// it with its fallback scenario.
+#[test]
+fn scenarios_select_the_stylesheets() {
+    let (manifest, files) = selecting_manifest("", SELECTING_SCENARIOS);
+    let files: Vec<(&str, &[u8])> = files.iter().map(|(p, b)| (*p, b.as_slice())).collect();
+    let validator = Validator::from_bundle(&manifest, &files).unwrap();
+    assert!(validator.rule_set().selects_by_scenario());
+    let run = |document: &str| {
+        let report = validator.validate(document.as_bytes()).unwrap();
+        let names: Vec<String> = report.stylesheets.iter().map(|s| s.name.clone()).collect();
+        (report, names)
+    };
+    // Both stylesheets, A-1 made other by the scenario: valid.
+    let (report, names) = run(&ubl(&["urn:both"], false));
+    assert_eq!(report.scenario.as_deref(), Some("Both"));
+    assert_eq!(report.no_scenario, None);
+    assert_eq!(names, ["a", "b"]);
+    let severities: Vec<Severity> = report.findings().map(|f| f.severity).collect();
+    assert_eq!(severities, [Severity::Other, Severity::Warning]);
+    assert_eq!(report.verdict(), Verdict::Valid);
+    // Its own order, its flags: A-1 fatal.
+    let (report, names) = run(&ubl(&["urn:ba"], false));
+    assert_eq!(report.scenario.as_deref(), Some("B then A"));
+    assert_eq!(names, ["b", "a"]);
+    assert_eq!(report.verdict(), Verdict::Invalid);
+    // A text node split by a comment is not the identifier; the string value is.
+    let (report, _) = run(&ubl(&["urn:<!-- -->ba"], true));
+    assert_eq!(report.no_scenario, Some(NoScenario::NoneMatches));
+    let (report, _) = run(&ubl(&["urn:<!-- -->both"], false));
+    assert_eq!(report.scenario.as_deref(), Some("Both"));
+    // B alone, though A would reject the document.
+    let (report, names) = run("<d n=' 1 '/>");
+    assert_eq!(report.scenario.as_deref(), Some("B alone"));
+    assert_eq!(names, ["b"]);
+    assert_eq!(report.verdict(), Verdict::Valid);
+    // A `match` that raises a dynamic error (FORG0001) is false, as for the KoSIT
+    // validator: no scenario.
+    for document in [
+        "<d n='one'/>",
+        "<d/>",
+        &ubl(&["urn:other"], true),
+        &ubl(&[], true),
+    ] {
+        let (report, names) = run(document);
+        assert_eq!(report.scenario, None, "{document}");
+        assert_eq!(
+            report.no_scenario,
+            Some(NoScenario::NoneMatches),
+            "{document}"
+        );
+        assert_eq!(names, Vec::<String>::new());
+        assert_eq!(report.findings().count(), 0);
+        assert_eq!(report.verdict(), Verdict::Invalid, "{document}");
+        assert!(!report.is_valid());
+    }
+    assert_eq!(
+        NoScenario::NoneMatches.to_string(),
+        "no scenario of the rule set matches the document"
+    );
+    // Two identifiers, two scenarios: none applies.
+    let (report, names) = run(&ubl(&["urn:both", "urn:ba"], true));
+    let several = NoScenario::SeveralMatch(vec!["Both".to_owned(), "B then A".to_owned()]);
+    assert_eq!(report.no_scenario.as_ref(), Some(&several));
+    assert_eq!(names, Vec::<String>::new());
+    assert_eq!(report.verdict(), Verdict::Invalid);
+    assert_eq!(
+        several.to_string(),
+        "2 scenarios of the rule set match the document, one is required: Both, B then A"
+    );
+    // Not XML: an error, before any scenario.
+    assert!(matches!(
+        validator.validate(b"<d"),
+        Err(Error::NotXml { .. })
+    ));
+}
+
+/// With a schema: a document that has a scenario keeps its schema errors; one that has
+/// none gets none (the KoSIT validator validates against the schema of the scenario).
+#[test]
+fn a_document_without_a_scenario_has_no_schema_errors() {
+    let (manifest, files) = selecting_manifest("schema = \"ubl-2.1\"\n", SELECTING_SCENARIOS);
+    let files: Vec<(&str, &[u8])> = files.iter().map(|(p, b)| (*p, b.as_slice())).collect();
+    let validator = Validator::from_bundle(&manifest, &files).unwrap();
+    let matched = validator
+        .validate(ubl(&["urn:both"], true).as_bytes())
+        .unwrap();
+    assert_eq!(matched.scenario.as_deref(), Some("Both"));
+    assert_ne!(matched.schema_errors.len(), 0);
+    assert_eq!(matched.verdict(), Verdict::Invalid);
+    let unmatched = validator
+        .validate(ubl(&["urn:x"], true).as_bytes())
+        .unwrap();
+    assert_eq!(unmatched.no_scenario, Some(NoScenario::NoneMatches));
+    assert_eq!(unmatched.schema_errors, []);
+    assert_eq!(unmatched.rule_set.schema, Some(SchemaId::Ubl21));
+}
+
+/// The schema a manifest names unchecked is in the report; a `match` expression the
+/// engine cannot compile is refused when the bundle is loaded.
+#[test]
+fn unchecked_schemas_and_unsupported_matches() {
+    let (manifest, files) = selecting_manifest(
+        "unchecked-schema = \"UN/CEFACT CII D16B (CrossIndustryInvoice_100pD16B.xsd)\"\n",
+        SELECTING_SCENARIOS,
+    );
+    let files: Vec<(&str, &[u8])> = files.iter().map(|(p, b)| (*p, b.as_slice())).collect();
+    let validator = Validator::from_bundle(&manifest, &files).unwrap();
+    assert_eq!(
+        validator.rule_set().unchecked_schema(),
+        Some("UN/CEFACT CII D16B (CrossIndustryInvoice_100pD16B.xsd)")
+    );
+    let report = validator.validate(b"<d n='1'/>").unwrap();
+    assert_eq!(
+        report.rule_set.unchecked_schema.as_deref(),
+        Some("UN/CEFACT CII D16B (CrossIndustryInvoice_100pD16B.xsd)")
+    );
+    assert_eq!(report.rule_set.schema, None);
+    // A function the engine does not have.
+    let unknown = manifest.replace("xs:integer(/*/@n) = 1", "lower-case(name(/*)) = 'd'");
+    let e = Validator::from_bundle(&unknown, &files).unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::Unsupported, "{e}");
+    assert!(e.to_string().contains("scenario \"B alone\": match"), "{e}");
 }

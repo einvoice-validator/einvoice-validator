@@ -3,7 +3,9 @@
 use std::fmt::Write as _;
 
 use einvoice_validator::pdf::{AfRelationship, Embedded};
-use einvoice_validator::{Error, ErrorKind, Finding, Report, RuleSet, Severity, Verdict};
+use einvoice_validator::{
+    Error, ErrorKind, Finding, NoScenario, Report, RuleSet, Severity, Verdict,
+};
 
 use crate::json::Json;
 
@@ -238,7 +240,7 @@ fn report_text(name: &str, report: &Report, style: Style, out: &mut String) {
         .iter()
         .filter(|s| s.failure.is_some())
         .count();
-    let counts: Vec<String> = [
+    let mut counts: Vec<String> = [
         (report.schema_errors.len(), "schema error", "schema errors"),
         (report.count(Severity::Fatal), "fatal", "fatal"),
         (report.count(Severity::Warning), "warning", "warnings"),
@@ -253,6 +255,9 @@ fn report_text(name: &str, report: &Report, style: Style, out: &mut String) {
     .filter(|(n, _, _)| *n > 0)
     .map(|(n, one, many)| plural(n, one, many))
     .collect();
+    if report.no_scenario.is_some() {
+        counts.insert(0, "no scenario".to_owned());
+    }
     let verdict = match report.verdict() {
         Verdict::Valid => style.paint(GREEN, "valid"),
         Verdict::Invalid => style.paint(RED, "invalid"),
@@ -261,6 +266,21 @@ fn report_text(name: &str, report: &Report, style: Style, out: &mut String) {
         let _ = writeln!(out, "{name}: {verdict}");
     } else {
         let _ = writeln!(out, "{name}: {verdict}: {}", counts.join(", "));
+    }
+    if let Some(no_scenario) = &report.no_scenario {
+        let _ = writeln!(
+            out,
+            "  {} {no_scenario}: the reference validator rejects it",
+            style.paint(RED, "scenario")
+        );
+    } else if let Some(scenario) = &report.scenario {
+        let _ = writeln!(out, "  scenario {scenario}");
+    }
+    if let Some(unchecked) = &report.rule_set.unchecked_schema {
+        let _ = writeln!(
+            out,
+            "  note     not checked: the XML schema {unchecked}, which the reference validator also validates against"
+        );
     }
     for e in &report.schema_errors {
         let _ = writeln!(
@@ -410,6 +430,10 @@ pub(crate) fn json_rule_set(rule_set: &RuleSet) -> Json {
             Json::optional(rule_set.schema().map(einvoice_validator::SchemaId::as_str)),
         ),
         (
+            "unchecked_schema",
+            Json::optional(rule_set.unchecked_schema()),
+        ),
+        (
             "stylesheets",
             Json::Array(
                 rule_set
@@ -444,6 +468,34 @@ fn json_error(e: &Error) -> Json {
         ("line", line),
         ("column", column),
     ])
+}
+
+/// The `scenario`, `no_scenario` and `stylesheets_run` members of a document in the JSON
+/// report.
+fn json_scenario(report: Option<&Report>) -> [Json; 3] {
+    let no_scenario = report
+        .and_then(|r| r.no_scenario.as_ref())
+        .map_or(Json::Null, |n| {
+            let matching = match n {
+                NoScenario::SeveralMatch(names) => names.iter().map(Json::string).collect(),
+                _ => Vec::new(),
+            };
+            Json::Object(vec![
+                ("matching", Json::Array(matching)),
+                ("message", Json::string(n.to_string())),
+            ])
+        });
+    let stylesheets_run: Vec<Json> = report
+        .map(|r| r.stylesheets.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .map(|s| Json::string(&s.name))
+        .collect();
+    [
+        Json::optional(report.and_then(|r| r.scenario.as_deref())),
+        no_scenario,
+        Json::Array(stylesheets_run),
+    ]
 }
 
 /// One document, in the JSON report.
@@ -508,11 +560,15 @@ pub(crate) fn json(outcome: &Outcome) -> Json {
             ]));
         }
     }
+    let [scenario, no_scenario, stylesheets_run] = json_scenario(report);
     Json::Object(vec![
         ("path", Json::string(&outcome.name)),
         ("rule_set", Json::string(&outcome.rule_set)),
         ("status", Json::string(status.as_str())),
         ("error", error),
+        ("scenario", scenario),
+        ("no_scenario", no_scenario),
+        ("stylesheets_run", stylesheets_run),
         (
             "counts",
             Json::Object(vec![

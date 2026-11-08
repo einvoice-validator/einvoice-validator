@@ -138,10 +138,14 @@ einvoice-validate rules list
 and the bundles of the rule sets whose reference validators read the reports otherwise say so in
 their manifests: a Factur-X failed assert without a flag (most of them have none) is fatal, as the
 Mustang validator reads it, and so is an XRechnung one, as the KoSIT validator reads it; the
-XRechnung bundles also carry the levels the scenarios of the KoSIT configuration give some rule
-ids (`customLevel`), applied to the documents each scenario matches. On every document of the
-test corpora, the verdict of each bundle is the one the reference validator's reading of the
-Saxon-HE reports gives. `--fail-closed` makes every other finding without a known severity fatal.
+XRechnung bundles run the scenarios of the KoSIT configuration as the KoSIT validator does: the
+`match` expression of each is evaluated on the document, the one that matches names the
+stylesheets that run (the CEN rules alone, or the CEN and XRechnung rules) and gives some rule
+ids levels of their own (`customLevel`), and a document that matches no scenario is rejected. On
+every document of the test corpora, the verdict of each bundle is the one the reference
+validator's reading of the Saxon-HE reports gives. One gap: the KoSIT configuration also validates
+CII documents against the UN/CEFACT CII D16B XML schema, which is not embedded; the CII bundle
+names it unchecked and the reports say so. `--fail-closed` makes every other finding without a known severity fatal.
 
 Downloading uses rustls with a cryptography provider on the RustCrypto crates, pure Rust like
 the rest: it is the `fetch` feature of `einvoice-cli` (on by default);

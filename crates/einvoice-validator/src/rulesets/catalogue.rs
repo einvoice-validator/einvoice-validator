@@ -179,10 +179,20 @@ pub(crate) const XRECHNUNG_STYLESHEETS: [(&str, &str, &str, &str); 4] = [
     ),
 ];
 
-/// A scenario of the configuration: syntax of the bundle, name, root element, the
-/// specification identifier its match requires, and the rule ids of the levels error,
-/// warning and information (separated by spaces).
+/// The namespaces of the UBL invoice scenarios of the configuration, as their
+/// `namespace` elements bind them (`rep` is the namespace of its validation reports).
+const XRECHNUNG_UBL_INVOICE_NAMESPACES: &str = "cbc=urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2 invoice=urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 rep=http://www.xoev.de/de/validator/varl/1";
+/// The namespaces of the UBL credit note scenarios.
+const XRECHNUNG_UBL_CREDIT_NOTE_NAMESPACES: &str = "cbc=urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2 creditnote=urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2 rep=http://www.xoev.de/de/validator/varl/1";
+/// The namespaces of the CII scenarios.
+const XRECHNUNG_CII_NAMESPACES: &str = "rsm=urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100 ram=urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100 rep=http://www.xoev.de/de/validator/varl/1";
+
+/// A scenario of the configuration: syntax of the bundle, name, namespaces (`prefix=uri`
+/// pairs), its `match` expression as written, the stylesheets it runs (bundle names, in
+/// order), and the rule ids of the levels error, warning and information (separated by
+/// spaces).
 type XRechnungScenario = (
+    &'static str,
     &'static str,
     &'static str,
     &'static str,
@@ -192,15 +202,16 @@ type XRechnungScenario = (
     &'static str,
 );
 
-/// The scenarios of the configuration (`scenarios.xml`) that give rule ids levels of
-/// their own (`customLevel`), in its order, as `scripts/fetch-xrechnung.sh` lists them:
-/// the `[[scenario]]` tables of the bundles (`fatal`, `warning`, `other`).
-pub(crate) const XRECHNUNG_SCENARIOS: [XRechnungScenario; 8] = [
+/// The scenarios of the configuration (`scenarios.xml`), in its order, as
+/// `scripts/fetch-xrechnung.sh` lists them: the `[[scenario]]` tables of the bundles
+/// (`fatal`, `warning`, `other`), each in the bundle of its syntax.
+pub(crate) const XRECHNUNG_SCENARIOS: [XRechnungScenario; 11] = [
     (
         "ubl",
         "EN16931 XRechnung (UBL Invoice)",
-        "Invoice",
-        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+        XRECHNUNG_UBL_INVOICE_NAMESPACES,
+        "exists(/invoice:Invoice/cbc:CustomizationID[ . = 'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0']) ",
+        "EN16931-UBL XRechnung-UBL",
         "UBL-CR-646",
         "BR-CL-23 BR-CL-21",
         "",
@@ -208,8 +219,9 @@ pub(crate) const XRECHNUNG_SCENARIOS: [XRechnungScenario; 8] = [
     (
         "ubl",
         "EN16931 XRechnung Extension (UBL Invoice)",
-        "Invoice",
-        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0",
+        XRECHNUNG_UBL_INVOICE_NAMESPACES,
+        "exists(/invoice:Invoice/cbc:CustomizationID[ . = 'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0'])",
+        "EN16931-UBL XRechnung-UBL",
         "",
         "BR-CL-23",
         "BR-CL-21 BR-CL-24 BR-CL-10 BR-CL-11 BR-CL-25 BR-CL-26 BR-CO-16 UBL-CR-470 UBL-CR-646",
@@ -217,8 +229,9 @@ pub(crate) const XRECHNUNG_SCENARIOS: [XRechnungScenario; 8] = [
     (
         "ubl",
         "EN16931 XRechnung CVD (UBL Invoice)",
-        "Invoice",
-        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9",
+        XRECHNUNG_UBL_INVOICE_NAMESPACES,
+        "exists(/invoice:Invoice/cbc:CustomizationID[ . = 'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9']) ",
+        "EN16931-UBL XRechnung-UBL",
         "UBL-CR-646",
         "BR-CL-23 BR-CL-21",
         "BR-CL-13",
@@ -226,8 +239,9 @@ pub(crate) const XRECHNUNG_SCENARIOS: [XRechnungScenario; 8] = [
     (
         "ubl",
         "EN16931 XRechnung (UBL CreditNote)",
-        "CreditNote",
-        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+        XRECHNUNG_UBL_CREDIT_NOTE_NAMESPACES,
+        "exists(/creditnote:CreditNote[ cbc:CustomizationID/text() = 'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0'])",
+        "EN16931-UBL XRechnung-UBL",
         "",
         "BR-CL-23 BR-CL-21",
         "",
@@ -235,8 +249,9 @@ pub(crate) const XRECHNUNG_SCENARIOS: [XRechnungScenario; 8] = [
     (
         "ubl",
         "EN16931 XRechnung CVD (UBL CreditNote)",
-        "CreditNote",
-        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9",
+        XRECHNUNG_UBL_CREDIT_NOTE_NAMESPACES,
+        "exists(/creditnote:CreditNote[ cbc:CustomizationID/text() = 'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9'])",
+        "EN16931-UBL XRechnung-UBL",
         "UBL-CR-646",
         "BR-CL-23 BR-CL-21",
         "BR-CL-13",
@@ -244,8 +259,9 @@ pub(crate) const XRECHNUNG_SCENARIOS: [XRechnungScenario; 8] = [
     (
         "cii",
         "EN16931 XRechnung (CII)",
-        "CrossIndustryInvoice",
-        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+        XRECHNUNG_CII_NAMESPACES,
+        "exists(/rsm:CrossIndustryInvoice[rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID/text() = 'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0'])",
+        "EN16931-CII XRechnung-CII",
         "CII-SR-452 CII-SR-453 CII-SR-454 CII-SR-465 CII-SR-466",
         "BR-CL-23 BR-CL-21",
         "CII-SR-475 CII-SR-476",
@@ -253,8 +269,9 @@ pub(crate) const XRECHNUNG_SCENARIOS: [XRechnungScenario; 8] = [
     (
         "cii",
         "EN16931 XRechnung Extension (CII)",
-        "CrossIndustryInvoice",
-        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0",
+        XRECHNUNG_CII_NAMESPACES,
+        "exists(/rsm:CrossIndustryInvoice[rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID/text() = 'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0'])",
+        "EN16931-CII XRechnung-CII",
         "CII-SR-452 CII-SR-453 CII-SR-454 CII-SR-465 CII-SR-466",
         "BR-CL-23",
         "BR-CL-21 BR-CL-11 BR-CL-10 BR-CL-24 BR-CL-25 BR-CL-26 CII-SR-475 CII-SR-476",
@@ -262,13 +279,50 @@ pub(crate) const XRECHNUNG_SCENARIOS: [XRechnungScenario; 8] = [
     (
         "cii",
         "EN16931 XRechnung CVD (CII)",
-        "CrossIndustryInvoice",
-        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9",
+        XRECHNUNG_CII_NAMESPACES,
+        "exists(/rsm:CrossIndustryInvoice[rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID/text() = 'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9'])",
+        "EN16931-CII XRechnung-CII",
         "CII-SR-452 CII-SR-453 CII-SR-454 CII-SR-465 CII-SR-466",
         "BR-CL-23 BR-CL-21",
         "BR-CL-13 CII-SR-475 CII-SR-476",
     ),
+    (
+        "ubl",
+        "EN16931 (UBL Invoice)",
+        XRECHNUNG_UBL_INVOICE_NAMESPACES,
+        "exists(/invoice:Invoice[ cbc:CustomizationID/text() = 'urn:cen.eu:en16931:2017' ])",
+        "EN16931-UBL",
+        "",
+        "",
+        "",
+    ),
+    (
+        "ubl",
+        "EN16931 (UBL CreditNote)",
+        XRECHNUNG_UBL_CREDIT_NOTE_NAMESPACES,
+        "exists(/creditnote:CreditNote[cbc:CustomizationID/text() = 'urn:cen.eu:en16931:2017'])",
+        "EN16931-UBL",
+        "",
+        "",
+        "",
+    ),
+    (
+        "cii",
+        "EN16931 (CII)",
+        XRECHNUNG_CII_NAMESPACES,
+        "exists(/rsm:CrossIndustryInvoice[ rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID/text() = 'urn:cen.eu:en16931:2017'])",
+        "EN16931-CII",
+        "",
+        "",
+        "",
+    ),
 ];
+
+/// The XML schema the CII scenarios of the configuration validate documents against
+/// (`validateWithXmlSchema`), which the CII bundle does not run: the `unchecked-schema`
+/// of its manifest.
+pub(crate) const XRECHNUNG_CII_SCHEMA: &str =
+    "UN/CEFACT CII D16B (CrossIndustryInvoice_100pD16B.xsd)";
 
 // --- The French rules --------------------------------------------------------------
 
@@ -1010,20 +1064,32 @@ fn manifest_xrechnung(spec: &RuleSetSpec) -> Result<String, String> {
         "# XRechnung {xrechnung} ({upper}), validator configuration {configuration}: the
 # rule-set bundle manifest of einvoice-validator, as scripts/fetch-xrechnung.sh
 # and einvoice-validate rules fetch write it (einvoice-validate --bundle DIR).
-# As the KoSIT validator reads the reports: a failed assert without a flag is
-# fatal, and the scenarios of the configuration give the rule ids they list
-# their levels (customLevel: error is fatal, information other).
-format = 2
-name = \"xrechnung-{syntax}\"
-title = \"XRechnung {upper}\"
-version = \"{xrechnung}\"
+# As the KoSIT validator runs the configuration: a document must match exactly
+# one of its scenarios (match), which names the stylesheets that run and gives
+# rule ids levels of their own (customLevel: error is fatal, information
+# other); a document that matches none is rejected; a failed assert without a
+# flag is fatal.
 ",
         xrechnung = p("xrechnung")?,
         configuration = p("configuration")?,
+    );
+    if spec.dir == "cii" {
+        m.push_str(
+            "# The scenarios also validate the documents against the UN/CEFACT CII D16B
+# XML schema, which this bundle does not run (unchecked-schema).
+",
+        );
+    }
+    let _ = write!(
+        m,
+        "format = 2\nname = \"xrechnung-{syntax}\"\ntitle = \"XRechnung {upper}\"\nversion = \"{xrechnung}\"\n",
         syntax = spec.dir,
+        xrechnung = p("xrechnung")?,
     );
     if spec.dir == "ubl" {
         m.push_str("schema = \"ubl-2.1\"\n");
+    } else {
+        let _ = writeln!(m, "unchecked-schema = \"{XRECHNUNG_CII_SCHEMA}\"");
     }
     for (name, path, sha, version) in XRECHNUNG_STYLESHEETS {
         if !name.ends_with(&format!("-{upper}")) {
@@ -1037,18 +1103,15 @@ version = \"{xrechnung}\"
             p(version)?
         );
     }
-    for (syntax, name, root, identifier, fatal, warning, other) in XRECHNUNG_SCENARIOS {
+    for (syntax, name, namespaces, matching, stylesheets, fatal, warning, other) in
+        XRECHNUNG_SCENARIOS
+    {
         if syntax != spec.dir {
             continue;
         }
-        let namespace = match root {
-            "Invoice" => crate::manifest::UBL_INVOICE,
-            "CreditNote" => crate::manifest::UBL_CREDIT_NOTE,
-            _ => crate::manifest::CII,
-        };
         let _ = write!(
             m,
-            "\n[[scenario]]\nname = \"{name}\"\nnamespace = \"{namespace}\"\nroot = \"{root}\"\nidentifier = \"{identifier}\"\n"
+            "\n[[scenario]]\nname = \"{name}\"\nnamespaces = \"{namespaces}\"\nmatch = \"{matching}\"\nstylesheets = \"{stylesheets}\"\n"
         );
         for (key, ids) in [("fatal", fatal), ("warning", warning), ("other", other)] {
             if !ids.is_empty() {
@@ -1230,16 +1293,28 @@ mod tests {
                 };
                 assert_eq!(s.unflagged_assert(), expected, "{} {}", r.name(), s.name());
             }
-            let scenarios: Vec<(&str, &str)> = parsed
+            let scenarios: Vec<(&str, Option<&[String]>)> = parsed
                 .scenarios()
                 .iter()
-                .map(|s| (s.root(), s.identifier()))
+                .map(|s| (s.name(), s.stylesheets()))
                 .collect();
             match r.name() {
-                "xrechnung-ubl" => assert_eq!(scenarios.len(), 5),
-                "xrechnung-cii" => assert_eq!(scenarios.len(), 3),
-                _ => assert_eq!(scenarios, [], "{}", r.name()),
+                "xrechnung-ubl" | "xrechnung-cii" => {
+                    // Every scenario of the configuration that runs its stylesheets, each
+                    // with a match expression: the bundle selects by scenario.
+                    assert_eq!(
+                        scenarios.len(),
+                        if r.name() == "xrechnung-ubl" { 7 } else { 4 }
+                    );
+                    assert!(parsed.selects_by_scenario());
+                }
+                _ => {
+                    assert_eq!(scenarios, [], "{}", r.name());
+                    assert!(!parsed.selects_by_scenario());
+                }
             }
+            let gap = (r.name() == "xrechnung-cii").then_some(XRECHNUNG_CII_SCHEMA);
+            assert_eq!(parsed.unchecked_schema(), gap, "{}", r.name());
         }
         let ubl = RuleSet::parse(
             fetched_rule_set("xrechnung-ubl", None)
@@ -1256,6 +1331,16 @@ mod tests {
             ubl.scenarios()[1].level("UBL-CR-646"),
             Some(Severity::Other)
         );
+        let names = |s: &crate::Scenario| s.stylesheets().map(<[String]>::to_vec);
+        assert_eq!(
+            names(standard),
+            Some(vec!["EN16931-UBL".to_owned(), "XRechnung-UBL".to_owned()])
+        );
+        // The scenario of the CEN rules alone runs the CEN stylesheet alone.
+        let cen = &ubl.scenarios()[5];
+        assert_eq!(cen.name(), "EN16931 (UBL Invoice)");
+        assert_eq!(names(cen), Some(vec!["EN16931-UBL".to_owned()]));
+        assert_eq!(cen.levels(), []);
     }
 
     #[test]

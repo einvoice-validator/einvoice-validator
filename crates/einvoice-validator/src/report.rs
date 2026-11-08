@@ -15,9 +15,12 @@ const SVRL_NS: &str = "http://purl.oclc.org/dsdl/svrl";
 /// The overall verdict on a document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Verdict {
-    /// No schema error and no finding with severity [`Severity::Fatal`].
+    /// No schema error and no finding with severity [`Severity::Fatal`] (and, in a rule
+    /// set that selects by scenario, one scenario matched).
     Valid,
-    /// At least one schema error or one finding with severity [`Severity::Fatal`].
+    /// At least one schema error or one finding with severity [`Severity::Fatal`], or, in
+    /// a rule set that selects by scenario, no scenario for the document
+    /// ([`Report::no_scenario`]).
     Invalid,
 }
 
@@ -288,6 +291,38 @@ pub struct RuleSetVersion {
     pub version: String,
     /// The schema the document was validated against, if any.
     pub schema: Option<crate::SchemaId>,
+    /// The XML schema the reference validator of the rule set also validates documents
+    /// against, and this rule set does not, as its manifest names it
+    /// ([`RuleSet::unchecked_schema`](crate::RuleSet::unchecked_schema)): a document valid
+    /// here may still be rejected there for an error of that schema.
+    pub unchecked_schema: Option<String>,
+}
+
+/// Why a document has no scenario, in a rule set that selects by scenario
+/// ([`RuleSet::selects_by_scenario`](crate::RuleSet::selects_by_scenario)): the document
+/// is then invalid and no stylesheet runs on it, as the KoSIT validator rejects a
+/// document with its fallback scenario.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NoScenario {
+    /// The `match` expression of no scenario is true on the document.
+    NoneMatches,
+    /// Those of several scenarios are: their names, in the order of the manifest.
+    SeveralMatch(Vec<String>),
+}
+
+impl fmt::Display for NoScenario {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoneMatches => f.write_str("no scenario of the rule set matches the document"),
+            Self::SeveralMatch(names) => write!(
+                f,
+                "{} scenarios of the rule set match the document, one is required: {}",
+                names.len(),
+                names.join(", ")
+            ),
+        }
+    }
 }
 
 /// The result of validating one document: the schema errors, then what each stylesheet
@@ -300,21 +335,31 @@ pub struct Report {
     /// The URI the document was given, if any (`document-uri(/)` in the stylesheets).
     pub document_uri: Option<String>,
     /// The name of the scenario of the rule set the document matched, whose severities
-    /// apply to its findings ([`RuleSet::scenarios`](crate::RuleSet::scenarios)), if
-    /// any.
+    /// apply to its findings and, in a rule set that selects by scenario, whose
+    /// stylesheets ran ([`RuleSet::scenarios`](crate::RuleSet::scenarios)), if any.
     pub scenario: Option<String>,
+    /// In a rule set that selects by scenario, why the document has none, if it has
+    /// none: it is then invalid, no stylesheet ran on it and no schema error is reported
+    /// (the KoSIT validator validates a document against the schema of its scenario).
+    pub no_scenario: Option<NoScenario>,
     /// The schema validity errors, sorted by position; empty when the document is valid
     /// against the schema, or when the rule set has no schema.
     pub schema_errors: Vec<SchemaError>,
-    /// One report per stylesheet, in the order they ran.
+    /// One report per stylesheet that ran, in the order they ran: every stylesheet of
+    /// the rule set, or those of the scenario the document matched in a rule set that
+    /// selects by scenario.
     pub stylesheets: Vec<StylesheetReport>,
 }
 
 impl Report {
-    /// [`Verdict::Valid`] if there is no schema error and no fatal finding.
+    /// [`Verdict::Valid`] if there is no schema error and no fatal finding, and, in a
+    /// rule set that selects by scenario, the document matched one.
     #[must_use]
     pub fn verdict(&self) -> Verdict {
-        if self.schema_errors.is_empty() && self.count(Severity::Fatal) == 0 {
+        if self.no_scenario.is_none()
+            && self.schema_errors.is_empty()
+            && self.count(Severity::Fatal) == 0
+        {
             Verdict::Valid
         } else {
             Verdict::Invalid

@@ -670,3 +670,146 @@ fn the_built_in_rule_set_agrees_with_the_saxon_goldens_on_the_mutation_cases() {
     }
     assert_eq!(problems, Vec::<String>::new());
 }
+
+/// A stylesheet reporting a warning (`T-1`) whatever the document.
+const WARNING_STYLESHEET: &[u8] = br#"<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:svrl="http://purl.oclc.org/dsdl/svrl">
+<xsl:template match="/">
+<svrl:schematron-output>
+<svrl:fired-rule context="/"/>
+<svrl:failed-assert id="T-1" flag="warning" location="/" test="t"><svrl:text>warning</svrl:text></svrl:failed-assert>
+</svrl:schematron-output>
+</xsl:template>
+</xsl:stylesheet>"#;
+
+/// A bundle that selects by scenario, as the XRechnung bundles do: the text and JSON
+/// forms name the scenario, the stylesheets that ran, and reject a document without
+/// one; a schema the manifest names unchecked is stated.
+#[test]
+fn scenarios_select_what_runs() {
+    let dir = common::temp_dir("scenarios");
+    std::fs::write(dir.join("s.xsl"), SEVERITIES_STYLESHEET).unwrap();
+    std::fs::write(dir.join("t.xsl"), WARNING_STYLESHEET).unwrap();
+    let manifest = format!(
+        "format = 2\nname = \"sel\"\ntitle = \"Sel\"\nversion = \"1\"\nunchecked-schema = \"Some schema (s.xsd)\"\n\n[[stylesheet]]\nname = \"s\"\npath = \"s.xsl\"\nsha256 = \"{}\"\n\n[[stylesheet]]\nname = \"t\"\npath = \"t.xsl\"\nsha256 = \"{}\"\n
+[[scenario]]
+name = \"T alone\"
+namespaces = \"cbc=urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2\"
+match = \"exists(/*[cbc:CustomizationID/text() = 'urn:t'])\"
+stylesheets = \"t\"
+
+[[scenario]]
+name = \"Both\"
+namespaces = \"cbc=urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2\"
+match = \"exists(/*[cbc:CustomizationID/text() = 'urn:both'])\"
+fatal = \"W-1\"
+",
+        sha256(SEVERITIES_STYLESHEET),
+        sha256(WARNING_STYLESHEET)
+    );
+    std::fs::write(dir.join("bundle.toml"), manifest).unwrap();
+    let document = |id: &str| {
+        format!(
+            "<Invoice xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'><cbc:CustomizationID>{id}</cbc:CustomizationID></Invoice>"
+        )
+    };
+    for (name, id) in [
+        ("t.xml", "urn:t"),
+        ("both.xml", "urn:both"),
+        ("none.xml", "urn:x"),
+        (
+            "two.xml",
+            "urn:t</cbc:CustomizationID><cbc:CustomizationID>urn:both",
+        ),
+    ] {
+        std::fs::write(dir.join(name), document(id)).unwrap();
+    }
+    let bundle = dir.to_str().unwrap();
+    let file = |name: &str| dir.join(name).to_str().unwrap().to_owned();
+    let note = "  note     not checked: the XML schema Some schema (s.xsd), which the reference validator also validates against\n";
+    // T alone: its warning, valid.
+    let r = run(&["--bundle", bundle, &file("t.xml")], None);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    assert_eq!(
+        r.stdout,
+        format!(
+            "{}: valid: 1 warning\n  scenario T alone\n{note}  warning  T-1: warning\n           at /\n",
+            file("t.xml")
+        )
+    );
+    // Both stylesheets, W-1 fatal by the scenario.
+    let r = run(&["--bundle", bundle, &file("both.xml")], None);
+    assert_eq!(r.code, 1, "{}", r.stdout);
+    assert!(r.stdout.contains("\n  scenario Both\n"), "{}", r.stdout);
+    assert!(r.stdout.contains("  warning  T-1: warning"), "{}", r.stdout);
+    // No scenario, several: rejected, nothing ran.
+    let r = run(&["--bundle", bundle, &file("none.xml")], None);
+    assert_eq!(r.code, 1, "{}", r.stdout);
+    assert_eq!(
+        r.stdout,
+        format!(
+            "{}: invalid: no scenario\n  scenario no scenario of the rule set matches the document: the reference validator rejects it\n{note}",
+            file("none.xml")
+        )
+    );
+    let r = run(&["--bundle", bundle, &file("two.xml")], None);
+    assert_eq!(r.code, 1, "{}", r.stdout);
+    assert!(
+        r.stdout.contains("  scenario 2 scenarios of the rule set match the document, one is required: T alone, Both: the reference validator rejects it\n"),
+        "{}",
+        r.stdout
+    );
+    // JSON.
+    let r = run(
+        &[
+            "--bundle",
+            bundle,
+            "--format",
+            "json",
+            &file("t.xml"),
+            &file("both.xml"),
+            &file("none.xml"),
+            &file("two.xml"),
+        ],
+        None,
+    );
+    assert_eq!(r.code, 1);
+    let report = json::parse(&r.stdout).unwrap();
+    assert_eq!(
+        report.get("rule_set").get("unchecked_schema").str(),
+        Some("Some schema (s.xsd)")
+    );
+    let documents = report.get("documents").array();
+    let strings = |v: &Value| -> Vec<String> {
+        v.array()
+            .iter()
+            .map(|s| s.str().unwrap().to_owned())
+            .collect()
+    };
+    let t = &documents[0];
+    assert_eq!(t.get("scenario").str(), Some("T alone"));
+    assert_eq!(*t.get("no_scenario"), Value::Null);
+    assert_eq!(strings(t.get("stylesheets_run")), ["t"]);
+    assert_eq!(strings(documents[1].get("stylesheets_run")), ["s", "t"]);
+    assert_eq!(documents[1].get("status").str(), Some("invalid"));
+    let unmatched = &documents[2];
+    assert_eq!(unmatched.get("status").str(), Some("invalid"));
+    assert_eq!(unmatched.get("scenario").str(), None);
+    assert_eq!(
+        strings(unmatched.get("no_scenario").get("matching")),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        unmatched.get("no_scenario").get("message").str(),
+        Some("no scenario of the rule set matches the document")
+    );
+    assert_eq!(
+        strings(unmatched.get("stylesheets_run")),
+        Vec::<String>::new()
+    );
+    assert_eq!(unmatched.get("findings").array(), []);
+    assert_eq!(
+        strings(documents[3].get("no_scenario").get("matching")),
+        ["T alone", "Both"]
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}

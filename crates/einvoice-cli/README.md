@@ -106,10 +106,17 @@ reads the reports:
   without a flag is fatal, as the Mustang validator and the KoSIT validator read it (their
   bundles say `unflagged-assert = "fatal"`). Most Factur-X asserts have no flag.
 - XRechnung: the scenario of the KoSIT validator configuration that the document matches
-  (by its root element and its `cbc:CustomizationID`, or its CII guideline identifier)
-  gives the rule ids it lists their levels, whatever their flags (`customLevel`: `error`
-  is fatal, `information` other); for instance `UBL-CR-646` is fatal in an XRechnung 3.0
-  invoice and other in an XRechnung extension.
+  (its `match` expression, evaluated on the document, which reads its root element and
+  its `cbc:CustomizationID` or its CII guideline identifier) names the stylesheets that
+  run (the CEN rules alone for `urn:cen.eu:en16931:2017`, the CEN and XRechnung rules for
+  the XRechnung identifiers) and gives the rule ids it lists their levels, whatever their
+  flags (`customLevel`: `error` is fatal, `information` other); for instance `UBL-CR-646`
+  is fatal in an XRechnung 3.0 invoice and other in an XRechnung extension. A document
+  that matches no scenario (a Peppol BIS invoice, a misspelt identifier) or several is
+  invalid, and no stylesheet runs on it, as the KoSIT validator rejects it. The CII
+  scenarios also validate against the UN/CEFACT CII D16B XML schema, which is not
+  embedded: the text output notes it, the JSON output names it in
+  `rule_set.unchecked_schema`.
 - CEN EN 16931, Peppol BIS Billing and the other French rules flag every assert `fatal`
   or `warning`.
 
@@ -165,8 +172,11 @@ the reader exceeded is an error of kind `unsupported` (exit status 3).
 For each document, a line `<file>: valid`, `<file>: invalid: <counts>` or
 `<file>: error (<kind>): <message>`; for a PDF file whose invoice was extracted, a line
 `pdf      <name> embedded in a PDF <version>: AFRelationship <relationship>; PDF/A-<part><conformance>; <properties>`;
-then one line per schema error, one per stylesheet stopped by an error, and two per finding
-(severity, rule id and message, then the location). After several documents, a summary line.
+then, for a rule set with scenarios, a line `scenario <name>` or, for a document that matches
+none (`<file>: invalid: no scenario`), the reason; for a rule set that names an XML schema it
+does not check, a line `note     not checked: ...`; then one line per schema error, one per
+stylesheet stopped by an error, and two per finding (severity, rule id and message, then the
+location). After several documents, a summary line.
 The UBL and XML Schema namespaces in schema errors are written with their usual prefixes
 (`cbc:`, `cac:`, `ext:`, `ubl:`, `cn:`, `xs:`). Colours are used only when standard output is a terminal and
 `NO_COLOR` is not set to a non-empty value. The text format is meant for people; use `json`
@@ -197,6 +207,8 @@ members are always present and in the order below. The format is identified by `
     "title": string,                   "CEN EN 16931 UBL"
     "version": string,                 "1.3.17"
     "schema": string | null,           "ubl-2.1"
+    "unchecked_schema": string | null, an XML schema the reference validator also checks
+                                       and this rule set does not: "UN/CEFACT CII D16B (...)"
     "stylesheets": [
       { "name": string, "version": string, "path": string, "sha256": string }
     ]
@@ -212,6 +224,12 @@ members are always present and in the order below. The format is identified by `
         "line": number | null,         not-xml only
         "column": number | null        not-xml only
       },
+      "scenario": string | null,       the scenario of the rule set the document matched
+      "no_scenario": null | {          a rule set that selects by scenario, none applies
+        "matching": [ string ],        the scenarios that matched: empty for none, or several
+        "message": string
+      },
+      "stylesheets_run": [ string ],   the stylesheets that ran, in order
       "counts": {
         "schema_errors": number, "fatal": number, "warning": number, "other": number,
         "stylesheet_errors": number
@@ -281,7 +299,11 @@ errors: the document is `invalid` and the other stylesheets' findings are kept. 
 schema errors, there is no verdict: `status` is `error`, `error.kind` is `transform`. `warnings` lists the recoverable
 conditions a stylesheet reported (ambiguous template rule matches), as Saxon-HE reports them.
 `pdf` is `null` for an XML document and for a PDF file no invoice could be extracted from
-(`error.kind` is then `io` or `unsupported`); it was added to version 1 as a pure addition.
+(`error.kind` is then `io` or `unsupported`); it was added to version 1 as a pure addition, as
+were `unchecked_schema`, `scenario`, `no_scenario` and `stylesheets_run`. A document of a rule
+set that selects by scenario (XRechnung) that matches no scenario, or several, is `invalid`
+with `no_scenario` set and every list empty: no stylesheet ran, and no schema error is reported
+(the KoSIT validator validates against the schema of the scenario).
 
 ## Licence
 

@@ -87,13 +87,14 @@ pub(crate) enum Profiles {
     Listed(&'static [(&'static str, &'static [&'static str])]),
     /// The scenarios of a KoSIT validator configuration (`scenarios.xml`,
     /// relative to the base directory; the locations of its resources are
-    /// relative to its directory): the scenario that matches the root element
-    /// and the identifier of the document names the stylesheets, and its
-    /// `customLevel` elements override the level of rule ids; a finding of
-    /// level `error` (as for [`Profiles::Listed`] when not overridden)
-    /// rejects the document. `bundle` is the directory of the bundle the
-    /// fetch script writes for the rule set, relative to the base directory:
-    /// its `[[scenario]]` tables must be the levels of the configuration.
+    /// relative to its directory): the one scenario whose `match` the document
+    /// satisfies names the stylesheets, and its `customLevel` elements override
+    /// the level of rule ids; a finding of level `error` (KoSIT's reading of
+    /// the flag and the role when not overridden) rejects the document, and so
+    /// does matching no scenario or several (`crate::acceptance`). `bundle` is
+    /// the directory of the bundle the fetch script writes for the rule set,
+    /// relative to the base directory: its `[[scenario]]` tables must be the
+    /// scenarios of the configuration that run its stylesheets.
     KositScenarios {
         file: &'static str,
         bundle: &'static str,

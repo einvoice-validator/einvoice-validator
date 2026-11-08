@@ -10,6 +10,7 @@
     "title": "CEN EN 16931 UBL",
     "version": "1.3.17",
     "schema": "ubl-2.1",
+    "unchecked_schema": null,
     "stylesheets": [
       {
         "name": "EN16931-UBL",
@@ -25,6 +26,11 @@
       "rule_set": "cen-ubl",
       "status": "valid",
       "error": null,
+      "scenario": null,
+      "no_scenario": null,
+      "stylesheets_run": [
+        "EN16931-UBL"
+      ],
       "counts": {
         "schema_errors": 0,
         "fatal": 0,
@@ -43,6 +49,11 @@
       "rule_set": "cen-ubl",
       "status": "invalid",
       "error": null,
+      "scenario": null,
+      "no_scenario": null,
+      "stylesheets_run": [
+        "EN16931-UBL"
+      ],
       "counts": {
         "schema_errors": 1,
         "fatal": 11,
@@ -214,6 +225,11 @@
       "rule_set": "cen-ubl",
       "status": "invalid",
       "error": null,
+      "scenario": null,
+      "no_scenario": null,
+      "stylesheets_run": [
+        "EN16931-UBL"
+      ],
       "counts": {
         "schema_errors": 1,
         "fatal": 10,

@@ -15,14 +15,20 @@
 //!    text, which builds no tree;
 //! 3. every stylesheet of the rule set, with [`einvoice_xslt_exec`], which executes the
 //!    official compiled Schematron with the behaviour of the reference engine
-//!    (Saxon-HE 12.10) and writes its SVRL report.
+//!    (Saxon-HE 12.10) and writes its SVRL report. In a rule set that selects by
+//!    scenario ([`RuleSet::selects_by_scenario`], the XRechnung bundles), the `match`
+//!    expressions of its scenarios are evaluated on the document first, as the KoSIT
+//!    validator evaluates them: the one scenario that matches gives the stylesheets that
+//!    run; a document that matches none, or more than one, is invalid
+//!    ([`Report::no_scenario`]) and nothing runs on it.
 //!
 //! The [`Report`] holds the schema errors, then, for each stylesheet, its raw SVRL
 //! report, its findings (failed asserts and successful reports, with their id, flag,
 //! location, rule context, test and message) and the canonical form of the SVRL. The
 //! verdict is [`Verdict::Valid`] when there is no schema error and no finding of severity
 //! [`Severity::Fatal`]: the flag `fatal`, or what the manifest of the rule set reads as
-//! fatal, as the reference validator of the rule set does (see [Severities](#severities)).
+//! fatal, as the reference validator of the rule set does (see [Severities](#severities)),
+//! and, in a rule set that selects by scenario, the document matched one.
 //!
 //! ```
 //! # #[cfg(feature = "cen-ubl")] {
@@ -122,6 +128,8 @@
 //! title = "CEN EN 16931 UBL"
 //! version = "1.3.17"           # the version of the official artefacts
 //! schema = "ubl-2.1"           # optional: the XML schema validated first
+//! # unchecked-schema = "..."   # format 2, optional: an XML schema the reference
+//! #                            # validator also checks and this rule set does not
 //!
 //! [[stylesheet]]               # one or more, run in this order
 //! name = "EN16931-UBL"         # unique in the bundle
@@ -137,12 +145,29 @@
 //!
 //! [[scenario]]                 # format 2: zero or more, tried in this order
 //! name = "EN16931 XRechnung (UBL Invoice)"        # unique in the bundle
-//! namespace = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
-//! root = "Invoice"             # with namespace: a UBL Invoice or CreditNote, a CII CrossIndustryInvoice
-//! identifier = "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0"
-//! fatal = "UBL-CR-646"         # at least one of fatal, warning and other: rule ids,
-//! warning = "BR-CL-23 BR-CL-21"   # separated by spaces, each in one list only
+//! # A scenario of a KoSIT configuration: its namespaces (prefix=uri, separated by
+//! # spaces), its match expression (XPath, as written) and the stylesheets it runs.
+//! namespaces = "cbc=urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2 invoice=urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+//! match = "exists(/invoice:Invoice/cbc:CustomizationID[ . = 'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0'])"
+//! stylesheets = "EN16931-UBL XRechnung-UBL"    # optional: by default all, in order
+//! fatal = "UBL-CR-646"         # optional: rule ids and the severity the scenario
+//! warning = "BR-CL-23 BR-CL-21"   # gives them, separated by spaces, each in one list
+//! # Or, instead of namespaces, match and stylesheets: the root element and the
+//! # specification identifier (BT-24) of the documents it gives severities to (at least
+//! # one of fatal, warning and other then), every stylesheet running.
+//! # namespace = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+//! # root = "Invoice"           # with namespace: a UBL Invoice or CreditNote, a CII CrossIndustryInvoice
+//! # identifier = "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0"
 //! ```
+//!
+//! The scenarios of a manifest all have a `match` expression, or none has. With them, the
+//! rule set selects by scenario ([`Scenario`]): a document must match exactly one, whose
+//! stylesheets run, in its order, and whose severities apply; a document that matches none,
+//! or several, is invalid, with no schema error reported and no stylesheet run, as the
+//! KoSIT validator rejects it with its fallback scenario (which has no schema). The expressions are evaluated
+//! with [`einvoice_xpath_eval`], with the document node as the context item, their
+//! effective boolean value; one that raises a dynamic error is false, as for the KoSIT
+//! validator; one outside the engine's subset is refused when the bundle is loaded.
 //!
 //! Accepted syntax: comments, `key = value` lines with a bare key, values that are
 //! basic strings (escapes `\"` and `\\` only), literal strings or non-negative integers,
@@ -164,10 +189,17 @@
 //!   flag stays [`Severity::Other`].
 //! - `[[scenario]]` ([`Scenario`]): the levels a scenario of a KoSIT validator
 //!   configuration gives rule ids (`customLevel`), whatever their flags, in the documents
-//!   it matches by their root element and their specification identifier (BT-24); the
-//!   XRechnung bundles have the scenarios of their configuration (`error` is
-//!   [`Severity::Fatal`], `information` [`Severity::Other`]). The [`Report`] names the
-//!   scenario the document matched.
+//!   it matches; the XRechnung bundles have the scenarios of their configuration, each
+//!   with its `match` expression and its stylesheets (`error` is [`Severity::Fatal`],
+//!   `information` [`Severity::Other`]). The [`Report`] names the scenario the document
+//!   matched, or says why it has none.
+//!
+//! The KoSIT validator also validates each document against the XML schema of its
+//! scenario. For UBL, that is the UBL 2.1 schema the XRechnung UBL bundle runs; for CII,
+//! the UN/CEFACT CII D16B schema, which this crate does not embed: the XRechnung CII
+//! bundle names it in `unchecked-schema` ([`RuleSet::unchecked_schema`],
+//! [`RuleSetVersion::unchecked_schema`] in the report), and a document it would reject
+//! for a schema error alone is valid here.
 //!
 //! [`ValidateOptions::fail_closed`] then makes every finding that is still
 //! [`Severity::Other`] fatal, for rule sets whose flags the caller does not know.
@@ -240,8 +272,8 @@ pub use manifest::{
     MANIFEST_FILE, MANIFEST_FORMAT, ResourceEntry, RuleSet, Scenario, SchemaId, StylesheetEntry,
 };
 pub use report::{
-    Finding, FindingKind, Report, RuleSetVersion, SchemaError, SchemaErrorKind, Severity,
-    StylesheetFailure, StylesheetReport, Verdict,
+    Finding, FindingKind, NoScenario, Report, RuleSetVersion, SchemaError, SchemaErrorKind,
+    Severity, StylesheetFailure, StylesheetReport, Verdict,
 };
 pub use validator::{ValidateOptions, Validator, file_uri};
 

@@ -35,10 +35,10 @@ tracked tree, then checks them:
    the committed corpora, see `../README.md`), applies `../mutations.toml` to the CEN documents `Invoice-Max_content.xml`, `CreditNote-Max_content.xml` and `ubl-tc434-example2.xml` (504 mutation cases), runs
    Saxon-HE with both stylesheets on every case (`golden-cen/`, `golden-xrechnung/`),
    cross-checks the goldens with the expectations against `disagreements.tsv`, writes
-   `acceptance.tsv` (whether the findings of each stylesheet reject the case as the KoSIT
-   validator reads them, see `../README.md`), checks the levels of the bundle (its
-   `[[scenario]]` tables) against `source/configuration/scenarios.xml`, and writes
-   `complete.txt`.
+   `acceptance.tsv` (the scenario of each case, whether the findings of each stylesheet reject
+   it as the KoSIT validator reads them, and the verdict of the configuration, see
+   `../README.md`), checks the scenarios of the bundle (its `[[scenario]]` tables) against
+   `source/configuration/scenarios.xml`, and writes `complete.txt`.
 3. The equivalence test of the engine, `tests/xrechnung_equivalence.rs` of `crates/einvoice-xslt-exec`
    (required by `scripts/check.sh xrechnung`), runs every stylesheet on every case and mutation
    case: the engine gives the Saxon-HE result on all of them (the same canonical SVRL, or the
@@ -72,8 +72,8 @@ byte.
   stylesheet `xrubl` (XRechnung-UBL), the rules that must fail (`schematron-invalid`) and those
   that must not (`schematron-valid`); `cases.tsv` records them as kind `xmute` (`scope`: the
   stylesheet, `error`: must fail, `success`: must not). The goldens agree with all of them.
-- Test-suite instances: documents the configuration accepts. The scenario of
-  `scenarios.xml` that matches the root element and the specification identifier (BT-24) of
-  each names the stylesheets, and its `customLevel` elements override the level of some rule
-  ids; no finding may have the level `error` (a failed assert flagged `fatal` or `error`, or
-  unflagged, unless overridden). All 45 are accepted.
+- Test-suite instances: documents the configuration accepts. Each must match exactly one
+  scenario of `scenarios.xml` (its `match` expression), which names the stylesheets, and whose
+  `customLevel` elements override the level of some rule ids; no finding may have the level
+  `error` (a failed assert flagged `fatal` or `error`, or with neither a flag nor a role that
+  says otherwise, unless overridden). All 45 are accepted.

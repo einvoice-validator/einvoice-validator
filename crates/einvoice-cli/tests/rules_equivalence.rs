@@ -11,6 +11,13 @@
 //! scenario of the KoSIT configuration the document matches overrides the levels of the
 //! rule ids it lists).
 //!
+//! The XRechnung bundles select by scenario, as the KoSIT validator runs its
+//! configuration: the scenario each document matches (by the `match` expressions, which
+//! the bundles evaluate with the engine and xtask on its own) must be the table's, the
+//! stylesheets that ran those of the scenario, compared with their goldens, and the
+//! verdict the configuration's (the table's `verdict`): a document that matches no
+//! scenario, or several, is invalid and nothing runs on it.
+//!
 //! The corpora and their goldens live in `target/` (built by `scripts/check.sh facturx
 //! xrechnung fr-ctc peppol`), the cache in `target/rules-cache/`. A family missing from
 //! the cache is fetched into it from the downloads of the fetch scripts (`rules fetch
@@ -27,7 +34,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use common::{Golden, MutationCase, check_document, golden_of, join, run_env, workspace_root};
-use einvoice_validator::{FetchedRuleSet, fetched_rule_set, fetched_rule_sets};
+use einvoice_validator::{FetchedRuleSet, RuleSet, fetched_rule_set, fetched_rule_sets};
 
 const REQUIRED_VAR: &str = "EINVOICE_RULES_REQUIRED";
 /// The maximum depth of the run again of a document deeper than the default (as the
@@ -303,8 +310,9 @@ fn corpus_cases(release: &str, corpus: &str) -> Option<Vec<MutationCase>> {
     Some(cases)
 }
 
-/// The acceptance table of a corpus (`cargo xtask <family>`): for each case, the verdict
-/// of each stylesheet, by golden directory (`accept`, `reject` or `error`).
+/// The acceptance table of a corpus (`cargo xtask <family>`): for each case, its
+/// `scenario`, the verdict of each stylesheet, by golden directory (`accept`, `reject` or
+/// `error`), and the `verdict` of the configuration for the XRechnung corpora.
 type Acceptance = HashMap<String, HashMap<String, String>>;
 
 /// The acceptance table of a corpus, `None` when there is none.
@@ -322,9 +330,9 @@ fn acceptance_of(release: &str, corpus: &str) -> Option<Acceptance> {
             .map(|line| {
                 let columns: Vec<&str> = line.split('\t').collect();
                 assert_eq!(columns.len(), header.len(), "{line}");
-                let verdicts = header[2..]
+                let verdicts = header[1..]
                     .iter()
-                    .zip(&columns[2..])
+                    .zip(&columns[1..])
                     .map(|(dir, verdict)| ((*dir).to_owned(), (*verdict).to_owned()))
                     .collect();
                 (columns[0].to_owned(), verdicts)
@@ -378,8 +386,20 @@ fn fetched_rule_sets_from_the_cache_agree_with_the_saxon_goldens() {
             .map(|(s, dir)| (*s, format!("{release}/{corpus}/{dir}")))
             .collect();
         let goldens: Vec<(&str, &str)> = goldens.iter().map(|(s, d)| (*s, d.as_str())).collect();
-        let (found, summary) =
-            check_documents(name, stylesheets, &goldens, &cases, &documents, &acceptance);
+        let manifest = RuleSet::parse(rule_set.manifest()).unwrap();
+        let (found, summary) = if manifest.selects_by_scenario() {
+            check_selected(
+                name,
+                &manifest,
+                stylesheets,
+                &goldens,
+                &cases,
+                &documents,
+                &acceptance,
+            )
+        } else {
+            check_documents(name, stylesheets, &goldens, &cases, &documents, &acceptance)
+        };
         eprintln!(
             "{name}: {} documents ({summary}; {deep} run again with --max-depth {RAISED_MAX_DEPTH}), {} disagreements",
             cases.len(),
@@ -521,4 +541,188 @@ fn check_documents(
         "{valid} valid, {invalid} invalid, {errors} stopped by an error; the reference levels make {raised} invalid and {lowered} valid that the fatal flags alone would not"
     );
     (found, summary)
+}
+
+/// [`check_documents`] for a bundle that selects by scenario (XRechnung): for each case,
+/// the scenario of the document must be the table's (`-` and `several: ...`: none), the
+/// stylesheets that ran those of that scenario, in its order, their findings those of
+/// their goldens, the status the one their levels give, and the verdict that of the
+/// configuration (the table's `verdict`, with the schema errors: invalid with any). A
+/// document without a scenario is invalid, without findings, schema errors or stylesheet
+/// errors. The problems, and a summary.
+fn check_selected(
+    name: &str,
+    manifest: &RuleSet,
+    stylesheets: &[(&str, &str)],
+    goldens: &[(&str, &str)],
+    cases: &[MutationCase],
+    documents: &[common::json::Value],
+    acceptance: &Acceptance,
+) -> (Vec<String>, String) {
+    let mut found = Vec::new();
+    let (mut valid, mut invalid, mut errors, mut unmatched) = (0, 0, 0, 0);
+    for (case, document) in cases.iter().zip(documents) {
+        assert_eq!(document.get("path").str(), Some(case.input.as_str()));
+        assert_eq!(document.get("rule_set").str(), Some(name));
+        let Some(table) = acceptance.get(&case.id) else {
+            found.push(format!("{}: not in the acceptance table", case.id));
+            continue;
+        };
+        match document.get("status").str() {
+            Some("valid") => valid += 1,
+            Some("invalid") => invalid += 1,
+            _ => errors += 1,
+        }
+        // Stopped by a stylesheet error, there is no report: the scenario is the table's.
+        let stopped = document.get("status").str() == Some("error");
+        if document.get("scenario").str().is_none() && !stopped {
+            unmatched += 1;
+            found.extend(check_unmatched(&case.id, document, table));
+        } else {
+            found.extend(check_matched(
+                &case.id,
+                document,
+                table,
+                manifest,
+                stylesheets,
+                goldens,
+            ));
+        }
+    }
+    let summary = format!(
+        "{valid} valid, {invalid} invalid ({unmatched} without a scenario), {errors} stopped by an error"
+    );
+    (found, summary)
+}
+
+/// The column `key` of a case in the acceptance table.
+fn column<'t>(table: &'t HashMap<String, String>, key: &str) -> &'t str {
+    table.get(key).map_or("", String::as_str)
+}
+
+/// The stylesheets that ran on a document.
+fn stylesheets_run(document: &common::json::Value) -> Vec<&str> {
+    document
+        .get("stylesheets_run")
+        .array()
+        .iter()
+        .map(|s| s.str().unwrap())
+        .collect()
+}
+
+/// A document without a scenario: the table's must be none (`-`), or the same several;
+/// the document invalid, without findings, schema errors, stylesheet errors or
+/// stylesheets that ran; the configuration's verdict `reject`.
+fn check_unmatched(
+    id: &str,
+    document: &common::json::Value,
+    table: &HashMap<String, String>,
+) -> Vec<String> {
+    let mut found = Vec::new();
+    let expected = column(table, "scenario");
+    let no_scenario = document.get("no_scenario");
+    if *no_scenario == common::json::Value::Null {
+        return vec![format!("{id}: no scenario and no no_scenario")];
+    }
+    let matching: Vec<&str> = no_scenario
+        .get("matching")
+        .array()
+        .iter()
+        .map(|m| m.str().unwrap())
+        .collect();
+    let table_matching: Vec<&str> = match expected.strip_prefix("several: ") {
+        Some(names) => names.split(" | ").collect(),
+        None if expected == "-" => Vec::new(),
+        None => return vec![format!("{id}: no scenario, the table's is {expected:?}")],
+    };
+    if matching != table_matching {
+        found.push(format!(
+            "{id}: scenarios {matching:?}, the table's {table_matching:?}"
+        ));
+    }
+    let status = document.get("status").str().unwrap_or("");
+    let empty = document.get("findings").array().is_empty()
+        && document.get("stylesheet_errors").array().is_empty()
+        && document.get("counts").get("schema_errors").number() == 0
+        && stylesheets_run(document).is_empty();
+    if status != "invalid" || !empty || column(table, "verdict") != "reject" {
+        found.push(format!(
+            "{id}: without a scenario: {status}, empty {empty}, the table's verdict {:?}",
+            column(table, "verdict")
+        ));
+    }
+    found
+}
+
+/// A document with a scenario: the table's; the stylesheets that ran those of the
+/// scenario, in its order, their findings those of their goldens and the status the one
+/// their levels give ([`check_document`]); the status the configuration's verdict (the
+/// table's `verdict`), invalid with schema errors. A document a stylesheet stopped on
+/// (status `error`) has no report: its scenario is the table's, and [`check_document`]
+/// checks that the first of its stylesheets with an error golden is the one that stopped,
+/// with that error.
+fn check_matched(
+    id: &str,
+    document: &common::json::Value,
+    table: &HashMap<String, String>,
+    manifest: &RuleSet,
+    stylesheets: &[(&str, &str)],
+    goldens: &[(&str, &str)],
+) -> Vec<String> {
+    let expected = column(table, "scenario");
+    // Stopped by a stylesheet error, there is no report: the scenario is the table's,
+    // which check_document confirms with the stylesheet that stopped.
+    let stopped = document.get("status").str() == Some("error");
+    let scenario = if stopped {
+        expected
+    } else {
+        document.get("scenario").str().unwrap_or("")
+    };
+    if scenario != expected || *document.get("no_scenario") != common::json::Value::Null {
+        return vec![format!(
+            "{id}: scenario {scenario:?}, the table's {expected:?}"
+        )];
+    }
+    let Some(selected) = manifest.scenarios().iter().find(|s| s.name() == scenario) else {
+        return vec![format!("{id}: no scenario {scenario:?} in the bundle")];
+    };
+    let names: Vec<&str> = selected.stylesheets().map_or_else(
+        || stylesheets.iter().map(|(s, _)| *s).collect(),
+        |names| names.iter().map(String::as_str).collect(),
+    );
+    let ran = stylesheets_run(document);
+    if ran != names && !stopped {
+        return vec![format!("{id}: ran {ran:?}, the scenario runs {names:?}")];
+    }
+    // The findings and the status, from the goldens of the stylesheets that ran.
+    let run_goldens: Vec<(&str, &str)> = names
+        .iter()
+        .filter_map(|n| goldens.iter().find(|(s, _)| s == n).copied())
+        .collect();
+    let rejecting: Vec<bool> = names
+        .iter()
+        .map(|n| {
+            stylesheets
+                .iter()
+                .find(|(s, _)| s == n)
+                .is_some_and(|(_, dir)| column(table, dir) == "reject")
+        })
+        .collect();
+    let mut found = check_document(id, document, &run_goldens, Some(&rejecting));
+    // The verdict of the configuration.
+    let status = document.get("status").str().unwrap_or("");
+    let schema_errors = document.get("counts").get("schema_errors").number();
+    let verdict = column(table, "verdict");
+    let expected_status = match (verdict, schema_errors) {
+        (_, 1..) | ("reject", 0) => "invalid",
+        ("accept", 0) => "valid",
+        ("error", 0) => "error",
+        (other, _) => return vec![format!("{id}: table verdict {other:?}")],
+    };
+    if status != expected_status {
+        found.push(format!(
+            "{id}: {status}, the configuration's verdict {verdict:?} ({schema_errors} schema errors)"
+        ));
+    }
+    found
 }

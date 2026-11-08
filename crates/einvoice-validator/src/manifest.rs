@@ -1,8 +1,8 @@
 //! The manifest of a rule-set bundle (`bundle.toml`): what the rule set is, which XML
 //! schema and which stylesheets it runs, the resources the stylesheets read with
 //! `document()`, the SHA-256 of each file, and how the findings of the stylesheets are
-//! read: the severity of an unflagged failed assert, and the severities that scenarios
-//! give rule ids.
+//! read: the severity of an unflagged failed assert, and the scenarios, which give rule
+//! ids severities and may select the stylesheets that run on a document.
 
 use std::fmt;
 
@@ -12,8 +12,8 @@ use crate::{Error, Severity};
 pub const MANIFEST_FILE: &str = "bundle.toml";
 
 /// The newest manifest format this crate reads (the `format` key): format 2 adds to
-/// format 1, which is read too, the `[[resource]]` and `[[scenario]]` tables and the
-/// `unflagged-assert` key of `[[stylesheet]]`.
+/// format 1, which is read too, the `[[resource]]` and `[[scenario]]` tables, the
+/// `unflagged-assert` key of `[[stylesheet]]` and the `unchecked-schema` key.
 pub const MANIFEST_FORMAT: u32 = 2;
 
 /// The XML schema a rule set validates documents against before running its
@@ -97,21 +97,53 @@ impl StylesheetEntry {
     }
 }
 
-/// The severities that a scenario gives rule ids, whatever their flags, in the documents
-/// it matches (format 2, `[[scenario]]`): the `customLevel` elements of a scenario of a
-/// KoSIT validator configuration. A document matches when its root element has the
-/// scenario's namespace and local name, and its specification identifier (BT-24) is the
-/// scenario's: the text of a `cbc:CustomizationID` child of the root of a UBL document,
-/// or of `rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID`
-/// in a CII document, compared as it is written. The first scenario of the manifest
-/// that matches applies.
+/// A scenario of the rule set (format 2, `[[scenario]]`): which documents it matches, the
+/// severities it gives rule ids, whatever their flags, in them (the `customLevel`
+/// elements of a scenario of a KoSIT validator configuration), and, for a scenario with
+/// a `match` expression, the stylesheets that run on them.
+///
+/// A scenario matches documents in one of two ways, the same for every scenario of a
+/// manifest:
+///
+/// - With a `match` expression ([`Scenario::match_expression`]), the XPath expression of a
+///   KoSIT scenario, evaluated as the KoSIT validator evaluates it: its effective boolean
+///   value, the document node as the context item, the prefixes of
+///   [`Scenario::namespaces`] bound. The rule set then selects by scenario
+///   ([`RuleSet::selects_by_scenario`]): a document must match exactly one scenario, whose
+///   stylesheets run on it ([`Scenario::stylesheets`]); a document that matches none, or
+///   more than one, is invalid and no stylesheet runs on it, as the KoSIT validator
+///   rejects it with its fallback scenario.
+/// - With a root element and a specification identifier ([`Scenario::namespace`],
+///   [`Scenario::root`], [`Scenario::identifier`]): a document matches when its root
+///   element has the scenario's namespace and local name, and its specification
+///   identifier (BT-24) is the scenario's: the string value of a `cbc:CustomizationID`
+///   child of the root of a UBL document, or of
+///   `rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID`
+///   in a CII document, compared as it is written. The first scenario of the manifest
+///   that matches gives its severities; every stylesheet runs, whether one matches or
+///   not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scenario {
     name: String,
-    namespace: String,
-    root: String,
-    identifier: String,
+    selector: Selector,
+    stylesheets: Option<Vec<String>>,
     levels: Vec<(String, Severity)>,
+}
+
+/// How a scenario matches documents.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Selector {
+    /// By the root element and the specification identifier.
+    Identifier {
+        namespace: String,
+        root: String,
+        identifier: String,
+    },
+    /// By an XPath expression, with its namespace bindings.
+    Match {
+        namespaces: Vec<(String, String)>,
+        expression: String,
+    },
 }
 
 impl Scenario {
@@ -121,22 +153,62 @@ impl Scenario {
         &self.name
     }
 
-    /// The namespace of the root element of the documents it matches.
+    /// The `match` expression, for a scenario that has one: XPath, evaluated on the
+    /// document node.
     #[must_use]
-    pub fn namespace(&self) -> &str {
-        &self.namespace
+    pub fn match_expression(&self) -> Option<&str> {
+        match &self.selector {
+            Selector::Match { expression, .. } => Some(expression),
+            Selector::Identifier { .. } => None,
+        }
     }
 
-    /// The local name of the root element of the documents it matches (`Invoice`).
+    /// The namespace prefixes the `match` expression may use, with their URIs, in the
+    /// order of the manifest; empty for a scenario without a `match` expression.
     #[must_use]
-    pub fn root(&self) -> &str {
-        &self.root
+    pub fn namespaces(&self) -> &[(String, String)] {
+        match &self.selector {
+            Selector::Match { namespaces, .. } => namespaces,
+            Selector::Identifier { .. } => &[],
+        }
     }
 
-    /// The specification identifier (BT-24) of the documents it matches.
+    /// The names of the stylesheets that run on the documents it matches, in the order
+    /// they run, for a scenario with a `match` expression that names them; `None` when
+    /// every stylesheet of the rule set runs, in its order.
     #[must_use]
-    pub fn identifier(&self) -> &str {
-        &self.identifier
+    pub fn stylesheets(&self) -> Option<&[String]> {
+        self.stylesheets.as_deref()
+    }
+
+    /// The namespace of the root element of the documents it matches, for a scenario
+    /// without a `match` expression.
+    #[must_use]
+    pub fn namespace(&self) -> Option<&str> {
+        match &self.selector {
+            Selector::Identifier { namespace, .. } => Some(namespace),
+            Selector::Match { .. } => None,
+        }
+    }
+
+    /// The local name of the root element of the documents it matches (`Invoice`), for a
+    /// scenario without a `match` expression.
+    #[must_use]
+    pub fn root(&self) -> Option<&str> {
+        match &self.selector {
+            Selector::Identifier { root, .. } => Some(root),
+            Selector::Match { .. } => None,
+        }
+    }
+
+    /// The specification identifier (BT-24) of the documents it matches, for a scenario
+    /// without a `match` expression.
+    #[must_use]
+    pub fn identifier(&self) -> Option<&str> {
+        match &self.selector {
+            Selector::Identifier { identifier, .. } => Some(identifier),
+            Selector::Match { .. } => None,
+        }
     }
 
     /// The rule ids it gives a severity, with that severity, in the order of the
@@ -205,6 +277,7 @@ pub struct RuleSet {
     title: String,
     version: String,
     schema: Option<SchemaId>,
+    unchecked_schema: Option<String>,
     stylesheets: Vec<StylesheetEntry>,
     resources: Vec<ResourceEntry>,
     scenarios: Vec<Scenario>,
@@ -218,10 +291,14 @@ impl RuleSet {
     /// [`Error::Bundle`] naming the line: a syntax outside the accepted TOML subset, an
     /// unknown or repeated key, a missing key, a value that is not valid for its key, an
     /// unknown schema, a format other than 1 and [`MANIFEST_FORMAT`], a `[[resource]]`,
-    /// a `[[scenario]]` or an `unflagged-assert` in format 1, a path given twice, a
-    /// scenario named twice, for a root element other than a UBL `Invoice` or
-    /// `CreditNote` or a CII `CrossIndustryInvoice`, without a rule id, or giving a rule
-    /// id two severities.
+    /// a `[[scenario]]`, an `unflagged-assert` or an `unchecked-schema` in format 1, a
+    /// path given twice, a scenario named twice, with a `match` expression that is not
+    /// XPath or uses a prefix it does not bind, naming a stylesheet the rule set does not
+    /// have (or one twice), with a `match` expression in some scenarios and not in others;
+    /// a scenario without one for a root element other than a UBL `Invoice` or
+    /// `CreditNote` or a CII `CrossIndustryInvoice`, or without a rule id; a scenario
+    /// giving a rule id two severities. [`Error::Unsupported`] for a `match` expression
+    /// outside the XPath subset of the engine.
     pub fn parse(manifest: &str) -> Result<Self, Error> {
         let tables = parse_tables(manifest)?;
         let mut tables = tables.into_iter();
@@ -230,7 +307,14 @@ impl RuleSet {
         };
         let mut top = Table::new(top);
         let format_line = top.line_of("format");
-        top.allow(&["format", "name", "title", "version", "schema"])?;
+        top.allow(&[
+            "format",
+            "name",
+            "title",
+            "version",
+            "schema",
+            "unchecked-schema",
+        ])?;
         let format = match top.take("format") {
             Some(Value::Integer(f)) if (1..=u64::from(MANIFEST_FORMAT)).contains(&f) => f,
             Some(Value::Integer(f)) => {
@@ -263,11 +347,23 @@ impl RuleSet {
                 top.error("schema", &format!("unknown schema {s:?} (known: ubl-2.1)"))
             })?),
         };
+        let unchecked_schema = match top.optional_string("unchecked-schema")? {
+            None => None,
+            Some(_) if format < 2 => {
+                return Err(top.error("unchecked-schema", "needs format = 2"));
+            }
+            Some(s) if s.trim().is_empty() || s.chars().any(char::is_control) => {
+                return Err(top.error("unchecked-schema", "must be non-empty text on one line"));
+            }
+            Some(s) => Some(s),
+        };
         top.finish()?;
 
         let mut stylesheets: Vec<StylesheetEntry> = Vec::new();
         let mut resources: Vec<ResourceEntry> = Vec::new();
         let mut scenarios: Vec<Scenario> = Vec::new();
+        // The line of each scenario's header.
+        let mut scenario_lines: Vec<u32> = Vec::new();
         for raw in tables {
             let kind = raw.kind;
             let table = Table::new(raw);
@@ -277,6 +373,7 @@ impl RuleSet {
                 continue;
             }
             if kind == TableKind::Scenario {
+                scenario_lines.push(table.header_line);
                 let scenario = scenario(table, format, &scenarios)?;
                 scenarios.push(scenario);
                 continue;
@@ -289,11 +386,13 @@ impl RuleSet {
                 "{MANIFEST_FILE}: no [[stylesheet]]: a rule set runs at least one"
             )));
         }
+        check_scenarios(&scenarios, &scenario_lines, &stylesheets)?;
         Ok(Self {
             name,
             title,
             version,
             schema,
+            unchecked_schema,
             stylesheets,
             resources,
             scenarios,
@@ -334,7 +433,16 @@ impl RuleSet {
         self.schema
     }
 
-    /// The stylesheets, in the order they run.
+    /// The XML schema that the reference validator of the rule set also validates
+    /// documents against and that this rule set does not (format 2, `unchecked-schema`),
+    /// as the manifest names it: a gap in its verdicts, which reports state.
+    #[must_use]
+    pub fn unchecked_schema(&self) -> Option<&str> {
+        self.unchecked_schema.as_deref()
+    }
+
+    /// The stylesheets, in the order of the manifest: the order they run in, unless the
+    /// scenario a document matches orders them ([`Scenario::stylesheets`]).
     #[must_use]
     pub fn stylesheets(&self) -> &[StylesheetEntry] {
         &self.stylesheets
@@ -352,6 +460,17 @@ impl RuleSet {
     #[must_use]
     pub fn scenarios(&self) -> &[Scenario] {
         &self.scenarios
+    }
+
+    /// Whether the rule set selects by scenario: its scenarios have `match` expressions,
+    /// so that a document must match exactly one of them, which gives the stylesheets
+    /// that run on it and the severities of its rule ids; a document that matches none,
+    /// or more than one, is invalid, and no stylesheet runs on it (see [`Scenario`]).
+    #[must_use]
+    pub fn selects_by_scenario(&self) -> bool {
+        self.scenarios
+            .first()
+            .is_some_and(|s| s.match_expression().is_some())
     }
 }
 
@@ -420,6 +539,9 @@ fn scenario(mut table: Table, format: u64, scenarios: &[Scenario]) -> Result<Sce
     }
     table.allow(&[
         "name",
+        "namespaces",
+        "match",
+        "stylesheets",
         "namespace",
         "root",
         "identifier",
@@ -434,20 +556,24 @@ fn scenario(mut table: Table, format: u64, scenarios: &[Scenario]) -> Result<Sce
     if scenarios.iter().any(|s| s.name == name) {
         return Err(table.error("name", &format!("scenario {name:?} twice")));
     }
-    let namespace = table.required_string("namespace")?;
-    let root = table.required_string("root")?;
-    if !IDENTIFIED_ROOTS.contains(&(namespace.as_str(), root.as_str())) {
-        return Err(table.error(
-            "root",
-            &format!(
-                "{{{namespace}}}{root}: a scenario matches a UBL Invoice or CreditNote, or a CII CrossIndustryInvoice"
-            ),
-        ));
-    }
-    let identifier = table.required_string("identifier")?;
-    if identifier.is_empty() || identifier.chars().any(char::is_control) {
-        return Err(table.error("identifier", "must be non-empty text on one line"));
-    }
+    let selector = selector(&mut table)?;
+    let stylesheets = match table.optional_string("stylesheets")? {
+        None => None,
+        Some(names) => {
+            let names: Vec<String> = names
+                .split([' ', '\t'])
+                .filter(|n| !n.is_empty())
+                .map(str::to_owned)
+                .collect();
+            if names.is_empty() {
+                return Err(table.error(
+                    "stylesheets",
+                    "no stylesheet name (names separated by spaces)",
+                ));
+            }
+            Some(names)
+        }
+    };
     let mut levels: Vec<(String, Severity)> = Vec::new();
     for key in ["fatal", "warning", "other"] {
         let Some(ids) = table.optional_string(key)? else {
@@ -465,7 +591,8 @@ fn scenario(mut table: Table, format: u64, scenarios: &[Scenario]) -> Result<Sce
             return Err(table.error(key, "no rule id (rule ids separated by spaces)"));
         }
     }
-    if levels.is_empty() {
+    // Without a `match` expression, a scenario only gives severities: it must give some.
+    if levels.is_empty() && matches!(selector, Selector::Identifier { .. }) {
         return Err(Error::bundle(format!(
             "{}: no rule id (the keys fatal, warning and other)",
             table.where_()
@@ -474,11 +601,155 @@ fn scenario(mut table: Table, format: u64, scenarios: &[Scenario]) -> Result<Sce
     table.finish()?;
     Ok(Scenario {
         name,
+        selector,
+        stylesheets,
+        levels,
+    })
+}
+
+/// How a `[[scenario]]` table says which documents the scenario matches: a `match`
+/// expression with its `namespaces`, or a root element and an identifier.
+fn selector(table: &mut Table) -> Result<Selector, Error> {
+    if let Some(expression) = table.optional_string("match")? {
+        for key in ["namespace", "root", "identifier"] {
+            if table.optional_string(key)?.is_some() {
+                return Err(table.error(key, "not with `match`, which says what matches"));
+            }
+        }
+        let namespaces = match table.optional_string("namespaces")? {
+            None => Vec::new(),
+            Some(text) => namespaces(&text).map_err(|m| table.error("namespaces", &m))?,
+        };
+        check_match(&expression, &namespaces).map_err(|(unsupported, m)| {
+            let error = table.error("match", &m);
+            if unsupported {
+                Error::unsupported(error.to_string())
+            } else {
+                error
+            }
+        })?;
+        return Ok(Selector::Match {
+            namespaces,
+            expression,
+        });
+    }
+    for key in ["namespaces", "stylesheets"] {
+        if table.optional_string(key)?.is_some() {
+            return Err(table.error(key, "only with `match`"));
+        }
+    }
+    let namespace = table.required_string("namespace")?;
+    let root = table.required_string("root")?;
+    if !IDENTIFIED_ROOTS.contains(&(namespace.as_str(), root.as_str())) {
+        return Err(table.error(
+            "root",
+            &format!(
+                "{{{namespace}}}{root}: a scenario matches a UBL Invoice or CreditNote, or a CII CrossIndustryInvoice"
+            ),
+        ));
+    }
+    let identifier = table.required_string("identifier")?;
+    if identifier.is_empty() || identifier.chars().any(char::is_control) {
+        return Err(table.error("identifier", "must be non-empty text on one line"));
+    }
+    Ok(Selector::Identifier {
         namespace,
         root,
         identifier,
-        levels,
     })
+}
+
+/// The `namespaces` of a scenario: `prefix=uri` pairs separated by spaces, each prefix
+/// an `NCName` given once.
+fn namespaces(text: &str) -> Result<Vec<(String, String)>, String> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for pair in text.split([' ', '\t']).filter(|p| !p.is_empty()) {
+        let Some((prefix, uri)) = pair.split_once('=') else {
+            return Err(format!("{pair:?}: expected prefix=uri"));
+        };
+        if !einvoice_xpath::is_ncname(prefix) || uri.is_empty() {
+            return Err(format!(
+                "{pair:?}: expected prefix=uri, the prefix an NCName"
+            ));
+        }
+        if out.iter().any(|(p, _)| p == prefix) {
+            return Err(format!("prefix {prefix:?} bound twice"));
+        }
+        out.push((prefix.to_owned(), uri.to_owned()));
+    }
+    if out.is_empty() {
+        return Err("no binding (prefix=uri pairs separated by spaces)".to_owned());
+    }
+    Ok(out)
+}
+
+/// The namespace bindings of a scenario's `match` expression.
+pub(crate) fn namespace_map(namespaces: &[(String, String)]) -> einvoice_xpath::NamespaceMap {
+    namespaces
+        .iter()
+        .fold(einvoice_xpath::NamespaceMap::new(), |map, (prefix, uri)| {
+            map.bind(prefix, uri)
+        })
+}
+
+/// Whether a `match` expression parses as XPath with its namespace bindings; when not,
+/// whether it is outside the subset of the engine rather than wrong, and why.
+fn check_match(expression: &str, namespaces: &[(String, String)]) -> Result<(), (bool, String)> {
+    if expression.trim().is_empty() {
+        return Err((false, "empty".to_owned()));
+    }
+    einvoice_xpath::parse_expr(expression, &namespace_map(namespaces))
+        .map(|_| ())
+        .map_err(|e| {
+            let unsupported = matches!(
+                e.kind,
+                einvoice_xpath::ErrorKind::Unsupported | einvoice_xpath::ErrorKind::TooDeep
+            );
+            (unsupported, e.to_string())
+        })
+}
+
+/// What holds across the scenarios of a manifest: they all have a `match` expression,
+/// or none has; the stylesheets each names are stylesheets of the rule set, each once.
+/// `lines` are the lines of their headers.
+fn check_scenarios(
+    scenarios: &[Scenario],
+    lines: &[u32],
+    stylesheets: &[StylesheetEntry],
+) -> Result<(), Error> {
+    let at = |index: usize| {
+        format!(
+            "{MANIFEST_FILE}: [[scenario]] of line {}",
+            lines.get(index).copied().unwrap_or(0)
+        )
+    };
+    let selecting = scenarios
+        .first()
+        .is_some_and(|s| s.match_expression().is_some());
+    for (index, scenario) in scenarios.iter().enumerate() {
+        if scenario.match_expression().is_some() != selecting {
+            return Err(Error::bundle(format!(
+                "{}: either every [[scenario]] has a `match` expression, or none has",
+                at(index)
+            )));
+        }
+        let names = scenario.stylesheets().unwrap_or_default();
+        for (i, name) in names.iter().enumerate() {
+            if !stylesheets.iter().any(|s| s.name() == name) {
+                return Err(Error::bundle(format!(
+                    "{}: `stylesheets`: no stylesheet {name:?} in the bundle",
+                    at(index)
+                )));
+            }
+            if names[..i].contains(name) {
+                return Err(Error::bundle(format!(
+                    "{}: `stylesheets`: {name:?} twice",
+                    at(index)
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A `[[resource]]` table (format 2), whose path no file of the bundle has yet.
@@ -944,7 +1215,7 @@ warning = \"R-1\"
         };
         assert_eq!(
             (s1.name(), s1.namespace(), s1.root(), s1.identifier()),
-            ("S 1", UBL_INVOICE, "Invoice", "urn:x")
+            ("S 1", Some(UBL_INVOICE), Some("Invoice"), Some("urn:x"))
         );
         assert_eq!(
             s1.levels(),
@@ -958,7 +1229,7 @@ warning = \"R-1\"
         assert_eq!(s1.level("R-4"), None);
         assert_eq!(
             (s2.root(), s2.identifier()),
-            ("CrossIndustryInvoice", "urn:y#z")
+            (Some("CrossIndustryInvoice"), Some("urn:y#z"))
         );
         assert_eq!(s2.level("R-1"), Some(Severity::Warning));
         // Format 1 and format 2 without them: as before.
@@ -1040,6 +1311,180 @@ warning = \"R-1\"
                 "{expected:?} not in {message:?}"
             );
         }
+    }
+
+    /// [`GOOD`] in format 2 with scenarios that select by `match` expressions, as the
+    /// XRechnung bundles have them.
+    fn with_matches() -> String {
+        format!(
+            "{}
+[[scenario]]
+name = \"Both\"
+namespaces = \"cbc=urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2 invoice={UBL_INVOICE}\"
+match = \"exists(/invoice:Invoice/cbc:CustomizationID[ . = 'urn:x#y']) \"
+stylesheets = \"EN16931-UBL other\"
+fatal = \"R-1\"
+
+[[scenario]]
+name = \"First\"
+namespaces = \"invoice={UBL_INVOICE}\"
+match = \"exists(/invoice:Invoice)\"
+stylesheets = \"EN16931-UBL\"
+
+[[scenario]]
+name = \"Every one\"
+match = \"true()\"
+",
+            GOOD.replace("format = 1", "format = 2").replace(
+                "schema = \"ubl-2.1\"",
+                "schema = \"ubl-2.1\"\nunchecked-schema = \"Another schema (x.xsd)\""
+            )
+        )
+    }
+
+    #[test]
+    fn format_2_selects_by_scenario() {
+        let text = with_matches();
+        let rule_set = RuleSet::parse(&text).unwrap();
+        assert!(rule_set.selects_by_scenario());
+        assert_eq!(rule_set.unchecked_schema(), Some("Another schema (x.xsd)"));
+        let [both, first, every] = rule_set.scenarios() else {
+            panic!("{:?}", rule_set.scenarios());
+        };
+        assert_eq!(
+            both.match_expression(),
+            Some("exists(/invoice:Invoice/cbc:CustomizationID[ . = 'urn:x#y']) ")
+        );
+        assert_eq!(
+            both.namespaces(),
+            [
+                (
+                    "cbc".to_owned(),
+                    "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+                        .to_owned()
+                ),
+                ("invoice".to_owned(), UBL_INVOICE.to_owned())
+            ]
+        );
+        assert_eq!(
+            both.stylesheets(),
+            Some(&["EN16931-UBL".to_owned(), "other".to_owned()][..])
+        );
+        assert_eq!(both.level("R-1"), Some(Severity::Fatal));
+        assert_eq!(
+            (both.namespace(), both.root(), both.identifier()),
+            (None, None, None)
+        );
+        // Levels are optional with a `match` expression, and so are the stylesheets
+        // (all of them) and the namespaces.
+        assert_eq!(first.levels(), []);
+        assert_eq!(first.stylesheets().map(<[String]>::len), Some(1));
+        assert_eq!(every.stylesheets(), None);
+        assert_eq!(every.namespaces(), []);
+        // The scenarios of the other form do not select.
+        let identified = RuleSet::parse(&with_severities()).unwrap();
+        assert!(!identified.selects_by_scenario());
+        assert_eq!(identified.scenarios()[0].match_expression(), None);
+        assert_eq!(identified.scenarios()[0].stylesheets(), None);
+        assert_eq!(identified.unchecked_schema(), None);
+        assert!(!RuleSet::parse(GOOD).unwrap().selects_by_scenario());
+    }
+
+    #[test]
+    fn match_scenarios_are_refused_with_the_line() {
+        let text = with_matches();
+        let identified = "\n[[scenario]]\nname = \"I\"\nnamespace = \"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\"\nroot = \"Invoice\"\nidentifier = \"urn:x\"\nfatal = \"R-1\"\n";
+        for (bad, expected) in [
+            (
+                text.replace("format = 2", "format = 1")
+                    .replace("unchecked-schema = \"Another schema (x.xsd)\"\n", "")
+                    .split("\n[[scenario]]")
+                    .next()
+                    .unwrap()
+                    .replace(
+                        "version = \"1.3.17\"",
+                        "version = \"1.3.17\"\nunchecked-schema = \"x\"",
+                    ),
+                "bundle.toml:6: `unchecked-schema`: needs format = 2",
+            ),
+            (
+                text.replace("\"Another schema (x.xsd)\"", "\" \""),
+                "`unchecked-schema`: must be non-empty",
+            ),
+            (
+                text.replace("match = \"true()\"", "match = \"true(\""),
+                "bundle.toml:35: `match`: syntax error",
+            ),
+            (
+                text.replace(
+                    "match = \"exists(/invoice:Invoice)\"",
+                    "match = \"exists(/x:Invoice)\"",
+                ),
+                "`match`: undeclared namespace prefix",
+            ),
+            (
+                text.replace("match = \"true()\"", "match = \" \""),
+                "`match`: empty",
+            ),
+            (
+                text.replace(
+                    "stylesheets = \"EN16931-UBL\"",
+                    "stylesheets = \"EN16931-UBL x\"",
+                ),
+                "[[scenario]] of line 27: `stylesheets`: no stylesheet \"x\" in the bundle",
+            ),
+            (
+                text.replace(
+                    "stylesheets = \"EN16931-UBL\"",
+                    "stylesheets = \"other other\"",
+                ),
+                "`stylesheets`: \"other\" twice",
+            ),
+            (
+                text.replace("stylesheets = \"EN16931-UBL\"", "stylesheets = \" \""),
+                "`stylesheets`: no stylesheet name",
+            ),
+            (
+                text.replace(
+                    "match = \"true()\"",
+                    "match = \"true()\"\nroot = \"Invoice\"",
+                ),
+                "`root`: not with `match`",
+            ),
+            (
+                text.replace("namespaces = \"invoice=", "namespaces = \"invoice "),
+                "`namespaces`: \"invoice\": expected prefix=uri",
+            ),
+            (
+                text.replace("namespaces = \"invoice=", "namespaces = \"1x="),
+                "the prefix an NCName",
+            ),
+            (
+                text.replace(
+                    "namespaces = \"invoice=",
+                    "namespaces = \"invoice=urn:a invoice=",
+                ),
+                "prefix \"invoice\" bound twice",
+            ),
+            (
+                format!("{text}{identified}"),
+                "[[scenario]] of line 37: either every [[scenario]] has a `match` expression, or none has",
+            ),
+            (
+                format!("{}\nstylesheets = \"other\"\n", with_severities()),
+                "`stylesheets`: only with `match`",
+            ),
+        ] {
+            let message = error(&bad);
+            assert!(
+                message.contains(expected),
+                "{expected:?} not in {message:?}"
+            );
+        }
+        // An expression outside the subset of the engine: unsupported, not malformed.
+        let unsupported = text.replace("match = \"true()\"", "match = \"let $x := 1 return $x\"");
+        let e = RuleSet::parse(&unsupported).unwrap_err();
+        assert_eq!(e.kind(), crate::ErrorKind::Unsupported, "{e}");
     }
 
     #[test]

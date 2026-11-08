@@ -4,7 +4,10 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use einvoice_xpath_eval::{Clock, DEFAULT_MAX_DEPTH, LimitExceeded};
+use einvoice_xpath_eval::{
+    Clock, CompiledExpr, Context, DEFAULT_MAX_DEPTH, Document, DynamicContext, ErrorCode, Item,
+    LimitExceeded, NoHost, SimpleStaticContext,
+};
 use einvoice_xslt::LoadErrorKind;
 use einvoice_xslt_exec::{
     DEFAULT_MAX_STACK, Executable, TransformError, TransformOptions, max_nesting_for_depth,
@@ -13,10 +16,11 @@ use sha2::{Digest, Sha256};
 
 use crate::manifest::{
     CII, MANIFEST_FILE, RuleSet, Scenario, SchemaId, StylesheetEntry, UBL_CREDIT_NOTE, UBL_INVOICE,
+    namespace_map,
 };
 use crate::report::{
-    Report, RuleSetVersion, SchemaError, Severities, StylesheetFailure, StylesheetReport,
-    SvrlReader,
+    NoScenario, Report, RuleSetVersion, SchemaError, Severities, StylesheetFailure,
+    StylesheetReport, SvrlReader,
 };
 use crate::resources::{BUNDLE_URI, Resources};
 use crate::{Error, builtin};
@@ -137,6 +141,20 @@ pub struct Validator {
     stylesheets: Arc<[Executable]>,
     /// The resources the stylesheets read with `document()`.
     resources: Arc<Resources>,
+    /// In a rule set that selects by scenario, what each scenario selects, in the order
+    /// of `rule_set.scenarios()`; empty otherwise.
+    selections: Arc<[Selection]>,
+    /// The indices of every stylesheet, in order: what runs without a selection.
+    all: Arc<[usize]>,
+}
+
+/// A scenario of a rule set that selects by scenario, prepared: its `match` expression
+/// compiled, and the stylesheets it runs.
+#[derive(Debug)]
+struct Selection {
+    matches: CompiledExpr,
+    /// Indices in `rule_set.stylesheets()`, in the order they run.
+    stylesheets: Vec<usize>,
 }
 
 impl Validator {
@@ -269,11 +287,22 @@ impl Validator {
                 }
             })?),
         };
+        let selections = if rule_set.selects_by_scenario() {
+            rule_set
+                .scenarios()
+                .iter()
+                .map(|scenario| selection(&rule_set, scenario))
+                .collect::<Result<Vec<_>, Error>>()?
+        } else {
+            Vec::new()
+        };
         Ok(Self {
             rule_set,
             schema: schema.map(Arc::new),
+            all: (0..stylesheets.len()).collect(),
             stylesheets: stylesheets.into(),
             resources: Arc::new(resources),
+            selections: selections.into(),
         })
     }
 
@@ -323,7 +352,17 @@ impl Validator {
     /// Validates a document: checks that it is well-formed XML, validates it against
     /// the rule set's schema, then runs every stylesheet of the rule set on it. The
     /// stylesheets run even when the schema reports errors, so that the report is
-    /// complete. When a stylesheet raises a dynamic error on a document that has schema
+    /// complete.
+    ///
+    /// In a rule set that selects by scenario
+    /// ([`RuleSet::selects_by_scenario`](crate::RuleSet::selects_by_scenario)), the
+    /// `match` expression of each scenario is then evaluated on the document, as the
+    /// KoSIT validator evaluates it (an expression that raises a dynamic error is false):
+    /// when exactly one is true, the stylesheets of that scenario run, in its order;
+    /// otherwise the report has no stylesheet and no schema error, only
+    /// [`Report::no_scenario`], and the document is invalid.
+    ///
+    /// When a stylesheet raises a dynamic error on a document that has schema
     /// errors (a non-numeric amount the rules compute with, ...), the report is returned
     /// all the same, invalid, with the error in [`StylesheetReport::failure`]; without
     /// schema errors, the error is returned.
@@ -353,10 +392,29 @@ impl Validator {
         text: Cow<'_, str>,
         options: &ValidateOptions<'_>,
     ) -> Result<Report, Error> {
-        let identify = !self.rule_set.scenarios().is_empty();
+        let selects = self.rule_set.selects_by_scenario();
+        let identify = !selects && !self.rule_set.scenarios().is_empty();
         let checked = check(&text, options.max_depth, self.schema.as_deref(), identify)?;
         let schema_errors = checked.schema_errors;
-        let scenario = checked.identification.scenario(self.rule_set.scenarios());
+        let (scenario, run) = if selects {
+            match self.select(&text, options)? {
+                Ok(index) => (
+                    self.rule_set.scenarios().get(index),
+                    self.selections
+                        .get(index)
+                        .map(|s| s.stylesheets.as_slice())
+                        .unwrap_or_default(),
+                ),
+                // As the KoSIT validator's fallback scenario: no schema, no stylesheet,
+                // rejected.
+                Err(no_scenario) => return Ok(self.without_scenario(no_scenario, options)),
+            }
+        } else {
+            (
+                checked.identification.scenario(self.rule_set.scenarios()),
+                self.all.as_ref(),
+            )
+        };
         let transform_options = TransformOptions {
             implicit_timezone: options.clock.map(|c| c.implicit_timezone()),
             current_date_time: options.clock.map(|c| c.current_date_time()),
@@ -366,17 +424,19 @@ impl Validator {
             resolver: Some(&*self.resources),
             ..TransformOptions::default()
         };
-        let mut stylesheets = Vec::with_capacity(self.stylesheets.len());
-        let count = self.stylesheets.len();
+        let mut stylesheets = Vec::with_capacity(run.len());
+        let count = run.len();
         // The text, until the last stylesheet is given it.
         let mut text = Some(text);
-        for (index, (entry, executable)) in self
-            .rule_set
-            .stylesheets()
-            .iter()
-            .zip(self.stylesheets.iter())
-            .enumerate()
-        {
+        for (index, &stylesheet) in run.iter().enumerate() {
+            let (Some(entry), Some(executable)) = (
+                self.rule_set.stylesheets().get(stylesheet),
+                self.stylesheets.get(stylesheet),
+            ) else {
+                return Err(Error::internal(
+                    "a scenario names no stylesheet of the rule set",
+                ));
+            };
             let source = if index + 1 == count {
                 text.take()
             } else {
@@ -426,18 +486,151 @@ impl Validator {
             stylesheets.push(report);
         }
         Ok(Report {
-            rule_set: RuleSetVersion {
-                name: self.rule_set.name().to_owned(),
-                title: self.rule_set.title().to_owned(),
-                version: self.rule_set.version().to_owned(),
-                schema: self.rule_set.schema(),
-            },
+            rule_set: self.version(),
             document_uri: options.document_uri.map(str::to_owned),
             scenario: scenario.map(|s| s.name().to_owned()),
+            no_scenario: None,
             schema_errors,
             stylesheets,
         })
     }
+
+    /// The report on a document that has no scenario, in a rule set that selects by
+    /// scenario.
+    fn without_scenario(&self, no_scenario: NoScenario, options: &ValidateOptions<'_>) -> Report {
+        Report {
+            rule_set: self.version(),
+            document_uri: options.document_uri.map(str::to_owned),
+            scenario: None,
+            no_scenario: Some(no_scenario),
+            schema_errors: Vec::new(),
+            stylesheets: Vec::new(),
+        }
+    }
+
+    /// The rule set, as a report names it.
+    fn version(&self) -> RuleSetVersion {
+        RuleSetVersion {
+            name: self.rule_set.name().to_owned(),
+            title: self.rule_set.title().to_owned(),
+            version: self.rule_set.version().to_owned(),
+            schema: self.rule_set.schema(),
+            unchecked_schema: self.rule_set.unchecked_schema().map(str::to_owned),
+        }
+    }
+
+    /// The scenario of a rule set that selects by scenario that a document (checked
+    /// well-formed, and not nested deeper than `options.max_depth`) matches: the index of
+    /// the one whose `match` expression is true on it, or why there is none. The
+    /// expressions are evaluated as the KoSIT validator evaluates them: with the document
+    /// node as the context item, the effective boolean value; one that raises a dynamic
+    /// error is false (the validator logs the error and goes on). A construct the engine
+    /// refuses, or a limit, is an error rather than a false.
+    fn select(
+        &self,
+        text: &str,
+        options: &ValidateOptions<'_>,
+    ) -> Result<Result<usize, NoScenario>, Error> {
+        let document =
+            Document::parse_with_max_depth(text, None, options.max_depth).map_err(|e| {
+                // The XML check accepted the text: two parsers disagree, a bug.
+                Error::internal(format!("the document for the scenarios: {}", e.message()))
+            })?;
+        let clock = match options.clock {
+            Some(clock) => clock,
+            None => system_clock()?,
+        };
+        let dc = DynamicContext::new(&NoHost, clock);
+        let context = Context::for_item(Item::Node(document.root()));
+        let mut matched = Vec::new();
+        for (index, (scenario, selection)) in self
+            .rule_set
+            .scenarios()
+            .iter()
+            .zip(self.selections.iter())
+            .enumerate()
+        {
+            match selection.matches.effective_boolean_value(&dc, &context) {
+                Ok(true) => matched.push(index),
+                Ok(false) => {}
+                Err(e) => {
+                    let what = format!("scenario {:?}: match: {}", scenario.name(), e.message());
+                    if let Some(limit) = e.limit() {
+                        return Err(Error::Limit {
+                            limit,
+                            message: what,
+                        });
+                    }
+                    match e.code() {
+                        ErrorCode::Unsupported => return Err(Error::unsupported(what)),
+                        ErrorCode::Internal => return Err(Error::internal(what)),
+                        // A dynamic error: the KoSIT validator takes the scenario not to
+                        // match.
+                        _ => {}
+                    }
+                }
+            }
+        }
+        Ok(match matched[..] {
+            [index] => Ok(index),
+            [] => Err(NoScenario::NoneMatches),
+            _ => Err(NoScenario::SeveralMatch(
+                matched
+                    .iter()
+                    .filter_map(|&i| self.rule_set.scenarios().get(i))
+                    .map(|s| s.name().to_owned())
+                    .collect(),
+            )),
+        })
+    }
+}
+
+/// The clock of the `match` expressions when the options give none: the system clock in
+/// UTC, as for the stylesheets.
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+fn system_clock() -> Result<Clock, Error> {
+    Clock::system(0).map_err(|e| Error::internal(format!("the system clock: {}", e.message())))
+}
+
+/// No system clock on this target: the caller must give one.
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+fn system_clock() -> Result<Clock, Error> {
+    Err(Error::unsupported(
+        "no system clock on this target: give ValidateOptions::clock",
+    ))
+}
+
+/// A scenario of a rule set that selects by scenario, prepared: its `match` expression
+/// parsed with its namespaces and compiled, as an XPath expression without the XSLT
+/// functions; its stylesheets by index, every one of the rule set when it names none.
+fn selection(rule_set: &RuleSet, scenario: &Scenario) -> Result<Selection, Error> {
+    let what = format!("scenario {:?}: match", scenario.name());
+    let Some(text) = scenario.match_expression() else {
+        return Err(Error::internal(format!("{what}: none")));
+    };
+    let expr = einvoice_xpath::parse_expr(text, &namespace_map(scenario.namespaces()))
+        .map_err(|e| Error::bundle(format!("{what}: {e}")))?;
+    // A function or construct the engine does not have: refused, not evaluated
+    // differently.
+    let matches = einvoice_xpath_eval::compile(&expr, &SimpleStaticContext::new())
+        .map_err(|e| Error::unsupported(format!("{what}: {}", e.message())))?;
+    let stylesheets = match scenario.stylesheets() {
+        None => (0..rule_set.stylesheets().len()).collect(),
+        Some(names) => names
+            .iter()
+            .map(|name| {
+                rule_set
+                    .stylesheets()
+                    .iter()
+                    .position(|s| s.name() == name)
+                    .ok_or_else(|| Error::internal(format!("{what}: no stylesheet {name}")))
+            })
+            .collect::<Result<_, Error>>()?,
+    };
+    Ok(Selection {
+        matches,
+        stylesheets,
+    })
 }
 
 fn read(path: &Path) -> Result<Vec<u8>, Error> {
@@ -727,13 +920,16 @@ impl Identification {
         }
     }
 
-    /// The first of `scenarios` the document matches.
+    /// The first of `scenarios` (without `match` expressions) the document matches.
     fn scenario<'s>(&self, scenarios: &'s [Scenario]) -> Option<&'s Scenario> {
         let (namespace, local) = self.root.as_ref()?;
         scenarios.iter().find(|s| {
-            s.namespace() == namespace
-                && s.root() == local
-                && self.identifiers.iter().any(|i| i == s.identifier())
+            s.namespace() == Some(namespace.as_str())
+                && s.root() == Some(local.as_str())
+                && self
+                    .identifiers
+                    .iter()
+                    .any(|i| Some(i.as_str()) == s.identifier())
         })
     }
 }

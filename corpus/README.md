@@ -134,8 +134,10 @@ For an `xmute` case, every `error` id must be reported by the stylesheet named i
 any flag, and no `success` id. Published examples and test-suite instances are documents their
 reference pipeline accepts: the stylesheets of the profile each declares (BT-24) must report no
 failed assert other than one flagged `warning` or `information`, and no successful report
-flagged `fatal` or `error`; for XRechnung, the matching scenario of the KoSIT configuration
-names the stylesheets and overrides the level of some rule ids (`customLevel`). The
+flagged `fatal` or `error`; for XRechnung, the one scenario of the KoSIT configuration whose
+`match` the document satisfies names the stylesheets and overrides the level of some rule ids
+(`customLevel`), a finding being an error unless its flag or role is `warning`, `warn`,
+`information` or `info`, and a document that matches no scenario, or several, is rejected. The
 disagreements are listed with their explanation in `<rule set>/disagreements.tsv`, in the
 format of `vefa-disagreements.tsv`.
 
@@ -143,17 +145,29 @@ format of `vefa-disagreements.tsv`.
 
 `cargo xtask <family>` also writes `<corpus>/acceptance.tsv` in the cache: for every case
 (whole documents, test cases and mutation cases), the KoSIT scenario it matches (`-` for none,
-or a rule set without scenarios), then for each stylesheet, in a column named after its golden
-directory, `reject` when one of its findings rejects the case as the reference validator reads
-the report (a failed assert unless flagged `warning` or `information`, a successful report
-flagged `fatal` or `error`, the levels of the matching scenario first), `accept` when none
-does, `error` when Saxon-HE stopped on the case. A document matches a scenario when its root
-element has the name of the scenario's `match` and an element at the path of its predicate has
-the identifier as its value, compared as it is written. For XRechnung, it also checks that the
-`[[scenario]]` tables of the bundles the fetch script wrote are the scenarios of the
-configuration that give levels. `crates/einvoice-cli/tests/rules_equivalence.rs` requires the
-verdict of every bundle on every document to be that table's: invalid with schema errors or
-when one of its stylesheets rejects the document.
+or a rule set without scenarios; `several: A | B` when several do), then for each stylesheet,
+in a column named after its golden directory, `reject` when one of its findings rejects the
+case as the reference validator reads the report, `accept` when none does, `error` when
+Saxon-HE stopped on the case, and last `verdict`, the acceptance of the KoSIT configuration
+(`-` for the other rule sets). For the Mustang validator and the French rules, a failed assert
+rejects unless flagged `warning` or `information`, a successful report when flagged `fatal` or
+`error`. For XRechnung, as the KoSIT validator reads the reports (`default-report.xsl`), a
+failed assert or a successful report rejects unless its flag or its role is `warning`, `warn`,
+`information` or `info`, the levels of the matching scenario first; `verdict` is `reject` for a
+document that matches no scenario or several (the validator's fallback scenario), otherwise
+`error`, `reject` or `accept` from the stylesheets of its scenario alone (a document with XML
+Schema errors is rejected too, which the table leaves to the tests). The `match` expressions of
+the configuration are read in their three forms, `exists(/p:R/p:C[ . = 'X'])` (the string
+value), `exists(/p:R[p:A/p:B/text() = 'X'])` (a text node child) and
+`exists(/p:R[p:A = 'X'])`, and evaluated with their XPath meaning, on xtask's own parser: any
+other form is an error. For XRechnung, it also checks that the `[[scenario]]` tables of the
+bundles the fetch script wrote are the scenarios of the configuration for their syntax, each
+with its namespaces, its `match` as written, its stylesheets and its levels, and that each
+scenario's XML schema is the one the bundle runs or names unchecked.
+`crates/einvoice-cli/tests/rules_equivalence.rs` requires the verdict of every bundle on every
+document to be that table's: invalid with schema errors or when one of its stylesheets rejects
+the document; for XRechnung, the scenario of each document is the table's, the stylesheets that
+ran are its scenario's, and the status is the table's `verdict`.
 
 ## Peppol BIS Billing 3.0.22: built locally, not committed
 

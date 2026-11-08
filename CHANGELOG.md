@@ -38,11 +38,40 @@ against.
   `customLevel` elements of a KoSIT validator configuration do; `Report::scenario` names the
   one a document matched. Format 1 manifests, and format 2 manifests without them, mean what
   they meant.
-- `cargo xtask <family>` writes `acceptance.tsv` in each fetched corpus: for every case, whether
-  the findings of each stylesheet reject it as the reference validator reads them (an unflagged
-  failed assert is an error; the levels of the KoSIT scenario the document matches), and checks
-  the scenarios of the XRechnung bundles against the configuration. `tests/rules_equivalence.rs`
-  of `einvoice-cli` compares the verdict of every bundle on every corpus document with it.
+- Rule sets that select by scenario (#27), as the KoSIT validator runs its configuration:
+  `[[scenario]]` tables with `match` (the XPath expression of a KoSIT scenario, as written),
+  `namespaces` (its prefixes, `prefix=uri` separated by spaces) and `stylesheets` (those it runs,
+  in order; all by default), the levels optional (`Scenario::match_expression`,
+  `Scenario::namespaces`, `Scenario::stylesheets`, `RuleSet::selects_by_scenario`). The
+  expressions are compiled with the engine when the bundle is loaded (one outside its subset is
+  refused) and evaluated on each document, its document node the context item; one that raises a
+  dynamic error is false, as for the KoSIT validator. The one scenario that matches gives the
+  stylesheets that run and the severities; a document that matches none, or several, is invalid,
+  without schema errors or findings: `Report::no_scenario` (`NoScenario::NoneMatches`,
+  `NoScenario::SeveralMatch`) says why. The top-level key `unchecked-schema` names an XML schema
+  the reference validator also checks and the rule set does not (`RuleSet::unchecked_schema`,
+  `RuleSetVersion::unchecked_schema`). `Scenario::namespace`, `root` and `identifier` return an
+  `Option` (`None` for a scenario with `match`).
+- The XRechnung bundles have every scenario of the KoSIT configuration for their syntax (7 for
+  UBL, 4 for CII), with their `match` expressions: a document with the identifier
+  `urn:cen.eu:en16931:2017` runs the CEN rules alone, an XRechnung one the CEN and XRechnung
+  rules, and any other (a Peppol BIS invoice, a misspelt identifier, an XRechnung extension
+  credit note, which no scenario names) is rejected. The CII bundle names the UN/CEFACT CII D16B
+  XML schema, which its scenarios validate against and which is not embedded, unchecked.
+  `fetch-xrechnung.sh` and the catalogue write the same manifests.
+- `einvoice-validate`: the text output names the scenario of a document (`scenario <name>`), says
+  why a document has none (`invalid: no scenario`), and notes an unchecked schema; the JSON
+  output adds `rule_set.unchecked_schema` and, for each document, `scenario`, `no_scenario`
+  (`matching`, `message`) and `stylesheets_run` (pure additions to format version 1).
+- `cargo xtask <family>` writes `acceptance.tsv` in each fetched corpus: for every case, the KoSIT
+  scenario it matches, whether the findings of each stylesheet reject it as the reference
+  validator reads them (an unflagged failed assert is an error; for XRechnung, the levels the
+  KoSIT report stylesheet gives flags and roles, then those of the scenario), and for XRechnung
+  the verdict of the configuration (`verdict`: rejected without a scenario or with several,
+  otherwise from the stylesheets of the scenario alone); it checks the scenarios of the XRechnung
+  bundles against the configuration (namespaces, `match` as written, stylesheets, levels, XML
+  schema). `tests/rules_equivalence.rs` of `einvoice-cli` compares the verdict of every bundle on
+  every corpus document with it, and for XRechnung the scenario and the stylesheets that ran.
 - Rule sets fetched on demand (#35): `einvoice-validate rules list|fetch|path|clear`, `--rules NAME`
   for Factur-X (`factur-x-minimum` … `factur-x-extended`), XRechnung (`xrechnung-ubl`,
   `xrechnung-cii`, alias `xrechnung`), the French rules (`fr-ctc-*`) and Peppol BIS Billing 3.0
