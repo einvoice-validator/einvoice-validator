@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:xs="http://www.w3.org/2001/XMLSchema"><v n="1">true</v><v n="2">true</v><v n="3">true</v><v n="4">2</v><v n="5">10.5</v><v n="6">6.5</v><v n="7">0.666666666666666667</v><v n="8">0.666666666666666667</v><v n="9">0.666666666666666667</v><v n="10">0</v><v n="11">10.5</v><v n="12">2 -2</v><v n="13">2013-04-10</v><v n="14">2013-04-10</v><v n="15">true false NaN</v><v n="17">true false</v><v n="18">-1</v><v n="19">10.50  3.25 </v><v n="20">1 2 3</v><v n="21">2</v><v n="22">1 2 3</v><v n="23">true</v><v n="24">3</v><v n="25">15.75</v><v n="26">false</v><v n="27">false</v><v n="28">0 0.5 5</v><v n="29">7 -3</v><v n="30">yes</v></out>

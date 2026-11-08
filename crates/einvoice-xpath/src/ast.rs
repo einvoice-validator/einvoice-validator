@@ -43,6 +43,13 @@ pub enum Expr {
     Path(PathExpr),
     /// Unary minus (\[20\] `UnaryExpr`); `--x` is two nested negations.
     Negate(Box<Expr>),
+    /// `operand cast as T?` (\[19\] `CastExpr`).
+    Cast {
+        /// The converted expression.
+        operand: Box<Expr>,
+        /// The target type.
+        target: SingleType,
+    },
     /// `operand castable as T?` (\[18\] `CastableExpr`).
     Castable {
         /// The tested expression.
@@ -375,7 +382,7 @@ pub enum Occurrence {
     OneOrMore,
 }
 
-/// A single type (\[49\] `SingleType`), the target of `castable as`.
+/// A single type (\[49\] `SingleType`), the target of `cast as` and `castable as`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SingleType {
     /// The atomic type.

@@ -29,6 +29,7 @@ mod prec {
     pub(super) const UNION: u8 = 8;
     pub(super) const INSTANCE_OF: u8 = 10;
     pub(super) const CASTABLE: u8 = 12;
+    pub(super) const CAST: u8 = 13;
     pub(super) const UNARY: u8 = 14;
     pub(super) const PATH: u8 = 15;
     pub(super) const FILTER: u8 = 16;
@@ -53,6 +54,7 @@ fn precedence(expr: &Expr) -> u8 {
         // documentation.
         Expr::InstanceOf { .. } => prec::SEQUENCE,
         Expr::Castable { .. } => prec::CASTABLE,
+        Expr::Cast { .. } => prec::CAST,
         Expr::Negate(_) => prec::UNARY,
         Expr::Path(PathExpr { steps, .. }) if steps.is_empty() => prec::SEQUENCE,
         Expr::Path(_) => prec::PATH,
@@ -116,8 +118,12 @@ impl Printer<'_, '_> {
                 self.expr(operand, prec::UNARY)
             }
             Expr::Castable { operand, target } => {
-                self.expr(operand, prec::UNARY)?;
+                self.expr(operand, prec::CAST)?;
                 write!(self.f, " castable as {target}")
+            }
+            Expr::Cast { operand, target } => {
+                self.expr(operand, prec::UNARY)?;
+                write!(self.f, " cast as {target}")
             }
             Expr::InstanceOf { operand, target } => {
                 self.expr(operand, prec::CASTABLE)?;

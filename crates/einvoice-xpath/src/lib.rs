@@ -13,13 +13,13 @@
 //!   `comment()`, `processing-instruction()`, `element(name?)`, `attribute(name?)`;
 //!   predicates; filter expressions as steps;
 //! - `for`, `some`, `every` (one or more bindings), `if then else`, `to`, `instance of`,
-//!   `castable as`, general and value comparisons, `or`, `and`, `+ - * div idiv mod`,
+//!   `cast as`, `castable as`, general and value comparisons, `or`, `and`, `+ - * div idiv mod`,
 //!   unary `-`, `|`, sequences, literals (numeric literals keep their kind and text),
 //!   variable references, `.`, function calls;
 //! - patterns of XSLT 2.0 without `id()`/`key()`, plus the XSLT 3.0 forms `root()` and
 //!   `(A | B)[p]`.
 //!
-//! Refused: `intersect`, `except`, the `union` keyword, `treat as`, `cast as`, node
+//! Refused: `intersect`, `except`, the `union` keyword, `treat as`, node
 //! comparisons, unary `+`, XPath comments, the `descendant`, `following` and `namespace`
 //! axes, `document-node()`, `schema-element()`, `schema-attribute()`, typed `element()` and
 //! `attribute()` tests, `item()`, `empty-sequence()`, atomic types other than `xs:string`,

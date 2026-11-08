@@ -248,6 +248,10 @@ impl<'a> Run<'a> {
                     .collect::<Result<Vec<_>>>()?;
                 from_vec(self.dc.host.call_function(*id, values)?)
             }
+            Expr::Cast { .. } => match self.cast(expr, ctx)? {
+                Some(value) => once(Item::Atomic(value)),
+                None => Box::new(std::iter::empty()),
+            },
             Expr::Negate(..) | Expr::Arithmetic { .. } | Expr::ValueComparison { .. } => {
                 match self.atomic_operation(expr, ctx)? {
                     Some(value) => once(Item::Atomic(value)),
@@ -261,6 +265,30 @@ impl<'a> Run<'a> {
             | Expr::InstanceOf { .. }
             | Expr::Castable { .. } => boolean(self.ebv(expr, ctx)?),
         })
+    }
+
+    /// `operand cast as target`, `?` when `allows_empty`: the atomized operand, at most
+    /// one item, cast to the target (up-cast for an operand statically typed
+    /// `xs:integer` and the target `xs:decimal`).
+    fn cast(&self, expr: &Expr, ctx: &Ctx) -> Result<Option<AtomicValue>> {
+        let Expr::Cast {
+            operand,
+            target,
+            allows_empty,
+            upcast,
+        } = expr
+        else {
+            return err(ErrorCode::Internal, "not a cast");
+        };
+        match self.atomic_opt(operand, ctx, "value in 'cast as' expression")? {
+            None if *allows_empty => Ok(None),
+            None => err(
+                ErrorCode::Xpty0004,
+                "An empty sequence is not allowed as the value in 'cast as' expression",
+            ),
+            Some(value) if *upcast => Ok(Some(value.upcast(*target)?)),
+            Some(value) => Ok(Some(value.cast(*target)?)),
+        }
     }
 
     /// Unary minus, arithmetic and value comparisons: the operands are atomized and read

@@ -404,6 +404,7 @@ fn calls_document(expr: &Expr) -> bool {
         }),
         Expr::Negate(e)
         | Expr::Castable { operand: e, .. }
+        | Expr::Cast { operand: e, .. }
         | Expr::InstanceOf { operand: e, .. } => calls_document(e),
         Expr::Union(lhs, rhs)
         | Expr::Range(lhs, rhs)

@@ -103,6 +103,15 @@ pub(crate) enum Expr {
         target: AtomicType,
         allows_empty: bool,
     },
+    /// `operand cast as target` (`?` when `allows_empty`). `upcast` as for
+    /// [`CallData::Upcast`]: an `xs:decimal` target and an operand statically typed
+    /// `xs:integer`.
+    Cast {
+        operand: Box<Expr>,
+        target: AtomicType,
+        allows_empty: bool,
+        upcast: bool,
+    },
     Call {
         function: Builtin,
         args: Vec<Expr>,
@@ -743,7 +752,8 @@ fn refers_to_variable_or_function(expr: &Expr) -> bool {
         } => refers_to_variable_or_function(lhs) || refers_to_variable_or_function(rhs),
         Expr::Negate(e)
         | Expr::InstanceOf { operand: e, .. }
-        | Expr::Castable { operand: e, .. } => refers_to_variable_or_function(e),
+        | Expr::Castable { operand: e, .. }
+        | Expr::Cast { operand: e, .. } => refers_to_variable_or_function(e),
         Expr::If {
             condition,
             then,
@@ -894,7 +904,8 @@ fn calls_focus(expr: &Expr, position: bool) -> bool {
         } => calls_focus(lhs, position) || calls_focus(rhs, position),
         Expr::Negate(e)
         | Expr::InstanceOf { operand: e, .. }
-        | Expr::Castable { operand: e, .. } => calls_focus(e, position),
+        | Expr::Castable { operand: e, .. }
+        | Expr::Cast { operand: e, .. } => calls_focus(e, position),
         Expr::If {
             condition,
             then,
@@ -1062,6 +1073,29 @@ impl Compiler<'_> {
                         allows_empty: target.allows_empty,
                     },
                     Props::BOOLEAN.exactly_one(true),
+                ))
+            }
+            // As the constructor functions, which Saxon-HE 12.10 compiles to the same
+            // `CastExpression` with the empty sequence allowed.
+            ast::Expr::Cast { operand, target } => {
+                let (operand, p) = self.expr(operand)?;
+                let atomic = atomic_type(target.atomic.kind);
+                let class = if matches!(atomic, AtomicType::Integer | AtomicType::Decimal) {
+                    Class::Unknown
+                } else {
+                    Class::NotNumeric
+                };
+                Ok((
+                    Expr::Cast {
+                        operand: boxed(operand),
+                        target: atomic,
+                        allows_empty: target.allows_empty,
+                        upcast: atomic == AtomicType::Decimal && p.ty.upcasts_to_decimal(),
+                    },
+                    Props::atomic(true, class)
+                        .typed(StaticType::of_atomic(atomic))
+                        .exactly_one(!target.allows_empty || p.one())
+                        .literal(p.is_literal(), p.folds()),
                 ))
             }
             ast::Expr::InstanceOf { operand, target } => {
@@ -1714,7 +1748,8 @@ fn depends_on_more_than_focus(expr: &Expr) -> bool {
         } => depends_on_more_than_focus(lhs) || depends_on_more_than_focus(rhs),
         Expr::Negate(e)
         | Expr::InstanceOf { operand: e, .. }
-        | Expr::Castable { operand: e, .. } => depends_on_more_than_focus(e),
+        | Expr::Castable { operand: e, .. }
+        | Expr::Cast { operand: e, .. } => depends_on_more_than_focus(e),
         Expr::If {
             condition,
             then,

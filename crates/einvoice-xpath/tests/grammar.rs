@@ -119,6 +119,7 @@ fn shape(expr: &Expr) -> String {
         }
         Expr::Negate(e) => format!("(neg {})", shape(e)),
         Expr::Castable { operand, target } => format!("(castable {} {target})", shape(operand)),
+        Expr::Cast { operand, target } => format!("(cast {} {target})", shape(operand)),
         Expr::InstanceOf { operand, target } => format!("(instance {} {target})", shape(operand)),
         Expr::Union(a, b) => format!("(| {} {})", shape(a), shape(b)),
         Expr::Arithmetic { op, lhs, rhs } => {
@@ -272,6 +273,20 @@ fn type_operators() {
             "(= (castable $a xs:integer) (fn:true))",
         ),
         ("$a castable as xs:date?", "(castable $a xs:date?)"),
+        (
+            "a/b cast as xs:boolean = true()",
+            "(= (cast (path child::a child::b) xs:boolean) (fn:true))",
+        ),
+        ("$a cast as xs:decimal?", "(cast $a xs:decimal?)"),
+        ("-$a cast as xs:integer", "(cast (neg $a) xs:integer)"),
+        (
+            "$a cast as xs:integer castable as xs:boolean",
+            "(castable (cast $a xs:integer) xs:boolean)",
+        ),
+        (
+            "$a cast as xs:integer? * 2",
+            "(* (cast $a xs:integer?) int:2)",
+        ),
         (
             "-$a castable as xs:integer",
             "(castable (neg $a) xs:integer)",
@@ -602,6 +617,9 @@ fn printing_hazards_round_trip() {
         "some $x in a satisfies (b, c)",
         "if (a) then (b, c) else ()",
         "$a castable as xs:integer? * 2",
+        "$a cast as xs:integer? * 2",
+        "($a castable as xs:integer) cast as xs:boolean",
+        "($a cast as xs:integer) instance of xs:integer",
         "(1 to 2) to 3",
         "(a = b) = c",
         "a - (b - c)",

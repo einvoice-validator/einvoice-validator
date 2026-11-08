@@ -2,7 +2,7 @@
 
 Synthetic stylesheets for the XSLT behaviour the official rule sets do not all exercise:
 rule selection and ties, `xsl:next-match`, modes, built-in rules, simple and complex content,
-variables and parameters, `xsl:function`, `xsl:number`, patterns, namespaces, dynamic
+variables and parameters, `xsl:function`, `xsl:number`, patterns, namespaces, `cast as`, dynamic
 errors, and dynamic errors raised while matching a pattern (`pattern-error*`, which Saxon
 recovers from with a warning). Each runs on `input.xml`. Every expected result in
 `expected/` is produced by Saxon-HE, the reference engine, never written by hand (format in

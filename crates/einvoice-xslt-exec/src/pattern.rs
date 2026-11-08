@@ -348,9 +348,10 @@ fn calls_focus(expr: &ast::Expr) -> bool {
         E::Sequence(items) => items.iter().any(calls_focus),
         E::Filter { base, predicates } => calls_focus(base) || predicates.iter().any(calls_focus),
         E::Path(path) => steps(path),
-        E::Negate(e) | E::Castable { operand: e, .. } | E::InstanceOf { operand: e, .. } => {
-            calls_focus(e)
-        }
+        E::Negate(e)
+        | E::Castable { operand: e, .. }
+        | E::Cast { operand: e, .. }
+        | E::InstanceOf { operand: e, .. } => calls_focus(e),
         E::Union(a, b)
         | E::Arithmetic { lhs: a, rhs: b, .. }
         | E::Range(a, b)
@@ -422,6 +423,10 @@ fn never_numeric(expr: &ast::Expr) -> bool {
             Some(Step::Expr(e)) => never_numeric(e),
         },
         E::Filter { base, .. } => never_numeric(base),
+        E::Cast { target, .. } => !matches!(
+            target.atomic.kind,
+            ast::AtomicKind::Integer | ast::AtomicKind::Decimal
+        ),
         E::Sequence(items) => items.iter().all(never_numeric),
         E::If {
             then, otherwise, ..

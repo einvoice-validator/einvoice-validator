@@ -284,6 +284,15 @@ fn expr() -> impl Strategy<Value = Expr> {
                     },
                 }
             }),
+            (inner.clone(), atomic_type(), any::<bool>()).prop_map(|(e, atomic, allows_empty)| {
+                Expr::Cast {
+                    operand: boxed(e),
+                    target: SingleType {
+                        atomic,
+                        allows_empty,
+                    },
+                }
+            }),
             (inner.clone(), sequence_type()).prop_map(|(e, target)| Expr::InstanceOf {
                 operand: boxed(e),
                 target

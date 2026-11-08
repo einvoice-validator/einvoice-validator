@@ -1,0 +1,4 @@
+error XPTY0004
+warnings 0
+pattern-errors
+---

@@ -43,7 +43,6 @@ fn unsupported_expressions() {
         ("a except b", 2, "`except` operator"),
         ("a union b", 2, "`union` operator"),
         ("a treat as xs:integer", 2, "`treat as`"),
-        ("a cast as xs:integer", 2, "`cast as`"),
         ("a is b", 2, "node comparison `is`"),
         ("a << b", 2, "node comparison `<<`"),
         ("a >> b", 2, "node comparison `>>`"),
@@ -77,6 +76,7 @@ fn unsupported_expressions() {
             15,
             "atomic type `xs:dateTime`",
         ),
+        ("$a cast as xs:double", 11, "atomic type `xs:double`"),
     ] {
         refused(parse_expr(src, &ns()), src, offset, needle);
     }

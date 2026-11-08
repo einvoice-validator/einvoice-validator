@@ -526,13 +526,19 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// \[19\] `CastExpr ::= UnaryExpr ( "cast" "as" SingleType )?`. Not supported.
+    /// \[19\] `CastExpr ::= UnaryExpr ( "cast" "as" SingleType )?`
     fn cast_expr(&mut self) -> Result<Expr> {
         let operand = self.unary_expr()?;
-        if self.at_words("cast", "as")? {
-            return Err(self.error_here(ErrorKind::Unsupported, "`cast as` expression"));
+        if !self.at_words("cast", "as")? {
+            return Ok(operand);
         }
-        Ok(operand)
+        self.bump()?;
+        self.bump()?;
+        let target = self.single_type()?;
+        Ok(Expr::Cast {
+            operand: Box::new(operand),
+            target,
+        })
     }
 
     /// \[20\] `UnaryExpr ::= ("-" | "+")* ValueExpr`. Only `-` is supported.
