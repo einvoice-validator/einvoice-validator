@@ -9,10 +9,10 @@
 //! 1. the XML check: UTF-8, well-formed, namespace-well-formed, no document type
 //!    declaration ([`Error::NotXml`], [`Error::Unsupported`]), no element nested deeper
 //!    than [`ValidateOptions::max_depth`] ([`Error::Limit`]);
-//! 2. the XML schema of the rule set, if any (UBL 2.1 for the UBL rule sets), with
-//!    [`einvoice_xsd`]: every validity error, with its line and column. The XML check and
-//!    the schema run in one pass of the streaming reader of [`einvoice_xml`] over the
-//!    text, which builds no tree;
+//! 2. the XML schema of the rule set, if any (UBL 2.1 for the UBL rule sets, CII D16B
+//!    for `cen-cii`), with [`einvoice_xsd`]: every validity error, with its line and
+//!    column. The XML check and the schema run in one pass of the streaming reader of
+//!    [`einvoice_xml`] over the text, which builds no tree;
 //! 3. every stylesheet of the rule set, with [`einvoice_xslt_exec`], which executes the
 //!    official compiled Schematron with the behaviour of the reference engine
 //!    (Saxon-HE 12.10) and writes its SVRL report. In a rule set that selects by
@@ -60,10 +60,9 @@
 //! - Built in ([`BUILTIN_RULE_SETS`], [`Validator::builtin`]), embedded unmodified, each
 //!   behind a feature of its name, on by default (the artefacts are under the EUPL-1.2):
 //!   `cen-ubl`, the CEN EN 16931 validation artefacts for UBL, release 1.3.17, with the
-//!   UBL 2.1 schemas; `cen-cii`, the same release for UN/CEFACT CII D16B, without an XML
-//!   schema (the CII D16B schemas are not embedded: documents are checked for
-//!   well-formedness, then by the stylesheet). [`Syntax::detect`] tells from the root
-//!   element which of the two a document is for.
+//!   UBL 2.1 schemas; `cen-cii`, the same release for UN/CEFACT CII D16B, with the
+//!   UN/CEFACT CII D16B schemas. [`Syntax::detect`] tells from the root element which of
+//!   the two a document is for.
 //! - From a directory ([`Validator::from_bundle_dir`]): the manifest is
 //!   `<dir>/bundle.toml` ([`MANIFEST_FILE`]), and the paths it gives are relative to
 //!   `<dir>`. This is how rule sets whose artefacts cannot be redistributed are used:
@@ -127,7 +126,7 @@
 //! name = "cen-ubl"             # ASCII letters, digits, '-', '.', '_'
 //! title = "CEN EN 16931 UBL"
 //! version = "1.3.17"           # the version of the official artefacts
-//! schema = "ubl-2.1"           # optional: the XML schema validated first
+//! schema = "ubl-2.1"           # optional: the XML schema validated first, ubl-2.1 or cii-d16b
 //! # unchecked-schema = "..."   # format 2, optional: an XML schema the reference
 //! #                            # validator also checks and this rule set does not
 //!
@@ -195,11 +194,12 @@
 //!   matched, or says why it has none.
 //!
 //! The KoSIT validator also validates each document against the XML schema of its
-//! scenario. For UBL, that is the UBL 2.1 schema the XRechnung UBL bundle runs; for CII,
-//! the UN/CEFACT CII D16B schema, which this crate does not embed: the XRechnung CII
-//! bundle names it in `unchecked-schema` ([`RuleSet::unchecked_schema`],
-//! [`RuleSetVersion::unchecked_schema`] in the report), and a document it would reject
-//! for a schema error alone is valid here.
+//! scenario: the UBL 2.1 schema, which the XRechnung UBL bundle runs, or the UN/CEFACT
+//! CII D16B schema, which the XRechnung CII bundle runs ([`SchemaId::CiiD16b`]). A
+//! bundle whose reference validator checks a schema this crate does not embed names it
+//! in `unchecked-schema` ([`RuleSet::unchecked_schema`],
+//! [`RuleSetVersion::unchecked_schema`] in the report): a document it would reject for a
+//! schema error alone is valid here.
 //!
 //! [`ValidateOptions::fail_closed`] then makes every finding that is still
 //! [`Severity::Other`] fatal, for rule sets whose flags the caller does not know.
@@ -224,9 +224,10 @@
 //! # Licences
 //!
 //! The code is MIT. The built-in rule sets `cen-ubl` and `cen-cii` embed the CEN
-//! stylesheets, under the EUPL-1.2, and [`einvoice_xsd`] embeds the OASIS UBL 2.1 schemas, which keep their own
-//! terms (OASIS, UN/CEFACT, W3C). [`licences()`] returns the full text of every licence
-//! of what this build embeds, for programs that must show them to their users.
+//! stylesheets, under the EUPL-1.2, and [`einvoice_xsd`] embeds the OASIS UBL 2.1 schemas
+//! and the UN/CEFACT CII D16B schemas, which keep their own terms (OASIS, UN/CEFACT, W3C).
+//! [`licences()`] returns the full text of every licence of what this build embeds, for
+//! programs that must show them to their users.
 //!
 //! # Errors
 //!

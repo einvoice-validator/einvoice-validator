@@ -524,9 +524,63 @@ fn stylesheet_verdict(
 /// namespaces, its `match` as written, the bundle names of its stylesheets in
 /// their order, and its `customLevel` rule ids (`error` written `fatal`,
 /// `information` `other`); that the XML schema of each scenario is the one the
-/// bundle runs (`ubl-2.1`: the UBL 2.1 schema of its root element) or the one
-/// it names unchecked; and that its stylesheets read an unflagged failed
-/// assert as fatal. Returns a summary line; nothing for another rule set.
+/// bundle runs (`ubl-2.1`: the UBL 2.1 schema of its root element; `cii-d16b`:
+/// the CII D16B entry point, whose documents in the configuration are, byte for
+/// byte, those `einvoice-xsd` embeds, [`CII_D16B_DIR`]) or the one it names
+/// unchecked; and that its stylesheets read an unflagged failed assert as
+/// fatal. Returns a summary line; nothing for another rule set.
+/// The CII D16B schema of the CII scenarios of the KoSIT configuration, relative to
+/// its directory.
+const CII_D16B_LOCATION: &str = "resources/cii/16b/xsd/CrossIndustryInvoice_100pD16B.xsd";
+
+/// The CII D16B schema documents `einvoice-xsd` embeds (the schema `cii-d16b`),
+/// relative to the repository root, listed in its `SHA256SUMS`.
+const CII_D16B_DIR: &str = "crates/einvoice-xsd/schemas/uncefact-cii-d16b";
+
+/// Checks that the directory of the CII D16B entry point in the KoSIT configuration
+/// `configuration` holds exactly the schema documents of [`CII_D16B_DIR`], byte for
+/// byte: the bundle's `cii-d16b` is then the schema the configuration validates with.
+fn same_cii_schemas(root: &Path, configuration: &Path) -> Result<()> {
+    let ours_dir = util::join(root, CII_D16B_DIR);
+    let sums = util::read_string(&ours_dir.join("SHA256SUMS"))?;
+    let theirs_dir = util::join(
+        configuration,
+        CII_D16B_LOCATION
+            .rsplit_once('/')
+            .map_or("", |(dir, _)| dir),
+    );
+    let mut expected = Vec::new();
+    for line in sums.lines() {
+        let (sha, path) = line
+            .split_once("  ")
+            .ok_or_else(|| Error::new(format!("{CII_D16B_DIR}/SHA256SUMS: bad line {line:?}")))?;
+        let ours = util::read(&util::join(&ours_dir, path))?;
+        if util::sha256_hex(&ours) != sha {
+            return Err(Error::new(format!(
+                "{CII_D16B_DIR}/{path}: not its SHA256SUMS digest"
+            )));
+        }
+        let name = path.rsplit('/').next().unwrap_or(path);
+        let theirs = util::read(&theirs_dir.join(name))?;
+        if theirs != ours {
+            return Err(Error::new(format!(
+                "{}: differs from {CII_D16B_DIR}/{path}: the configuration's CII D16B schema is not the one cii-d16b embeds",
+                theirs_dir.join(name).display()
+            )));
+        }
+        expected.push(name.to_owned());
+    }
+    expected.sort();
+    let found = util::list_files(&theirs_dir)?;
+    if found != expected {
+        return Err(Error::new(format!(
+            "{}: holds {found:?}, expected the CII D16B documents {expected:?}",
+            theirs_dir.display()
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn check_bundle(root: &Path, rule_set: &RuleSet) -> Result<Option<String>> {
     let Some(Profiles::KositScenarios { file, bundle }) =
         rule_set.acceptance.as_ref().map(|a| &a.profiles)
@@ -537,6 +591,10 @@ pub(crate) fn check_bundle(root: &Path, rule_set: &RuleSet) -> Result<Option<Str
     let path = format!("{bundle}/bundle.toml");
     let manifest = util::read_string(&util::join(&base, &path))?;
     let runs_ubl = manifest.contains("\nschema = \"ubl-2.1\"\n");
+    let runs_cii = manifest.contains("\nschema = \"cii-d16b\"\n");
+    let configuration = file.rsplit_once('/').map_or("", |(dir, _)| dir);
+    // `root` names the root element of a scenario below.
+    let repo = root;
     let unchecked = manifest
         .split('\n')
         .find_map(|l| l.strip_prefix("unchecked-schema = \""))
@@ -558,10 +616,14 @@ pub(crate) fn check_bundle(root: &Path, rule_set: &RuleSet) -> Result<Option<Str
             .next()
             .unwrap_or(&scenario.schema);
         let ubl = scenario.schema == format!("resources/ubl/2.1/xsd/maindoc/UBL-{root}-2.1.xsd");
+        let cii = scenario.schema == CII_D16B_LOCATION;
+        if runs_cii && cii {
+            same_cii_schemas(repo, &util::join(&base, configuration))?;
+        }
         let listed = unchecked.is_some_and(|u| u.contains(schema_file));
-        if !(listed || runs_ubl && ubl) {
+        if !(listed || runs_ubl && ubl || runs_cii && cii) {
             return Err(Error::new(format!(
-                "{path}: scenario {:?} validates against {}, which the bundle neither runs (schema = \"ubl-2.1\" for a UBL root) nor names (unchecked-schema)",
+                "{path}: scenario {:?} validates against {}, which the bundle neither runs (schema = \"ubl-2.1\" for a UBL root, \"cii-d16b\" for {CII_D16B_LOCATION}) nor names (unchecked-schema)",
                 scenario.name, scenario.schema
             )));
         }

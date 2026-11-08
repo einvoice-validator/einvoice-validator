@@ -33,7 +33,7 @@ downloaded from `docs.oasis-open.org`; SHA-256 checked either way), runs xmllint
 every case (`$XMLLINT`, else `xmllint`), checks or rewrites `expected.tsv`, and prints how this
 crate compares, case by case, twice: with the shipped schemas, where every listed disagreement
 must occur, and with the complete set, where the XAdES ones must not and every other one must.
-It then does the same for the synthetic suite below.
+It then does the same for the synthetic suite and for the CII suite below.
 
 ```sh
 cargo run --release -p einvoice-xsd --example xmllint-oracle             # check both expected.tsv against xmllint
@@ -67,6 +67,35 @@ The cases are, in order: every file of `documents/` (`document/<stem>`), every m
 (`mutation/<id>`), every schema mutation (`schema/<id>`). `tests/oracle.rs` checks them as it
 checks the UBL suite; the example runs xmllint on them with the schema set as it is in the
 repository, each schema mutation written to `target/xsd-oracle/synthetic/schema/<id>/`.
+
+## CII suite
+
+`cii/` compares `Schema::cii_d16b` with xmllint loading the same four vendored documents
+(`../../schemas/uncefact-cii-d16b/`, entry point `CrossIndustryInvoice_100pD16B.xsd`), on every
+case of the CEN EN 16931 CII corpus (`corpus/cen-en16931-cii-1.3.17/`: `corpus/<case>` for the
+24 cases of its `cases.tsv`, `mutation/<id>` for the 808 of its `mutations.tsv`).
+
+| file | content |
+|---|---|
+| `expected.tsv` | xmllint's verdict and errors for every case |
+| `disagreements.tsv` | every case where this crate differs from xmllint, with the reason; none may be a corpus case |
+| `fetched-disagreements.tsv` | the same for the CII corpora of the fetched rule sets (below), case ids prefixed with the name of the corpus |
+
+`tests/oracle.rs` checks it as it checks the other suites; the example runs xmllint on it.
+
+The CII corpora of the fetched rule sets (XRechnung 3.0.2 CII, Factur-X 1.09.2 and the French
+rules 1.4.0.04 CII, see `corpus/README.md`) are not committed: their fetch scripts and
+`cargo xtask <family>` build them in `target/`. The test `fetched_cii_corpora_agree_with_xmllint`
+validates every case and mutation case of each one that is there with this crate and with
+xmllint, and compares them against `cii/fetched-disagreements.tsv` (no difference is tolerated
+on an upstream case). A corpus that is not there is SKIPPED, and so is everything without
+xmllint, unless `EINVOICE_XSD_FETCHED_REQUIRED` names it (comma-separated names:
+`xrechnung-cii-3.0.2`, `factur-x-1.09.2`, `fr-ctc-cii-1.4.0.04`), as the facturx, xrechnung and
+fr-ctc jobs of `scripts/check.sh` do.
+
+```sh
+EINVOICE_XSD_FETCHED_REQUIRED=xrechnung-cii-3.0.2 cargo test --release -p einvoice-xsd --test oracle fetched_cii -- --nocapture
+```
 
 ## Schema sets outside the repository
 

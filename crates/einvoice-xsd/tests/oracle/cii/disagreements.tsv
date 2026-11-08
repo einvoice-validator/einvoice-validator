@@ -1,0 +1,11 @@
+# Cases of the CII suite where this crate and xmllint (libxml2 2.9.14) disagree, each with its
+# cause. The test tests/oracle.rs fails on any difference not listed here and on any listed one
+# that no longer occurs; no difference is tolerated on a corpus case. kind: verdict (validity
+# differs), errors (same verdict, different errors), unsupported (this crate refuses the document
+# as unsupported). Spec references are to XML Schema 1.0 Second Edition (Part 1: Structures,
+# Part 2: Datatypes).
+case	kind	explanation
+mutation/booleans/charge-indicator-child-element	errors	After a child element in the content of udt:Indicator, whose type xs:boolean is simple (reported by both, cvc-type.3.1.2), libxml2 also validates the text around it as a value and reports it as an invalid xs:boolean. This crate does not check the value of content already reported as invalid. Same verdict (as simple-content-child-and-value in the UBL suite).
+mutation/long/deep-nesting	verdict	The document nests elements 304 deep. libxml2's parser refuses documents deeper than 256 levels unless given XML_PARSE_HUGE (xmllint --huge), an implementation limit of the parser, so xmllint reports a parser error. The document is well-formed; this crate validates it and reports the undeclared x:a element in ram:SellerTradeParty, whose content model has no wildcard. (einvoice-validator refuses such a document by its own depth limit, 256 by default, before the schema is checked.)
+mutation/long/huge-decimal	verdict	A ram:LineTotalAmount of 400 digits. The value space of xs:decimal has no digit limit (Part 2 3.2.3; minimally conforming processors must support at least 18 digits). libxml2 rejects decimals with more than 24 significant digits, an implementation limit it does not document. This crate checks the lexical space without limit (as decimal-25-digits in the UBL suite).
+mutation/long/huge-decimal-fraction	verdict	As huge-decimal, with 400 fractional digits: they count towards the libxml2 limit of 24 digits.

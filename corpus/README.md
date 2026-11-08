@@ -12,7 +12,7 @@ those examples.
 | Directory | Rule set | Cases | Mutation cases |
 |---|---|---|---|
 | `cen-en16931-ubl-1.3.17/` | CEN EN 16931 UBL, release 1.3.17 | 1179 | 508 |
-| `cen-en16931-cii-1.3.17/` | CEN EN 16931 UN/CEFACT CII D16B, release 1.3.17 (no XML schema: the CII schemas are not vendored) | 24 | 808 |
+| `cen-en16931-cii-1.3.17/` | CEN EN 16931 UN/CEFACT CII D16B, release 1.3.17 | 24 | 808 |
 | `peppol-bis-billing-ubl-3.0.22/` | Peppol BIS Billing 3.0.22, UBL: its own rules and the CEN EN 16931 rules it embeds (two stylesheets); built locally, not committed (see below) | 707 | 509 |
 | `factur-x-1.09.2/` | Factur-X 1.09.2 (ZUGFeRD 2.5.2), CII: the stylesheets of its five profiles; built locally, not committed | 42 | 808 |
 | `xrechnung-ubl-3.0.2/` | XRechnung 3.0.2, UBL: the EN 16931 and XRechnung stylesheets of the KoSIT validator configuration 2026-08-31; built locally, not committed | 1196 | 508 |
@@ -163,7 +163,8 @@ value), `exists(/p:R[p:A/p:B/text() = 'X'])` (a text node child) and
 other form is an error. For XRechnung, it also checks that the `[[scenario]]` tables of the
 bundles the fetch script wrote are the scenarios of the configuration for their syntax, each
 with its namespaces, its `match` as written, its stylesheets and its levels, and that each
-scenario's XML schema is the one the bundle runs or names unchecked.
+scenario's XML schema is the one the bundle runs (for CII, the configuration's copy of the CII
+D16B schema must be, byte for byte, the one `einvoice-xsd` embeds) or names unchecked.
 `crates/einvoice-cli/tests/rules_equivalence.rs` requires the verdict of every bundle on every
 document to be that table's: invalid with schema errors or when one of its stylesheets rejects
 the document; for XRechnung, the scenario of each document is the table's, the stylesheets that

@@ -57,7 +57,7 @@ fn a_cii_document_is_validated_with_cen_cii_by_default() {
     let rule_set = report.get("rule_set");
     assert_eq!(rule_set.get("name").str(), Some("cen-cii"));
     assert_eq!(rule_set.get("title").str(), Some("CEN EN 16931 CII"));
-    assert_eq!(rule_set.get("schema"), &Value::Null);
+    assert_eq!(rule_set.get("schema").str(), Some("cii-d16b"));
     let documents = report.get("documents").array();
     assert_eq!(documents[1].get("status").str(), Some("invalid"));
     let ids: Vec<&str> = documents[1]
@@ -83,13 +83,19 @@ fn the_rule_set_can_be_named() {
     let json = report(&r);
     let document = &json.get("documents").array()[0];
     assert!(document.get("counts").get("schema_errors").number() > 0);
-    // And the CII rule set on a UBL document: no rule context matches, the document is
-    // valid for it.
-    let r = common::run(&["--rules", "cen-cii", UBL_VALID], None);
+    // And the CII rule set on a UBL document: its schema refuses the root element (no
+    // rule context of the stylesheet matches).
+    let r = common::run(&["--rules", "cen-cii", "--format", "json", UBL_VALID], None);
+    assert_eq!(r.code, 1);
+    assert_eq!(rule_sets(&r), ["cen-cii"]);
+    let json = report(&r);
+    let document = &json.get("documents").array()[0];
+    assert_eq!(document.get("counts").get("schema_errors").number(), 1);
     assert_eq!(
-        (r.code, r.stdout.as_str()),
-        (0, &*format!("{UBL_VALID}: valid\n"))
+        document.get("schema_errors").array()[0].get("kind").str(),
+        Some("unknown-root")
     );
+    assert_eq!(document.get("findings").array().len(), 0);
 }
 
 #[test]
@@ -141,8 +147,9 @@ fn standard_input_and_unknown_roots() {
     assert_eq!(rule_sets(&r), ["cen-ubl"]);
 }
 
-/// Every case of the CII corpus, without `--rules`: each is detected as CII, and its
-/// status and findings agree with the Saxon-HE golden.
+/// Every case of the CII corpus, without `--rules`: each is detected as CII, its findings
+/// agree with the Saxon-HE golden, and it is invalid exactly when the golden has a fatal
+/// finding or the document has schema errors.
 #[test]
 fn the_cii_corpus_agrees_with_the_saxon_goldens() {
     let cases = index("cases.tsv");
@@ -161,8 +168,15 @@ fn the_cii_corpus_agrees_with_the_saxon_goldens() {
         .unwrap();
         let expected = common::golden_findings(&golden);
         let fatal = expected.iter().any(|f| f.2.as_deref() == Some("fatal"));
+        let schema_errors = document.get("counts").get("schema_errors").number();
         let status = document.get("status").str().unwrap();
-        if status != if fatal { "invalid" } else { "valid" } {
+        if status
+            != if fatal || schema_errors > 0 {
+                "invalid"
+            } else {
+                "valid"
+            }
+        {
             problems.push(format!("{id}: {status}"));
         }
         if document.get("rule_set").str() != Some("cen-cii") {

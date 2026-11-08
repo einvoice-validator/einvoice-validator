@@ -1,13 +1,13 @@
 # The built-in rule set `cen-cii`: the CEN EN 16931 validation artefacts for UN/CEFACT CII
 # D16B, release 1.3.17 (EUPL-1.2), the files it names vendored unmodified in this directory
-# (README.md). No schema: the UN/CEFACT CII D16B schemas are not embedded (README.md), so
-# documents are checked for well-formedness, then by the stylesheet. Paths are relative to
-# this directory, which is a bundle directory as Validator::from_bundle_dir reads it. Format:
-# see the crate documentation.
+# (README.md). Documents are first validated against the UN/CEFACT CII D16B schemas embedded
+# in einvoice-xsd (`schema`). Paths are relative to this directory, which is a bundle
+# directory as Validator::from_bundle_dir reads it. Format: see the crate documentation.
 format = 1
 name = "cen-cii"
 title = "CEN EN 16931 CII"
 version = "1.3.17"
+schema = "cii-d16b"
 
 [[stylesheet]]
 name = "EN16931-CII"

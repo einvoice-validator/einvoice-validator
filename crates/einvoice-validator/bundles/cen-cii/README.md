@@ -15,12 +15,13 @@ rule set `cen-cii`, described by `bundle.toml`.
 In the repository, the same file is in `artefacts/cen-en16931-cii-1.3.17/`, with the rest of
 the release.
 
-## No XML schema
+## XML schema
 
-The rule set has no `schema`: the UN/CEFACT CII D16B XML schemas are not embedded (the CEN
-release asset does not ship them, and they are UN/CEFACT works under their own terms). A
-document is checked for well-formed XML, then by the stylesheet; elements and values that only
-the schema constrains are not checked.
+The rule set names the schema `cii-d16b` (`bundle.toml`): a document is checked for well-formed
+XML, validated against the UN/CEFACT CII D16B schemas with uncoupled code lists, then by the
+stylesheet, which runs whatever the schema reports. The CEN release asset does not ship those
+schemas; `einvoice-xsd` embeds UNECE's files, unmodified, under their own UN/CEFACT terms
+(`crates/einvoice-xsd/schemas/uncefact-cii-d16b/README.md`).
 
 ## Licence
 

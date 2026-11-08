@@ -19,7 +19,8 @@ pub struct Licence {
 /// The licences of this crate, one per term of its licence expression (`MIT AND
 /// LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND
 /// W3C-19980720`): its code, then the three sets of terms of the embedded UBL 2.1
-/// schemas ([`UBL_2_1_FILES`](crate::UBL_2_1_FILES)).
+/// schemas ([`UBL_2_1_FILES`](crate::UBL_2_1_FILES)), the UN/CEFACT one also covering
+/// the embedded CII D16B schemas ([`CII_D16B_FILES`](crate::CII_D16B_FILES)).
 pub const LICENCES: &[Licence] = &[
     Licence {
         id: "MIT",
@@ -36,7 +37,12 @@ pub const LICENCES: &[Licence] = &[
     Licence {
         id: "LicenseRef-UN-CEFACT-Copyright-Notice",
         covers: "xsd/common/CCTS_CCT_SchemaModule-2.1.xsd of the UBL 2.1 schemas embedded \
-                 by einvoice-xsd, copyright UN/CEFACT 2006",
+                 by einvoice-xsd, copyright UN/CEFACT 2006; and the UN/CEFACT CII D16B \
+                 schemas embedded by einvoice-xsd, unmodified, copyright UN/CEFACT 2016: \
+                 uncefact/data/standard/CrossIndustryInvoice_100pD16B.xsd, \
+                 uncefact/data/standard/CrossIndustryInvoice_QualifiedDataType_100pD16B.xsd, \
+                 uncefact/data/standard/CrossIndustryInvoice_ReusableAggregateBusinessInformationEntity_100pD16B.xsd \
+                 and uncefact/data/standard/CrossIndustryInvoice_UnqualifiedDataType_100pD16B.xsd",
         text: include_str!("../LICENSES/LicenseRef-UN-CEFACT-Copyright-Notice.txt"),
     },
     Licence {

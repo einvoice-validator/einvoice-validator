@@ -1,5 +1,6 @@
-//! The vendored OASIS UBL 2.1 schemas match `schemas/oasis-ubl-2.1/SHA256SUMS`, the
-//! list has no file too many or too few, and the embedded copies are these files. The
+//! The vendored OASIS UBL 2.1 and UN/CEFACT CII D16B schemas match the `SHA256SUMS` of
+//! their directories (`schemas/oasis-ubl-2.1/`, `schemas/uncefact-cii-d16b/`), each list
+//! has no file too many or too few, and the embedded copies are these files. The
 //! licence expression of the crate names exactly the texts in `LICENSES/`, and each
 //! vendored file carries the terms its licence term stands for.
 #![cfg(test)]
@@ -10,8 +11,25 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-fn schemas_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schemas/oasis-ubl-2.1")
+/// The embedded files of a set: path and text.
+type Files = &'static [(&'static str, &'static str)];
+
+/// The vendored directories: name under `schemas/`, embedded files, number of files.
+const SETS: [(&str, Files, usize); 2] = [
+    ("oasis-ubl-2.1", einvoice_xsd::UBL_2_1_FILES, 13),
+    ("uncefact-cii-d16b", einvoice_xsd::CII_D16B_FILES, 4),
+];
+
+fn schemas_dir(set: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("schemas")
+        .join(set)
+}
+
+/// Every embedded schema document of every set: set, path, text.
+fn embedded() -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
+    SETS.into_iter()
+        .flat_map(|(set, files, _)| files.iter().map(move |(path, text)| (set, *path, *text)))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -22,9 +40,9 @@ fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
-/// `SHA256SUMS` as path -> digest.
-fn manifest() -> BTreeMap<String, String> {
-    let text = std::fs::read_to_string(schemas_dir().join("SHA256SUMS")).unwrap();
+/// `SHA256SUMS` of a set as path -> digest.
+fn manifest(set: &str) -> BTreeMap<String, String> {
+    let text = std::fs::read_to_string(schemas_dir(set).join("SHA256SUMS")).unwrap();
     let mut map = BTreeMap::new();
     for line in text.lines() {
         let (digest, path) = line
@@ -58,38 +76,81 @@ fn files_under(dir: &Path, root: &Path, out: &mut Vec<String>) {
 
 #[test]
 fn vendored_files_match_their_checksums() {
-    let manifest = manifest();
-    assert_eq!(manifest.len(), 13);
-    for (path, digest) in &manifest {
-        let bytes = std::fs::read(schemas_dir().join(path)).unwrap();
-        assert_eq!(&sha256_hex(&bytes), digest, "{path}");
+    for (set, _, count) in SETS {
+        let manifest = manifest(set);
+        assert_eq!(manifest.len(), count, "{set}");
+        for (path, digest) in &manifest {
+            let bytes = std::fs::read(schemas_dir(set).join(path)).unwrap();
+            assert_eq!(&sha256_hex(&bytes), digest, "{set}/{path}");
+        }
     }
 }
 
 #[test]
 fn manifest_lists_exactly_the_vendored_files() {
-    let root = schemas_dir();
-    let mut found = Vec::new();
-    files_under(&root, &root, &mut found);
-    found.retain(|p| p != "README.md" && p != "SHA256SUMS");
-    found.sort();
-    let listed: Vec<String> = manifest().into_keys().collect();
-    assert_eq!(found, listed);
+    let mut directories = Vec::new();
+    for entry in
+        std::fs::read_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schemas")).unwrap()
+    {
+        directories.push(entry.unwrap().file_name().into_string().unwrap());
+    }
+    directories.sort();
+    assert_eq!(directories, SETS.map(|(set, _, _)| set));
+    for (set, _, _) in SETS {
+        let root = schemas_dir(set);
+        let mut found = Vec::new();
+        files_under(&root, &root, &mut found);
+        found.retain(|p| p != "README.md" && p != "SHA256SUMS");
+        found.sort();
+        let listed: Vec<String> = manifest(set).into_keys().collect();
+        assert_eq!(found, listed, "{set}");
+    }
 }
 
 #[test]
 fn embedded_files_are_the_vendored_files() {
-    let listed: Vec<String> = manifest().into_keys().collect();
-    let mut embedded: Vec<String> = einvoice_xsd::UBL_2_1_FILES
-        .iter()
-        .map(|(p, _)| (*p).to_owned())
-        .collect();
-    embedded.sort();
-    assert_eq!(embedded, listed);
-    for (path, text) in einvoice_xsd::UBL_2_1_FILES {
-        let bytes = std::fs::read(schemas_dir().join(path)).unwrap();
-        assert_eq!(text.as_bytes(), bytes.as_slice(), "{path}");
+    for (set, files, _) in SETS {
+        let listed: Vec<String> = manifest(set).into_keys().collect();
+        let mut embedded: Vec<String> = files.iter().map(|(p, _)| (*p).to_owned()).collect();
+        embedded.sort();
+        assert_eq!(embedded, listed, "{set}");
+        for (path, text) in files {
+            let bytes = std::fs::read(schemas_dir(set).join(path)).unwrap();
+            assert_eq!(text.as_bytes(), bytes.as_slice(), "{set}/{path}");
+        }
     }
+}
+
+#[test]
+fn cii_schemas_are_the_unece_originals() {
+    // UNECE publishes these files with CRLF line ends: a checkout that converted them
+    // to LF (without the `-text` rule of .gitattributes) would not hold the published
+    // bytes. The checksums catch that; this says why.
+    for (path, text) in einvoice_xsd::CII_D16B_FILES {
+        let lines = text.matches('\n').count();
+        assert!(lines > 20, "{path}");
+        assert_eq!(
+            text.matches("\r\n").count(),
+            lines,
+            "{path}: not CRLF throughout"
+        );
+        // The closure of the entry point is the vendored set: no code-list module is
+        // imported.
+        for location in text.split("schemaLocation=\"").skip(1) {
+            let target = location.split('"').next().unwrap();
+            let target = format!("uncefact/data/standard/{target}");
+            assert!(
+                einvoice_xsd::CII_D16B_FILES
+                    .iter()
+                    .any(|(p, _)| *p == target),
+                "{path}: imports {target}"
+            );
+        }
+    }
+    assert_eq!(
+        einvoice_xsd::CII_D16B_FILES[0].0,
+        einvoice_xsd::CII_D16B_ENTRY_POINT
+    );
 }
 
 #[test]
@@ -97,7 +158,7 @@ fn xades_schemas_are_not_vendored() {
     // No licence allows the ETSI XAdES schemas to be redistributed: they must not be
     // in the vendored directory, and the only vendored document that names their
     // namespaces is the one importing them.
-    let root = schemas_dir();
+    let root = schemas_dir("oasis-ubl-2.1");
     let mut found = Vec::new();
     files_under(&root, &root, &mut found);
     assert!(
@@ -151,11 +212,24 @@ fn collapse(text: &str) -> String {
 }
 
 /// The term of the licence expression that covers each vendored file.
-fn licence_of(path: &str) -> &'static str {
-    match path {
-        "xsd/common/CCTS_CCT_SchemaModule-2.1.xsd" => "LicenseRef-UN-CEFACT-Copyright-Notice",
-        "xsd/common/UBL-xmldsig-core-schema-2.1.xsd" => "W3C-19980720",
-        _ => "LicenseRef-OASIS-Copyright-Notice",
+fn licence_of(set: &str, path: &str) -> &'static str {
+    match (set, path) {
+        ("uncefact-cii-d16b", _)
+        | ("oasis-ubl-2.1", "xsd/common/CCTS_CCT_SchemaModule-2.1.xsd") => {
+            "LicenseRef-UN-CEFACT-Copyright-Notice"
+        }
+        ("oasis-ubl-2.1", "xsd/common/UBL-xmldsig-core-schema-2.1.xsd") => "W3C-19980720",
+        ("oasis-ubl-2.1", _) => "LicenseRef-OASIS-Copyright-Notice",
+        _ => panic!("{set}/{path}: unknown set"),
+    }
+}
+
+/// The year of the UN/CEFACT copyright of the files of a set under that notice.
+fn un_cefact_year(set: &str) -> &'static str {
+    if set == "uncefact-cii-d16b" {
+        "2016"
+    } else {
+        "2006"
     }
 }
 
@@ -182,17 +256,34 @@ fn mit_text_is_the_repository_licence() {
 #[test]
 fn every_vendored_file_carries_the_terms_of_its_licence() {
     let mut used = std::collections::BTreeSet::new();
-    for (path, text) in einvoice_xsd::UBL_2_1_FILES {
-        let licence = licence_of(path);
+    for (set, path, text) in embedded() {
+        let licence = licence_of(set, path);
         used.insert(licence);
         let text = collapse(text);
         match licence {
-            "LicenseRef-OASIS-Copyright-Notice" | "LicenseRef-UN-CEFACT-Copyright-Notice" => {
+            "LicenseRef-OASIS-Copyright-Notice" => {
                 // Each paragraph of the licence text is in the file, word for word: the
                 // copyright line at the top and the notice.
                 for paragraph in licence_text(licence).split("\n\n") {
                     assert!(text.contains(&collapse(paragraph)), "{path}: {paragraph}");
                 }
+            }
+            "LicenseRef-UN-CEFACT-Copyright-Notice" => {
+                // The licence text: the copyright line of each year, then the notice.
+                // The file has the copyright line of its year, then the notice, word
+                // for word.
+                let licence_text = licence_text(licence);
+                let (copyrights, notice) = licence_text.split_once("\n\n").unwrap();
+                let year = un_cefact_year(set);
+                let copyright = format!("Copyright (C) UN/CEFACT ({year}). All Rights Reserved.");
+                assert!(
+                    copyrights.lines().any(|line| line == copyright),
+                    "{copyright}"
+                );
+                assert!(
+                    text.contains(&format!("{copyright} {}", collapse(notice))),
+                    "{set}/{path}: no UN/CEFACT {year} notice"
+                );
             }
             "W3C-19980720" => assert!(
                 text.contains("This document is governed by the W3C Software License")
@@ -229,8 +320,8 @@ fn embedded_licences_are_the_shipped_texts() {
             .unwrap()
             .covers
     };
-    for (path, _) in einvoice_xsd::UBL_2_1_FILES {
-        let licence = licence_of(path);
+    for (set, path, _) in embedded() {
+        let licence = licence_of(set, path);
         let file = path.rsplit('/').next().unwrap();
         if licence == "LicenseRef-OASIS-Copyright-Notice" {
             assert!(file.starts_with("UBL-"), "{path}");

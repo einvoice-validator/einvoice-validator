@@ -1,0 +1,21 @@
+# Cases of the CII corpora of the fetched rule sets (built in target/, not committed, see
+# corpus/README.md) where this crate and xmllint (libxml2 2.9.14) disagree, each with its cause,
+# checked by fetched_cii_corpora_agree_with_xmllint in tests/oracle.rs on every corpus that is
+# there: it fails on any difference not listed here and on any listed one that no longer occurs
+# (for the corpora present). The case ids are those of the CII suite (disagreements.tsv),
+# prefixed with the name of the corpus: these corpora apply the same mutation catalogue
+# (corpus/mutations-cii.toml) to their own base documents. No difference is tolerated on an
+# upstream case.
+case	kind	explanation
+xrechnung-cii-3.0.2/mutation/booleans/charge-indicator-child-element	errors	As mutation/booleans/charge-indicator-child-element in disagreements.tsv: libxml2 also reports the text around the child element of udt:Indicator as an invalid xs:boolean.
+xrechnung-cii-3.0.2/mutation/long/deep-nesting	verdict	As mutation/long/deep-nesting in disagreements.tsv: libxml2's parser refuses documents deeper than 256 levels.
+xrechnung-cii-3.0.2/mutation/long/huge-decimal	verdict	As mutation/long/huge-decimal in disagreements.tsv: libxml2 rejects decimals of more than 24 digits; xs:decimal has no digit limit.
+xrechnung-cii-3.0.2/mutation/long/huge-decimal-fraction	verdict	As mutation/long/huge-decimal-fraction in disagreements.tsv.
+factur-x-1.09.2/mutation/booleans/charge-indicator-child-element	errors	As mutation/booleans/charge-indicator-child-element in disagreements.tsv: libxml2 also reports the text around the child element of udt:Indicator as an invalid xs:boolean.
+factur-x-1.09.2/mutation/long/deep-nesting	verdict	As mutation/long/deep-nesting in disagreements.tsv: libxml2's parser refuses documents deeper than 256 levels.
+factur-x-1.09.2/mutation/long/huge-decimal	verdict	As mutation/long/huge-decimal in disagreements.tsv: libxml2 rejects decimals of more than 24 digits; xs:decimal has no digit limit.
+factur-x-1.09.2/mutation/long/huge-decimal-fraction	verdict	As mutation/long/huge-decimal-fraction in disagreements.tsv.
+fr-ctc-cii-1.4.0.04/mutation/booleans/charge-indicator-child-element	errors	As mutation/booleans/charge-indicator-child-element in disagreements.tsv: libxml2 also reports the text around the child element of udt:Indicator as an invalid xs:boolean.
+fr-ctc-cii-1.4.0.04/mutation/long/deep-nesting	verdict	As mutation/long/deep-nesting in disagreements.tsv: libxml2's parser refuses documents deeper than 256 levels.
+fr-ctc-cii-1.4.0.04/mutation/long/huge-decimal	verdict	As mutation/long/huge-decimal in disagreements.tsv: libxml2 rejects decimals of more than 24 digits; xs:decimal has no digit limit.
+fr-ctc-cii-1.4.0.04/mutation/long/huge-decimal-fraction	verdict	As mutation/long/huge-decimal-fraction in disagreements.tsv.

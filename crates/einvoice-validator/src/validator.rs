@@ -181,8 +181,8 @@ impl Validator {
     }
 
     /// The built-in rule set `cen-cii`: the CEN EN 16931 validation artefacts for UN/CEFACT
-    /// CII D16B, release 1.3.17 (EUPL-1.2), embedded unmodified, without an XML schema
-    /// (the CII D16B schemas are not embedded).
+    /// CII D16B, release 1.3.17 (EUPL-1.2), embedded unmodified, with the UN/CEFACT CII
+    /// D16B schemas embedded in [`einvoice_xsd`] ([`SchemaId::CiiD16b`]).
     ///
     /// # Errors
     ///
@@ -279,13 +279,19 @@ impl Validator {
     ) -> Result<Self, Error> {
         let schema = match rule_set.schema() {
             None => None,
-            Some(SchemaId::Ubl21) => Some(einvoice_xsd::Schema::ubl_2_1().map_err(|e| {
-                if e.kind == einvoice_xsd::LoadErrorKind::Unsupported {
-                    Error::unsupported(format!("schema ubl-2.1: {e}"))
-                } else {
-                    Error::internal(format!("the embedded schema ubl-2.1 does not load: {e}"))
-                }
-            })?),
+            Some(id) => {
+                let loaded = match id {
+                    SchemaId::Ubl21 => einvoice_xsd::Schema::ubl_2_1(),
+                    SchemaId::CiiD16b => einvoice_xsd::Schema::cii_d16b(),
+                };
+                Some(loaded.map_err(|e| {
+                    if e.kind == einvoice_xsd::LoadErrorKind::Unsupported {
+                        Error::unsupported(format!("schema {id}: {e}"))
+                    } else {
+                        Error::internal(format!("the embedded schema {id} does not load: {e}"))
+                    }
+                })?)
+            }
         };
         let selections = if rule_set.selects_by_scenario() {
             rule_set

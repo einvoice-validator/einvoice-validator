@@ -64,7 +64,7 @@ fn version() {
     assert_eq!(
         r.stdout,
         format!(
-            "einvoice-validate {}\nBuilt-in rule sets:\n  cen-ubl  CEN EN 16931 UBL 1.3.17, with the ubl-2.1 schema\n  cen-cii  CEN EN 16931 CII 1.3.17\n",
+            "einvoice-validate {}\nBuilt-in rule sets:\n  cen-ubl  CEN EN 16931 UBL 1.3.17, with the ubl-2.1 schema\n  cen-cii  CEN EN 16931 CII 1.3.17, with the cii-d16b schema\n",
             common::VERSION
         )
     );

@@ -56,9 +56,10 @@ against.
   UBL, 4 for CII), with their `match` expressions: a document with the identifier
   `urn:cen.eu:en16931:2017` runs the CEN rules alone, an XRechnung one the CEN and XRechnung
   rules, and any other (a Peppol BIS invoice, a misspelt identifier, an XRechnung extension
-  credit note, which no scenario names) is rejected. The CII bundle names the UN/CEFACT CII D16B
-  XML schema, which its scenarios validate against and which is not embedded, unchecked.
-  `fetch-xrechnung.sh` and the catalogue write the same manifests.
+  credit note, which no scenario names) is rejected. Each bundle runs the XML schema its
+  scenarios validate against: UBL 2.1, or the UN/CEFACT CII D16B schema (`schema = "cii-d16b"`,
+  #32; `cargo xtask xrechnung` checks that the configuration's copy is the file `einvoice-xsd`
+  embeds, byte for byte). `fetch-xrechnung.sh` and the catalogue write the same manifests.
 - `einvoice-validate`: the text output names the scenario of a document (`scenario <name>`), says
   why a document has none (`invalid: no scenario`), and notes an unchecked schema; the JSON
   output adds `rule_set.unchecked_schema` and, for each document, `scenario`, `no_scenario`
@@ -72,6 +73,18 @@ against.
   bundles against the configuration (namespaces, `match` as written, stylesheets, levels, XML
   schema). `tests/rules_equivalence.rs` of `einvoice-cli` compares the verdict of every bundle on
   every corpus document with it, and for XRechnung the scenario and the stylesheets that ran.
+- XML Schema validation of CII (#32): `einvoice-xsd` vendors and embeds the UN/CEFACT CII D16B
+  schemas with uncoupled code lists (`CrossIndustryInvoice_100pD16B.xsd` and the three modules
+  it imports), UNECE's files byte for byte, CRLF line ends included
+  (`schemas/uncefact-cii-d16b/`, `-text` in `.gitattributes`, `SHA256SUMS` checked by the tests);
+  `Schema::cii_d16b`, `CII_D16B_FILES`, `CII_D16B_ENTRY_POINT`. Loading takes 1.4 ms and keeps
+  326 KiB. Compared with xmllint (libxml2 2.9.14) on the 24 cases and 808 mutation cases of
+  the CEN CII corpus (`tests/oracle/cii/`): every case agrees but 4 mutation cases, listed with
+  their cause (decimals beyond libxml2's 24 digits, a document deeper than its parser accepts, a
+  second error on content already invalid); `scripts/check.sh facturx`, `xrechnung` and `fr-ctc`
+  run the same comparison on their CII corpora (`EINVOICE_XSD_FETCHED_REQUIRED`). The CII D22B
+  schemas are not vendored: they carry no licence notice. In `einvoice-validator`,
+  `SchemaId::CiiD16b`, named `cii-d16b` in a manifest.
 - Rule sets fetched on demand (#35): `einvoice-validate rules list|fetch|path|clear`, `--rules NAME`
   for Factur-X (`factur-x-minimum` … `factur-x-extended`), XRechnung (`xrechnung-ubl`,
   `xrechnung-cii`, alias `xrechnung`), the French rules (`fr-ctc-*`) and Peppol BIS Billing 3.0
@@ -272,6 +285,18 @@ against.
   `aws-lc-sys`, `openssl-sys` and others), and `docs/dependencies.md` audits every third-party
   crate of the binary, the library and the WebAssembly module (`unsafe`, build scripts, inline
   assembly), checked by `tests/supply_chain.rs` of `einvoice-testkit`.
+- The built-in rule set `cen-cii` validates documents against the UN/CEFACT CII D16B schemas
+  first (`schema = "cii-d16b"`), as `cen-ubl` does with UBL 2.1 (#32): a document invalid for
+  the schema is invalid, and when the CEN stylesheet stops with a dynamic error on such a
+  document the report is returned, invalid, with the error in `StylesheetReport::failure`. On
+  the CEN CII corpus, the 9 VEFA test documents (fragments, already invalid for the CEN rules)
+  and 274 of the 808 mutation cases have schema errors (xmllint agrees, but for the documented
+  differences: it also rejects the two 400-digit decimals, and refuses the 304-level document
+  as not well-formed); 127 of those mutation cases are valid for the CEN rules alone, and in 42
+  the stylesheet stops with a dynamic error. The SVRL reports are unchanged.
+  `LicenseRef-UN-CEFACT-Copyright-Notice` now carries the 2016 copyright line of the CII schemas
+  besides the 2006 one of UBL 2.1. `cargo xtask bench` measures the built-in `cen-cii` with its
+  schema, and the run without it.
 - The manifests written by `scripts/fetch-*.sh` have neutral comments; `fetch-peppol.sh` pins
   the embedded CEN version (`cen=1.3.16`). `einvoice-cli` depends on rustls, the RustCrypto
   crates and webpki-roots by default (feature `fetch`; licences in THIRD-PARTY-NOTICES; `--no-default-features` leaves them

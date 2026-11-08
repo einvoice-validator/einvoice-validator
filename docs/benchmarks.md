@@ -16,16 +16,17 @@ command is one process for the whole corpus:
 
 - **einvoice-validate**: the release build, `--format json --jobs N`, with the built-in rule set
   (`cen-ubl`, `cen-cii`) or a bundle of the rule set's stylesheets and the files they read. This
-  is the tool as it validates: the XML check, then for UBL the UBL 2.1 XML schema, then the
-  stylesheets. The XML schema is work Saxon-HE does not do. On a corpus with a document nested
-  deeper than the default limit of 256 levels (the CII mutation cases), `--max-depth 1024` is
-  given, as in the equivalence tests, so that every document is validated.
+  is the tool as it validates: the XML check, then the XML schema (UBL 2.1 for UBL, CII D16B for
+  the built-in `cen-cii`), then the stylesheets. The XML schema is work Saxon-HE does not do. On
+  a corpus with a document nested deeper than the default limit of 256 levels (the CII mutation
+  cases), `--max-depth 1024` is given, as in the equivalence tests, so that every document is
+  validated.
 - **Same work as Saxon-HE**: `einvoice-validate` with one bundle per stylesheet, without XML
   schema, one process per stylesheet. When a stylesheet stops with a dynamic error on a document
   that has no schema errors, `einvoice-validate` gives no verdict and does not run the
   stylesheets after it; Saxon-HE, run once per stylesheet, runs them all. This variant runs every
   stylesheet on every document, as Saxon-HE does. It is measured only where it differs from the
-  first (a UBL rule set, or several stylesheets).
+  first (a rule set with an XML schema, or several stylesheets).
 - **Saxon-HE**: `java -cp ... net.sf.saxon.Transform -t -threads:N -xsl:STYLESHEET -s:DIR -o:DIR`,
   with the pinned jars of `scripts/fetch-saxon.sh` and the default settings of the JVM (whose
   heap may grow up to a quarter of the physical memory, which shows in its peak memory). The

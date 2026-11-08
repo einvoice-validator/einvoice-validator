@@ -11,9 +11,9 @@ homepage.workspace = true
 documentation = "https://docs.rs/einvoice-cli"
 readme = "README.md"
 # The code is MIT; the binary embeds the CEN EN 16931 stylesheets of einvoice-validator's
-# built-in rule sets (default features), which are EUPL-1.2, and the OASIS UBL 2.1
-# schemas of einvoice-xsd, which keep the terms in their own headers (OASIS, UN/CEFACT,
-# W3C). Texts in LICENSES/.
+# built-in rule sets (default features), which are EUPL-1.2, and the OASIS UBL 2.1 and
+# UN/CEFACT CII D16B schemas of einvoice-xsd, which keep the terms in their own headers
+# (OASIS, UN/CEFACT, W3C). Texts in LICENSES/.
 license = "MIT AND EUPL-1.2 AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720"
 
 [[bin]]

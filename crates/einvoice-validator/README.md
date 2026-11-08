@@ -19,9 +19,9 @@ for XRechnung the levels the KoSIT scenario of the document gives rule ids, as t
 manifests say). The XRechnung bundles select by scenario, as the KoSIT validator runs its
 configuration: the `match` expression of each scenario is evaluated on the document, and the
 one that matches names the stylesheets that run (the CEN rules alone, or the CEN and XRechnung
-rules); a document that matches no scenario, or several, is invalid (`Report::no_scenario`). The
-CII scenarios also validate against the UN/CEFACT CII D16B XML schema, which is not embedded:
-the bundle names it unchecked (`RuleSet::unchecked_schema`), and the report says so.
+rules); a document that matches no scenario, or several, is invalid (`Report::no_scenario`).
+Each bundle validates documents against the XML schema of its scenarios first, as the KoSIT
+validator does: UBL 2.1, or the UN/CEFACT CII D16B schema.
 The XML check and the schema are one pass of the streaming reader
 [`einvoice-xml`](https://crates.io/crates/einvoice-xml) over the document, which builds no
 tree; the stylesheets run on a tree of the document each, and a rule set that selects by
@@ -56,8 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 - Built in, embedded unmodified, each behind a default feature of its name: `cen-ubl`, the CEN
   EN 16931 validation artefacts for UBL, release 1.3.17, with the UBL 2.1 schemas; `cen-cii`,
-  the same release for UN/CEFACT CII D16B, without an XML schema (the CII D16B schemas are not
-  embedded: a document is checked for well-formedness, then by the stylesheet).
+  the same release for UN/CEFACT CII D16B, with the UN/CEFACT CII D16B schemas.
   `Syntax::detect(document)` tells from the root element whether a document is UBL or CII,
   and `builtin_rule_set()` names its built-in rule set.
 - Bundles: a directory or in-memory set of files with a `bundle.toml` manifest naming the
@@ -96,7 +95,7 @@ This crate is part of [einvoice-validator](https://github.com/einvoice-validator
 the code is MIT; the default features `cen-ubl` and `cen-cii` embed the CEN EN 16931
 stylesheets, vendored unmodified in `bundles/cen-ubl/` and `bundles/cen-cii/`, which are under
 the EUPL-1.2 (built with `default-features = false`, the crate embeds no rule set); and
-through `einvoice-xsd`, every program built with the crate embeds the OASIS UBL 2.1 schemas,
-which keep their own terms (OASIS, UN/CEFACT, W3C). The texts are in `LICENSES/`, and
-`einvoice_validator::licences()` returns those of what a build embeds, for programs that must
-show them to their users.
+through `einvoice-xsd`, every program built with the crate embeds the OASIS UBL 2.1 schemas
+and the UN/CEFACT CII D16B schemas, which keep their own terms (OASIS, UN/CEFACT, W3C). The
+texts are in `LICENSES/`, and `einvoice_validator::licences()` returns those of what a build
+embeds, for programs that must show them to their users.

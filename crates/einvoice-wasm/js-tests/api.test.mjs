@@ -59,7 +59,7 @@ test("an official CII example is valid with the built-in rule set cen-cii", () =
   try {
     assert.equal(cii.ruleSet.name, "cen-cii");
     assert.equal(cii.ruleSet.version, "1.3.17");
-    assert.equal(cii.ruleSet.schema, null);
+    assert.equal(cii.ruleSet.schema, "cii-d16b");
     assert.equal(cii.ruleSet.stylesheets.length, 1);
     const report = cii.validate(read(CII_EXAMPLE));
     assert.equal(report.status, "valid", JSON.stringify(report.findings.filter((f) => f.severity === "fatal")));

@@ -103,7 +103,7 @@ fn the_builtin_cii_rule_set() {
         (rule_set.name(), rule_set.title(), rule_set.version()),
         ("cen-cii", "CEN EN 16931 CII", "1.3.17")
     );
-    assert_eq!(rule_set.schema(), None);
+    assert_eq!(rule_set.schema(), Some(SchemaId::CiiD16b));
     let [stylesheet] = rule_set.stylesheets() else {
         panic!("one stylesheet")
     };
@@ -115,17 +115,50 @@ fn the_builtin_cii_rule_set() {
     .unwrap();
     let line = format!("{}  {}", stylesheet.sha256(), stylesheet.path());
     assert!(sums.lines().any(|l| l == line), "{line}");
-    // A minimal CII document: no schema, so only the CEN rules report what is missing.
+    // A minimal CII document: the schema wants the mandatory elements; the CEN rules
+    // report what is missing.
     let report = validator
         .validate(
             br#"<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"/>"#,
         )
         .unwrap();
     assert_eq!(report.verdict(), Verdict::Invalid);
-    assert_eq!(report.schema_errors, []);
+    let kinds: Vec<&str> = report
+        .schema_errors
+        .iter()
+        .map(|e| e.kind.as_str())
+        .collect();
+    assert_eq!(kinds, ["missing-element"]);
     assert_eq!(report.rule_set.name, "cen-cii");
-    assert_eq!(report.rule_set.schema, None);
+    assert_eq!(report.rule_set.schema, Some(SchemaId::CiiD16b));
     assert!(report.findings().any(|f| f.id.as_deref() == Some("BR-01")));
+    // An official example is valid for the schema and the rules.
+    let example = std::fs::read(common::join(
+        &common::workspace_root(),
+        "artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_example3.xml",
+    ))
+    .unwrap();
+    let report = validator.validate(&example).unwrap();
+    assert_eq!(report.schema_errors, []);
+    assert_eq!(report.verdict(), Verdict::Valid);
+    // A value only the schema checks: the document is invalid for the schema alone.
+    let text = String::from_utf8(example).unwrap();
+    assert_eq!(
+        text.matches("<udt:Indicator>true</udt:Indicator>").count(),
+        1
+    );
+    let edited = text.replace(
+        "<udt:Indicator>true</udt:Indicator>",
+        "<udt:Indicator>yes</udt:Indicator>",
+    );
+    let report = validator.validate(edited.as_bytes()).unwrap();
+    assert_eq!(report.verdict(), Verdict::Invalid);
+    let errors: Vec<(&str, u32)> = report
+        .schema_errors
+        .iter()
+        .map(|e| (e.kind.as_str(), e.line))
+        .collect();
+    assert_eq!(errors, [("invalid-value", 121)]);
 }
 
 #[cfg(feature = "cen-ubl")]
@@ -1145,19 +1178,19 @@ fn a_document_without_a_scenario_has_no_schema_errors() {
 #[test]
 fn unchecked_schemas_and_unsupported_matches() {
     let (manifest, files) = selecting_manifest(
-        "unchecked-schema = \"UN/CEFACT CII D16B (CrossIndustryInvoice_100pD16B.xsd)\"\n",
+        "unchecked-schema = \"Another schema (another.xsd)\"\n",
         SELECTING_SCENARIOS,
     );
     let files: Vec<(&str, &[u8])> = files.iter().map(|(p, b)| (*p, b.as_slice())).collect();
     let validator = Validator::from_bundle(&manifest, &files).unwrap();
     assert_eq!(
         validator.rule_set().unchecked_schema(),
-        Some("UN/CEFACT CII D16B (CrossIndustryInvoice_100pD16B.xsd)")
+        Some("Another schema (another.xsd)")
     );
     let report = validator.validate(b"<d n='1'/>").unwrap();
     assert_eq!(
         report.rule_set.unchecked_schema.as_deref(),
-        Some("UN/CEFACT CII D16B (CrossIndustryInvoice_100pD16B.xsd)")
+        Some("Another schema (another.xsd)")
     );
     assert_eq!(report.rule_set.schema, None);
     // A function the engine does not have.

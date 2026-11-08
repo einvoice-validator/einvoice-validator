@@ -1,5 +1,6 @@
 //! XML Schema 1.0 validation of UBL 2.1 Invoice and `CreditNote` documents against the
-//! official OASIS UBL 2.1 schemas, in pure Rust.
+//! official OASIS UBL 2.1 schemas, and of UN/CEFACT Cross Industry Invoice D16B
+//! documents against the official UN/CEFACT CII D16B schemas, in pure Rust.
 //!
 //! This is not a general XML Schema processor: it implements exactly the constructs
 //! that the schemas reachable from `UBL-Invoice-2.1.xsd` and `UBL-CreditNote-2.1.xsd`
@@ -33,6 +34,14 @@
 //! schema documents within the supported subset, from memory: `xs:import` and
 //! `xs:include` are resolved as paths relative to the importing document, never
 //! fetched.
+//!
+//! The UN/CEFACT CII D16B schemas with uncoupled code lists (D16B SCRDM (Subset),
+//! the schemas the CEN EN 16931 CII validation artefacts are built against) are
+//! vendored byte for byte in `schemas/uncefact-cii-d16b/` and embedded
+//! ([`CII_D16B_FILES`]): the entry point `CrossIndustryInvoice_100pD16B.xsd` and the
+//! three modules it imports, its qualified and unqualified data types and its
+//! reusable aggregates. Those import no code-list module: code values are checked
+//! by the CEN rules, not by the schema. [`Schema::cii_d16b`] loads them.
 //!
 //! The other two are the ETSI `XAdES` schemas (`UBL-XAdESv132-2.1.xsd` and
 //! `UBL-XAdESv141-2.1.xsd`), which the OASIS package includes but no licence allows
@@ -99,8 +108,10 @@
 //! [`Schema::load`] also loads the schema sets of the UN/CEFACT Cross Industry
 //! Invoice: CII D16B (the schemas of the CEN EN 16931 CII validation artefacts,
 //! with and without the coupled code lists), CII D22B (with and without code lists),
-//! and the five Factur-X (`ZUGFeRD`) profiles. They are not shipped with this crate.
-//! Over the UBL subset, they need:
+//! and the five Factur-X (`ZUGFeRD`) profiles. Of these, only CII D16B with uncoupled
+//! code lists is shipped with this crate ([`Schema::cii_d16b`]); the CII D22B
+//! schemas carry no licence notice that allows their redistribution. Over the UBL
+//! subset, they need:
 //!
 //! * `fixed` and `default` on `xs:attribute` (D16B, D22B, Factur-X EXTENDED);
 //! * anonymous `xs:complexType` in local element declarations (every set has some:
@@ -140,12 +151,22 @@
 //! it accepts length facets that contradict each other), cases with more errors
 //! reported by libxml2 for the same verdict, and constructs refused as unsupported.
 //!
+//! A third suite compares [`Schema::cii_d16b`] with xmllint loading the same four
+//! documents, on every case of the CEN EN 16931 CII test corpus and every one of its
+//! mutation cases (`tests/oracle/cii/`). Every corpus case agrees; the mutation
+//! cases that do not are listed with their cause (decimals beyond libxml2's 24
+//! digits, a document deeper than libxml2's parser accepts, a second error reported
+//! by libxml2 for content already invalid). The same comparison runs locally on the
+//! CII corpora of the fetched rule sets (XRechnung, Factur-X, the French rules) when
+//! they are built.
+//!
 //! # Licences
 //!
 //! The code is MIT; the embedded schemas keep the terms stated in their own headers
-//! (OASIS, UN/CEFACT, W3C). [`LICENCES`] holds the full text of each, as shipped in
-//! the crate's `LICENSES/` directory, for programs that must show them to their
-//! users.
+//! (OASIS and UN/CEFACT for the UBL 2.1 schemas, W3C for the XML Signature schema
+//! they include, UN/CEFACT for the CII D16B schemas). [`LICENCES`] holds the full
+//! text of each, as shipped in the crate's `LICENSES/` directory, for programs that
+//! must show them to their users.
 //!
 //! # Inventory of the UBL 2.1 schemas
 //!
@@ -253,6 +274,7 @@
 //! INVENTORY-END
 
 mod automaton;
+mod cii;
 mod datatypes;
 mod error;
 mod licences;
@@ -262,6 +284,7 @@ mod ubl;
 mod uri;
 mod validate;
 
+pub use cii::{CII_D16B_ENTRY_POINT, CII_D16B_FILES};
 pub use datatypes::Builtin;
 pub use error::{DocumentError, ErrorKind, LoadError, LoadErrorKind, Report, ValidationError};
 pub use licences::{LICENCES, Licence};
@@ -298,6 +321,29 @@ impl Schema {
             UBL_2_1_FILES,
             &[INVOICE_ENTRY_POINT, CREDIT_NOTE_ENTRY_POINT],
         )
+    }
+
+    /// Loads the embedded UN/CEFACT Cross Industry Invoice D16B schemas (uncoupled
+    /// code lists, the schemas of the CEN EN 16931 CII validation artefacts), from
+    /// their entry point [`CII_D16B_ENTRY_POINT`]: the four documents of
+    /// [`CII_D16B_FILES`], no import omitted.
+    ///
+    /// ```
+    /// let schema = einvoice_xsd::Schema::cii_d16b()?;
+    /// let report = schema.validate(
+    ///     r#"<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"/>"#,
+    /// )?;
+    /// // The exchanged document context and the rest are missing.
+    /// assert_eq!(report.errors[0].kind.as_str(), "missing-element");
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// None in practice: the embedded schemas are within the supported subset (a
+    /// test loads them). The error is returned rather than hidden.
+    pub fn cii_d16b() -> Result<Self, LoadError> {
+        Self::load(CII_D16B_FILES, &[CII_D16B_ENTRY_POINT])
     }
 
     /// Validates a document, in one pass of the streaming reader of the `einvoice-xml`

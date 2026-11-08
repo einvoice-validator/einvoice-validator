@@ -24,14 +24,18 @@ pub enum SchemaId {
     /// The OASIS UBL 2.1 schemas for Invoice and `CreditNote`, embedded in
     /// [`einvoice_xsd`].
     Ubl21,
+    /// The UN/CEFACT Cross Industry Invoice D16B schemas (uncoupled code lists),
+    /// embedded in [`einvoice_xsd`].
+    CiiD16b,
 }
 
 impl SchemaId {
-    /// The name used in manifests: `ubl-2.1`.
+    /// The name used in manifests: `ubl-2.1` or `cii-d16b`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Ubl21 => "ubl-2.1",
+            Self::CiiD16b => "cii-d16b",
         }
     }
 
@@ -40,6 +44,7 @@ impl SchemaId {
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "ubl-2.1" => Some(Self::Ubl21),
+            "cii-d16b" => Some(Self::CiiD16b),
             _ => None,
         }
     }
@@ -344,7 +349,10 @@ impl RuleSet {
         let schema = match top.optional_string("schema")? {
             None => None,
             Some(s) => Some(SchemaId::from_name(&s).ok_or_else(|| {
-                top.error("schema", &format!("unknown schema {s:?} (known: ubl-2.1)"))
+                top.error(
+                    "schema",
+                    &format!("unknown schema {s:?} (known: ubl-2.1, cii-d16b)"),
+                )
             })?),
         };
         let unchecked_schema = match top.optional_string("unchecked-schema")? {
@@ -1491,6 +1499,17 @@ match = \"true()\"
     fn schema_is_optional() {
         let text = GOOD.replace("schema = \"ubl-2.1\"\n", "");
         assert_eq!(RuleSet::parse(&text).unwrap().schema(), None);
+    }
+
+    #[test]
+    fn schema_names() {
+        for id in [SchemaId::Ubl21, SchemaId::CiiD16b] {
+            assert_eq!(SchemaId::from_name(id.as_str()), Some(id));
+            let text = GOOD.replace("ubl-2.1", id.as_str());
+            assert_eq!(RuleSet::parse(&text).unwrap().schema(), Some(id));
+        }
+        assert_eq!(SchemaId::CiiD16b.to_string(), "cii-d16b");
+        assert_eq!(SchemaId::from_name("CII-D16B"), None);
     }
 
     fn error(text: &str) -> String {

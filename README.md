@@ -18,8 +18,8 @@ the library is the crate [`einvoice-validator`](https://crates.io/crates/einvoic
 [Usage](#usage)); all nine crates of the workspace are published on crates.io at 0.2.0. Before
 1.0.0, a minor version may break the public API ([RELEASING.md](RELEASING.md)). The library and the tool validate UBL 2.1 invoices and credit
 notes (the XML, the UBL 2.1 schema, then the official stylesheets of the rule set) and, since
-0.2.0, UN/CEFACT CII D16B invoices (the XML, then the official stylesheet:
-the CII schemas are not embedded). The CEN EN 16931 UBL and CII 1.3.17 rule sets are built in, and the
+0.2.0, UN/CEFACT CII D16B invoices (the XML, the UN/CEFACT CII D16B schema, then the official
+stylesheet). The CEN EN 16931 UBL and CII 1.3.17 rule sets are built in, and the
 tool picks one from each document's root element; Peppol BIS Billing 3.0.22 (its own rules and
 the CEN rules it embeds) is used as a bundle built locally, since its files may not be
 redistributed. Factur-X 1.09.2, XRechnung 3.0.2 and the French e-invoicing rules (FNFE-MPE
@@ -41,7 +41,8 @@ rule sets, the engine produces the same SVRL report as Saxon-HE (see the table b
 | `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1555 cases, every corpus case agrees, the other differences are listed with their cause (XAdES content is validated laxly: its schemas are not redistributable) | done ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6) follow-ups) |
 | Public API (`einvoice-validator`: rule-set bundles, `Validator`, `Report`) and command-line tool (`einvoice-validate`); verdicts and findings agree with Saxon-HE on all 1179 CEN cases and 508 mutation cases and, with the Peppol bundle, on all 707 Peppol cases and 509 mutation cases | done ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
 | Test corpus of CEN EN 16931 CII 1.3.17 (24 cases: the 15 examples and the 9 VEFA tests of the release, and 808 mutation cases of our own, [`corpus/mutations-cii.toml`](corpus/mutations-cii.toml)) with the Saxon-HE results; 785 of the 810 assert ids of the stylesheet fail in some case, the 25 others cannot ([`corpus/cen-en16931-cii-1.3.17/README.md`](corpus/cen-en16931-cii-1.3.17/README.md)) | done ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
-| Same results as Saxon-HE on the whole CII corpus; built-in rule set `cen-cii` and detection of the syntax from the root element in `einvoice-validate` | done: 24 / 24 cases and 808 / 808 mutation cases identical, from the engine, the library and the tool ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)); XML Schema validation of CII is not done: the UN/CEFACT D16B schemas are not embedded |
+| Same results as Saxon-HE on the whole CII corpus; built-in rule set `cen-cii` and detection of the syntax from the root element in `einvoice-validate` | done: 24 / 24 cases and 808 / 808 mutation cases identical, from the engine, the library and the tool ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
+| `einvoice-xsd`: UN/CEFACT CII D16B XML Schema validation against the official schemas (uncoupled code lists, UNECE's files vendored unmodified), run first by `cen-cii`; compared with xmllint on the 24 cases and 808 mutation cases of the CEN CII corpus, every corpus case agrees, the 4 mutation cases that differ are listed with their cause; locally, the same on the CII corpora of XRechnung, Factur-X and the French rules. CII D22B is not embedded: its schemas carry no licence notice | done ([#32](https://github.com/einvoice-validator/einvoice-validator/issues/32)) |
 | WebAssembly build | done on `main`, not yet published: the library runs on `wasm32-unknown-unknown`, with the current date and time given by the caller (CI validates two corpus documents with the built-in rule set under wasmtime); the npm package `einvoice-validator` (crate `einvoice-wasm`, JavaScript and TypeScript bindings, for Node.js 22, browsers and bundlers, with `cen-ubl` and `cen-cii`) gives the Saxon-HE findings on all 2515 CEN UBL and CII cases under Node.js and in headless Chrome and Firefox ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
 | Factur-X / ZUGFeRD / Order-X PDF files | done on `main`: `einvoice-pdf` extracts the embedded invoice XML and the XMP metadata in pure Rust; `einvoice-validate` and the library (feature `pdf`) validate a PDF through the XML it embeds ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
 | Streaming XML parser (`einvoice-xml`) | done on `main`: checked against `roxmltree` on every XML file of the repository and on 133231 damaged documents, and against Saxon-HE; the validator reads each document with it, in one pass for the XML check and the XML schema, and builds the stylesheets' input tree from it; the SVRL report is kept compactly and its findings are read as the stylesheet writes it, without parsing it again: on an invoice of 5000 lines the peak heap of a validation drops from 9.5 to 2.1 times the document, the input tree alone being 1.9 times ([#18](https://github.com/einvoice-validator/einvoice-validator/issues/18)) |
@@ -143,9 +144,9 @@ XRechnung bundles run the scenarios of the KoSIT configuration as the KoSIT vali
 stylesheets that run (the CEN rules alone, or the CEN and XRechnung rules) and gives some rule
 ids levels of their own (`customLevel`), and a document that matches no scenario is rejected. On
 every document of the test corpora, the verdict of each bundle is the one the reference
-validator's reading of the Saxon-HE reports gives. One gap: the KoSIT configuration also validates
-CII documents against the UN/CEFACT CII D16B XML schema, which is not embedded; the CII bundle
-names it unchecked and the reports say so. `--fail-closed` makes every other finding without a known severity fatal.
+validator's reading of the Saxon-HE reports gives, the XML schema of the scenario included (UBL
+2.1, or UN/CEFACT CII D16B for CII). `--fail-closed` makes every other finding without a known
+severity fatal.
 
 Downloading uses rustls with a cryptography provider on the RustCrypto crates, pure Rust like
 the rest: it is the `fetch` feature of `einvoice-cli` (on by default);
@@ -226,11 +227,13 @@ document today) to 2.6 times (CEN CII).
 |---|---|---|
 | CEN EN 16931, UBL syntax | 1.3.17 | Artefacts vendored unmodified in `artefacts/`; test corpus and Saxon-HE results in `corpus/`. Built into `einvoice-validator` as the rule set `cen-ubl` (default feature `cen-ubl`). |
 | Peppol BIS Billing 3.0, UBL syntax | 3.0.22 | Not vendored: the upstream repository publishes no licence. `scripts/fetch-peppol.sh` fetches the pinned tag and compiles its two Schematron files to XSLT (ISO skeleton of ph-schematron) into `target/peppol/`, every input and output checked against a pinned checksum, with the `bundle.toml` that makes the directory a rule-set bundle; `scripts/check.sh peppol` builds the corpus and the Saxon-HE results there. |
-| CEN EN 16931, UN/CEFACT CII D16B syntax | 1.3.17 | Artefacts vendored unmodified in `artefacts/` (the CII D16B schemas of the source archive excepted: they are UN/CEFACT works, and no schema validation is done for CII); test corpus, mutation cases and Saxon-HE results in `corpus/`. Built into `einvoice-validator` as the rule set `cen-cii` (default feature `cen-cii`), without a schema. |
+| CEN EN 16931, UN/CEFACT CII D16B syntax | 1.3.17 | Artefacts vendored unmodified in `artefacts/` (the CII D16B schemas of the source archive excepted: `einvoice-xsd` vendors UNECE's own files); test corpus, mutation cases and Saxon-HE results in `corpus/`. Built into `einvoice-validator` as the rule set `cen-cii` (default feature `cen-cii`), with the UN/CEFACT CII D16B schemas. |
 | Factur-X / ZUGFeRD, CII syntax | Factur-X 1.09.2 | Not vendored: the official package is behind a registration form, and the example documents are AFNOR's (all rights reserved). `scripts/fetch-facturx.sh` takes the stylesheets of the five profiles from the Mustang validator 2.26.0 on Maven Central and the examples of XP Z12-012 and XP Z12-014 from `fnfe-mpe.org`, every input checked against a pinned checksum, with one rule-set bundle per profile; `scripts/check.sh facturx` builds the corpus and the Saxon-HE results in `target/facturx/` and runs the engine on it. |
 | XRechnung, UBL and CII syntaxes | XRechnung 3.0.2 | Not vendored: the XRechnung Schematron includes rules derived from Peppol BIS Billing 3.0. `scripts/fetch-xrechnung.sh` fetches KoSIT's validator configuration, test suite and Schematron unit tests (expanded by XML Mutate) from KoSIT's GitLab, every input checked against a pinned checksum, with a bundle per syntax; `scripts/check.sh xrechnung` builds the corpora in `target/xrechnung/` and runs the engine on them. |
 | French e-invoicing rules (XP Z12-012), CII, UBL and CDAR | FNFE-MPE package 1.4.0.04 | Not vendored: the licence statements of the package disagree, and the example documents are AFNOR's (all rights reserved). `scripts/fetch-fr-ctc.sh` fetches the package and the examples from `fnfe-mpe.org`, every input checked against a pinned checksum, with a bundle per profile; `scripts/check.sh fr-ctc` builds the corpora in `target/fr-ctc/` and runs the engine on them. |
 | OASIS UBL 2.1 schemas (Invoice, CreditNote) | 2.1 | Vendored unmodified in `crates/einvoice-xsd/schemas/`, except the two ETSI XAdES schemas, which are not redistributable; `einvoice-xsd` validates against them. |
+| UN/CEFACT CII D16B schemas (CrossIndustryInvoice, uncoupled code lists) | D16B | Vendored unmodified (UNECE's files, CRLF line ends included) in `crates/einvoice-xsd/schemas/uncefact-cii-d16b/`: the entry point and the three modules it imports; `einvoice-xsd` validates against them, and the rule set `cen-cii` does so first. |
+| UN/CEFACT CII D22B schemas | D22B | Not vendored: UNECE publishes them with no copyright notice or licence, so the default terms of the United Nations web sites apply, which give no right to redistribute. `einvoice-xsd` loads them from files the user has (`Schema::load`). |
 
 The pinned versions are listed in `upstream.toml`; a weekly workflow reports newer upstream
 releases.
@@ -247,7 +250,7 @@ flowchart LR
     eval --> exec["einvoice-xslt-exec<br/>XSLT executor + SVRL"]
     invoice["Invoice XML"] --> exec
     exec --> api["einvoice-validator<br/>API"]
-    invoice --> xsd["einvoice-xsd<br/>UBL 2.1 schemas"]
+    invoice --> xsd["einvoice-xsd<br/>UBL 2.1 and CII D16B schemas"]
     xsd --> api
     api --> cli["einvoice-cli<br/>einvoice-validate"]
     exec -.->|compared with| golden["Saxon-HE goldens<br/>(corpus/)"]
@@ -260,7 +263,7 @@ flowchart LR
 | [`einvoice-xpath`](crates/einvoice-xpath) | Parser and syntax tree for the XPath 2.0 subset, XSLT match patterns, sequence types and attribute value templates. |
 | [`einvoice-xpath-eval`](crates/einvoice-xpath-eval) | Node model and evaluator of the XPath 2.0 subset, with the behaviour of Saxon-HE 12.10; unknown functions and variables are refused when an expression is compiled. |
 | [`einvoice-xslt`](crates/einvoice-xslt) | Loader for the XSLT 2.0 subset emitted by the Schematron compilers: templates, modes, priorities, functions, variables, parameters and instructions, each with its source line. |
-| [`einvoice-xsd`](crates/einvoice-xsd) | XML Schema validation of UBL 2.1 Invoice and CreditNote documents against the official OASIS UBL 2.1 schemas, which it embeds; implements exactly the XML Schema 1.0 constructs those schemas use and refuses any other at load time. |
+| [`einvoice-xsd`](crates/einvoice-xsd) | XML Schema validation of UBL 2.1 Invoice and CreditNote documents against the official OASIS UBL 2.1 schemas, and of UN/CEFACT CII D16B documents against the official UN/CEFACT schemas, which it embeds; implements exactly the XML Schema 1.0 constructs those schemas (and the other CII-family schemas) use and refuses any other at load time. |
 | [`einvoice-xslt-exec`](crates/einvoice-xslt-exec) | Executor of the XSLT 2.0 subset: runs the official compiled Schematron with the behaviour of Saxon-HE 12.10 and writes SVRL; constructs whose result would differ are refused when a stylesheet is prepared. |
 | [`einvoice-svrl`](crates/einvoice-svrl) | The canonical, line-oriented form of SVRL reports ([`corpus/SVRL-CANONICAL.md`](corpus/SVRL-CANONICAL.md)) used to compare reports with the reference engine. |
 | [`einvoice-validator`](crates/einvoice-validator) | The public crate: rule-set bundles (a `bundle.toml` manifest with the SHA-256 of each stylesheet and of each resource read with `document()`, from memory or a directory; CEN EN 16931 UBL and CII 1.3.17 built in), the `Validator` (XML check, the schema of the rule set if any, then each stylesheet; `Send + Sync`), the `Report` (schema errors, findings, SVRL, verdict) and `Syntax` (UBL or CII, from the root element). |
@@ -346,13 +349,13 @@ cargo test -p einvoice-xslt-exec --test mutation_equivalence -- --nocapture # th
 cargo test -p einvoice-xslt-exec --test cii_equivalence -- --nocapture      # the engine on the CII corpus and its mutation cases
 cargo test -p einvoice-cli --test peppol_bundle -- --nocapture              # einvoice-validate with the Peppol bundle
 cargo run --release -p einvoice-xsd --example xmllint-oracle                # xmllint on the oracle cases of einvoice-xsd
-cargo run --release -p einvoice-xsd --example heap                          # heap of the UBL 2.1 schema and of validating the CEN corpus
+cargo run --release -p einvoice-xsd --example heap                          # heap of the UBL 2.1 and CII D16B schemas and of validating the CEN corpora
 ```
 
 ## Repository layout
 
 ```text
-crates/              the library crates and the command-line tool (see the table above); einvoice-xsd holds the UBL 2.1 schemas
+crates/              the library crates and the command-line tool (see the table above); einvoice-xsd holds the UBL 2.1 and CII D16B schemas
 xtask/               repository tooling (cargo xtask ...)
 artefacts/           official validation artefacts, unmodified, with SHA256SUMS
 corpus/              test cases and Saxon-HE goldens, one directory per rule set
@@ -391,19 +394,20 @@ upstream.toml        every pinned upstream version and the files that record it
   (EUPL-1.2). `corpus/cen-en16931-ubl-1.3.17/` and `corpus/cen-en16931-cii-1.3.17/` are derived
   from them, their mutation cases included, and are EUPL-1.2 too. Each directory has a README
   with the provenance and a `LICENSE.txt`. The UN/CEFACT CII D16B schemas of the CEN source
-  archive are not vendored.
+  archive are not vendored there (see below for UNECE's own files).
 - `einvoice-validator` embeds the CEN stylesheets of those two directories (EUPL-1.2), vendored
   unmodified in the crate (`crates/einvoice-validator/bundles/cen-ubl/` and `bundles/cen-cii/`),
   through its default features `cen-ubl` and `cen-cii`, which provide the built-in rule sets of
   the same names; so does the `einvoice-validate` binary, and through `einvoice-xsd` both embed
-  the OASIS UBL 2.1 schemas. `einvoice-validator` and `einvoice-cli` are therefore licensed
+  the OASIS UBL 2.1 and UN/CEFACT CII D16B schemas. `einvoice-validator` and `einvoice-cli` are
+  therefore licensed
   `MIT AND EUPL-1.2 AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720`,
   and so is the npm package `einvoice-validator` (crate `einvoice-wasm`), which embeds the same.
   Built with `default-features = false`, the library embeds no rule set and
   uses only the bundles it is given. Every crate ships the texts of its licences in its
   `LICENSES/` directory. `einvoice-validate --licences` prints the licences of everything the
-  binary embeds (MIT, EUPL-1.2, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1
-  schemas) in full, and `einvoice_validator::licences()` returns them to other programs.
+  binary embeds (MIT, EUPL-1.2, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1 and CII
+  D16B schemas) in full, and `einvoice_validator::licences()` returns them to other programs.
 - The `einvoice-validate` binary and the npm package are also compiled from crates of
   crates.io, each used under the MIT licence (and the Unicode licence v3 for the tables of
   `unicode-ident`). `crates/einvoice-cli/THIRD-PARTY-NOTICES` and
@@ -431,6 +435,14 @@ upstream.toml        every pinned upstream version and the files that record it
   therefore validates XAdES content (in UBL extensions and signatures) laxly; the README of the
   schema directory says what that means. The xmllint oracle of `einvoice-xsd` downloads the two
   files from OASIS (checksums verified) into `target/`, for the tests only.
+- `crates/einvoice-xsd/schemas/uncefact-cii-d16b/` holds the four UN/CEFACT CII D16B schema
+  documents reachable from `CrossIndustryInvoice_100pD16B.xsd` (uncoupled code lists), UNECE's
+  files vendored unmodified and embedded in `einvoice-xsd`. They are not under the MIT licence:
+  each keeps the UN/CEFACT notice in its header (copyright UN/CEFACT 2016), the same notice, but
+  for the year, as the UN/CEFACT module of the UBL 2.1 schemas, so the same term of the licence
+  expression covers them (`LicenseRef-UN-CEFACT-Copyright-Notice`, whose text carries both
+  copyright lines). The UN/CEFACT CII D22B schemas are not redistributed: they carry no notice
+  or licence (the README of the schema directory explains).
 - xmllint (libxml2) is the reference of the `einvoice-xsd` tests only; it is neither part of the
   repository nor a dependency.
 

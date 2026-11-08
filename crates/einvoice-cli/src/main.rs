@@ -163,8 +163,8 @@ const THIRD_PARTY_NOTICES: &str = include_str!("../THIRD-PARTY-NOTICES");
 
 /// The licence notices of everything the binary embeds, with their full texts: the
 /// code (MIT), then the other licences `einvoice_validator::licences` lists for this
-/// build (the CEN stylesheets of the built-in rule sets, the UBL 2.1 schemas), then the
-/// notices of the third-party crates it is compiled from.
+/// build (the CEN stylesheets of the built-in rule sets, the UBL 2.1 and CII D16B schemas),
+/// then the notices of the third-party crates it is compiled from.
 fn licences() -> String {
     let licences = einvoice_validator::licences();
     let mut out = format!(
@@ -230,7 +230,7 @@ Options:
   -h, --help           Print this help.
   -V, --version        Print the version and the built-in rule sets.
       --licences       Print the licences of everything embedded in this program
-                       (its code, the CEN stylesheets, the UBL 2.1 schemas, the
+                       (its code, the CEN stylesheets, the XML schemas, the
                        third-party crates), with their full texts. Also --licenses.
 
 Built-in rule sets:

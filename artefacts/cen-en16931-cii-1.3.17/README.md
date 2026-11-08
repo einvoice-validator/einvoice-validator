@@ -30,8 +30,10 @@ ones in the release asset, which holds exactly `cii/examples/`, `cii/schematron/
 - `LICENSE.txt`: the licence (the same file as in `../cen-en16931-ubl-1.3.17/`).
 
 Not vendored: `cii/schema/`, the UN/CEFACT CII D16B XML schemas the source archive carries
-(the release asset does not). They are UN/CEFACT works under their own terms, not the EUPL;
-the rule set runs without XML schema validation.
+(the release asset does not). They are UN/CEFACT works under their own terms, not the EUPL,
+and the copies there have LF line ends where UNECE's files have CRLF. `einvoice-xsd` vendors
+UNECE's files of the uncoupled set (`crates/einvoice-xsd/schemas/uncefact-cii-d16b/`), which
+the rule set validates documents against first.
 
 ## Licence
 

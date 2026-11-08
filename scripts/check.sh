@@ -450,12 +450,15 @@ build_corpus() {
 # and cross-checks the goldens with the expectations (XML Mutate, accepted
 # documents) against the committed records (build_corpus), then the
 # equivalence test of the engine on the corpus (tests/<family>_equivalence.rs
-# of einvoice-xslt-exec, required).
+# of einvoice-xslt-exec, required), then xmllint (libxml2) and einvoice-xsd on
+# every case of the family's CII corpus against the CII D16B schemas
+# (fetched_cii_corpora_agree_with_xmllint in tests/oracle.rs of einvoice-xsd,
+# required: every difference must be explained).
 # Without Java or without network access (and nothing cached yet),
-# SKIPPED, except in CI, where it fails.
-#   fetched_family NAME SCRIPT
+# SKIPPED, except in CI, where it fails; so is the xmllint run without xmllint.
+#   fetched_family NAME SCRIPT CII_CORPUS
 fetched_family() {
-    local name=$1 script=$2 status=0
+    local name=$1 script=$2 cii=$3 status=0
     build_corpus "$name" "$script" || status=$?
     [ "$status" -ne 2 ] || return 0
     [ "$status" -eq 0 ] || return 1
@@ -464,11 +467,18 @@ fetched_family() {
     local test=${name//-/_} variable
     variable=EINVOICE_$(echo "$test" | tr '[:lower:]' '[:upper:]')_REQUIRED
     env "$variable=1" cargo test --locked --release -p einvoice-xslt-exec \
-        --test "${test}_equivalence" -- --nocapture
+        --test "${test}_equivalence" -- --nocapture || return 1
+    local xmllint=${XMLLINT:-xmllint}
+    if command -v "$xmllint" >/dev/null 2>&1; then
+        XMLLINT=$xmllint EINVOICE_XSD_FETCHED_REQUIRED=$cii cargo test --locked --release \
+            -p einvoice-xsd --test oracle fetched_cii_corpora_agree_with_xmllint -- --nocapture
+    else
+        missing "xmllint on the $name CII corpus (xmllint is not installed)"
+    fi
 }
-job_facturx() { fetched_family facturx scripts/fetch-facturx.sh; }
-job_xrechnung() { fetched_family xrechnung scripts/fetch-xrechnung.sh; }
-job_fr-ctc() { fetched_family fr-ctc scripts/fetch-fr-ctc.sh; }
+job_facturx() { fetched_family facturx scripts/fetch-facturx.sh factur-x-1.09.2; }
+job_xrechnung() { fetched_family xrechnung scripts/fetch-xrechnung.sh xrechnung-cii-3.0.2; }
+job_fr-ctc() { fetched_family fr-ctc scripts/fetch-fr-ctc.sh fr-ctc-cii-1.4.0.04; }
 # The rule sets fetched on demand (`einvoice-validate rules`, the feature `fetch` of
 # einvoice-validator): the pins embedded in the crate are the fetch scripts' pin blocks
 # and the URLs the scripts download; the bundles `rules fetch` assembles from the

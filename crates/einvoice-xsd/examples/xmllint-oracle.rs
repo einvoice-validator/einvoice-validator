@@ -17,6 +17,11 @@
 //!   complex types) and its documents, mutations and schema mutations, against
 //!   `tests/oracle/synthetic/expected.tsv` and `disagreements.tsv`; a schema
 //!   mutation's verdict is whether xmllint compiles the edited set.
+//! * CII: every case and mutation case of the CEN CII corpus validated with xmllint
+//!   against the vendored CII D16B schemas (the same files this crate embeds),
+//!   compared with `tests/oracle/cii/expected.tsv` (or written there), then this crate
+//!   ([`einvoice_xsd::Schema::cii_d16b`]) against xmllint, every difference documented
+//!   in `tests/oracle/cii/disagreements.tsv` and none on a corpus case.
 //!
 //! ```text
 //! cargo run -p einvoice-xsd --example xmllint-oracle             run xmllint, compare with expected.tsv
@@ -74,7 +79,29 @@ fn run() -> Result<bool, String> {
     println!("{}", xmllint::version(&program)?);
     let ubl_ok = ubl(&program, write)?;
     let synthetic_ok = synthetic(&program, write)?;
-    Ok(ubl_ok && synthetic_ok)
+    let cii_ok = cii(&program, write)?;
+    Ok(ubl_ok && synthetic_ok && cii_ok)
+}
+
+/// The CII suite.
+fn cii(program: &str, write: bool) -> Result<bool, String> {
+    let cases = format::cii_cases()?;
+    let entry = format::cii_entry_point()
+        .canonicalize()
+        .map_err(|e| format!("CII D16B schemas: {e}"))?;
+    let observed = xmllint::run(program, &cases, &entry, &oracle_work_dir().join("cii"))?;
+    let ok = check_expected(&format::cii_dir().join("expected.tsv"), &observed, write)?;
+    let documented =
+        format::parse_disagreements(&format::read(&format::cii_dir().join("disagreements.tsv"))?)?;
+    let observed_map: BTreeMap<String, Expected> = observed.iter().cloned().collect();
+    let schema = einvoice_xsd::Schema::cii_d16b().map_err(|e| e.to_string())?;
+    let cii_ok = report(
+        "einvoice-xsd (CII D16B schemas) vs xmllint",
+        &cases,
+        &format::differences(&schema, &cases, &observed_map)?,
+        &documented,
+    );
+    Ok(ok && cii_ok)
 }
 
 /// The UBL suite.

@@ -67,7 +67,7 @@ pub struct Validator {
 impl Validator {
     /// The built-in rule set `name` (see `builtinRuleSets()`): `"cen-ubl"`, the CEN
     /// EN 16931 validation artefacts for UBL, release 1.3.17, with the UBL 2.1 schemas;
-    /// `"cen-cii"`, the same release for UN/CEFACT CII D16B, without an XML schema.
+    /// `"cen-cii"`, the same release for UN/CEFACT CII D16B, with the CII D16B schemas.
     ///
     /// # Errors
     ///
@@ -188,9 +188,9 @@ pub fn builtin_rule_sets() -> Result<JsValue, JsValue> {
 
 /// Every licence of what the package embeds, with what it covers and its full text: the
 /// MIT licence of the code, the EUPL-1.2 of the CEN stylesheet of the built-in rule set,
-/// and the terms of the OASIS UBL 2.1 schemas (OASIS, UN/CEFACT, W3C). The W3C licence of
-/// the XML Signature schema asks for its notice "in a location viewable to users": an
-/// application can show these texts.
+/// and the terms of the OASIS UBL 2.1 and UN/CEFACT CII D16B schemas (OASIS, UN/CEFACT,
+/// W3C). The W3C licence of the XML Signature schema asks for its notice "in a location
+/// viewable to users": an application can show these texts.
 ///
 /// # Errors
 ///

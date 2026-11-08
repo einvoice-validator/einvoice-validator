@@ -8,17 +8,18 @@
 //!
 //! - `einvoice-validate` (the release build, `--cli`, by default
 //!   `target/release/einvoice-validate`), one process for the whole job:
-//!   `--format json --jobs N`, with the built-in rule set (`cen-ubl`,
-//!   `cen-cii`) or a bundle of the rule set's stylesheets and the files they
-//!   read; the bundle of a UBL rule set names the UBL 2.1 schema, so that the
-//!   tool validates as it does for its users, the XML schema included. In
+//!   `--format json --jobs N`, with the built-in rule set (`cen-ubl` with the
+//!   UBL 2.1 schema, `cen-cii` with the CII D16B schema) or a bundle of the rule
+//!   set's stylesheets and the files they read; the bundle of a UBL rule set
+//!   names the UBL 2.1 schema, so that the tool validates as it does for its
+//!   users, the XML schema included. In
 //!   that run, a stylesheet that stops with a dynamic error on a document
 //!   without schema errors ends the document's validation: the stylesheets
 //!   after it do not run on it;
 //! - `einvoice-validate` doing exactly the work of Saxon-HE, when that run
-//!   does not (a UBL rule set, or several stylesheets): one process per
-//!   stylesheet, each with a bundle of that stylesheet alone and no schema,
-//!   so that every stylesheet runs on every document;
+//!   does not (a rule set with an XML schema, or several stylesheets): one
+//!   process per stylesheet, each with a bundle of that stylesheet alone and
+//!   no schema, so that every stylesheet runs on every document;
 //! - Saxon-HE 12.10 (the pinned jars of `scripts/fetch-saxon.sh`), one JVM
 //!   per stylesheet (`net.sf.saxon.Transform` runs one stylesheet), on the
 //!   directory of the documents with `-threads:N` and `-t`. On one thread,
@@ -87,8 +88,9 @@ pub(crate) struct Target {
     family: Option<&'static Family>,
     /// The built-in rule set of `einvoice-validate` with these stylesheets.
     builtin: Option<&'static str>,
-    /// Whether documents are UBL: the bundle then names the UBL 2.1 schema.
-    ubl: bool,
+    /// The XML schema `einvoice-validate` validates the documents against: the
+    /// built-in rule set's, or the one the bundle names (UBL 2.1 for UBL).
+    schema: Option<&'static str>,
 }
 
 pub(crate) const TARGETS: &[Target] = &[
@@ -98,7 +100,7 @@ pub(crate) const TARGETS: &[Target] = &[
         rule_set: &ruleset::CEN_UBL,
         family: None,
         builtin: Some("cen-ubl"),
-        ubl: true,
+        schema: Some("ubl-2.1"),
     },
     Target {
         key: "cen-cii",
@@ -106,7 +108,7 @@ pub(crate) const TARGETS: &[Target] = &[
         rule_set: &ruleset::CEN_CII,
         family: None,
         builtin: Some("cen-cii"),
-        ubl: false,
+        schema: Some("cii-d16b"),
     },
     Target {
         key: "peppol",
@@ -114,7 +116,7 @@ pub(crate) const TARGETS: &[Target] = &[
         rule_set: &ruleset::PEPPOL_UBL,
         family: Some(&ruleset::PEPPOL),
         builtin: None,
-        ubl: true,
+        schema: Some("ubl-2.1"),
     },
     Target {
         key: "facturx",
@@ -122,7 +124,7 @@ pub(crate) const TARGETS: &[Target] = &[
         rule_set: &ruleset::FACTURX,
         family: Some(&ruleset::FACTURX_FAMILY),
         builtin: None,
-        ubl: false,
+        schema: None,
     },
     Target {
         key: "xrechnung-ubl",
@@ -130,7 +132,7 @@ pub(crate) const TARGETS: &[Target] = &[
         rule_set: &ruleset::XRECHNUNG_UBL,
         family: Some(&ruleset::XRECHNUNG),
         builtin: None,
-        ubl: true,
+        schema: Some("ubl-2.1"),
     },
     Target {
         key: "xrechnung-cii",
@@ -138,7 +140,7 @@ pub(crate) const TARGETS: &[Target] = &[
         rule_set: &ruleset::XRECHNUNG_CII,
         family: Some(&ruleset::XRECHNUNG),
         builtin: None,
-        ubl: false,
+        schema: None,
     },
     Target {
         key: "fr-ctc-cii",
@@ -146,7 +148,7 @@ pub(crate) const TARGETS: &[Target] = &[
         rule_set: &ruleset::FR_CTC_CII,
         family: Some(&ruleset::FR_CTC),
         builtin: None,
-        ubl: false,
+        schema: None,
     },
     Target {
         key: "fr-ctc-ubl",
@@ -154,7 +156,7 @@ pub(crate) const TARGETS: &[Target] = &[
         rule_set: &ruleset::FR_CTC_UBL,
         family: Some(&ruleset::FR_CTC),
         builtin: None,
-        ubl: true,
+        schema: Some("ubl-2.1"),
     },
     Target {
         key: "fr-ctc-cdar",
@@ -162,7 +164,7 @@ pub(crate) const TARGETS: &[Target] = &[
         rule_set: &ruleset::FR_CTC_CDAR,
         family: Some(&ruleset::FR_CTC),
         builtin: None,
-        ubl: false,
+        schema: None,
     },
 ];
 
@@ -423,18 +425,18 @@ fn stage(root: &Path, work: &Path, target: &Target) -> Result<Staged> {
             &base,
             target,
             &all,
-            target.ubl,
+            target.schema,
         )?),
     };
     let mut same_work = Vec::new();
-    if target.ubl || all.len() > 1 {
+    if target.schema.is_some() || all.len() > 1 {
         for (index, stylesheet) in all.iter().enumerate() {
             same_work.push(write_bundle(
                 &dir.join(format!("bundle-{index}")),
                 &base,
                 target,
                 &[stylesheet],
-                false,
+                None,
             )?);
         }
     }
@@ -449,22 +451,22 @@ fn stage(root: &Path, work: &Path, target: &Target) -> Result<Staged> {
 }
 
 /// Writes a bundle of `stylesheets` and of the files they read with
-/// `document()`, at their paths relative to the base directory, naming the
-/// UBL 2.1 schema when `schema`.
+/// `document()`, at their paths relative to the base directory, naming
+/// `schema`, if any.
 fn write_bundle(
     dir: &Path,
     base: &Path,
     target: &Target,
     stylesheets: &[&Stylesheet],
-    schema: bool,
+    schema: Option<&str>,
 ) -> Result<PathBuf> {
     util::remove_dir(dir)?;
     let mut manifest = format!(
         "# {}, written by `cargo xtask bench`.\nformat = 2\nname = \"bench-{}\"\ntitle = \"{}\"\nversion = \"0\"\n",
         target.title, target.key, target.title
     );
-    if schema {
-        manifest.push_str("schema = \"ubl-2.1\"\n");
+    if let Some(schema) = schema {
+        let _ = writeln!(manifest, "schema = \"{schema}\"");
     }
     let mut resources: Vec<String> = Vec::new();
     for stylesheet in stylesheets {
@@ -568,7 +570,7 @@ fn bench_target(
         title: target.title,
         documents,
         stylesheets: staged.stylesheets.len(),
-        schema: target.ubl,
+        schema: target.schema,
         max_depth: staged.max_depth,
         runs,
     })
@@ -856,7 +858,7 @@ fn latency(root: &Path, work: &Path, tools: &Tools, runs: usize) -> Result<Laten
         root,
         target,
         &[stylesheet],
-        false,
+        None,
     )?;
     let dir = absolute(&dir)?;
     let xslt = absolute(&util::join(root, stylesheet.xslt))?;

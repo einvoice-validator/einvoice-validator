@@ -9,7 +9,9 @@ name: rulesets
 # Saxon-HE with every stylesheet, writes the acceptance table and
 # cross-checks the goldens with the expectations (XML Mutate tests, documents
 # the reference pipeline accepts) against the committed records of
-# disagreements (`cargo xtask <family>`), then runs the engine on the corpus.
+# disagreements (`cargo xtask <family>`), then runs the engine on the corpus,
+# and compares einvoice-xsd with xmllint on the CII corpus against the CII
+# D16B schemas.
 # The rules job builds the four corpora, Peppol BIS Billing's included, on
 # one runner (`scripts/check.sh corpora`, without the engine runs of the
 # other jobs and of peppol.yml) and runs `scripts/check.sh rules` on them:
@@ -96,7 +98,10 @@ defaults:
 jobs:
   corpus:
     name: ${{ matrix.family }} (corpus, Saxon-HE goldens, cross-checks)
-    runs-on: ubuntu-latest
+    # Not ubuntu-latest: the explanations of the xmllint differences on the CII
+    # corpora (crates/einvoice-xsd/tests/oracle/cii/) are those of libxml2
+    # 2.9.14, the version Ubuntu 24.04 ships.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -110,6 +115,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      # xmllint (libxml2), the reference of einvoice-xsd.
+      - name: Install xmllint
+        run: |
+          sudo apt-get -o Acquire::Retries=5 update -qq
+          sudo apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends libxml2-utils
+          xmllint --version 2>&1 | head -n 1
       - name: Install the toolchain pinned in rust-toolchain.toml
         run: scripts/check.sh toolchain
       # The downloads and the Saxon-HE jars, keyed by the pins. A cached file

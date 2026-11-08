@@ -166,12 +166,12 @@ fn the_builtin_rule_set_embeds_the_vendored_files() {
 #[test]
 fn the_builtin_cii_rule_set_embeds_the_vendored_files() {
     check_embedded("cen-cii");
-    // No schema: the UN/CEFACT CII D16B schemas are not embedded.
+    // The UN/CEFACT CII D16B schemas, embedded in einvoice-xsd.
     assert_eq!(
         einvoice_validator::RuleSet::builtin("cen-cii")
             .unwrap()
             .schema(),
-        None
+        Some(einvoice_validator::SchemaId::CiiD16b)
     );
 }
 

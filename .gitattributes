@@ -11,3 +11,5 @@ corpus/*/LICENSE.txt -text
 crates/einvoice-validator/bundles/cen-ubl/ubl/** -text
 crates/einvoice-validator/bundles/cen-cii/cii/** -text
 crates/*/LICENSES/EUPL-1.2.txt -text
+# UNECE's original bytes of the UN/CEFACT CII D16B schemas (CRLF line ends).
+crates/einvoice-xsd/schemas/uncefact-cii-d16b/** -text

@@ -6,11 +6,11 @@ JVM, no native code, nothing fetched at run time. For browsers, bundlers and Nod
 TypeScript declarations.
 
 Each validation runs the XML check (UTF-8, well-formed, no document type declaration, no
-element nested deeper than 256 levels), the OASIS UBL 2.1 schema for UBL (the CII schemas are
-not embedded), then the official compiled CEN EN 16931 Schematron stylesheet of the syntax
-(release 1.3.17, embedded unmodified), executed with the behaviour of the reference engine,
-Saxon-HE: on every case of the CEN UBL and CII test corpora, the findings are those Saxon-HE
-reports. The package is the Rust library
+element nested deeper than 256 levels), the XML schema of the syntax (OASIS UBL 2.1 for UBL,
+UN/CEFACT CII D16B for CII), then the official compiled CEN EN 16931 Schematron stylesheet of
+the syntax (release 1.3.17, embedded unmodified), executed with the behaviour of the reference
+engine, Saxon-HE: on every case of the CEN UBL and CII test corpora, the findings are those
+Saxon-HE reports. The package is the Rust library
 [einvoice-validator](https://crates.io/crates/einvoice-validator) compiled to WebAssembly.
 
 ```sh
@@ -55,15 +55,15 @@ const bytes = new Uint8Array(await file.arrayBuffer());
 const report = validator.validate(bytes);
 ```
 
-The module is about 6.5 MB (1.0 MB with gzip, 0.7 MB with brotli): it embeds the CEN UBL and
-CII stylesheets and the UBL 2.1 schemas. In a page, validate in a Web Worker to keep the main
-thread free.
+The module is about 6.8 MB (1.1 MB with gzip, 0.7 MB with brotli): it embeds the CEN UBL and
+CII stylesheets and the UBL 2.1 and CII D16B schemas. In a page, validate in a Web Worker to
+keep the main thread free.
 
 ## API
 
 - `new Validator(name)`, `Validator.builtin(name)`: the built-in rule set `name`, `"cen-ubl"`
-  for UBL invoices and credit notes, `"cen-cii"` for CII invoices (no XML schema: the CII
-  rules only); `builtinRuleSets()` lists them (`["cen-ubl", "cen-cii"]`). Each validates
+  for UBL invoices and credit notes, `"cen-cii"` for CII invoices (with the CII D16B
+  schema); `builtinRuleSets()` lists them (`["cen-ubl", "cen-cii"]`). Each validates
   documents of its syntax only. `validator.ruleSet`: its name, title,
   version, schema and stylesheets (with their SHA-256). `validator.free()` releases its memory
   at once (otherwise it is released when the object is garbage-collected).
@@ -127,9 +127,10 @@ type or out of range throws a `TypeError` or `RangeError` with the kind `argumen
 
 `MIT AND EUPL-1.2 AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720`:
 the code is MIT; the module embeds the CEN EN 16931 UBL and CII validation stylesheets, release
-1.3.17, unmodified, which are under the EUPL-1.2, and the OASIS UBL 2.1 schemas, which keep the terms
-stated in their headers (OASIS, UN/CEFACT, and the W3C licence of the XML Signature schema,
-which asks for its notice to be shown to users: `licences()` returns it). The texts are in
+1.3.17, unmodified, which are under the EUPL-1.2, and the OASIS UBL 2.1 and UN/CEFACT CII D16B
+schemas, which keep the terms stated in their headers (OASIS, UN/CEFACT, and the W3C licence of
+the XML Signature schema, which asks for its notice to be shown to users: `licences()` returns
+it). The texts are in
 `LICENSES/`. The module is also compiled from Rust crates of crates.io, used under the MIT
 licence (and the Unicode licence v3 for the tables of `unicode-ident`): `THIRD-PARTY-NOTICES`
 gives, for each, its version, its licence, its authors and the text of that licence with its

@@ -1,6 +1,6 @@
 [package]
 name = "einvoice-xsd"
-description = "XML Schema validation of UBL 2.1 Invoice and CreditNote documents against the official OASIS schemas, in pure Rust"
+description = "XML Schema validation of UBL 2.1 and UN/CEFACT CII D16B e-invoices against the official OASIS and UN/CEFACT schemas, in pure Rust"
 keywords = ["xsd", "ubl", "einvoice", "peppol", "en16931"]
 categories = ["parser-implementations", "finance", "wasm"]
 version.workspace = true
@@ -10,9 +10,9 @@ repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/einvoice-xsd"
 readme = "README.md"
-# The code is MIT; the embedded OASIS UBL 2.1 schemas (schemas/oasis-ubl-2.1/) keep the
-# terms stated in their own headers. Texts in LICENSES/, file by file in
-# schemas/oasis-ubl-2.1/README.md.
+# The code is MIT; the embedded OASIS UBL 2.1 schemas (schemas/oasis-ubl-2.1/) and
+# UN/CEFACT CII D16B schemas (schemas/uncefact-cii-d16b/) keep the terms stated in their
+# own headers. Texts in LICENSES/, file by file in the README.md of each directory.
 license = "MIT AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720"
 
 [dependencies]

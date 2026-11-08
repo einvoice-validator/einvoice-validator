@@ -46,8 +46,8 @@ const EUPL_COVERS: &str = "the CEN EN 16931 CII validation stylesheet, release 1
 /// Every licence of what this build of the crate embeds in a program, with its full
 /// text: the MIT licence of the code (of this crate and of the crates of the project
 /// it depends on, which share that licence), the EUPL-1.2 of the CEN stylesheets when
-/// the feature `cen-ubl` or `cen-cii` is on, then the terms of the UBL 2.1 schemas embedded by
-/// [`einvoice_xsd`] (OASIS, UN/CEFACT, W3C).
+/// the feature `cen-ubl` or `cen-cii` is on, then the terms of the UBL 2.1 and CII D16B
+/// schemas embedded by [`einvoice_xsd`] (OASIS, UN/CEFACT, W3C).
 ///
 /// The W3C licence of the XML Signature schema asks for its full notice "in a location
 /// viewable to users": a program built on this crate can show these texts, as

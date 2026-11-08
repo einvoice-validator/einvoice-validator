@@ -62,7 +62,7 @@ export interface RuleSetInfo {
   title: string;
   /** The version of the official artefacts: `"1.3.17"`. */
   version: string;
-  /** The XML schema a document is validated against first, if any: `"ubl-2.1"`. */
+  /** The XML schema a document is validated against first, if any: `"ubl-2.1"` or `"cii-d16b"`. */
   schema: string | null;
   /** The stylesheets, in the order they run. */
   stylesheets: StylesheetInfo[];

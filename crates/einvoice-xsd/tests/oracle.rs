@@ -137,9 +137,15 @@ fn documents_with_a_document_type_declaration_are_validated_alike() {
     let (cases, _, _) = load();
     let ubl = einvoice_xsd::Schema::ubl_2_1().unwrap();
     let synthetic = load_synthetic();
+    let cii = einvoice_xsd::Schema::cii_d16b().unwrap();
+    let cii_cases = format::cii_cases().unwrap();
     let mut compared = 0;
     let mut failures = Vec::new();
-    for (schema, cases) in [(&ubl, &cases), (&synthetic.schema, &synthetic.cases)] {
+    for (schema, cases) in [
+        (&ubl, &cases),
+        (&synthetic.schema, &synthetic.cases),
+        (&cii, &cii_cases),
+    ] {
         for case in cases.iter().filter(|c| !c.text.contains("<!DOCTYPE")) {
             let plain = schema.validate(&case.text);
             let declared = schema.validate(&with_document_type_declaration(&case.text));
@@ -170,7 +176,7 @@ fn documents_with_a_document_type_declaration_are_validated_alike() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert!(compared > 1500, "{compared} cases");
+    assert!(compared > 2300, "{compared} cases");
 }
 
 /// The synthetic suite: its schema set loaded, its cases, what xmllint said and the
@@ -300,6 +306,186 @@ fn mutations_apply_exactly_once() {
         format::crate_dir()
             .join("examples/xmllint-oracle.rs")
             .is_file()
+    );
+}
+
+/// The CII suite: its cases, what xmllint said and the documented disagreements.
+fn load_cii() -> (
+    Vec<format::Case>,
+    BTreeMap<String, format::Expected>,
+    Vec<format::Disagreement>,
+) {
+    let cases = format::cii_cases().unwrap();
+    let expected =
+        format::parse_expected(&format::read(&format::cii_dir().join("expected.tsv")).unwrap())
+            .unwrap();
+    let documented = format::parse_disagreements(
+        &format::read(&format::cii_dir().join("disagreements.tsv")).unwrap(),
+    )
+    .unwrap();
+    (cases, expected, documented)
+}
+
+#[test]
+fn cii_suite_agrees_with_xmllint_except_documented_disagreements() {
+    let (cases, expected, documented) = load_cii();
+    let corpus = cases.iter().filter(|c| c.id.starts_with("corpus/")).count();
+    assert_eq!((corpus, cases.len() - corpus), (24, 808));
+    let schema = einvoice_xsd::Schema::cii_d16b().unwrap();
+    let differences = format::differences(&schema, &cases, &expected).unwrap();
+    let problems = format::unexplained(&differences, &documented);
+    assert!(
+        problems.is_empty(),
+        "{} problems:\n{}",
+        problems.len(),
+        problems.join("\n")
+    );
+    // The official examples and test documents: no disagreement is tolerated there.
+    for case in cases.iter().filter(|c| c.id.starts_with("corpus/")) {
+        let ours = format::observe(&schema, case);
+        assert_eq!(Some(&ours), expected.get(&case.id), "{}", case.id);
+    }
+}
+
+#[test]
+fn cii_expected_file_is_canonical() {
+    let (_, expected, _) = load_cii();
+    let text = format::read(&format::cii_dir().join("expected.tsv")).unwrap();
+    let rewritten = format::format_expected(
+        &expected
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<Vec<_>>(),
+    );
+    let mut original: Vec<&str> = text.lines().collect();
+    let mut again: Vec<&str> = rewritten.lines().collect();
+    original.sort_unstable();
+    again.sort_unstable();
+    assert_eq!(original, again);
+}
+
+/// The CII corpora of the fetched rule sets (`corpus/README.md`): name, directory of the
+/// family's cache relative to the workspace root (the base of the `input` columns), and
+/// corpus directory relative to that one.
+const FETCHED_CII_CORPORA: [(&str, &str, &str); 3] = [
+    (
+        "xrechnung-cii-3.0.2",
+        "target/xrechnung/xrechnung-3.0.2",
+        "corpus-cii",
+    ),
+    (
+        "factur-x-1.09.2",
+        "target/facturx/factur-x-1.09.2",
+        "corpus",
+    ),
+    (
+        "fr-ctc-cii-1.4.0.04",
+        "target/fr-ctc/fr-ctc-1.4.0.04",
+        "corpus-cii",
+    ),
+];
+
+/// The variable naming the fetched CII corpora (comma-separated names of
+/// [`FETCHED_CII_CORPORA`]) that must be there, with xmllint, for
+/// [`fetched_cii_corpora_agree_with_xmllint`].
+const FETCHED_REQUIRED: &str = "EINVOICE_XSD_FETCHED_REQUIRED";
+
+/// The CII corpora of the fetched rule sets, built in `target/` by their fetch scripts
+/// and `cargo xtask <family>`, not committed: each one present (its `cases.tsv` and
+/// `mutations.tsv` there) is validated with this crate ([`einvoice_xsd::Schema::cii_d16b`])
+/// and with xmllint loading the same schemas, case by case; they must agree but for the
+/// differences listed in `tests/oracle/cii/fetched-disagreements.tsv` (case ids prefixed
+/// with the name of the corpus), and on every upstream case. A corpus that is absent is
+/// SKIPPED, and so is everything without xmllint, unless `EINVOICE_XSD_FETCHED_REQUIRED`
+/// names it.
+#[test]
+fn fetched_cii_corpora_agree_with_xmllint() {
+    let required: Vec<String> = std::env::var(FETCHED_REQUIRED)
+        .unwrap_or_default()
+        .split(',')
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect();
+    for name in &required {
+        assert!(
+            FETCHED_CII_CORPORA.iter().any(|(n, _, _)| n == name),
+            "{FETCHED_REQUIRED}: unknown corpus {name}"
+        );
+    }
+    let program = xmllint::program();
+    let version = match xmllint::version(&program) {
+        Ok(version) => version,
+        Err(e) => {
+            assert!(required.is_empty(), "{e}");
+            eprintln!("SKIPPED: fetched CII corpora: {e}");
+            return;
+        }
+    };
+    eprintln!("{version}");
+    let documented = format::parse_disagreements(
+        &format::read(&format::cii_dir().join("fetched-disagreements.tsv")).unwrap(),
+    )
+    .unwrap();
+    let schema = einvoice_xsd::Schema::cii_d16b().unwrap();
+    let entry = format::cii_entry_point().canonicalize().unwrap();
+    let root = format::workspace_root();
+    let mut problems = Vec::new();
+    for (name, base, corpus) in FETCHED_CII_CORPORA {
+        let base = root.join(base);
+        let corpus = base.join(corpus);
+        if !(corpus.join("cases.tsv").is_file() && corpus.join("mutations.tsv").is_file()) {
+            assert!(
+                !required.iter().any(|n| n == name),
+                "{name}: no corpus in {} (run its fetch script and cargo xtask)",
+                corpus.display()
+            );
+            eprintln!("SKIPPED: {name}: no corpus in {}", corpus.display());
+            continue;
+        }
+        let cases: Vec<format::Case> = format::indexed_cases(&base, &corpus)
+            .unwrap()
+            .into_iter()
+            .map(|case| format::Case {
+                id: format!("{name}/{}", case.id),
+                text: case.text,
+            })
+            .collect();
+        let work = root.join("target/xsd-oracle/fetched").join(name);
+        let observed: BTreeMap<String, format::Expected> =
+            xmllint::run(&program, &cases, &entry, &work)
+                .unwrap()
+                .into_iter()
+                .collect();
+        let differences = format::differences(&schema, &cases, &observed).unwrap();
+        let mine: Vec<format::Disagreement> = documented
+            .iter()
+            .filter(|x| x.case.starts_with(&format!("{name}/")))
+            .cloned()
+            .collect();
+        problems.extend(format::unexplained(&differences, &mine));
+        let upstream = format!("{name}/corpus/");
+        problems.extend(
+            differences
+                .iter()
+                .filter(|d| d.case.starts_with(&upstream))
+                .map(|d| format!("{}: an upstream case differs", d.case)),
+        );
+        let valid = observed.values().filter(|e| e.verdict == "valid").count();
+        let corpus_cases = cases.iter().filter(|c| c.id.starts_with(&upstream)).count();
+        eprintln!(
+            "{name}: {} cases ({corpus_cases} upstream, {} mutation cases), {valid} valid for xmllint, \
+             {} identical to xmllint including errors, {} documented differences",
+            cases.len(),
+            cases.len() - corpus_cases,
+            cases.len() - differences.len(),
+            differences.len()
+        );
+    }
+    assert!(
+        problems.is_empty(),
+        "{} problems:\n{}",
+        problems.len(),
+        problems.join("\n")
     );
 }
 

@@ -13,12 +13,75 @@
 //!   `mutations.tsv`;
 //! * `schema/<id>`: every line of its `schema-mutations.tsv`, applied to a schema
 //!   document of the set; the verdict is whether the edited set loads.
+//!
+//! The CII suite (`tests/oracle/cii/`, against the CII D16B schemas), in this order:
+//! * `corpus/<case>`: every case of `corpus/cen-en16931-cii-1.3.17/cases.tsv`;
+//! * `mutation/<id>`: every mutation case of its `mutations.tsv` (`mutations/<id>.xml`).
+//!
+//! The corpora of the fetched CII rule sets, built in `target/` and checked locally,
+//! have their cases named the same way, prefixed with the name of the corpus.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The corpus whose cases are part of the oracle, relative to the workspace root.
 pub(crate) const CORPUS: &str = "corpus/cen-en16931-ubl-1.3.17";
+
+/// The corpus of the CII suite, relative to the workspace root.
+pub(crate) const CII_CORPUS: &str = "corpus/cen-en16931-cii-1.3.17";
+
+/// The directory of the CII suite.
+pub(crate) fn cii_dir() -> PathBuf {
+    oracle_dir().join("cii")
+}
+
+/// The entry point of the vendored CII D16B schemas, as a file xmllint can load.
+pub(crate) fn cii_entry_point() -> PathBuf {
+    crate_dir()
+        .join("schemas/uncefact-cii-d16b")
+        .join(einvoice_xsd::CII_D16B_ENTRY_POINT)
+}
+
+/// Every case of the CII suite, in a fixed order.
+pub(crate) fn cii_cases() -> Result<Vec<Case>, String> {
+    let root = workspace_root();
+    indexed_cases(&root, &root.join(CII_CORPUS))
+}
+
+/// The cases of a corpus directory in the layout of `corpus/README.md`: `corpus/<case>`
+/// for every line of its `cases.tsv`, then `mutation/<id>` for every line of its
+/// `mutations.tsv` (case `mutations/<id>.xml`), each document read from its `input`,
+/// relative to `base`, without a byte order mark.
+pub(crate) fn indexed_cases(base: &Path, corpus: &Path) -> Result<Vec<Case>, String> {
+    let mut cases = Vec::new();
+    for (index, prefix) in [("cases.tsv", "corpus/"), ("mutations.tsv", "mutation/")] {
+        let text = read(&corpus.join(index))?;
+        for row in text.lines().skip(1).filter(|l| !l.is_empty()) {
+            let fields: Vec<&str> = row.split('\t').collect();
+            let (Some(id), Some(input)) = (fields.first(), fields.get(1)) else {
+                return Err(format!(
+                    "{}: bad line {row:?}",
+                    corpus.join(index).display()
+                ));
+            };
+            let id = if prefix == "mutation/" {
+                id.strip_prefix("mutations/")
+                    .and_then(|id| id.strip_suffix(".xml"))
+                    .ok_or_else(|| format!("bad mutation case {id}"))?
+            } else {
+                id
+            };
+            let text = read(&base.join(input))?;
+            let text = text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned();
+            cases.push(Case {
+                id: format!("{prefix}{id}"),
+                text,
+            });
+        }
+    }
+    check_unique(cases.iter().map(|c| c.id.as_str()))?;
+    Ok(cases)
+}
 
 /// A document to validate.
 #[derive(Debug, Clone)]

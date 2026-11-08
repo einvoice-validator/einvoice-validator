@@ -1,0 +1,835 @@
+# Written by `cargo run -p einvoice-xsd --example xmllint-oracle -- --write`: xmllint's
+# verdict and errors (line:category, sorted) for every case. Do not edit by hand.
+case	verdict	errors
+corpus/examples/CII-BR-CO-10-RoundingIssue.xml	valid	
+corpus/examples/CII_business_example_01.xml	valid	
+corpus/examples/CII_business_example_02.xml	valid	
+corpus/examples/CII_business_example_Z.xml	valid	
+corpus/examples/CII_example1.xml	valid	
+corpus/examples/CII_example2.xml	valid	
+corpus/examples/CII_example3.xml	valid	
+corpus/examples/CII_example4.xml	valid	
+corpus/examples/CII_example5.xml	valid	
+corpus/examples/CII_example6.xml	valid	
+corpus/examples/CII_example7.xml	valid	
+corpus/examples/CII_example8.xml	valid	
+corpus/examples/CII_example9.xml	valid	
+corpus/examples/XRechnung-O.xml	valid	
+corpus/examples/huf_example_cii.xml	valid	
+corpus/vefa/cii/BR-CO-15-2.001.xml	invalid	7:unexpected-element
+corpus/vefa/cii/BR-CO-15-2.002.xml	invalid	7:unexpected-element
+corpus/vefa/cii/BR-CO-15-2.003.xml	invalid	7:unexpected-element
+corpus/vefa/cii/BR-CO-15-2.004.xml	invalid	7:unexpected-element
+corpus/vefa/cii/BR-CO-17.001.xml	invalid	4:unexpected-element
+corpus/vefa/cii/BR-CO-17.002.xml	invalid	4:unexpected-element
+corpus/vefa/cii/BR-CO-17.003.xml	invalid	4:unexpected-element
+corpus/vefa/cii/BR-CO-17.004.xml	invalid	4:unexpected-element
+corpus/vefa/cii/BR-CO-17.005.xml	invalid	4:unexpected-element
+mutation/totals/line-total-amount-plus-cent	valid	
+mutation/totals/line-total-amount-minus-cent	valid	
+mutation/totals/tax-basis-total-amount-plus-cent	valid	
+mutation/totals/tax-basis-total-amount-minus-cent	valid	
+mutation/totals/grand-total-amount-plus-cent	valid	
+mutation/totals/grand-total-amount-minus-cent	valid	
+mutation/totals/due-payable-amount-plus-cent	valid	
+mutation/totals/due-payable-amount-minus-cent	valid	
+mutation/totals/charge-total-amount-plus-cent	valid	
+mutation/totals/charge-total-amount-minus-cent	valid	
+mutation/totals/allowance-total-amount-plus-cent	valid	
+mutation/totals/allowance-total-amount-minus-cent	valid	
+mutation/totals/total-prepaid-amount-plus-cent	valid	
+mutation/totals/total-prepaid-amount-minus-cent	valid	
+mutation/totals/tax-total-plus-cent	valid	
+mutation/totals/tax-total-in-tax-currency-plus-cent	valid	
+mutation/totals/line-amount-plus-cent	valid	
+mutation/totals/lines-compensating-cents	valid	
+mutation/totals/rounding-amount-added	invalid	429:unexpected-element
+mutation/totals/rounding-amount-consistent	invalid	429:unexpected-element
+mutation/totals/prepaid-removed	valid	
+mutation/totals/prepaid-removed-due-full	valid	
+mutation/totals/allowance-plus-cent-totals-unchanged	valid	
+mutation/totals/charge-plus-cent-totals-unchanged	valid	
+mutation/totals/allowance-total-removed	valid	
+mutation/totals/charge-total-removed	valid	
+mutation/totals/allowance-and-charge-totals-removed	valid	
+mutation/totals/allowance-total-zero-without-allowance	valid	
+mutation/totals/allowance-total-without-allowance	valid	
+mutation/totals/tax-total-removed	valid	
+mutation/totals/tax-total-other-currency	valid	
+mutation/totals/tax-total-without-currency	valid	
+mutation/totals/tax-total-currency-lower-case	valid	
+mutation/totals/tax-total-twice-same-currency	valid	
+mutation/totals/tax-currency-without-total	valid	
+mutation/totals/tax-currency-same-as-invoice	valid	
+mutation/totals/all-amounts-negated	valid	
+mutation/totals/due-negative-only	valid	
+mutation/totals/everything-zero	valid	
+mutation/totals/second-summation	invalid	143:unexpected-element
+mutation/decimals/line-total-amount-three-decimals	valid	
+mutation/decimals/allowance-total-amount-three-decimals	valid	
+mutation/decimals/charge-total-amount-three-decimals	valid	
+mutation/decimals/tax-basis-total-amount-three-decimals	valid	
+mutation/decimals/grand-total-amount-three-decimals	valid	
+mutation/decimals/total-prepaid-amount-three-decimals	valid	
+mutation/decimals/due-payable-amount-three-decimals	valid	
+mutation/decimals/tax-total-three-decimals	valid	
+mutation/decimals/tax-total-three-decimals-with-tax-currency	valid	
+mutation/decimals/tax-total-tax-currency-three-decimals	valid	
+mutation/decimals/rounding-three-decimals	invalid	429:unexpected-element
+mutation/decimals/header-allowance-three-decimals	valid	
+mutation/decimals/header-charge-three-decimals	valid	
+mutation/decimals/line-allowance-three-decimals	valid	
+mutation/decimals/line-charge-three-decimals	valid	
+mutation/decimals/line-amount-three-decimals	valid	
+mutation/decimals/breakdown-three-decimals	valid	
+mutation/decimals/trailing-zeros-everywhere	valid	
+mutation/decimals/leading-zeros	valid	
+mutation/decimals/plus-sign	valid	
+mutation/decimals/surrounding-whitespace	valid	
+mutation/decimals/trailing-dot	valid	
+mutation/decimals/leading-dot	valid	
+mutation/decimals/exponent-amount	invalid	136:element-value
+mutation/decimals/comma-amount	invalid	140:element-value
+mutation/decimals/empty-amount	invalid	141:element-value
+mutation/decimals/text-amount	invalid	55:element-value
+mutation/decimals/nan-amount	invalid	55:element-value
+mutation/decimals/inf-rate	invalid	109:element-value
+mutation/decimals/large-amounts	valid	
+mutation/decimals/many-decimals-consistent	valid	
+mutation/rounding/breakdown-half-up	valid	
+mutation/rounding/breakdown-half-down	valid	
+mutation/rounding/breakdown-half-cent	valid	
+mutation/rounding/breakdown-half-cent-down	valid	
+mutation/rounding/breakdown-negative-half	valid	
+mutation/rounding/breakdown-negative-half-up	valid	
+mutation/rounding/breakdown-three-decimals	valid	
+mutation/rounding/rate-with-decimals	valid	
+mutation/rounding/rate-many-decimals	valid	
+mutation/rounding/line-sum-half-cent	valid	
+mutation/rounding/line-sum-just-below-half	valid	
+mutation/booleans/charge-indicator-one	valid	
+mutation/booleans/charge-indicator-zero	valid	
+mutation/booleans/charge-indicator-false	valid	
+mutation/booleans/charge-indicator-spaced	valid	
+mutation/booleans/charge-indicator-line-breaks	valid	
+mutation/booleans/charge-indicator-upper-case	invalid	121:element-value
+mutation/booleans/charge-indicator-capitalised	invalid	121:element-value
+mutation/booleans/charge-indicator-yes	invalid	121:element-value
+mutation/booleans/charge-indicator-empty	invalid	121:element-value
+mutation/booleans/charge-indicator-two	invalid	121:element-value
+mutation/booleans/charge-indicator-two-words	invalid	121:element-value
+mutation/booleans/charge-indicator-missing	invalid	120:missing-element
+mutation/booleans/charge-indicator-element-missing	valid	
+mutation/booleans/charge-indicator-twice	invalid	122:unexpected-element
+mutation/booleans/charge-indicator-element-twice	invalid	123:unexpected-element
+mutation/booleans/charge-indicator-comment	valid	
+mutation/booleans/charge-indicator-cdata	valid	
+mutation/booleans/charge-indicator-child-element	invalid	121:element-in-simple-content 121:element-value
+mutation/booleans/allowance-indicator-one-line	valid	
+mutation/booleans/allowance-indicator-yes-header	invalid	387:element-value
+mutation/booleans/price-allowance-indicator-zero	valid	
+mutation/booleans/price-allowance-indicator-true	valid	
+mutation/booleans/price-allowance-indicator-bad	invalid	63:element-value
+mutation/booleans/price-allowance-without-indicator	valid	
+mutation/booleans/price-allowance-without-amount	valid	
+mutation/missing/br-01-specification-identifier	valid	
+mutation/missing/br-02-invoice-number	invalid	22:unexpected-element
+mutation/missing/br-03-issue-date	invalid	24:unexpected-element
+mutation/missing/br-04-invoice-type-code	valid	
+mutation/missing/br-05-invoice-currency-code	valid	
+mutation/missing/br-06-seller-name	valid	
+mutation/missing/br-07-buyer-name	valid	
+mutation/missing/br-08-seller-postal-address	valid	
+mutation/missing/br-09-seller-country	valid	
+mutation/missing/br-10-buyer-postal-address	valid	
+mutation/missing/br-11-buyer-country	valid	
+mutation/missing/br-12-sum-of-line-net-amounts	valid	
+mutation/missing/br-13-total-without-vat	valid	
+mutation/missing/br-14-total-with-vat	valid	
+mutation/missing/br-15-amount-due	valid	
+mutation/missing/br-16-every-invoice-line	valid	
+mutation/missing/br-21-line-identifier	valid	
+mutation/missing/br-22-invoiced-quantity	valid	
+mutation/missing/br-23-unit-of-measure-of-the-quantity	valid	
+mutation/missing/br-24-line-net-amount	valid	
+mutation/missing/br-25-item-name	valid	
+mutation/missing/br-26-item-net-price	invalid	41:missing-element
+mutation/missing/br-26-net-price-element	valid	
+mutation/missing/br-36-document-charge-amount	valid	
+mutation/missing/br-37-document-charge-vat-category	valid	
+mutation/missing/br-37-document-charge-vat-category-code	valid	
+mutation/missing/br-45-vat-category-taxable-amount	valid	
+mutation/missing/br-46-vat-category-tax-amount	valid	
+mutation/missing/br-47-vat-category-code-of-the-breakdown	valid	
+mutation/missing/br-48-vat-category-rate-of-the-breakdown	valid	
+mutation/missing/br-47-tax-type-code-of-the-breakdown	valid	
+mutation/missing/br-co-04-tax-type-code-of-the	valid	
+mutation/missing/br-co-04-line-vat-category-code	valid	
+mutation/missing/br-co-04-line-vat-information	valid	
+mutation/missing/br-co-18-the-vat-breakdown	valid	
+mutation/missing/br-49-payment-means-type-code	valid	
+mutation/missing/br-50-payment-account-identifier-of-a-credit	valid	
+mutation/missing/br-co-26-seller-legal-registration-the-seller	valid	
+mutation/missing/br-38-document-charge-reason-text-the-reason	valid	
+mutation/missing/br-25-item-name-of-the-first-line	valid	
+mutation/missing/br-18-seller-tax-representative-name	valid	
+mutation/missing/br-19-seller-tax-representative-address	valid	
+mutation/missing/br-20-seller-tax-representative-country	valid	
+mutation/missing/br-56-seller-tax-representative-vat-identifier	valid	
+mutation/missing/br-17-payee-name	valid	
+mutation/missing/br-52-supporting-document-reference	valid	
+mutation/missing/br-57-deliver-to-country	valid	
+mutation/missing/br-55-preceding-invoice-reference	valid	
+mutation/missing/br-54-item-attribute-value	valid	
+mutation/missing/br-54-item-attribute-name	valid	
+mutation/missing/br-64-scheme-of-the-item-standard-identifier	valid	
+mutation/missing/br-62-scheme-of-the-seller-electronic-address	valid	
+mutation/missing/br-63-scheme-of-the-buyer-electronic-address	valid	
+mutation/missing/br-31-document-allowance-amount	valid	
+mutation/missing/br-32-document-allowance-vat-category	valid	
+mutation/missing/br-41-line-allowance-amount	valid	
+mutation/missing/br-43-line-charge-amount	valid	
+mutation/missing/br-co-26-seller-global-identifier-legal-registration	valid	
+mutation/missing/br-53-vat-total-in-the-accounting-currency	valid	
+mutation/missing/br-02-invoice-number-blank	valid	
+mutation/missing/br-06-seller-name-blank	valid	
+mutation/missing/br-07-buyer-name-blank	valid	
+mutation/missing/br-09-seller-country-blank	valid	
+mutation/missing/br-21-line-identifier-blank	valid	
+mutation/missing/br-25-item-name-blank	valid	
+mutation/missing/br-01-specification-identifier-blank	valid	
+mutation/missing/br-05-invoice-currency-code-blank	valid	
+mutation/missing/br-04-invoice-type-code-blank	valid	
+mutation/missing/br-03-issue-date-blank	valid	
+mutation/missing/br-18-seller-tax-representative-name-blank	valid	
+mutation/missing/br-52-supporting-document-reference-blank	valid	
+mutation/missing/br-55-preceding-invoice-reference-blank	valid	
+mutation/missing/br-50-payment-account-identifier-blank	valid	
+mutation/missing/br-03-issue-date-other-format	valid	
+mutation/missing/br-03-issue-date-format-removed	valid	
+mutation/missing/br-65-classification-scheme	valid	
+mutation/missing/br-61-financial-account-empty	valid	
+mutation/missing/br-50-proprietary-account	valid	
+mutation/missing/br-61-sepa-transfer-58	valid	
+mutation/missing/br-61-not-a-transfer	valid	
+mutation/missing/br-51-card-number-too-long	invalid	103:unexpected-element
+mutation/missing/br-51-card-number-ten	invalid	103:unexpected-element
+mutation/missing/br-17-payee-is-seller	valid	
+mutation/missing/br-17-payee-id-is-seller	valid	
+mutation/missing/br-co-26-seller-vat-only	valid	
+mutation/missing/br-co-26-seller-fc-only	valid	
+mutation/missing/br-co-26-seller-id-only	valid	
+mutation/missing/br-co-26-seller-nothing	valid	
+mutation/missing/br-co-19-period-empty	valid	
+mutation/missing/br-co-19-period-end-only	valid	
+mutation/missing/br-co-20-line-period-empty	valid	
+mutation/missing/br-33-allowance-no-reason	valid	
+mutation/missing/br-38-charge-no-reason	valid	
+mutation/missing/br-42-line-allowance-no-reason	valid	
+mutation/missing/br-44-line-charge-no-reason	valid	
+mutation/missing/br-27-negative-net-price	valid	
+mutation/missing/br-27-net-price-zero	valid	
+mutation/missing/br-27-net-price-text	invalid	42:element-value
+mutation/missing/br-28-negative-gross-price	valid	
+mutation/missing/br-co-09-vat-id-without-country	valid	
+mutation/missing/br-co-09-vat-id-greece	valid	
+mutation/missing/br-co-09-vat-id-lower-case	valid	
+mutation/missing/br-co-09-vat-id-one-letter	valid	
+mutation/missing/br-co-09-vat-id-spaces	valid	
+mutation/missing/br-co-09-buyer-vat-id	valid	
+mutation/duplicates/invoice-number-twice	invalid	23:unexpected-element
+mutation/duplicates/invoice-type-code-twice	invalid	24:unexpected-element
+mutation/duplicates/specification-identifier-parameter-twice	valid	
+mutation/duplicates/specification-identifier-twice-in-its-parameter	invalid	19:unexpected-element
+mutation/duplicates/two-invoice-notes	valid	
+mutation/duplicates/two-contents-in-one-note	valid	
+mutation/duplicates/invoice-currency-code-twice	invalid	98:unexpected-element
+mutation/duplicates/seller-name-twice	invalid	62:unexpected-element
+mutation/duplicates/two-seller-contacts	valid	
+mutation/duplicates/two-seller-addresses	invalid	76:unexpected-element
+mutation/duplicates/seller-country-twice	invalid	75:unexpected-element
+mutation/duplicates/buyer-country-twice	invalid	88:unexpected-element
+mutation/duplicates/sum-of-line-net-amounts-twice	valid	
+mutation/duplicates/sum-of-charges-twice	valid	
+mutation/duplicates/total-without-vat-twice	valid	
+mutation/duplicates/total-with-vat-twice	valid	
+mutation/duplicates/amount-due-twice	valid	
+mutation/duplicates/line-net-amount-twice-in-one-line	valid	
+mutation/duplicates/line-monetary-summation-twice	invalid	57:unexpected-element
+mutation/duplicates/item-net-price-twice	valid	
+mutation/duplicates/two-vat-categories-on-one-line	valid	
+mutation/duplicates/line-vat-rate-twice	invalid	53:unexpected-element
+mutation/duplicates/line-vat-category-code-twice	invalid	52:unexpected-element
+mutation/duplicates/vat-category-taxable-amount-twice	valid	
+mutation/duplicates/vat-category-tax-amount-twice	valid	
+mutation/duplicates/vat-category-rate-twice	invalid	110:unexpected-element
+mutation/duplicates/vat-category-code-twice-in-the-breakdown	invalid	109:unexpected-element
+mutation/duplicates/vat-breakdown-given-twice	valid	
+mutation/duplicates/document-charge-amount-twice	valid	
+mutation/duplicates/two-vat-categories-on-a-document-charge	valid	
+mutation/duplicates/document-charge-vat-rate-twice	invalid	130:unexpected-element
+mutation/duplicates/document-charge-given-twice-totals-unchanged	valid	
+mutation/duplicates/two-payment-terms	valid	
+mutation/duplicates/two-invoicing-periods	invalid	119:unexpected-element
+mutation/duplicates/invoicing-period-start-date-twice	invalid	115:unexpected-element
+mutation/duplicates/payment-means-twice	valid	
+mutation/duplicates/payment-means-code-twice	invalid	100:unexpected-element
+mutation/duplicates/seller-vat-identifier-twice	valid	
+mutation/duplicates/invoiced-quantity-twice	invalid	47:unexpected-element
+mutation/duplicates/item-name-twice	valid	
+mutation/duplicates/line-identifier-twice	invalid	35:unexpected-element
+mutation/duplicates/the-invoice-line-given-twice-sums-no	valid	
+mutation/duplicates/two-seller-electronic-addresses	valid	
+mutation/duplicates/two-buyer-electronic-addresses	valid	
+mutation/duplicates/two-buyer-contacts	valid	
+mutation/duplicates/two-payees	invalid	347:unexpected-element
+mutation/duplicates/two-seller-tax-representatives	invalid	283:unexpected-element
+mutation/duplicates/two-preceding-invoice-references	invalid	437:unexpected-element
+mutation/duplicates/mandate-reference-twice	valid	
+mutation/duplicates/payment-terms-text-twice	valid	
+mutation/duplicates/vat-accounting-currency-twice	invalid	339:unexpected-element
+mutation/duplicates/vat-point-date-twice	invalid	368:unexpected-element
+mutation/duplicates/paid-amount-twice	valid	
+mutation/duplicates/sum-of-allowances-twice	valid	
+mutation/duplicates/two-attachments-of-type-916	valid	
+mutation/duplicates/attachment-description-twice	valid	
+mutation/duplicates/attachment-binary-object-twice	valid	
+mutation/duplicates/two-purchase-order-references	invalid	289:unexpected-element
+mutation/duplicates/two-contract-references	invalid	292:unexpected-element
+mutation/duplicates/two-project-references	invalid	309:unexpected-element
+mutation/duplicates/two-deliver-to-parties	invalid	323:unexpected-element
+mutation/duplicates/two-actual-delivery-events	invalid	328:unexpected-element
+mutation/duplicates/item-attribute-name-twice	valid	
+mutation/duplicates/item-attribute-value-twice	valid	
+mutation/duplicates/item-country-of-origin-twice	invalid	52:unexpected-element
+mutation/duplicates/item-standard-identifier-twice	invalid	42:unexpected-element
+mutation/duplicates/two-price-discounts	valid	
+mutation/duplicates/price-discount-amount-twice	valid	
+mutation/duplicates/item-gross-price-twice	valid	
+mutation/duplicates/item-price-base-quantity-twice-in-the	invalid	71:unexpected-element
+mutation/duplicates/two-line-periods	invalid	90:unexpected-element
+mutation/duplicates/two-line-object-identifiers	valid	
+mutation/duplicates/two-line-accounting-references	valid	
+mutation/duplicates/line-allowance-amount-twice	valid	
+mutation/duplicates/two-order-line-references-on-a-line	invalid	58:unexpected-element
+mutation/duplicates/two-buyer-accounting-references	valid	
+mutation/duplicates/two-seller-legal-registrations	invalid	211:unexpected-element
+mutation/duplicates/two-vat-categories-on-a-document-allowance	valid	
+mutation/duplicates/document-allowance-amount-twice	valid	
+mutation/duplicates/additional-document-130-twice	valid	
+mutation/duplicates/additional-document-50-twice	valid	
+mutation/duplicates/buyer-id-and-global-id	valid	
+mutation/duplicates/ship-to-id-and-global-id	valid	
+mutation/duplicates/payee-id-and-global-id	valid	
+mutation/duplicates/due-date-type-codes-differ	invalid	369:unexpected-element 377:unexpected-element
+mutation/duplicates/due-date-type-codes-same	invalid	369:unexpected-element 377:unexpected-element
+mutation/duplicates/due-date-type-code-and-tax-point-date	invalid	369:unexpected-element
+mutation/duplicates/transfer-without-account-twice	valid	
+mutation/codes/br-cl-01-381	valid	
+mutation/codes/br-cl-01-384	valid	
+mutation/codes/br-cl-01-389	valid	
+mutation/codes/br-cl-01-751	valid	
+mutation/codes/br-cl-01-999	valid	
+mutation/codes/br-cl-01-380-spaced	valid	
+mutation/codes/br-cl-01-380-381	valid	
+mutation/codes/br-cl-01-empty	valid	
+mutation/codes/br-cl-04-dkk-lower	valid	
+mutation/codes/br-cl-04-xxx	valid	
+mutation/codes/br-cl-04-euro	valid	
+mutation/codes/br-cl-04-eur-spaced	valid	
+mutation/codes/br-cl-04-eur	valid	
+mutation/codes/br-cl-14-dk-lower	valid	
+mutation/codes/br-cl-14-xx	valid	
+mutation/codes/br-cl-14-gr	valid	
+mutation/codes/br-cl-14-el	valid	
+mutation/codes/br-cl-14-uk	valid	
+mutation/codes/br-cl-14-dk-spaced	valid	
+mutation/codes/br-cl-14-1a	valid	
+mutation/codes/br-cl-16-zzz	valid	
+mutation/codes/br-cl-16-0	valid	
+mutation/codes/br-cl-16-31	valid	
+mutation/codes/br-cl-16-zzz-lower	valid	
+mutation/codes/br-cl-16-97	valid	
+mutation/codes/br-cl-17-s-lower	valid	
+mutation/codes/br-cl-17-x	valid	
+mutation/codes/br-cl-17-aa	valid	
+mutation/codes/br-cl-17-s-spaced	valid	
+mutation/codes/br-cl-18-s-lower	valid	
+mutation/codes/br-cl-18-x	valid	
+mutation/codes/br-cl-18-b	valid	
+mutation/codes/br-cl-20-fc-lower	valid	
+mutation/codes/br-cl-20-zzz	valid	
+mutation/codes/br-cl-20-aaa	valid	
+mutation/codes/br-cl-20-95	valid	
+mutation/codes/br-cl-23-c62-lower	valid	
+mutation/codes/br-cl-23-xyz	valid	
+mutation/codes/br-cl-23-h87	valid	
+mutation/codes/br-cl-23-c62-spaced	valid	
+mutation/codes/br-cl-23-ea	valid	
+mutation/codes/br-cl-21-0160	valid	
+mutation/codes/br-cl-21-9999	valid	
+mutation/codes/br-cl-21-88	valid	
+mutation/codes/br-cl-21-gtin	valid	
+mutation/codes/br-cl-25-0088	valid	
+mutation/codes/br-cl-25-xx	valid	
+mutation/codes/br-cl-25-9930	valid	
+mutation/codes/br-cl-25-em-lower	valid	
+mutation/codes/br-cl-10-9999	valid	
+mutation/codes/br-cl-10-0060	valid	
+mutation/codes/br-cl-10-0088-spaced	valid	
+mutation/codes/br-cl-26-9999	valid	
+mutation/codes/br-cl-26-0060	valid	
+mutation/codes/br-cl-15-nl-lower	valid	
+mutation/codes/br-cl-15-xx	valid	
+mutation/codes/br-cl-15-el	valid	
+mutation/codes/br-cl-05-eur-lower	valid	
+mutation/codes/br-cl-05-xxx	valid	
+mutation/codes/br-cl-19-95-spaced	valid	
+mutation/codes/br-cl-19-1	valid	
+mutation/codes/br-cl-19-41	valid	
+mutation/codes/br-cl-19-abl	valid	
+mutation/codes/br-cl-08-aai-lower	valid	
+mutation/codes/br-cl-08-zzz	valid	
+mutation/codes/br-cl-08-aab	valid	
+mutation/codes/br-cl-08-aai-spaced	valid	
+mutation/codes/br-cl-24-application-xml-lower	valid	
+mutation/codes/br-cl-24-image-png-lower	valid	
+mutation/codes/br-cl-24-text-csv-lower	valid	
+mutation/codes/br-cl-24-application-pdf	valid	
+mutation/codes/br-cl-24-application-vnd-oasis-opendocument-spreadsheet-lower	valid	
+mutation/codes/br-cl-23-xyz-2	valid	
+mutation/codes/br-cl-23-kgm	valid	
+mutation/codes/br-cl-11-legal-scheme-unknown	valid	
+mutation/codes/br-cl-11-legal-scheme-known	valid	
+mutation/codes/br-cl-11-tax-registration-not-checked	valid	
+mutation/codes/br-cl-13-classification-list-unknown	valid	
+mutation/codes/br-cl-13-classification-list-lower	valid	
+mutation/codes/br-cl-22-exemption-code-unknown	invalid	431:unexpected-element
+mutation/codes/br-cl-22-exemption-code-known	invalid	431:unexpected-element
+mutation/codes/br-cl-22-exemption-code-lower	invalid	431:unexpected-element
+mutation/codes/br-cl-03-tax-type-lower	valid	
+mutation/codes/br-cl-03-tax-type-other	valid	
+mutation/codes/br-cl-03-tax-type-spaced	valid	
+mutation/codes/credit-note-type	valid	
+mutation/codes/corrected-invoice-type	valid	
+mutation/codes/self-billed-type	valid	
+mutation/codes/type-code-attributes	invalid	23:attribute-value
+mutation/codes/type-code-name-and-uri	invalid	50:attribute-not-allowed 99:attribute-not-allowed 99:attribute-not-allowed 106:attribute-not-allowed 127:attribute-not-allowed
+mutation/dates/issue-date-not-leap	valid	
+mutation/dates/issue-date-leap	valid	
+mutation/dates/issue-date-month-13	valid	
+mutation/dates/issue-date-day-0	valid	
+mutation/dates/issue-date-day-32	valid	
+mutation/dates/issue-date-seven-digits	valid	
+mutation/dates/issue-date-nine-digits	valid	
+mutation/dates/issue-date-iso	valid	
+mutation/dates/issue-date-spaced	valid	
+mutation/dates/issue-date-line-breaks	valid	
+mutation/dates/issue-date-nbsp	valid	
+mutation/dates/issue-date-fullwidth-digits	valid	
+mutation/dates/issue-date-arabic-indic-digits	valid	
+mutation/dates/issue-date-year-9999	valid	
+mutation/dates/issue-date-year-0	valid	
+mutation/dates/issue-date-empty	valid	
+mutation/dates/issue-date-other-element	valid	
+mutation/dates/period-end-before-start	valid	
+mutation/dates/period-end-equals-start	valid	
+mutation/dates/period-iso-dates	valid	
+mutation/dates/period-end-other-format	valid	
+mutation/dates/period-text-dates	valid	
+mutation/dates/period-end-later-shorter	valid	
+mutation/dates/line-period-end-before-start	valid	
+mutation/dates/line-period-start-datetime	invalid	85:unexpected-element
+mutation/dates/line-period-end-datetime	invalid	88:unexpected-element
+mutation/dates/due-date-bad	valid	
+mutation/dates/delivery-date-bad	valid	
+mutation/dates/tax-point-date-bad	valid	
+mutation/dates/preceding-invoice-date-bad	valid	
+mutation/dates/due-date-and-terms-missing	valid	
+mutation/dates/due-date-and-terms-missing-zero-due	valid	
+mutation/dates/terms-description-only	valid	
+mutation/dates/terms-empty	valid	
+mutation/vat/zero-rated-with-allowance	valid	
+mutation/vat/zero-rated-allowance-without-seller-vat-id	valid	
+mutation/vat/zero-rated-allowance-rate-other	valid	
+mutation/vat/zero-rated	valid	
+mutation/vat/zero-rated-line-only	valid	
+mutation/vat/zero-rated-charge-only	valid	
+mutation/vat/zero-rated-breakdown-only	valid	
+mutation/vat/zero-rated-taxable-off	valid	
+mutation/vat/zero-rated-taxable-within-one	valid	
+mutation/vat/zero-rated-without-seller-vat-id	valid	
+mutation/vat/zero-rated-two-breakdowns	valid	
+mutation/vat/zero-rated-rate-nonzero	valid	
+mutation/vat/zero-rated-tax-nonzero	valid	
+mutation/vat/zero-rated-exemption-reason	invalid	110:unexpected-element
+mutation/vat/zero-rated-exemption-code	invalid	110:unexpected-element
+mutation/vat/exempt-with-allowance	invalid	110:unexpected-element
+mutation/vat/exempt-allowance-without-seller-vat-id	invalid	107:unexpected-element
+mutation/vat/exempt-allowance-rate-other	invalid	110:unexpected-element
+mutation/vat/exempt	invalid	110:unexpected-element
+mutation/vat/exempt-line-only	valid	
+mutation/vat/exempt-charge-only	valid	
+mutation/vat/exempt-breakdown-only	valid	
+mutation/vat/exempt-taxable-off	invalid	110:unexpected-element
+mutation/vat/exempt-taxable-within-one	invalid	110:unexpected-element
+mutation/vat/exempt-without-seller-vat-id	invalid	107:unexpected-element
+mutation/vat/exempt-two-breakdowns	invalid	110:unexpected-element 118:unexpected-element
+mutation/vat/exempt-rate-nonzero	invalid	110:unexpected-element
+mutation/vat/exempt-tax-nonzero	invalid	110:unexpected-element
+mutation/vat/exempt-without-exemption-reason	valid	
+mutation/vat/exempt-exemption-code-only	invalid	110:unexpected-element
+mutation/vat/reverse-charge-with-allowance	invalid	111:unexpected-element
+mutation/vat/reverse-charge-allowance-without-seller-vat-id	invalid	108:unexpected-element
+mutation/vat/reverse-charge-allowance-rate-other	invalid	111:unexpected-element
+mutation/vat/reverse-charge	invalid	111:unexpected-element
+mutation/vat/reverse-charge-line-only	valid	
+mutation/vat/reverse-charge-charge-only	valid	
+mutation/vat/reverse-charge-breakdown-only	valid	
+mutation/vat/reverse-charge-taxable-off	invalid	111:unexpected-element
+mutation/vat/reverse-charge-taxable-within-one	invalid	111:unexpected-element
+mutation/vat/reverse-charge-without-seller-vat-id	invalid	108:unexpected-element
+mutation/vat/reverse-charge-two-breakdowns	invalid	111:unexpected-element 119:unexpected-element
+mutation/vat/reverse-charge-rate-nonzero	invalid	111:unexpected-element
+mutation/vat/reverse-charge-tax-nonzero	invalid	111:unexpected-element
+mutation/vat/reverse-charge-without-exemption-reason	valid	
+mutation/vat/reverse-charge-exemption-code-only	invalid	111:unexpected-element
+mutation/vat/reverse-charge-without-buyer-vat-id	invalid	110:unexpected-element
+mutation/vat/reverse-charge-buyer-legal-registration	invalid	111:unexpected-element
+mutation/vat/reverse-charge-tax-representative-vat-id	invalid	109:unexpected-element
+mutation/vat/intra-community-with-allowance	invalid	111:unexpected-element
+mutation/vat/intra-community-allowance-without-seller-vat-id	invalid	108:unexpected-element
+mutation/vat/intra-community-allowance-rate-other	invalid	111:unexpected-element
+mutation/vat/intra-community	invalid	111:unexpected-element
+mutation/vat/intra-community-line-only	valid	
+mutation/vat/intra-community-charge-only	valid	
+mutation/vat/intra-community-breakdown-only	valid	
+mutation/vat/intra-community-taxable-off	invalid	111:unexpected-element
+mutation/vat/intra-community-taxable-within-one	invalid	111:unexpected-element
+mutation/vat/intra-community-without-seller-vat-id	invalid	108:unexpected-element
+mutation/vat/intra-community-two-breakdowns	invalid	111:unexpected-element 119:unexpected-element
+mutation/vat/intra-community-rate-nonzero	invalid	111:unexpected-element
+mutation/vat/intra-community-tax-nonzero	invalid	111:unexpected-element
+mutation/vat/intra-community-without-exemption-reason	valid	
+mutation/vat/intra-community-exemption-code-only	invalid	111:unexpected-element
+mutation/vat/intra-community-without-buyer-vat-id	invalid	110:unexpected-element
+mutation/vat/intra-community-buyer-legal-registration	invalid	111:unexpected-element
+mutation/vat/intra-community-tax-representative-vat-id	invalid	109:unexpected-element
+mutation/vat/intra-community-without-delivery-country	invalid	111:unexpected-element
+mutation/vat/intra-community-without-period	invalid	111:unexpected-element
+mutation/vat/intra-community-delivery-date	invalid	111:unexpected-element
+mutation/vat/export-with-allowance	invalid	110:unexpected-element
+mutation/vat/export-allowance-without-seller-vat-id	invalid	107:unexpected-element
+mutation/vat/export-allowance-rate-other	invalid	110:unexpected-element
+mutation/vat/export	invalid	110:unexpected-element
+mutation/vat/export-line-only	valid	
+mutation/vat/export-charge-only	valid	
+mutation/vat/export-breakdown-only	valid	
+mutation/vat/export-taxable-off	invalid	110:unexpected-element
+mutation/vat/export-taxable-within-one	invalid	110:unexpected-element
+mutation/vat/export-without-seller-vat-id	invalid	107:unexpected-element
+mutation/vat/export-two-breakdowns	invalid	110:unexpected-element 118:unexpected-element
+mutation/vat/export-rate-nonzero	invalid	110:unexpected-element
+mutation/vat/export-tax-nonzero	invalid	110:unexpected-element
+mutation/vat/export-without-exemption-reason	valid	
+mutation/vat/export-exemption-code-only	invalid	110:unexpected-element
+mutation/vat/outside-scope-with-allowance	invalid	105:unexpected-element
+mutation/vat/outside-scope-allowance-without-seller-vat-id	invalid	70:unexpected-element 106:unexpected-element
+mutation/vat/outside-scope-allowance-with-rate	invalid	105:unexpected-element
+mutation/vat/outside-scope	invalid	105:unexpected-element
+mutation/vat/outside-scope-line-only	valid	
+mutation/vat/outside-scope-charge-only	valid	
+mutation/vat/outside-scope-breakdown-only	valid	
+mutation/vat/outside-scope-taxable-off	invalid	105:unexpected-element
+mutation/vat/outside-scope-taxable-within-one	invalid	105:unexpected-element
+mutation/vat/outside-scope-without-seller-vat-id	invalid	105:unexpected-element
+mutation/vat/outside-scope-two-breakdowns	invalid	105:unexpected-element 112:unexpected-element
+mutation/vat/outside-scope-with-rate	invalid	106:unexpected-element
+mutation/vat/outside-scope-with-seller-vat-id	invalid	108:unexpected-element
+mutation/vat/outside-scope-with-buyer-vat-id	invalid	106:unexpected-element
+mutation/vat/outside-scope-with-tax-representative	invalid	106:unexpected-element
+mutation/vat/outside-scope-tax-nonzero	invalid	105:unexpected-element
+mutation/vat/outside-scope-without-exemption-reason	valid	
+mutation/vat/outside-scope-and-standard-line	invalid	132:unexpected-element
+mutation/vat/outside-scope-two-breakdowns-other-category	invalid	105:unexpected-element 112:unexpected-element
+mutation/vat/canary-igic-with-allowance	valid	
+mutation/vat/canary-igic-allowance-without-seller-vat-id	valid	
+mutation/vat/canary-igic-allowance-rate-other	valid	
+mutation/vat/canary-igic	valid	
+mutation/vat/canary-igic-line-only	valid	
+mutation/vat/canary-igic-charge-only	valid	
+mutation/vat/canary-igic-breakdown-only	valid	
+mutation/vat/canary-igic-taxable-off	valid	
+mutation/vat/canary-igic-taxable-within-one	valid	
+mutation/vat/canary-igic-without-seller-vat-id	valid	
+mutation/vat/canary-igic-two-breakdowns	valid	
+mutation/vat/canary-igic-rate-zero	valid	
+mutation/vat/canary-igic-rate-negative	valid	
+mutation/vat/canary-igic-tax-off	valid	
+mutation/vat/canary-igic-exemption-reason	invalid	110:unexpected-element
+mutation/vat/canary-igic-two-rates	valid	
+mutation/vat/ceuta-melilla-ipsi-with-allowance	valid	
+mutation/vat/ceuta-melilla-ipsi-allowance-without-seller-vat-id	valid	
+mutation/vat/ceuta-melilla-ipsi-allowance-rate-other	valid	
+mutation/vat/ceuta-melilla-ipsi	valid	
+mutation/vat/ceuta-melilla-ipsi-line-only	valid	
+mutation/vat/ceuta-melilla-ipsi-charge-only	valid	
+mutation/vat/ceuta-melilla-ipsi-breakdown-only	valid	
+mutation/vat/ceuta-melilla-ipsi-taxable-off	valid	
+mutation/vat/ceuta-melilla-ipsi-taxable-within-one	valid	
+mutation/vat/ceuta-melilla-ipsi-without-seller-vat-id	valid	
+mutation/vat/ceuta-melilla-ipsi-two-breakdowns	valid	
+mutation/vat/ceuta-melilla-ipsi-rate-zero	valid	
+mutation/vat/ceuta-melilla-ipsi-rate-negative	valid	
+mutation/vat/ceuta-melilla-ipsi-tax-off	valid	
+mutation/vat/ceuta-melilla-ipsi-exemption-reason	invalid	110:unexpected-element
+mutation/vat/ceuta-melilla-ipsi-two-rates	valid	
+mutation/vat/standard-allowance-without-seller-vat-id	valid	
+mutation/vat/standard-allowance-rate-zero	valid	
+mutation/vat/standard-rate-zero	valid	
+mutation/vat/standard-taxable-off	valid	
+mutation/vat/standard-taxable-minus-one	valid	
+mutation/vat/standard-tax-off	valid	
+mutation/vat/standard-exemption-reason	invalid	110:unexpected-element
+mutation/vat/standard-exemption-code	invalid	110:unexpected-element
+mutation/vat/standard-without-seller-vat-id	valid	
+mutation/vat/standard-seller-fc-only	valid	
+mutation/vat/standard-charge-other-rate	valid	
+mutation/vat/standard-rate-written-25-00	valid	
+mutation/vat/standard-rate-text	invalid	52:element-value
+mutation/vat/standard-rate-missing-on-line	valid	
+mutation/vat/category-code-lower-case	valid	
+mutation/vat/category-code-spaced	valid	
+mutation/vat/split-payment-italy	valid	
+mutation/vat/split-payment-not-italy	valid	
+mutation/vat/split-payment-and-standard	valid	
+mutation/vat/zero-example-taxable-off	valid	
+mutation/vat/zero-example-exemption-reason	invalid	180:unexpected-element
+mutation/vat/outside-example-with-rate	invalid	217:unexpected-element
+mutation/vat/outside-example-tax-off	valid	
+mutation/vat/exempt-example-reason-removed	valid	
+mutation/vat/exempt-example-taxable-off	valid	
+mutation/vat/line-tax-type-not-vat	valid	
+mutation/allowances/allowance-without-category	valid	
+mutation/allowances/allowance-category-zero	valid	
+mutation/allowances/allowance-rate-other	valid	
+mutation/allowances/allowance-reason-code-only	valid	
+mutation/allowances/allowance-reason-only	valid	
+mutation/allowances/allowance-percentage-without-base	valid	
+mutation/allowances/allowance-negative	valid	
+mutation/allowances/charge-becomes-allowance	valid	
+mutation/allowances/allowance-becomes-charge	valid	
+mutation/allowances/line-allowance-becomes-charge	valid	
+mutation/allowances/line-allowance-reason-code-unknown	valid	
+mutation/allowances/line-charge-reason-code-unknown	valid	
+mutation/allowances/line-allowance-in-category	valid	
+mutation/allowances/line-allowance-twice	valid	
+mutation/allowances/header-allowance-twice	valid	
+mutation/allowances/header-allowance-removed	valid	
+mutation/allowances/header-charge-removed	valid	
+mutation/allowances/header-charge-removed-consistent	valid	
+mutation/allowances/charge-amount-text	invalid	123:element-value
+mutation/allowances/charge-category-tax-type-other	valid	
+mutation/allowances/charge-tax-type-lower-case	valid	
+mutation/allowances/example-price-discount-removed	valid	
+mutation/allowances/example-line-allowances-twice	valid	
+mutation/allowances/example-header-amounts-plus-cent	valid	
+mutation/allowances/gross-price-below-net	valid	
+mutation/allowances/price-base-quantity-zero	valid	
+mutation/allowances/price-base-quantity-unit-differs	valid	
+mutation/ids/seller-address-scheme-blank	valid	
+mutation/ids/buyer-address-scheme-blank	valid	
+mutation/ids/second-address-without-scheme	valid	
+mutation/ids/first-address-without-scheme	valid	
+mutation/ids/item-global-id-scheme-blank	valid	
+mutation/ids/id-scheme-attributes	valid	
+mutation/ids/specification-id-attributes	valid	
+mutation/ids/line-id-scheme-attributes	valid	
+mutation/ids/line-category-code-attributes	invalid	79:attribute-value 79:attribute-value
+mutation/ids/amount-currency-attributes	valid	
+mutation/ids/tax-total-currency-list-version	valid	
+mutation/ids/quantity-unit-attributes	valid	
+mutation/ids/root-language-attributes	invalid	15:attribute-not-allowed 15:attribute-not-allowed
+mutation/ids/attachment-without-mime-code	valid	
+mutation/ids/attachment-without-filename	valid	
+mutation/ids/referenced-document-uri-not-916	valid	
+mutation/ids/attachment-uri	valid	
+mutation/ids/referenced-document-type-code	valid	
+mutation/ids/additional-document-type-50	valid	
+mutation/ids/additional-document-type-other	valid	
+mutation/ids/referenced-document-name	valid	
+mutation/ids/referenced-document-binary	valid	
+mutation/ids/referenced-document-reference-type	valid	
+mutation/ids/contract-reference-type	valid	
+mutation/ids/order-reference-date	valid	
+mutation/ids/iban-short	valid	
+mutation/ids/very-long-invoice-number	valid	
+mutation/ids/very-long-item-name	valid	
+mutation/ids/many-notes	valid	
+mutation/namespaces/default-namespace-ram	valid	
+mutation/namespaces/other-prefix	valid	
+mutation/namespaces/wrong-namespace-seller-name	invalid	61:unexpected-element
+mutation/namespaces/no-namespace-root	invalid	15:root
+mutation/namespaces/older-cii-namespace	invalid	15:root
+mutation/namespaces/udt-namespace-changed	invalid	25:unexpected-element 113:unexpected-element 116:unexpected-element 121:unexpected-element 133:unexpected-element
+mutation/namespaces/redeclared-prefix	valid	
+mutation/markup/comments-in-amounts	valid	
+mutation/markup/cdata-amounts	valid	
+mutation/markup/character-references	valid	
+mutation/markup/entity-references	valid	
+mutation/markup/processing-instruction	valid	
+mutation/markup/unicode-names	valid	
+mutation/markup/whitespace-only-element	valid	
+mutation/markup/xml-lang-and-space	invalid	21:attribute-not-allowed 61:attribute-not-allowed
+mutation/markup/unknown-elements	invalid	79:unexpected-element 143:unexpected-element
+mutation/markup/unknown-ram-element-ending-in-id	invalid	79:unexpected-element
+mutation/markup/xsi-type	invalid	22:xsi-type
+mutation/markup/xsi-nil	invalid	82:not-nillable
+mutation/long/many-lines	valid	
+mutation/long/deep-nesting	malformed	
+mutation/long/huge-decimal	invalid	55:element-value
+mutation/long/huge-decimal-fraction	invalid	55:element-value
+mutation/credit-notes/type-381-negated	valid	
+mutation/credit-notes/type-381-with-preceding-invoice	valid	
+mutation/credit-notes/negative-quantity	valid	
+mutation/credit-notes/type-381-line-amount-plus-cent	valid	
+mutation/forbidden/line-tax-basis-amount	invalid	81:unexpected-element
+mutation/forbidden/charge-tax-exemption	invalid	413:unexpected-element
+mutation/forbidden/line-tax-exemption	invalid	81:unexpected-element
+mutation/duplicates/business-process-twice	valid	
+mutation/duplicates/business-process-once	valid	
+mutation/missing/specification-parameter	valid	
+mutation/duplicates/seller-contact-person-and-department	invalid	219:unexpected-element
+mutation/duplicates/buyer-contact-person-and-department	invalid	253:unexpected-element
+mutation/duplicates/payment-means-codes-differ	valid	
+mutation/duplicates/payment-means-codes-differ-in-spaces	valid	
+mutation/duplicates/payment-means-information-differs	valid	
+mutation/duplicates/payment-reference-twice	valid	
+mutation/duplicates/payment-cards-twice	invalid	353:unexpected-element 360:unexpected-element
+mutation/duplicates/debtor-accounts-twice	invalid	353:unexpected-element 360:unexpected-element
+mutation/duplicates/rounding-amount-twice	invalid	429:unexpected-element
+mutation/duplicates/summation-information-amount-twice	invalid	430:unexpected-element
+mutation/duplicates/summation-total-discount-amount-twice	invalid	430:unexpected-element
+mutation/duplicates/summation-total-allowance-charge-amount-twice	invalid	430:unexpected-element
+mutation/duplicates/summation-retail-value-excluding-tax-information-amount-twice	valid	
+mutation/duplicates/summation-total-deposit-fee-information-amount-twice	valid	
+mutation/duplicates/summation-product-value-excluding-tobacco-tax-information-amount-twice	valid	
+mutation/duplicates/summation-total-retail-value-information-amount-twice	valid	
+mutation/duplicates/summation-gross-line-total-amount-twice	valid	
+mutation/duplicates/summation-net-line-total-amount-twice	valid	
+mutation/duplicates/summation-net-including-taxes-line-total-amount-twice	valid	
+mutation/codes/br-cl-06-due-date-code-unknown	invalid	110:unexpected-element
+mutation/codes/br-cl-06-due-date-code-known	invalid	110:unexpected-element
+mutation/codes/br-cl-07-reference-type-unknown	valid	
+mutation/codes/br-cl-07-reference-type-lower	valid	
+mutation/booleans/outside-charge-indicator-yes	invalid	220:element-value
+mutation/booleans/outside-charge-indicator-empty	invalid	220:element-value
+mutation/booleans/outside-charge-indicator-spaced-one	valid	
+mutation/booleans/outside-charge-indicator-zero	valid	
+mutation/booleans/outside-charge-indicator-upper-case	invalid	220:element-value
+mutation/booleans/outside-charge-indicator-missing	invalid	219:missing-element
+mutation/booleans/outside-charge-indicator-twice	invalid	221:unexpected-element
+mutation/booleans/outside-charge-without-category	invalid	219:missing-element
+mutation/booleans/zero-rated-charge-indicator-yes	invalid	121:element-value
+mutation/booleans/zero-rated-charge-indicator-empty	invalid	121:element-value
+mutation/booleans/zero-rated-charge-indicator-one	valid	
+mutation/booleans/zero-rated-charge-indicator-false	valid	
+mutation/booleans/zero-rated-charge-indicator-missing	invalid	120:missing-element
+mutation/booleans/zero-rated-charge-indicator-twice	invalid	122:unexpected-element
+mutation/forbidden/specified-trade-settlement-payment-means-1	invalid	353:text-not-allowed
+mutation/forbidden/exchanged-document-context-1	invalid	20:unexpected-element
+mutation/forbidden/exchanged-document-context-2	invalid	20:text-not-allowed
+mutation/forbidden/exchanged-document-1	invalid	26:unexpected-element 32:unexpected-element
+mutation/forbidden/exchanged-document-2	invalid	31:unexpected-element
+mutation/forbidden/exchanged-document-3	invalid	30:unexpected-element 34:unexpected-element
+mutation/forbidden/associated-document-line-document-1	invalid	40:unexpected-element
+mutation/forbidden/associated-document-line-document-2	invalid	39:unexpected-element
+mutation/forbidden/specified-trade-product-1	invalid	53:unexpected-element
+mutation/forbidden/specified-trade-product-2	invalid	53:unexpected-element
+mutation/forbidden/specified-trade-product-3	invalid	53:unexpected-element
+mutation/forbidden/specified-trade-product-4	invalid	49:unexpected-element 57:unexpected-element
+mutation/forbidden/specified-trade-product-5	invalid	50:missing-element 50:text-not-allowed 51:missing-element 51:text-not-allowed 53:text-not-allowed 54:text-not-allowed
+mutation/forbidden/specified-trade-product-6	invalid	49:text-not-allowed 54:unexpected-element
+mutation/forbidden/specified-trade-product-7	invalid	54:unexpected-element
+mutation/forbidden/specified-trade-product-8	invalid	52:text-not-allowed 54:text-not-allowed 55:text-not-allowed 56:text-not-allowed 57:text-not-allowed 58:text-not-allowed
+mutation/forbidden/specified-trade-product-9	invalid	53:text-not-allowed 54:text-not-allowed 55:text-not-allowed 56:text-not-allowed 57:text-not-allowed 58:text-not-allowed
+mutation/forbidden/specified-line-trade-agreement-1	invalid	57:unexpected-element 73:unexpected-element
+mutation/forbidden/specified-line-trade-agreement-2	invalid	67:unexpected-element 74:unexpected-element
+mutation/forbidden/specified-line-trade-agreement-3	invalid	66:unexpected-element 70:unexpected-element
+mutation/forbidden/specified-line-trade-agreement-4	invalid	66:unexpected-element
+mutation/forbidden/specified-line-trade-agreement-5	invalid	67:text-not-allowed 68:missing-element 68:text-not-allowed 70:text-not-allowed 71:unexpected-element
+mutation/forbidden/specified-line-trade-agreement-6	invalid	67:text-not-allowed 68:text-not-allowed 73:unexpected-element
+mutation/forbidden/specified-line-trade-agreement-7	invalid	72:text-not-allowed 73:text-not-allowed 74:unexpected-element
+mutation/forbidden/specified-line-trade-agreement-8	invalid	71:text-not-allowed 73:text-not-allowed 74:text-not-allowed 75:text-not-allowed 76:text-not-allowed 77:text-not-allowed
+mutation/forbidden/specified-line-trade-delivery-1	invalid	75:unexpected-element
+mutation/forbidden/specified-line-trade-delivery-2	invalid	79:text-not-allowed 80:text-not-allowed
+mutation/forbidden/specified-line-trade-delivery-3	invalid	75:text-not-allowed 76:text-not-allowed 77:text-not-allowed 78:text-not-allowed 79:text-not-allowed 80:text-not-allowed
+mutation/forbidden/specified-line-trade-delivery-4	invalid	75:text-not-allowed 76:text-not-allowed 77:text-not-allowed 78:text-not-allowed 79:text-not-allowed 80:text-not-allowed
+mutation/forbidden/specified-line-trade-delivery-5	invalid	75:text-not-allowed 76:text-not-allowed 77:text-not-allowed
+mutation/forbidden/specified-line-trade-settlement-1	invalid	81:unexpected-element 94:unexpected-element 122:unexpected-element
+mutation/forbidden/specified-line-trade-settlement-2	invalid	99:unexpected-element
+mutation/forbidden/specified-line-trade-settlement-3	invalid	100:text-not-allowed 101:missing-element 101:text-not-allowed 102:unexpected-element 124:unexpected-element
+mutation/forbidden/specified-line-trade-settlement-4	invalid	125:unexpected-element
+mutation/forbidden/specified-line-trade-settlement-5	valid	
+mutation/forbidden/specified-line-trade-settlement-6	invalid	123:unexpected-element
+mutation/forbidden/specified-line-trade-settlement-7	invalid	123:missing-element 123:text-not-allowed 124:missing-element 124:text-not-allowed 125:text-not-allowed
+mutation/forbidden/applicable-header-trade-agreement-1	invalid	210:unexpected-element 241:unexpected-element 314:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-2	invalid	215:unexpected-element 220:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-3	invalid	215:unexpected-element 222:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-4	invalid	219:text-not-allowed 220:text-not-allowed 221:text-not-allowed 222:text-not-allowed 223:text-not-allowed
+mutation/forbidden/applicable-header-trade-agreement-5	invalid	234:text-not-allowed 239:text-not-allowed 240:text-not-allowed 272:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-6	invalid	244:unexpected-element 257:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-7	invalid	249:unexpected-element 255:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-8	invalid	255:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-9	invalid	253:text-not-allowed 254:text-not-allowed 255:text-not-allowed 272:text-not-allowed
+mutation/forbidden/applicable-header-trade-agreement-10	invalid	268:text-not-allowed 269:text-not-allowed 311:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-11	invalid	282:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-12	invalid	281:text-not-allowed 283:unexpected-element 313:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-13	invalid	312:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-14	invalid	310:unexpected-element
+mutation/forbidden/applicable-header-trade-agreement-15	invalid	308:unexpected-element 310:unexpected-element
+mutation/forbidden/applicable-header-trade-delivery-1	invalid	322:unexpected-element 339:unexpected-element
+mutation/forbidden/applicable-header-trade-delivery-2	invalid	322:text-not-allowed 323:text-not-allowed 324:text-not-allowed 337:unexpected-element
+mutation/forbidden/applicable-header-trade-delivery-3	invalid	326:unexpected-element 328:unexpected-element 339:unexpected-element
+mutation/forbidden/applicable-header-trade-delivery-4	invalid	328:missing-element 328:text-not-allowed 329:missing-element 329:text-not-allowed 330:text-not-allowed 331:text-not-allowed 339:unexpected-element
+mutation/forbidden/applicable-header-trade-delivery-5	invalid	335:unexpected-element
+mutation/forbidden/applicable-header-trade-delivery-6	invalid	334:text-not-allowed
+mutation/forbidden/applicable-header-trade-settlement-1	invalid	440:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-2	invalid	440:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-3	invalid	345:unexpected-element 350:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-4	invalid	345:text-not-allowed 347:text-not-allowed 348:text-not-allowed 349:text-not-allowed 350:text-not-allowed 351:text-not-allowed
+mutation/forbidden/applicable-header-trade-settlement-5	invalid	346:text-not-allowed 354:unexpected-element 442:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-6	invalid	353:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-7	invalid	353:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-8	invalid	353:unexpected-element 404:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-9	invalid	399:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-10	invalid	417:unexpected-element 419:unexpected-element 443:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-11	invalid	419:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-12	invalid	419:text-not-allowed 420:text-not-allowed 438:unexpected-element 443:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-13	invalid	443:unexpected-element
+mutation/forbidden/applicable-header-trade-settlement-14	invalid	442:missing-element 442:text-not-allowed 443:missing-element 443:text-not-allowed 444:text-not-allowed 445:missing-element 445:text-not-allowed
+mutation/forbidden/applicable-header-trade-settlement-15	invalid	440:text-not-allowed
+mutation/forbidden/specified-trade-settlement-header-monetary-summation-1	invalid	430:unexpected-element
+mutation/forbidden/specified-trade-settlement-header-monetary-summation-2	valid	
+mutation/forbidden/cross-industry-invoice-1	invalid	15:attribute-not-allowed 15:attribute-not-allowed 442:unexpected-element
+mutation/forbidden/guideline-specified-document-context-parameter-1	invalid	20:text-not-allowed
+mutation/forbidden/i-d-1	valid	
+mutation/forbidden/i-d-2	valid	
+mutation/forbidden/i-d-1-2	valid	
+mutation/forbidden/type-code-1	valid	
+mutation/forbidden/type-code-1-2	invalid	23:attribute-value 23:attribute-value
+mutation/forbidden/category-code-1	invalid	79:attribute-value 79:attribute-value
+mutation/forbidden/contract-referenced-document-1	invalid	292:missing-element 292:text-not-allowed
+mutation/forbidden/contract-referenced-document-2	invalid	292:text-not-allowed 293:text-not-allowed 294:text-not-allowed
+mutation/forbidden/line-total-amount-1	valid	
+mutation/forbidden/billed-quantity-1	valid	
+mutation/forbidden/applicable-trade-tax-1	invalid	376:unexpected-element
+mutation/forbidden/applicable-trade-tax-2	invalid	376:unexpected-element
+mutation/forbidden/applicable-trade-tax-3	invalid	376:unexpected-element
+mutation/forbidden/applicable-trade-tax-4	invalid	376:missing-element 376:text-not-allowed 377:missing-element 377:text-not-allowed 378:missing-element 378:text-not-allowed 379:text-not-allowed
+mutation/forbidden/billing-specified-period-1	invalid	380:unexpected-element 384:unexpected-element 386:unexpected-element
+mutation/forbidden/billing-specified-period-2	invalid	384:missing-element 384:text-not-allowed
+mutation/forbidden/billing-specified-period-3	invalid	384:missing-element 384:text-not-allowed
+mutation/forbidden/postal-trade-address-1	invalid	227:unexpected-element
+mutation/forbidden/postal-trade-address-2	invalid	227:unexpected-element
+mutation/forbidden/postal-trade-address-3	valid	

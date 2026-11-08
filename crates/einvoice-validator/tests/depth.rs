@@ -15,8 +15,8 @@
 mod common;
 
 use einvoice_validator::{
-    DEFAULT_MAX_DEPTH, DEFAULT_MAX_STACK, Error, ErrorKind, LimitExceeded, Report, ValidateOptions,
-    Validator, Verdict,
+    DEFAULT_MAX_DEPTH, DEFAULT_MAX_STACK, Error, ErrorKind, LimitExceeded, Report, Severity,
+    ValidateOptions, Validator, Verdict,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -155,14 +155,25 @@ fn cen_ubl_at_the_maximum_depth() {
 }
 
 /// The built-in CII rule set: its location paths recurse over the ancestors of the
-/// node that fails a rule.
+/// node that fails a rule. The CII D16B schemas have no wildcard, so the chain is a
+/// schema error (its first element, unexpected in the seller); the CEN rules find
+/// nothing fatal in it.
 #[test]
 fn cen_cii_at_the_maximum_depth() {
     on_a_default_stack(|| {
         let validator = Validator::cen_cii().unwrap();
-        let report = validator.validate(deep_cii(256).as_bytes()).unwrap();
+        let text = deep_cii(256);
+        let report = validator.validate(text.as_bytes()).unwrap();
         assert!(report.stylesheets[0].failure.is_none());
-        assert_eq!(report.verdict(), Verdict::Valid);
+        let errors: Vec<(&str, u32, u32)> = report
+            .schema_errors
+            .iter()
+            .map(|e| (e.kind.as_str(), e.line, e.column))
+            .collect();
+        let (line, column) = position(&text, 5);
+        assert_eq!(errors, [("unexpected-element", line, column)]);
+        assert_eq!(report.count(Severity::Fatal), 0);
+        assert_eq!(report.verdict(), Verdict::Invalid);
         let text = deep_cii(257);
         assert_too_deep(
             validator.validate(text.as_bytes()),

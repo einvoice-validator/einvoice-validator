@@ -385,8 +385,9 @@ pub(crate) struct TargetRun {
     pub(crate) title: &'static str,
     pub(crate) documents: usize,
     pub(crate) stylesheets: usize,
-    /// Whether `einvoice-validate` validates with an XML schema (UBL 2.1).
-    pub(crate) schema: bool,
+    /// The XML schema `einvoice-validate` validates with, if any (`ubl-2.1`,
+    /// `cii-d16b`).
+    pub(crate) schema: Option<&'static str>,
     /// The `--max-depth` given to `einvoice-validate`, when a document is
     /// deeper than its default.
     pub(crate) max_depth: Option<usize>,
@@ -1000,10 +1001,7 @@ pub(crate) fn json(report: &Report) -> String {
                 ("title", Json::str(t.title)),
                 ("documents", Json::count(t.documents)),
                 ("stylesheets", Json::count(t.stylesheets)),
-                (
-                    "schema",
-                    Json::str(if t.schema { "ubl-2.1" } else { "none" }),
-                ),
+                ("schema", Json::str(t.schema.unwrap_or("none"))),
                 ("max_depth", t.max_depth.map_or(Json::Null, Json::count)),
                 (
                     "results",
@@ -1337,7 +1335,7 @@ mod tests {
                     title: "CEN UBL",
                     documents: 100,
                     stylesheets: 1,
-                    schema: true,
+                    schema: Some("ubl-2.1"),
                     max_depth: Some(1024),
                     runs: vec![
                         run(Tool::Engine, 1, &[500, 400, 600], 20 * 1024, summary),
@@ -1356,7 +1354,7 @@ mod tests {
                     title: "CEN CII",
                     documents: 50,
                     stylesheets: 2,
-                    schema: false,
+                    schema: Some("cii-d16b"),
                     max_depth: None,
                     runs: vec![
                         run(Tool::Engine, 1, &[100, 100, 100], 10 * 1024, summary),

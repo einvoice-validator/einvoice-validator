@@ -3,8 +3,8 @@
 Command-line validation of e-invoices against the official EN 16931 validation artefacts,
 with the [`einvoice-validator`](https://crates.io/crates/einvoice-validator) library: for each
 document, the XML check (UTF-8, well-formed, no document type declaration), the XML schema of
-the rule set (UBL 2.1; none for CII), then the official compiled Schematron stylesheets of the rule set,
-executed with the behaviour of Saxon-HE. XML files and Factur-X / ZUGFeRD / Order-X PDF files
+the rule set (UBL 2.1, or CII D16B for `cen-cii`), then the official compiled Schematron
+stylesheets of the rule set, executed with the behaviour of Saxon-HE. XML files and Factur-X / ZUGFeRD / Order-X PDF files
 (the invoice XML they embed). It is part of
 [einvoice-validator](https://github.com/einvoice-validator/einvoice-validator).
 
@@ -81,7 +81,7 @@ in the cache.
 | Option | Meaning |
 |---|---|
 | `FILE...` | Documents to validate, in that order; `-` reads standard input (at most once). After `--`, every argument is a file. A file (or standard input) that starts with `%PDF-` is a PDF: see [PDF files](#pdf-files). |
-| `-r`, `--rules NAME` | A rule set fetched on demand, from the cache (see [Rule sets fetched on demand](#rule-sets-fetched-on-demand)), or a built-in rule set: `cen-ubl`, the CEN EN 16931 UBL validation artefacts 1.3.17 with the UBL 2.1 schemas, or `cen-cii`, the CEN EN 16931 CII (UN/CEFACT D16B) validation artefacts 1.3.17, without an XML schema (the CII schemas are not embedded). Without `--rules` and `--bundle`, each document is validated with the rule set of its root element: `cen-ubl` for a UBL `Invoice` or `CreditNote` (namespaces `urn:oasis:names:specification:ubl:schema:xsd:Invoice-2` and `...:CreditNote-2`), `cen-cii` for a `CrossIndustryInvoice` in `urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100`, and `cen-ubl` for any other document, one that is not XML, or a file that cannot be read. Only the root element is read for that, before the document is validated. |
+| `-r`, `--rules NAME` | A rule set fetched on demand, from the cache (see [Rule sets fetched on demand](#rule-sets-fetched-on-demand)), or a built-in rule set: `cen-ubl`, the CEN EN 16931 UBL validation artefacts 1.3.17 with the UBL 2.1 schemas, or `cen-cii`, the CEN EN 16931 CII (UN/CEFACT D16B) validation artefacts 1.3.17 with the UN/CEFACT CII D16B schemas. Without `--rules` and `--bundle`, each document is validated with the rule set of its root element: `cen-ubl` for a UBL `Invoice` or `CreditNote` (namespaces `urn:oasis:names:specification:ubl:schema:xsd:Invoice-2` and `...:CreditNote-2`), `cen-cii` for a `CrossIndustryInvoice` in `urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100`, and `cen-ubl` for any other document, one that is not XML, or a file that cannot be read. Only the root element is read for that, before the document is validated. |
 | `--fetch` | With `--rules` naming a rule set fetched on demand that is not in the cache: fetch it first (otherwise an error says how). Nothing is downloaded without it or `rules fetch`. |
 | `-b`, `--bundle DIR` | A rule-set bundle: `DIR/bundle.toml` and the stylesheets and resources it names (see the documentation of the `einvoice-validator` crate for the manifest format). Excludes `--rules`. |
 | `-f`, `--format FORMAT` | `text` (default), `json` or `svrl`. |
@@ -90,7 +90,7 @@ in the cache.
 | `--fail-closed` | Count as fatal every finding that would not otherwise be fatal or a warning: a flag other than `fatal` and `warning` (`information`, ...), or none, that the rule set gives no severity of its own (see [Severities](#severities)). For rule sets whose flags are not known in advance. |
 | `-h`, `--help` | The help, then exit 0. |
 | `-V`, `--version` | The version and the built-in rule sets, then exit 0. |
-| `--licences`, `--licenses` | The licences of everything embedded in the binary, each with what it covers and its full text, then exit 0: MIT for the code, EUPL-1.2 for the CEN stylesheets of the built-in rule sets, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1 schemas; then the notices of the third-party crates the binary is compiled from (`THIRD-PARTY-NOTICES`). |
+| `--licences`, `--licenses` | The licences of everything embedded in the binary, each with what it covers and its full text, then exit 0: MIT for the code, EUPL-1.2 for the CEN stylesheets of the built-in rule sets, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1 and CII D16B schemas; then the notices of the third-party crates the binary is compiled from (`THIRD-PARTY-NOTICES`). |
 
 Options take their value as `--format json`, `--format=json`, `-f json` or `-fjson`. An option
 given twice is a usage error.
@@ -113,10 +113,11 @@ reads the reports:
   flags (`customLevel`: `error` is fatal, `information` other); for instance `UBL-CR-646`
   is fatal in an XRechnung 3.0 invoice and other in an XRechnung extension. A document
   that matches no scenario (a Peppol BIS invoice, a misspelt identifier) or several is
-  invalid, and no stylesheet runs on it, as the KoSIT validator rejects it. The CII
-  scenarios also validate against the UN/CEFACT CII D16B XML schema, which is not
-  embedded: the text output notes it, the JSON output names it in
-  `rule_set.unchecked_schema`.
+  invalid, and no stylesheet runs on it, as the KoSIT validator rejects it. Documents are
+  validated against the XML schema of their scenario first (UBL 2.1, or UN/CEFACT CII D16B),
+  as the KoSIT validator does. A bundle may name a schema its reference validator checks and
+  this tool does not (`unchecked-schema`): the text output notes it, the JSON output names it
+  in `rule_set.unchecked_schema`.
 - CEN EN 16931, Peppol BIS Billing and the other French rules flag every assert `fatal`
   or `warning`.
 

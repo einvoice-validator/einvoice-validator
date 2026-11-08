@@ -48,8 +48,10 @@
 #     runs them: the match expression of each, the stylesheets it runs (both,
 #     or the EN 16931 ones alone), the levels it gives the rule ids it lists; a
 #     document that matches no scenario is rejected; a failed assert without a
-#     flag is fatal. The CII scenarios also validate against the UN/CEFACT CII
-#     D16B XML schema, which the CII bundle does not run (unchecked-schema):
+#     flag is fatal. Documents are validated against the XML schema of their
+#     scenarios first, as the KoSIT validator does: UBL 2.1, or the UN/CEFACT
+#     CII D16B schema (cii-d16b, embedded in einvoice-xsd; the configuration's
+#     copy is UNECE's file, which `cargo xtask xrechnung` checks):
 #     `einvoice-validate --bundle DIR/xrechnung-3.0.2/ubl FILE`.
 #     `einvoice-validate rules fetch` builds the same bundles, byte for byte,
 #     from the same pins (crates/einvoice-validator/pins/, a copy of the block
@@ -103,9 +105,6 @@ stylesheets=(
 namespaces_invoice="cbc=urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2 invoice=urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 rep=http://www.xoev.de/de/validator/varl/1"
 namespaces_creditnote="cbc=urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2 creditnote=urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2 rep=http://www.xoev.de/de/validator/varl/1"
 namespaces_cii="rsm=urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100 ram=urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100 rep=http://www.xoev.de/de/validator/varl/1"
-# The XML schema the CII scenarios validate against, which the CII bundle does
-# not run (its unchecked-schema).
-cii_schema="UN/CEFACT CII D16B (CrossIndustryInvoice_100pD16B.xsd)"
 
 # The scenarios of the configuration (source/configuration/scenarios.xml), in
 # its order: syntax of the bundle, name, document kind (its namespaces above),
@@ -325,15 +324,15 @@ for syntax in ubl cii; do
         echo "# other); a document that matches none is rejected; a failed assert without a"
         echo "# flag is fatal."
         if [ "$syntax" = cii ]; then
-            echo "# The scenarios also validate the documents against the UN/CEFACT CII D16B"
-            echo "# XML schema, which this bundle does not run (unchecked-schema)."
+            echo "# The scenarios validate the documents against the UN/CEFACT CII D16B XML"
+            echo "# schema first (CrossIndustryInvoice_100pD16B.xsd): schema = \"cii-d16b\"."
         fi
         echo "format = 2"
         echo "name = \"xrechnung-$syntax\""
         echo "title = \"XRechnung $upper\""
         echo "version = \"$xrechnung\""
         if [ "$syntax" = cii ]; then
-            echo "unchecked-schema = \"$cii_schema\""
+            echo "schema = \"cii-d16b\""
         else
             echo "schema = \"ubl-2.1\""
         fi

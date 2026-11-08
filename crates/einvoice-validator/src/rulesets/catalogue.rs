@@ -318,12 +318,6 @@ pub(crate) const XRECHNUNG_SCENARIOS: [XRechnungScenario; 11] = [
     ),
 ];
 
-/// The XML schema the CII scenarios of the configuration validate documents against
-/// (`validateWithXmlSchema`), which the CII bundle does not run: the `unchecked-schema`
-/// of its manifest.
-pub(crate) const XRECHNUNG_CII_SCHEMA: &str =
-    "UN/CEFACT CII D16B (CrossIndustryInvoice_100pD16B.xsd)";
-
 // --- The French rules --------------------------------------------------------------
 
 static FR_CTC: FamilySpec = FamilySpec {
@@ -1075,8 +1069,8 @@ fn manifest_xrechnung(spec: &RuleSetSpec) -> Result<String, String> {
     );
     if spec.dir == "cii" {
         m.push_str(
-            "# The scenarios also validate the documents against the UN/CEFACT CII D16B
-# XML schema, which this bundle does not run (unchecked-schema).
+            "# The scenarios validate the documents against the UN/CEFACT CII D16B XML
+# schema first (CrossIndustryInvoice_100pD16B.xsd): schema = \"cii-d16b\".
 ",
         );
     }
@@ -1086,10 +1080,11 @@ fn manifest_xrechnung(spec: &RuleSetSpec) -> Result<String, String> {
         syntax = spec.dir,
         xrechnung = p("xrechnung")?,
     );
+    // The XML schema of the scenarios of the syntax (`validateWithXmlSchema`).
     if spec.dir == "ubl" {
         m.push_str("schema = \"ubl-2.1\"\n");
     } else {
-        let _ = writeln!(m, "unchecked-schema = \"{XRECHNUNG_CII_SCHEMA}\"");
+        m.push_str("schema = \"cii-d16b\"\n");
     }
     for (name, path, sha, version) in XRECHNUNG_STYLESHEETS {
         if !name.ends_with(&format!("-{upper}")) {
@@ -1252,12 +1247,16 @@ mod tests {
                 assert_eq!(s.digest().len(), length, "{}", s.url());
                 assert!(!s.file().contains('/'), "{}", s.file());
             }
-            assert_eq!(
-                parsed.schema().is_some(),
-                r.syntax() == Some(Syntax::Ubl),
-                "{}",
-                r.name()
-            );
+            // UBL 2.1 for UBL; CII D16B for XRechnung CII, whose KoSIT scenarios validate
+            // against it.
+            let schema = if r.syntax() == Some(Syntax::Ubl) {
+                Some(crate::SchemaId::Ubl21)
+            } else if r.name() == "xrechnung-cii" {
+                Some(crate::SchemaId::CiiD16b)
+            } else {
+                None
+            };
+            assert_eq!(parsed.schema(), schema, "{}", r.name());
         }
         // Names are unique, and no name is an alias or a family.
         for (i, r) in all.iter().enumerate() {
@@ -1313,8 +1312,8 @@ mod tests {
                     assert!(!parsed.selects_by_scenario());
                 }
             }
-            let gap = (r.name() == "xrechnung-cii").then_some(XRECHNUNG_CII_SCHEMA);
-            assert_eq!(parsed.unchecked_schema(), gap, "{}", r.name());
+            // Every XML schema of the reference validator is run.
+            assert_eq!(parsed.unchecked_schema(), None, "{}", r.name());
         }
         let ubl = RuleSet::parse(
             fetched_rule_set("xrechnung-ubl", None)
