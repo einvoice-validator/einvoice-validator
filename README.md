@@ -361,6 +361,13 @@ upstream.toml        every pinned upstream version and the files that record it
   `LICENSES/` directory. `einvoice-validate --licences` prints the licences of everything the
   binary embeds (MIT, EUPL-1.2, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1
   schemas) in full, and `einvoice_validator::licences()` returns them to other programs.
+- The `einvoice-validate` binary and the npm package are also compiled from crates of
+  crates.io, each used under the MIT licence (and the Unicode licence v3 for the tables of
+  `unicode-ident`). `crates/einvoice-cli/THIRD-PARTY-NOTICES` and
+  `crates/einvoice-wasm/THIRD-PARTY-NOTICES` give, for each of them, its version, its licence,
+  its authors and the text of that licence from its own package; `einvoice-validate --licences`
+  prints the first after the licences above, and the npm package ships the second. Both are
+  generated from `Cargo.lock`, and the tests fail when they are not up to date.
 - Saxon-HE 12.10 (MPL-2.0) is the reference engine of the tests only, with the XML Resolver
   5.3.3 (Apache-2.0) it needs at run time. `scripts/fetch-saxon.sh` downloads them from Maven
   Central into `target/`; they are neither part of the repository nor distributed.

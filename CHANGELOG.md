@@ -12,6 +12,12 @@ against.
 
 ### Added
 
+- Third-party notices (#22): `einvoice-validate --licences` prints, after the licences of the
+  embedded works, the notice of every crate from crates.io compiled into the binary (version,
+  licence expression and the licence used, authors, licence text from the crate's package); the
+  npm package ships `THIRD-PARTY-NOTICES` for its module. Generated from `Cargo.lock` by
+  `cargo run --locked -p einvoice-testkit --bin third-party-notices -- --write`; a test fails
+  when they are not up to date.
 - Test corpus of Factur-X 1.09.2 (ZUGFeRD 2.5.2), CII (#26), built locally and not committed
   (`corpus/factur-x-1.09.2/README.md`): `scripts/fetch-facturx.sh` takes the stylesheets of
   the five profiles and the code lists they read with `document()` from the Mustang validator
@@ -79,6 +85,13 @@ against.
 
 ### Changed
 
+- The release workflow publishes the crates on crates.io with trusted publishing (OIDC, no
+  stored token), in the environment `release`; `scripts/release.sh --publish` skips versions
+  already published and retries rate limits, and `--trusted-publishing` configures crates.io
+  (#17).
+- `num-bigint` 0.5.1 (#19); the property tests of `einvoice-xdm` check decimals against an exact
+  fraction type of their own instead of `num-rational`, which has no release for `num-bigint`
+  0.5.
 - The oracle runs Saxon-HE with a fixed clock (`-now:2000-01-01T00:00:00Z`), so that SchXslt
   reports, which record the time of their run in `svrl:metadata`, are the same on every run;
   that element, which the canonical form does not represent, is checked and kept apart in
