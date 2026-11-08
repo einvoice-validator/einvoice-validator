@@ -162,6 +162,38 @@ against.
 
 ### Changed
 
+- The engine is faster on every rule set: whole job of `einvoice-validate` on each corpus (every
+  document, mutation cases included, through every stylesheet), one thread, before and after on
+  the same machine, alternating: CEN UBL 2.18 to 1.34 s, CEN CII 0.756 to 0.569 s, Peppol 2.29
+  to 1.42 s, Factur-X 24.5 to 7.20 s, XRechnung UBL 6.19 to 4.08 s, XRechnung CII 3.38 to
+  2.64 s, French CII 22.0 to 8.67 s, French UBL 9.15 to 5.28 s, French CDAR 0.139 to 0.069 s
+  (70.6 to 31.3 s in all, 2.3 times faster); on 8 threads, 9.68 to 4.61 s. With
+  `cargo xtask bench` the speed-up over Saxon-HE 12.10, JVM start excluded, is now 1.4 times
+  (XRechnung UBL) to 13 times (French CDAR) on one thread, 2.4 times in all. The output of
+  every run is unchanged, byte for byte. What changed:
+  - a document `document()` loads (the code lists) is parsed once per stylesheet, not once per
+    transformation (`einvoice_xpath_eval::DocumentCache`, kept by `Executable`); a regular
+    expression compiled at evaluation is kept for every transformation
+    (`einvoice_xpath_eval::RegexCache`, `DynamicContext::with_regex_cache`);
+  - template rules: per mode and node kind, the outcome of the rule search when it needs no
+    pattern to be matched; patterns every node of their rule chain matches (`cac:X`, `text()`,
+    `@*|node()`) are not matched; the chains of a name are looked up once per name of the
+    source document (`Node::name_id`, `Document::name_count`); a rule with an empty body is not
+    set up to run; the built-in rule counts the children only when a rule needs it;
+  - XPath: paths and steps are walked on the tree, predicates evaluated in turn, instead of
+    being built as lazy sequences, for effective boolean values, `exists`, `empty`, `count`,
+    general comparisons, single operands and the value of an expression; `//name` reads the
+    elements of the name from an index each document builds when searched twice; a node is
+    compared without copying its value (`einvoice_xdm::ops::general_compare_untyped`);
+    `xsl:apply-templates` reads its selection (`@*|*`, `.`) from the tree
+    (`CompiledExpr::select_in_place`, `NodeSelection`, `SelectionStorage`);
+  - peak memory of a process is up to 3.5 MiB higher (the cached code lists: Factur-X 52.1 to
+    55.6 MiB on one thread, 65.7 to 69.2 MiB on 8); the peak heap of a validation is unchanged
+    (51 KiB for the largest CEN UBL corpus document, 1673 KiB for the invoice of 1000 lines,
+    1657 before; `tests/footprint.rs`). The
+    stack of a level of a recursion through `xsl:apply-templates` in a debug build is 792 bytes
+    for a selection read from the tree (888 before), 1648 for another selection, which no
+    official stylesheet recurses through.
 - The manifests written by `scripts/fetch-*.sh` have neutral comments; `fetch-peppol.sh` pins
   the embedded CEN version (`cen=1.3.16`). `einvoice-cli` depends on rustls/ring/webpki-roots by
   default (feature `fetch`; licences in THIRD-PARTY-NOTICES; `--no-default-features` leaves them
@@ -247,6 +279,17 @@ against.
 
 ### Fixed
 
+- A path whose nodes the engine sorts (its left operand not known to give nodes in document
+  order: `document('codes.xml')/codedb/cl[@id = 1]`, `(a, b)/c`) is read unsorted and lazily
+  where neither its order nor its duplicates matter, an effective boolean value (`xsl:if`,
+  `xsl:when`, `if`, `not`, `boolean`, `and`, `or`, a predicate), `exists`, `empty` and an
+  operand of a general comparison, as Saxon-HE 12.10 reads it (`Expression.unordered`): its
+  left operand in its own order, until a node decides. The engine read every node first, and
+  raised the error of a node Saxon-HE never reads: `exists(document('codes.xml')/codedb/cl[@id
+  = 1])` was `FORG0001` when a later `cl` has a non-numeric `id`, where Saxon-HE gives `true`.
+  New probes `unordered-paths`, `error-unordered-count` and `error-unordered-first` of
+  `einvoice-xslt-exec`, their expected results from Saxon-HE 12.10. No result of the corpora
+  changes.
 - `scripts/fetch-xrechnung.sh` builds the same XML Mutate mutants on every machine: XML Mutate
   numbers the mutants in the order it reads the unit tests, and writes the number into the name
   and the content of each; read from a directory, that order was the file system's. The script
