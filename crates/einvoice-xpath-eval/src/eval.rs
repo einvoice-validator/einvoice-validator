@@ -7,6 +7,7 @@
 //! that is never read never raises its error. Sequences whose order is not known
 //! statically (see `compile`) are materialised and sorted.
 
+use std::borrow::Cow;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -1036,13 +1037,13 @@ impl<'a> Run<'a> {
     /// A general comparison of two operands of at most one item each.
     #[inline]
     fn one_to_one(&self, op: ops::ComparisonOp, lhs: &Expr, rhs: &Expr, ctx: &Ctx) -> Result<bool> {
-        let Some(a) = self.atomic_opt(lhs, ctx, What::Text(GENERAL_OPERAND))? else {
+        let Some(a) = self.item_opt(lhs, ctx, What::Text(GENERAL_OPERAND))? else {
             return Ok(false);
         };
-        let Some(b) = self.atomic_opt(rhs, ctx, What::Text(GENERAL_OPERAND))? else {
+        let Some(b) = self.item_opt(rhs, ctx, What::Text(GENERAL_OPERAND))? else {
             return Ok(false);
         };
-        Ok(ops::general_compare(&a, op, &b, self.dc.implicit_timezone)?)
+        compare_items(&a, op, &b, self.dc.implicit_timezone)
     }
 
     /// A general comparison whose second operand has at most one item.
@@ -1060,7 +1061,7 @@ impl<'a> Run<'a> {
         if walkable(lhs, Order::Free) {
             let tz = self.dc.implicit_timezone;
             return self.walk(lhs, ctx, Order::Free, &mut |node| {
-                Ok(ops::general_compare(&node.typed_value(), op, &b, tz)?)
+                compare_node(&node, op, &b, tz, false)
             });
         }
         for a in self.atomized(lhs, ctx)? {
@@ -1086,7 +1087,7 @@ impl<'a> Run<'a> {
         if walkable(rhs, Order::Free) {
             let tz = self.dc.implicit_timezone;
             return self.walk(rhs, ctx, Order::Free, &mut |node| {
-                Ok(ops::general_compare(&a, op, &node.typed_value(), tz)?)
+                compare_node(&node, op, &a, tz, true)
             });
         }
         for b in self.atomized(rhs, ctx)? {
@@ -1590,6 +1591,61 @@ fn local(ctx: &Ctx, depth: usize) -> Result<Item> {
     }
     env.map(|e| e.item.clone())
         .ok_or_else(|| Error::new(ErrorCode::Internal, "range variable out of scope"))
+}
+
+/// The typed value of an item when it is `xs:untypedAtomic` (that of an element,
+/// attribute, text or document node, or an untyped value), as text: a node's string
+/// value, borrowed from the tree where it can be.
+fn untyped_text(item: &Item) -> Option<Cow<'_, str>> {
+    match item {
+        Item::Node(node) => match node.kind() {
+            NodeKind::Comment | NodeKind::ProcessingInstruction => None,
+            _ => Some(node.string_value()),
+        },
+        Item::Atomic(AtomicValue::UntypedAtomic(text)) => Some(Cow::Borrowed(text)),
+        Item::Atomic(_) => None,
+    }
+}
+
+/// The atomized value of an item, borrowed when it is an atomic value.
+fn atomized_item(item: &Item) -> Cow<'_, AtomicValue> {
+    match item {
+        Item::Atomic(value) => Cow::Borrowed(value),
+        Item::Node(node) => Cow::Owned(node.typed_value()),
+    }
+}
+
+/// `a op b`, a general comparison of two items, atomized ([`ops::general_compare`]),
+/// an untyped value compared as its text, read in place from the tree for a node.
+fn compare_items(a: &Item, op: ops::ComparisonOp, b: &Item, tz: i16) -> Result<bool> {
+    Ok(match (untyped_text(a), untyped_text(b)) {
+        (Some(x), Some(y)) => ops::general_compare_untyped_pair(&x, op, &y),
+        (Some(x), None) => ops::general_compare_untyped(&x, op, &atomized_item(b), tz, false)?,
+        (None, Some(y)) => ops::general_compare_untyped(&y, op, &atomized_item(a), tz, true)?,
+        (None, None) => ops::general_compare(&atomized_item(a), op, &atomized_item(b), tz)?,
+    })
+}
+
+/// A general comparison of a node, atomized, and `other` (the right operand, or with
+/// `node_is_right` the left one), as [`compare_items`] compares them.
+fn compare_node(
+    node: &Node,
+    op: ops::ComparisonOp,
+    other: &AtomicValue,
+    tz: i16,
+    node_is_right: bool,
+) -> Result<bool> {
+    Ok(match node.kind() {
+        NodeKind::Comment | NodeKind::ProcessingInstruction => {
+            let value = node.typed_value();
+            if node_is_right {
+                ops::general_compare(other, op, &value, tz)?
+            } else {
+                ops::general_compare(&value, op, other, tz)?
+            }
+        }
+        _ => ops::general_compare_untyped(&node.string_value(), op, other, tz, node_is_right)?,
+    })
 }
 
 /// Saxon's many-to-many general comparison: items are read from the two sides in turn,

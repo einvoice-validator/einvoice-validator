@@ -321,6 +321,43 @@ pub fn general_compare(
     }
 }
 
+/// [`general_compare`] of an `xs:untypedAtomic` value given by its text, the typed value
+/// of a node, and `other` (the right operand, or with `untyped_is_right` the left one),
+/// without copying the text.
+///
+/// # Errors
+///
+/// Those of [`general_compare`].
+pub fn general_compare_untyped(
+    untyped: &str,
+    op: ComparisonOp,
+    other: &AtomicValue,
+    implicit_timezone: i16,
+    untyped_is_right: bool,
+) -> Result<bool> {
+    match other {
+        // Two untyped values, or an untyped value and a string, compare as strings.
+        AtomicValue::UntypedAtomic(text)
+        | AtomicValue::String(text)
+        | AtomicValue::AnyUri(text) => {
+            let ordering = if untyped_is_right {
+                text.as_str().cmp(untyped)
+            } else {
+                untyped.cmp(text.as_str())
+            };
+            Ok(op.holds(ordering))
+        }
+        _ => untyped_against(untyped, op, other, implicit_timezone, untyped_is_right),
+    }
+}
+
+/// [`general_compare`] of two `xs:untypedAtomic` values given by their texts: they
+/// compare as strings.
+#[must_use]
+pub fn general_compare_untyped_pair(a: &str, op: ComparisonOp, b: &str) -> bool {
+    op.holds(a.cmp(b))
+}
+
 fn untyped_against(
     untyped: &str,
     op: ComparisonOp,
@@ -652,6 +689,77 @@ mod tests {
 
     fn untyped(s: &str) -> AtomicValue {
         AtomicValue::UntypedAtomic(s.to_owned())
+    }
+
+    #[test]
+    fn untyped_texts_compare_as_untyped_values() {
+        use ComparisonOp as Op;
+        let texts = [
+            "1",
+            " 1 ",
+            "01",
+            "1.0",
+            "-0",
+            "x",
+            "",
+            "NaN",
+            "INF",
+            "1e2",
+            "2026-01-01",
+            "true",
+            "abc",
+            "abd",
+            "\u{e9}",
+        ];
+        let others = [
+            AtomicValue::Integer(Integer::from(1)),
+            AtomicValue::Double(f64::NAN),
+            AtomicValue::Double(1.0),
+            AtomicValue::Double(f64::INFINITY),
+            dec("1.0"),
+            dec("-0.5"),
+            AtomicValue::String("abc".to_owned()),
+            AtomicValue::AnyUri("1".to_owned()),
+            untyped("1"),
+            untyped("abc"),
+            AtomicValue::Boolean(true),
+            AtomicValue::Date(crate::Date::parse("2026-01-01").unwrap()),
+        ];
+        let ops = [
+            Op::Equal,
+            Op::NotEqual,
+            Op::Less,
+            Op::LessOrEqual,
+            Op::Greater,
+            Op::GreaterOrEqual,
+        ];
+        let outcome = |r: Result<bool>| r.map_err(|e| (e.code(), e.to_string()));
+        for text in texts {
+            for other in &others {
+                for op in ops {
+                    let left = general_compare(&untyped(text), op, other, 60);
+                    let right = general_compare(other, op, &untyped(text), 60);
+                    assert_eq!(
+                        outcome(general_compare_untyped(text, op, other, 60, false)),
+                        outcome(left),
+                        "{text:?} {op:?} {other:?}"
+                    );
+                    assert_eq!(
+                        outcome(general_compare_untyped(text, op, other, 60, true)),
+                        outcome(right),
+                        "{other:?} {op:?} {text:?}"
+                    );
+                }
+            }
+            for other in texts {
+                for op in ops {
+                    assert_eq!(
+                        Ok(general_compare_untyped_pair(text, op, other)),
+                        outcome(general_compare(&untyped(text), op, &untyped(other), 0)),
+                    );
+                }
+            }
+        }
     }
 
     #[test]
