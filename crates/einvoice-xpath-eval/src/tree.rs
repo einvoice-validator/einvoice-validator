@@ -328,6 +328,23 @@ impl Document {
         )
     }
 
+    /// A new document with the same tree, whose text space starts with `source`, which
+    /// must be the text this one starts with.
+    fn copy_with_source(&self, source: String) -> Self {
+        debug_assert_eq!(source, self.source);
+        Self {
+            serial: NEXT_SERIAL.fetch_add(1, AtomicOrdering::Relaxed),
+            uri: self.uri.clone(),
+            base_uri: self.base_uri.clone(),
+            has_xml_base: self.has_xml_base,
+            records: self.records.clone(),
+            names: self.names.clone(),
+            namespaces: self.namespaces.clone(),
+            source,
+            text: self.text.clone(),
+        }
+    }
+
     /// The document node.
     #[must_use]
     pub fn root(self: &Rc<Self>) -> Node {
@@ -751,6 +768,90 @@ impl Iterator for Axis {
 
     fn count(self) -> usize {
         self.cursor.walk(&self.doc).count()
+    }
+}
+
+/// Documents that `fn:document` loads, parsed once and given to every transformation that
+/// loads them again: the code lists a stylesheet reads, the same text under the same URI
+/// for each document it validates.
+///
+/// [`DocumentCache::parse_loaded`] returns the tree [`Document::parse_loaded_with_max_depth`]
+/// would build from the text, without parsing it again when the same text was parsed under
+/// the same URI and maximum depth before: a copy of that tree, which is a new document
+/// (created now, as a parse now would create it, for the document order of nodes in
+/// different trees). The cache is shared between threads; it keeps at most
+/// [`DocumentCache::MAX_DOCUMENTS`] documents of at most [`DocumentCache::MAX_BYTES`] of
+/// text in all, and parses the others each time.
+#[derive(Debug, Default)]
+pub struct DocumentCache {
+    entries: std::sync::Mutex<Vec<CachedDocument>>,
+}
+
+/// A parsed document kept by a [`DocumentCache`], with what it was parsed under.
+#[derive(Debug)]
+struct CachedDocument {
+    max_depth: u32,
+    document: Document,
+}
+
+impl DocumentCache {
+    /// The most documents a cache keeps.
+    pub const MAX_DOCUMENTS: usize = 64;
+    /// The most text, in bytes, of the documents a cache keeps.
+    pub const MAX_BYTES: usize = 64 << 20;
+
+    /// An empty cache.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The document [`Document::parse_loaded_with_max_depth`] parses from `text`, loaded
+    /// from `uri`: a copy of the one parsed before from the same text, URI and maximum
+    /// depth, or parsed now (and kept, room permitting).
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Document::parse`]; a text that does not parse is not kept.
+    pub fn parse_loaded(
+        &self,
+        text: String,
+        uri: &str,
+        max_depth: u32,
+    ) -> Result<Rc<Document>, DocumentError> {
+        {
+            let entries = self
+                .entries
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(entry) = entries.iter().find(|e| {
+                e.max_depth == max_depth
+                    && e.document.uri.as_deref() == Some(uri)
+                    && e.document.source == text
+            }) {
+                return Ok(Rc::new(entry.document.copy_with_source(text)));
+            }
+        }
+        let document = Document::parse_loaded_with_max_depth(text, uri, max_depth)?;
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let bytes: usize = entries.iter().map(|e| e.document.source.len()).sum();
+        if entries.len() < Self::MAX_DOCUMENTS
+            && bytes.saturating_add(document.source.len()) <= Self::MAX_BYTES
+            && !entries.iter().any(|e| {
+                e.max_depth == max_depth
+                    && e.document.uri.as_deref() == Some(uri)
+                    && e.document.source == document.source
+            })
+        {
+            entries.push(CachedDocument {
+                max_depth,
+                document: document.copy_with_source(document.source.clone()),
+            });
+        }
+        Ok(document)
     }
 }
 
@@ -1865,6 +1966,52 @@ mod tests {
             ]
         );
         assert_eq!(tree.text, "vcxydz");
+    }
+
+    #[test]
+    fn the_document_cache_parses_a_text_once() {
+        fn shape(doc: &Rc<Document>) -> Vec<String> {
+            doc.root()
+                .axis(NodeAxis::Descendant)
+                .flat_map(|n| std::iter::once(n.clone()).chain(n.attributes()))
+                .map(|n| format!("{} {}", describe(&n), n.string_value()))
+                .collect()
+        }
+        let cache = DocumentCache::new();
+        let xml = "<cl id='1'><e v='a'/>text &amp; more<e v='b'/></cl>";
+        let uri = "file:/codes.xml";
+        let first = cache.parse_loaded(xml.to_owned(), uri, 8).unwrap();
+        let between = parse("<x/>");
+        let second = cache.parse_loaded(xml.to_owned(), uri, 8).unwrap();
+        // The same tree, as a new document created after the one parsed in between.
+        assert_eq!(shape(&first), shape(&second));
+        assert_eq!(second.document_uri(), Some(uri));
+        assert_eq!(second.base_uri(), Some(uri));
+        assert_eq!(second.node_count(), first.node_count());
+        assert_ne!(first.root(), second.root());
+        assert_eq!(
+            between.root().cmp_document_order(&second.root()),
+            Ordering::Less
+        );
+        assert_eq!(
+            first.root().cmp_document_order(&between.root()),
+            Ordering::Less
+        );
+        assert_eq!(cache.entries.lock().unwrap().len(), 1);
+        // Another text, URI or maximum depth is parsed, and kept apart.
+        let other = cache.parse_loaded("<cl/>".to_owned(), uri, 8).unwrap();
+        assert_eq!(other.node_count(), 2);
+        let elsewhere = cache
+            .parse_loaded(xml.to_owned(), "file:/other.xml", 8)
+            .unwrap();
+        assert_eq!(elsewhere.document_uri(), Some("file:/other.xml"));
+        assert_eq!(shape(&elsewhere), shape(&first));
+        let deeper = cache.parse_loaded(xml.to_owned(), uri, 1).unwrap_err();
+        assert!(deeper.limit().is_some());
+        assert_eq!(cache.entries.lock().unwrap().len(), 3);
+        // A text that does not parse is not kept.
+        assert!(cache.parse_loaded("<cl>".to_owned(), uri, 8).is_err());
+        assert_eq!(cache.entries.lock().unwrap().len(), 3);
     }
 
     #[test]

@@ -13,8 +13,8 @@ use einvoice_xpath::{
     self as ast, Avt, AvtPart, Expr, NamespaceMap, Occurrence, QName, SequenceType, parse_expr,
 };
 use einvoice_xpath_eval::{
-    BindingValue, Cardinality, CompiledExpr, FunctionId, StaticContext, ValueType, VariableId,
-    VariableInfo, compile,
+    BindingValue, Cardinality, CompiledExpr, DocumentCache, FunctionId, StaticContext, ValueType,
+    VariableId, VariableInfo, compile,
 };
 use einvoice_xslt::{
     ApplyMode, ApplyTemplates, Attribute, CallTemplate, Choose, Comment, ForEach, GlobalKind, If,
@@ -45,6 +45,9 @@ pub struct Executable {
     pub(crate) calls_document: bool,
     /// How many bindings are evaluated as [`Eval::Learning`].
     pub(crate) learners: usize,
+    /// The documents `document()` loaded through the resolver, parsed once for every
+    /// transformation that loads the same text again.
+    pub(crate) loaded: DocumentCache,
 }
 
 /// A global variable or parameter.
@@ -1528,6 +1531,7 @@ impl Executable {
             base_uri: None,
             calls_document: compiler.calls_document,
             learners: compiler.learners,
+            loaded: DocumentCache::new(),
         })
     }
 

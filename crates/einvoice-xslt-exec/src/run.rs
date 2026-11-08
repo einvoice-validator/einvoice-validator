@@ -1762,7 +1762,8 @@ impl<'e, 'a> Runtime<'e, 'a> {
         }
         // As Saxon: the source document, asked for by its base URI, is parsed again and
         // is a different tree. Loaded once: the tree is kept under its URI above.
-        let text: Cow<'_, str> = if self.source_uri == Some(absolute.as_str()) {
+        let is_source = self.source_uri == Some(absolute.as_str());
+        let text: Cow<'_, str> = if is_source {
             self.source_text.take().ok_or_else(|| {
                 TransformError::new(
                     "INTERNAL",
@@ -1783,8 +1784,17 @@ impl<'e, 'a> Runtime<'e, 'a> {
                     })?,
             )
         };
-        // A loaded document has a document URI, as one in Saxon's document pool.
-        let node = Document::parse_loaded_with_max_depth(text, &absolute, self.options.max_depth)
+        // A loaded document has a document URI, as one in Saxon's document pool. A text
+        // from the resolver is parsed once for every transformation of the stylesheet.
+        let parsed = match text {
+            Cow::Owned(text) if !is_source => {
+                self.exe
+                    .loaded
+                    .parse_loaded(text, &absolute, self.options.max_depth)
+            }
+            text => Document::parse_loaded_with_max_depth(text, &absolute, self.options.max_depth),
+        };
+        let node = parsed
             .map_err(|e| loaded_document_error(&absolute, &e))?
             .root();
         self.documents.borrow_mut().push((absolute, node.clone()));
