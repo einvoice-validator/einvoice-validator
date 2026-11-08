@@ -12,7 +12,11 @@ declaration, no element nested deeper than 256 levels or the maximum set with
 [`einvoice-xslt-exec`](https://crates.io/crates/einvoice-xslt-exec), which executes the
 official compiled Schematron with the behaviour of Saxon-HE 12.10. The `Report` holds the
 schema errors, the findings of each stylesheet (failed asserts and successful reports with
-their id, flag, location and message), the raw SVRL and the verdict.
+their id, flag, severity, location and message), the raw SVRL and the verdict: invalid with a
+schema error or a fatal finding, fatal as the reference validator of the rule set reads the
+report (the flag `fatal`; for Factur-X and XRechnung also a failed assert without a flag, and
+for XRechnung the levels the KoSIT scenario of the document gives rule ids, as their bundle
+manifests say).
 The XML check and the schema are one pass of the streaming reader
 [`einvoice-xml`](https://crates.io/crates/einvoice-xml) over the document, which builds no
 tree; the only tree of the document is the one the stylesheets run on. The findings are read

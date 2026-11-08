@@ -74,11 +74,13 @@ thread free.
 - `options`: `documentUri` (the URI of the document: the base URI of its nodes, as Saxon-HE
   takes it, copied into the report), `now` (the value of `fn:current-dateTime()`: a `Date` or
   milliseconds from the Unix epoch, by default `Date.now()` when the validation starts),
-  `timezoneMinutes` (the implicit timezone, in minutes east of UTC, by default 0) and
+  `timezoneMinutes` (the implicit timezone, in minutes east of UTC, by default 0),
   `maxDepth` (the maximum element depth of the document, the document element at depth 1: 1
   to 400, by default 256; the stylesheets recurse once or twice per level on the JavaScript
-  engine's stack, and a Web Worker in Chrome runs out of stack at about 600 levels). Other
-  members are refused.
+  engine's stack, and a Web Worker in Chrome runs out of stack at about 600 levels) and
+  `failClosed` (a boolean, by default `false`: when `true`, every finding that would
+  otherwise be of severity `other`, a flag other than `fatal` and `warning` or none, is
+  `fatal`). Other members are refused.
 - `licences()`: the licence of everything the package embeds, with what it covers and its full
   text, for applications that show them to their users. `version()`: the package's version.
 

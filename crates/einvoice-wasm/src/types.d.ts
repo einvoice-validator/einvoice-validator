@@ -34,6 +34,12 @@ export interface ValidateOptions {
    * a margin below the smallest measured (a Web Worker in Chrome, about 600 levels).
    */
   maxDepth?: number | null;
+  /**
+   * Fail closed: every finding that would otherwise be of severity `"other"` (a flag
+   * other than `fatal` and `warning`, or none, that the rule set gives no severity of
+   * its own) is `"fatal"`, and makes the document invalid. `false` by default.
+   */
+  failClosed?: boolean | null;
 }
 
 /** A stylesheet of a rule set. */

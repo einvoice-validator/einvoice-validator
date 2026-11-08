@@ -35,7 +35,8 @@ then checks it:
    (808 mutation cases), runs Saxon-HE with each of the five stylesheets on every case
    (`golden-minimum/`, `golden-basic-wl/`, `golden-basic/`, `golden-en16931/`,
    `golden-extended/`), cross-checks the goldens with the expectations against
-   `disagreements.tsv`, and writes `complete.txt`.
+   `disagreements.tsv`, writes `acceptance.tsv` (whether the findings of each stylesheet reject the case as the
+   reference validator reads them, see `../README.md`) and `complete.txt`.
 3. The equivalence test of the engine, `tests/facturx_equivalence.rs` of `crates/einvoice-xslt-exec`
    (required by `scripts/check.sh facturx`), runs every stylesheet on every case and mutation
    case: the engine gives the Saxon-HE result on all of them (the same canonical SVRL, or the

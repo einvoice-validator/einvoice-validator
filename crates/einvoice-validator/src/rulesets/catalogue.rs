@@ -179,6 +179,97 @@ pub(crate) const XRECHNUNG_STYLESHEETS: [(&str, &str, &str, &str); 4] = [
     ),
 ];
 
+/// A scenario of the configuration: syntax of the bundle, name, root element, the
+/// specification identifier its match requires, and the rule ids of the levels error,
+/// warning and information (separated by spaces).
+type XRechnungScenario = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+);
+
+/// The scenarios of the configuration (`scenarios.xml`) that give rule ids levels of
+/// their own (`customLevel`), in its order, as `scripts/fetch-xrechnung.sh` lists them:
+/// the `[[scenario]]` tables of the bundles (`fatal`, `warning`, `other`).
+pub(crate) const XRECHNUNG_SCENARIOS: [XRechnungScenario; 8] = [
+    (
+        "ubl",
+        "EN16931 XRechnung (UBL Invoice)",
+        "Invoice",
+        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+        "UBL-CR-646",
+        "BR-CL-23 BR-CL-21",
+        "",
+    ),
+    (
+        "ubl",
+        "EN16931 XRechnung Extension (UBL Invoice)",
+        "Invoice",
+        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0",
+        "",
+        "BR-CL-23",
+        "BR-CL-21 BR-CL-24 BR-CL-10 BR-CL-11 BR-CL-25 BR-CL-26 BR-CO-16 UBL-CR-470 UBL-CR-646",
+    ),
+    (
+        "ubl",
+        "EN16931 XRechnung CVD (UBL Invoice)",
+        "Invoice",
+        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9",
+        "UBL-CR-646",
+        "BR-CL-23 BR-CL-21",
+        "BR-CL-13",
+    ),
+    (
+        "ubl",
+        "EN16931 XRechnung (UBL CreditNote)",
+        "CreditNote",
+        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+        "",
+        "BR-CL-23 BR-CL-21",
+        "",
+    ),
+    (
+        "ubl",
+        "EN16931 XRechnung CVD (UBL CreditNote)",
+        "CreditNote",
+        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9",
+        "UBL-CR-646",
+        "BR-CL-23 BR-CL-21",
+        "BR-CL-13",
+    ),
+    (
+        "cii",
+        "EN16931 XRechnung (CII)",
+        "CrossIndustryInvoice",
+        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+        "CII-SR-452 CII-SR-453 CII-SR-454 CII-SR-465 CII-SR-466",
+        "BR-CL-23 BR-CL-21",
+        "CII-SR-475 CII-SR-476",
+    ),
+    (
+        "cii",
+        "EN16931 XRechnung Extension (CII)",
+        "CrossIndustryInvoice",
+        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0",
+        "CII-SR-452 CII-SR-453 CII-SR-454 CII-SR-465 CII-SR-466",
+        "BR-CL-23",
+        "BR-CL-21 BR-CL-11 BR-CL-10 BR-CL-24 BR-CL-25 BR-CL-26 CII-SR-475 CII-SR-476",
+    ),
+    (
+        "cii",
+        "EN16931 XRechnung CVD (CII)",
+        "CrossIndustryInvoice",
+        "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9",
+        "CII-SR-452 CII-SR-453 CII-SR-454 CII-SR-465 CII-SR-466",
+        "BR-CL-23 BR-CL-21",
+        "BR-CL-13 CII-SR-475 CII-SR-476",
+    ),
+];
+
 // --- The French rules --------------------------------------------------------------
 
 static FR_CTC: FamilySpec = FamilySpec {
@@ -371,6 +462,12 @@ pub(crate) const FR_CTC_BUNDLES: [(&str, bool, &str, &[&str]); 14] = [
     ),
     ("flux10", false, "E-reporting (Flux 10)", &["Flux10"]),
 ];
+
+/// Whether the stylesheet `name` of the package is a Factur-X profile (`FACTUR-X_<P>`),
+/// whose failed asserts without a flag are fatal, as the Mustang validator reads them.
+pub(crate) fn fr_ctc_factur_x(name: &str) -> bool {
+    name.starts_with("FACTUR-X_")
+}
 
 /// The code list a Factur-X stylesheet of the package reads: its path, from the
 /// stylesheet's.
@@ -883,7 +980,8 @@ fn manifest_facturx(spec: &RuleSetSpec) -> Result<String, String> {
 # rule-set bundle manifest of einvoice-validator, as scripts/fetch-facturx.sh and
 # einvoice-validate rules fetch write it (einvoice-validate --bundle DIR). The
 # stylesheet reads, with document(), the code list FACTUR-X_{file}_codedb.xml
-# next to it, a resource of the bundle.
+# next to it, a resource of the bundle. A failed assert without a flag is fatal,
+# as the Mustang validator reads the report.
 format = 2
 name = \"factur-x-{dir}\"
 title = \"Factur-X {file}\"
@@ -893,6 +991,7 @@ version = \"{facturx}\"
 name = \"FACTUR-X_{file}\"
 path = \"FACTUR-X_{file}.xslt\"
 sha256 = \"{xslt}\"
+unflagged-assert = \"fatal\"
 
 [[resource]]
 path = \"FACTUR-X_{file}_codedb.xml\"
@@ -911,7 +1010,10 @@ fn manifest_xrechnung(spec: &RuleSetSpec) -> Result<String, String> {
         "# XRechnung {xrechnung} ({upper}), validator configuration {configuration}: the
 # rule-set bundle manifest of einvoice-validator, as scripts/fetch-xrechnung.sh
 # and einvoice-validate rules fetch write it (einvoice-validate --bundle DIR).
-format = 1
+# As the KoSIT validator reads the reports: a failed assert without a flag is
+# fatal, and the scenarios of the configuration give the rule ids they list
+# their levels (customLevel: error is fatal, information other).
+format = 2
 name = \"xrechnung-{syntax}\"
 title = \"XRechnung {upper}\"
 version = \"{xrechnung}\"
@@ -930,10 +1032,29 @@ version = \"{xrechnung}\"
         let file = path.rsplit('/').next().unwrap_or(path);
         let _ = write!(
             m,
-            "\n[[stylesheet]]\nname = \"{name}\"\npath = \"{file}\"\nsha256 = \"{}\"\nversion = \"{}\"\n",
+            "\n[[stylesheet]]\nname = \"{name}\"\npath = \"{file}\"\nsha256 = \"{}\"\nversion = \"{}\"\nunflagged-assert = \"fatal\"\n",
             p(sha)?,
             p(version)?
         );
+    }
+    for (syntax, name, root, identifier, fatal, warning, other) in XRECHNUNG_SCENARIOS {
+        if syntax != spec.dir {
+            continue;
+        }
+        let namespace = match root {
+            "Invoice" => crate::manifest::UBL_INVOICE,
+            "CreditNote" => crate::manifest::UBL_CREDIT_NOTE,
+            _ => crate::manifest::CII,
+        };
+        let _ = write!(
+            m,
+            "\n[[scenario]]\nname = \"{name}\"\nnamespace = \"{namespace}\"\nroot = \"{root}\"\nidentifier = \"{identifier}\"\n"
+        );
+        for (key, ids) in [("fatal", fatal), ("warning", warning), ("other", other)] {
+            if !ids.is_empty() {
+                let _ = writeln!(m, "{key} = \"{ids}\"");
+            }
+        }
     }
     Ok(m)
 }
@@ -977,6 +1098,14 @@ fn manifest_fr_ctc(spec: &RuleSetSpec) -> Result<String, String> {
             "# The stylesheet {stem}.xslt reads, with document(), the code list\n# {base} next to it, a resource of the bundle.\n"
         );
     }
+    for (name, ..) in &stylesheets {
+        if fr_ctc_factur_x(name) {
+            let _ = write!(
+                m,
+                "# A failed assert of {name} without a flag is fatal, as the\n# Mustang validator reads the Factur-X reports.\n"
+            );
+        }
+    }
     let _ = write!(
         m,
         "format = 2\nname = \"fr-ctc-{dir}\"\ntitle = \"{title}\"\nversion = \"{pack}\"\n"
@@ -990,6 +1119,9 @@ fn manifest_fr_ctc(spec: &RuleSetSpec) -> Result<String, String> {
             "\n[[stylesheet]]\nname = \"{name}\"\npath = \"{name}.xslt\"\nsha256 = \"{}\"\n",
             p(sha)?
         );
+        if fr_ctc_factur_x(name) {
+            m.push_str("unflagged-assert = \"fatal\"\n");
+        }
     }
     for (base, pin) in &side {
         let _ = write!(
@@ -1075,6 +1207,55 @@ mod tests {
             assert!(FAMILIES.iter().all(|f| f.name != r.name()));
             assert!(crate::BUILTIN_RULE_SETS.iter().all(|b| *b != r.name()));
         }
+    }
+
+    /// Where an unflagged failed assert is fatal, and where scenarios give rule ids their
+    /// levels: as the reference validator of each family reads the reports.
+    #[test]
+    fn severities_of_the_reference_validators() {
+        use crate::Severity;
+        for r in fetched_rule_sets().unwrap() {
+            let parsed = RuleSet::parse(r.manifest()).unwrap();
+            for s in parsed.stylesheets() {
+                // Mustang (Factur-X, and the Factur-X profiles of the French package)
+                // and KoSIT (XRechnung) reject a document for an unflagged failed
+                // assert; Peppol and the rest of the French rules flag every assert.
+                let fatal = r.family() == "factur-x"
+                    || r.family() == "xrechnung"
+                    || s.name().starts_with("FACTUR-X_");
+                let expected = if fatal {
+                    Severity::Fatal
+                } else {
+                    Severity::Other
+                };
+                assert_eq!(s.unflagged_assert(), expected, "{} {}", r.name(), s.name());
+            }
+            let scenarios: Vec<(&str, &str)> = parsed
+                .scenarios()
+                .iter()
+                .map(|s| (s.root(), s.identifier()))
+                .collect();
+            match r.name() {
+                "xrechnung-ubl" => assert_eq!(scenarios.len(), 5),
+                "xrechnung-cii" => assert_eq!(scenarios.len(), 3),
+                _ => assert_eq!(scenarios, [], "{}", r.name()),
+            }
+        }
+        let ubl = RuleSet::parse(
+            fetched_rule_set("xrechnung-ubl", None)
+                .unwrap()
+                .unwrap()
+                .manifest(),
+        )
+        .unwrap();
+        let standard = &ubl.scenarios()[0];
+        assert_eq!(standard.name(), "EN16931 XRechnung (UBL Invoice)");
+        assert_eq!(standard.level("UBL-CR-646"), Some(Severity::Fatal));
+        assert_eq!(standard.level("BR-CL-23"), Some(Severity::Warning));
+        assert_eq!(
+            ubl.scenarios()[1].level("UBL-CR-646"),
+            Some(Severity::Other)
+        );
     }
 
     #[test]

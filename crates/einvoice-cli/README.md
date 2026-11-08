@@ -87,6 +87,7 @@ in the cache.
 | `-f`, `--format FORMAT` | `text` (default), `json` or `svrl`. |
 | `-j`, `--jobs N` | Validate N documents at a time, on N threads sharing one loaded rule set (default 1). The output keeps the order of the command line. |
 | `--max-depth N` | Refuse a document with an element nested deeper than N levels, the document element being at depth 1 (default 256, libxml2's default; at most 100000). Such a document gets no verdict: an error of kind `unsupported` naming the line and column of the first element too deep, exit status 3. The stylesheets recurse once or twice per element level; each worker thread gets 1 MiB and 4 KiB per allowed level of nesting of templates and functions (twice N, plus 64), at least 8 MiB, and the stylesheets may use all of it but 1 MiB: a larger N, or a stylesheet that recurses, ends with that error rather than a stack overflow. |
+| `--fail-closed` | Count as fatal every finding that would not otherwise be fatal or a warning: a flag other than `fatal` and `warning` (`information`, ...), or none, that the rule set gives no severity of its own (see [Severities](#severities)). For rule sets whose flags are not known in advance. |
 | `-h`, `--help` | The help, then exit 0. |
 | `-V`, `--version` | The version and the built-in rule sets, then exit 0. |
 | `--licences`, `--licenses` | The licences of everything embedded in the binary, each with what it covers and its full text, then exit 0: MIT for the code, EUPL-1.2 for the CEN stylesheets of the built-in rule sets, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1 schemas; then the notices of the third-party crates the binary is compiled from (`THIRD-PARTY-NOTICES`). |
@@ -94,13 +95,33 @@ in the cache.
 Options take their value as `--format json`, `--format=json`, `-f json` or `-fjson`. An option
 given twice is a usage error.
 
+## Severities
+
+Each finding has a severity, `fatal`, `warning` or `other`, and a document with a fatal
+finding is invalid. The severity is the one its Schematron flag stands for (`fatal`,
+`warning`, anything else or none `other`), as the reference validator of each rule set
+reads the reports:
+
+- Factur-X (and the Factur-X profiles of the French rules) and XRechnung: a failed assert
+  without a flag is fatal, as the Mustang validator and the KoSIT validator read it (their
+  bundles say `unflagged-assert = "fatal"`). Most Factur-X asserts have no flag.
+- XRechnung: the scenario of the KoSIT validator configuration that the document matches
+  (by its root element and its `cbc:CustomizationID`, or its CII guideline identifier)
+  gives the rule ids it lists their levels, whatever their flags (`customLevel`: `error`
+  is fatal, `information` other); for instance `UBL-CR-646` is fatal in an XRechnung 3.0
+  invoice and other in an XRechnung extension.
+- CEN EN 16931, Peppol BIS Billing and the other French rules flag every assert `fatal`
+  or `warning`.
+
+`--fail-closed` makes every finding that is still `other` fatal.
+
 ## Exit status
 
 The highest code that applies to the run:
 
 | Code | Meaning |
 |---|---|
-| 0 | Every document is valid: no schema error and no finding with flag `fatal`. |
+| 0 | Every document is valid: no schema error and no finding of severity `fatal` (see [Severities](#severities)). |
 | 1 | At least one document is invalid: schema errors, fatal findings, or not well-formed XML. |
 | 2 | Usage error; a document that cannot be read, a PDF file included (malformed, without an embedded file named as an invoice or with several, XMP metadata that is not well-formed); a bundle that cannot be read or is not valid (manifest, missing file, SHA-256 mismatch, stylesheet that is not SVRL-producing XSLT). |
 | 3 | A construct the engine does not support (in a document: an encoding other than UTF-8, a document type declaration; in a PDF file: encryption, a PDF feature outside the subset read, a limit of the PDF reader; in a rule set: XSLT or XPath outside the supported subset), a document beyond a limit (an element nested deeper than `--max-depth`; a stylesheet whose templates or functions recurse beyond the nesting or the stack allowed), a dynamic error raised by a stylesheet on a document, or an internal error. |

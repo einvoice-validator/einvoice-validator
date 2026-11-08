@@ -1,10 +1,15 @@
 //! The fetched rule sets used as a plain install uses them: `einvoice-validate --rules
 //! NAME` with the bundles `rules fetch` put in the cache. On every case and mutation case
 //! of the corpus of each family (Factur-X, XRechnung, the French rules, Peppol BIS
-//! Billing), the verdict and the findings of each stylesheet of each bundle (kind, id,
-//! flag, location, in order), or the error that stopped it, agree with the Saxon-HE
-//! goldens: the results of the equivalence tests of einvoice-xslt-exec, through the
-//! cache.
+//! Billing), the findings of each stylesheet of each bundle (kind, id, flag, location, in
+//! order), or the error that stopped it, agree with the Saxon-HE goldens: the results of
+//! the equivalence tests of einvoice-xslt-exec, through the cache. And the verdict is the
+//! reference validator's: invalid with schema errors, or when a stylesheet of the bundle
+//! has a finding that the reference validator of the rule set reads as an error, as the
+//! acceptance table of the corpus says (`acceptance.tsv`, which `cargo xtask <family>`
+//! writes from the goldens: an unflagged failed assert is an error, and for XRechnung the
+//! scenario of the KoSIT configuration the document matches overrides the levels of the
+//! rule ids it lists).
 //!
 //! The corpora and their goldens live in `target/` (built by `scripts/check.sh facturx
 //! xrechnung fr-ctc peppol`), the cache in `target/rules-cache/`. A family missing from
@@ -18,9 +23,10 @@
 
 mod common;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-use common::{MutationCase, check_mutation_document, join, run_env, workspace_root};
+use common::{Golden, MutationCase, check_document, golden_of, join, run_env, workspace_root};
 use einvoice_validator::{FetchedRuleSet, fetched_rule_set, fetched_rule_sets};
 
 const REQUIRED_VAR: &str = "EINVOICE_RULES_REQUIRED";
@@ -297,6 +303,36 @@ fn corpus_cases(release: &str, corpus: &str) -> Option<Vec<MutationCase>> {
     Some(cases)
 }
 
+/// The acceptance table of a corpus (`cargo xtask <family>`): for each case, the verdict
+/// of each stylesheet, by golden directory (`accept`, `reject` or `error`).
+type Acceptance = HashMap<String, HashMap<String, String>>;
+
+/// The acceptance table of a corpus, `None` when there is none.
+fn acceptance_of(release: &str, corpus: &str) -> Option<Acceptance> {
+    let path = join(
+        &workspace_root(),
+        &format!("{release}/{corpus}/acceptance.tsv"),
+    );
+    let text = std::fs::read_to_string(path).ok()?;
+    let mut lines = text.lines();
+    let header: Vec<&str> = lines.next()?.split('\t').collect();
+    assert_eq!(header[..2], ["case", "scenario"]);
+    Some(
+        lines
+            .map(|line| {
+                let columns: Vec<&str> = line.split('\t').collect();
+                assert_eq!(columns.len(), header.len(), "{line}");
+                let verdicts = header[2..]
+                    .iter()
+                    .zip(&columns[2..])
+                    .map(|(dir, verdict)| ((*dir).to_owned(), (*verdict).to_owned()))
+                    .collect();
+                (columns[0].to_owned(), verdicts)
+            })
+            .collect(),
+    )
+}
+
 #[test]
 fn every_fetched_rule_set_but_flux10_has_a_corpus_here() {
     let all = fetched_rule_sets().unwrap();
@@ -326,76 +362,27 @@ fn fetched_rule_sets_from_the_cache_agree_with_the_saxon_goldens() {
             ));
             continue;
         };
+        let Some(acceptance) = acceptance_of(&release, corpus) else {
+            skip(&format!(
+                "{name}: no acceptance table in {release}/{corpus}: build it with scripts/check.sh {}",
+                rule_set.family().replace("factur-x", "facturx")
+            ));
+            continue;
+        };
         if !ensure_cached(rule_set) {
             continue;
         }
-        let inputs: Vec<&str> = cases.iter().map(|c| c.input.as_str()).collect();
-        let runs = common::run_json_batches_env(
-            &["--rules", name, "--format", "json", "--jobs", &jobs],
-            &inputs,
-            &env(&cache_text),
-        );
-        assert_eq!(runs.stderr(), "", "{name}");
-        assert_eq!(runs.first().get("rule_set").get("name").str(), Some(*name));
-        let mut documents: Vec<common::json::Value> =
-            runs.documents().into_iter().cloned().collect();
-        assert_eq!(documents.len(), cases.len(), "{name}");
-        // A document deeper than the default maximum depth is refused, with the limit,
-        // rather than risking the stack: run again with the maximum raised, as the
-        // equivalence tests of the engine do.
-        let deep: Vec<usize> = documents
-            .iter()
-            .enumerate()
-            .filter(|(_, d)| {
-                d.get("status").str() == Some("error")
-                    && d.get("error")
-                        .get("message")
-                        .str()
-                        .is_some_and(|m| m.starts_with("limit exceeded"))
-            })
-            .map(|(i, _)| i)
-            .collect();
-        if !deep.is_empty() {
-            let inputs: Vec<&str> = deep.iter().map(|&i| cases[i].input.as_str()).collect();
-            let raised = common::run_json_batches_env(
-                &[
-                    "--rules",
-                    name,
-                    "--format",
-                    "json",
-                    "--max-depth",
-                    RAISED_MAX_DEPTH,
-                ],
-                &inputs,
-                &env(&cache_text),
-            );
-            assert_eq!(raised.stderr(), "", "{name}");
-            for (&i, document) in deep.iter().zip(raised.documents()) {
-                documents[i] = document.clone();
-            }
-        }
+        let (documents, deep) = run_documents(name, &cases, &cache_text, &jobs);
         let goldens: Vec<(&str, String)> = stylesheets
             .iter()
             .map(|(s, dir)| (*s, format!("{release}/{corpus}/{dir}")))
             .collect();
         let goldens: Vec<(&str, &str)> = goldens.iter().map(|(s, d)| (*s, d.as_str())).collect();
-        let mut found = Vec::new();
-        let (mut valid, mut invalid, mut errors) = (0, 0, 0);
-        for (case, document) in cases.iter().zip(&documents) {
-            let document = &document;
-            assert_eq!(document.get("path").str(), Some(case.input.as_str()));
-            assert_eq!(document.get("rule_set").str(), Some(*name));
-            found.extend(check_mutation_document(&case.id, document, &goldens));
-            match document.get("status").str() {
-                Some("valid") => valid += 1,
-                Some("invalid") => invalid += 1,
-                _ => errors += 1,
-            }
-        }
+        let (found, summary) =
+            check_documents(name, stylesheets, &goldens, &cases, &documents, &acceptance);
         eprintln!(
-            "{name}: {} documents ({valid} valid, {invalid} invalid, {errors} stopped by an error; {} run again with --max-depth {RAISED_MAX_DEPTH}), {} disagreements",
+            "{name}: {} documents ({summary}; {deep} run again with --max-depth {RAISED_MAX_DEPTH}), {} disagreements",
             cases.len(),
-            deep.len(),
             found.len()
         );
         for p in found.iter().take(10) {
@@ -406,4 +393,132 @@ fn fetched_rule_sets_from_the_cache_agree_with_the_saxon_goldens() {
     }
     eprintln!("{checked} of {} bundles checked", BUNDLES.len());
     assert_eq!(problems, Vec::<String>::new());
+}
+
+/// The JSON documents `einvoice-validate --rules NAME` gives the cases, in order, and the
+/// number run again with the maximum depth raised.
+fn run_documents(
+    name: &str,
+    cases: &[MutationCase],
+    cache: &str,
+    jobs: &str,
+) -> (Vec<common::json::Value>, usize) {
+    let inputs: Vec<&str> = cases.iter().map(|c| c.input.as_str()).collect();
+    let runs = common::run_json_batches_env(
+        &["--rules", name, "--format", "json", "--jobs", jobs],
+        &inputs,
+        &env(cache),
+    );
+    assert_eq!(runs.stderr(), "", "{name}");
+    assert_eq!(runs.first().get("rule_set").get("name").str(), Some(name));
+    let mut documents: Vec<common::json::Value> = runs.documents().into_iter().cloned().collect();
+    assert_eq!(documents.len(), cases.len(), "{name}");
+    // A document deeper than the default maximum depth is refused, with the limit,
+    // rather than risking the stack: run again with the maximum raised, as the
+    // equivalence tests of the engine do.
+    let deep: Vec<usize> = documents
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| {
+            d.get("status").str() == Some("error")
+                && d.get("error")
+                    .get("message")
+                    .str()
+                    .is_some_and(|m| m.starts_with("limit exceeded"))
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if !deep.is_empty() {
+        let inputs: Vec<&str> = deep.iter().map(|&i| cases[i].input.as_str()).collect();
+        let raised = common::run_json_batches_env(
+            &[
+                "--rules",
+                name,
+                "--format",
+                "json",
+                "--max-depth",
+                RAISED_MAX_DEPTH,
+            ],
+            &inputs,
+            &env(cache),
+        );
+        assert_eq!(raised.stderr(), "", "{name}");
+        for (&i, document) in deep.iter().zip(raised.documents()) {
+            documents[i] = document.clone();
+        }
+    }
+    (documents, deep.len())
+}
+
+/// Compares the documents of a bundle with the goldens of its stylesheets and with the
+/// acceptance table of the corpus. The problems, and a summary: the statuses, and the
+/// verdicts that the reference levels change (documents without schema errors that no
+/// stylesheet stopped on, invalid by the levels and valid by the fatal flags alone, or
+/// the reverse).
+fn check_documents(
+    name: &str,
+    stylesheets: &[(&str, &str)],
+    goldens: &[(&str, &str)],
+    cases: &[MutationCase],
+    documents: &[common::json::Value],
+    acceptance: &Acceptance,
+) -> (Vec<String>, String) {
+    let mut found = Vec::new();
+    let (mut valid, mut invalid, mut errors) = (0, 0, 0);
+    let (mut raised, mut lowered) = (0, 0);
+    for (case, document) in cases.iter().zip(documents) {
+        assert_eq!(document.get("path").str(), Some(case.input.as_str()));
+        assert_eq!(document.get("rule_set").str(), Some(name));
+        let Some(verdicts) = acceptance.get(&case.id) else {
+            found.push(format!("{}: not in the acceptance table", case.id));
+            continue;
+        };
+        let verdict = |dir: &str| verdicts.get(dir).map_or("", String::as_str);
+        let rejecting: Vec<bool> = stylesheets
+            .iter()
+            .map(|(_, dir)| verdict(dir) == "reject")
+            .collect();
+        found.extend(check_document(
+            &case.id,
+            document,
+            goldens,
+            Some(&rejecting),
+        ));
+        // The fatal flags alone, as before the levels of the manifests.
+        let mut stopped = false;
+        let mut flagged = false;
+        for ((_, dir), (_, golden_dir)) in stylesheets.iter().zip(goldens) {
+            match golden_of(golden_dir, &case.id) {
+                Golden::Error(_) => {
+                    stopped = true;
+                    if verdict(dir) != "error" {
+                        found.push(format!("{}: {dir}: stopped, not in the table", case.id));
+                    }
+                }
+                Golden::Findings(f) => {
+                    flagged |= f.iter().any(|f| f.2.as_deref() == Some("fatal"));
+                    if verdict(dir) == "error" {
+                        found.push(format!(
+                            "{}: {dir}: not stopped, error in the table",
+                            case.id
+                        ));
+                    }
+                }
+            }
+        }
+        if !stopped && document.get("counts").get("schema_errors").number() == 0 {
+            let reference = rejecting.contains(&true);
+            raised += usize::from(reference && !flagged);
+            lowered += usize::from(!reference && flagged);
+        }
+        match document.get("status").str() {
+            Some("valid") => valid += 1,
+            Some("invalid") => invalid += 1,
+            _ => errors += 1,
+        }
+    }
+    let summary = format!(
+        "{valid} valid, {invalid} invalid, {errors} stopped by an error; the reference levels make {raised} invalid and {lowered} valid that the fatal flags alone would not"
+    );
+    (found, summary)
 }

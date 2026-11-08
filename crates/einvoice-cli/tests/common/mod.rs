@@ -316,10 +316,26 @@ pub(crate) fn golden_of(golden_dir: &str, id: &str) -> Golden {
 /// they run, gives the error, and the findings of the others are not compared, whether
 /// they run before it or after. With schema errors, the stylesheet errors are reported
 /// with the findings of the others.
+///
+/// For rule sets that flag every assert `fatal` or `warning` (CEN, Peppol): a finding
+/// flagged `fatal` makes the document invalid, and a finding with another flag, or none,
+/// is a problem, the reference validators reading it otherwise.
 pub(crate) fn check_mutation_document(
     id: &str,
     document: &json::Value,
     stylesheets: &[(&str, &str)],
+) -> Vec<String> {
+    check_document(id, document, stylesheets, None)
+}
+
+/// [`check_mutation_document`], the verdict expected from `rejecting` when given: for each
+/// stylesheet, whether its findings reject the document as the reference validator of the
+/// rule set reads them (the acceptance table that `cargo xtask <family>` writes).
+pub(crate) fn check_document(
+    id: &str,
+    document: &json::Value,
+    stylesheets: &[(&str, &str)],
+    rejecting: Option<&[bool]>,
 ) -> Vec<String> {
     let goldens: Vec<(&str, Golden)> = stylesheets
         .iter()
@@ -344,7 +360,7 @@ pub(crate) fn check_mutation_document(
         Golden::Error(code) => Some((*name, code.clone())),
         Golden::Findings(_) => None,
     });
-    for (name, golden) in &goldens {
+    for (index, (name, golden)) in goldens.iter().enumerate() {
         match golden {
             Golden::Error(code) => {
                 if schema_errors > 0 && !errors.contains(&(*name, code.as_str())) {
@@ -354,7 +370,19 @@ pub(crate) fn check_mutation_document(
                 }
             }
             Golden::Findings(expected) => {
-                fatal |= expected.iter().any(|f| f.2.as_deref() == Some("fatal"));
+                if let Some(rejecting) = rejecting {
+                    fatal |= rejecting[index];
+                } else {
+                    fatal |= expected.iter().any(|f| f.2.as_deref() == Some("fatal"));
+                    for f in expected {
+                        if !matches!(f.2.as_deref(), Some("fatal" | "warning")) {
+                            problems.push(format!(
+                                "{id}: {name}: {} {:?} flagged {:?}, neither fatal nor warning",
+                                f.0, f.1, f.2
+                            ));
+                        }
+                    }
+                }
                 if stopped.is_some() && schema_errors == 0 {
                     continue;
                 }

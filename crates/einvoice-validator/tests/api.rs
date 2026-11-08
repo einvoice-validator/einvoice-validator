@@ -798,6 +798,87 @@ const CODES_STYLESHEET: &str = r#"<xsl:stylesheet version="2.0" xmlns:xsl="http:
 
 const CODES: &str = "<codes><code>A</code><code>B</code></codes>";
 
+/// A stylesheet reporting, whatever the document, a failed assert without a flag (`U-1`),
+/// one flagged `warning` (`W-1`) and a successful report without a flag (`R-1`).
+const UNFLAGGED_STYLESHEET: &str = r#"<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:svrl="http://purl.oclc.org/dsdl/svrl">
+  <xsl:template match="/">
+    <svrl:schematron-output>
+      <svrl:fired-rule context="/"/>
+      <svrl:failed-assert id="U-1" location="/" test="u"><svrl:text>u</svrl:text></svrl:failed-assert>
+      <svrl:failed-assert id="W-1" flag="warning" location="/" test="w"><svrl:text>w</svrl:text></svrl:failed-assert>
+      <svrl:successful-report id="R-1" location="/" test="r"><svrl:text>r</svrl:text></svrl:successful-report>
+    </svrl:schematron-output>
+  </xsl:template>
+</xsl:stylesheet>"#;
+
+/// The severities of a manifest: an unflagged failed assert, and the levels of the
+/// scenario the document matches, by its root element and its specification identifier.
+#[test]
+fn severities_of_the_manifest() {
+    let manifest = |extra: &str| {
+        format!(
+            "format = 2\nname = \"u\"\ntitle = \"U\"\nversion = \"1\"\n\n[[stylesheet]]\nname = \"u\"\npath = \"u.xsl\"\nsha256 = \"{}\"\nunflagged-assert = \"fatal\"\n{extra}",
+            sha256(UNFLAGGED_STYLESHEET.as_bytes())
+        )
+    };
+    let scenario = "\n[[scenario]]\nname = \"CII X\"\nnamespace = \"urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100\"\nroot = \"CrossIndustryInvoice\"\nidentifier = \"urn:x\"\nother = \"U-1\"\nfatal = \"W-1 R-1\"\n";
+    let files = [("u.xsl", UNFLAGGED_STYLESHEET.as_bytes())];
+    let cii = |id: &str| {
+        format!(
+            "<rsm:CrossIndustryInvoice xmlns:rsm='urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100' xmlns:ram='urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100'><rsm:ExchangedDocumentContext><ram:GuidelineSpecifiedDocumentContextParameter><ram:ID>{id}</ram:ID></ram:GuidelineSpecifiedDocumentContextParameter></rsm:ExchangedDocumentContext></rsm:CrossIndustryInvoice>"
+        )
+    };
+    let severities = |report: &einvoice_validator::Report| -> Vec<Severity> {
+        report.findings().map(|f| f.severity).collect()
+    };
+    // Unflagged failed asserts are fatal; an unflagged successful report is not.
+    let validator = Validator::from_bundle(&manifest(""), &files).unwrap();
+    assert_eq!(
+        validator.rule_set().stylesheets()[0].unflagged_assert(),
+        Severity::Fatal
+    );
+    let report = validator.validate(cii("urn:x").as_bytes()).unwrap();
+    assert_eq!(
+        severities(&report),
+        [Severity::Fatal, Severity::Warning, Severity::Other]
+    );
+    assert_eq!(report.verdict(), Verdict::Invalid);
+    assert_eq!(report.scenario, None);
+    // The scenario of the document: its levels win over the flags.
+    let validator = Validator::from_bundle(&manifest(scenario), &files).unwrap();
+    let report = validator.validate(cii("urn:x").as_bytes()).unwrap();
+    assert_eq!(report.scenario.as_deref(), Some("CII X"));
+    assert_eq!(
+        severities(&report),
+        [Severity::Other, Severity::Fatal, Severity::Fatal]
+    );
+    // Another identifier, the identifier with a space, another root: no scenario.
+    for document in [
+        cii("urn:y"),
+        cii("urn:x "),
+        "<Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'/>".to_owned(),
+    ] {
+        let report = validator.validate(document.as_bytes()).unwrap();
+        assert_eq!(report.scenario, None, "{document}");
+        assert_eq!(
+            severities(&report),
+            [Severity::Fatal, Severity::Warning, Severity::Other],
+            "{document}"
+        );
+    }
+    // Failing closed leaves the warning a warning.
+    let closed = validator
+        .validate_with(
+            cii("urn:y").as_bytes(),
+            &ValidateOptions::new().fail_closed(true),
+        )
+        .unwrap();
+    assert_eq!(
+        severities(&closed),
+        [Severity::Fatal, Severity::Warning, Severity::Fatal]
+    );
+}
+
 /// A format 2 manifest with the stylesheet at `xslt/codes.xsl` and its code list.
 fn codes_manifest(codes: &[u8]) -> String {
     format!(

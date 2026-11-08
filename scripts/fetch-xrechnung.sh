@@ -44,7 +44,9 @@
 #     catalogues.
 #  6. The rule-set bundles of einvoice-validator, ubl/ and cii/, each with its
 #     bundle.toml and the two stylesheets in the order the configuration runs
-#     them (EN 16931, then XRechnung):
+#     them (EN 16931, then XRechnung), with the levels the KoSIT validator
+#     reads the reports with: a failed assert without a flag is fatal, and the
+#     scenarios below give the rule ids they list their own levels:
 #     `einvoice-validate --bundle DIR/xrechnung-3.0.2/ubl FILE`.
 #     `einvoice-validate rules fetch` builds the same bundles, byte for byte,
 #     from the same pins (crates/einvoice-validator/pins/, a copy of the block
@@ -90,6 +92,23 @@ stylesheets=(
     XRechnung-UBL "resources/xrechnung/$xrechnung/xsl/XRechnung-UBL-validation.xsl" "$xrechnung_ubl_sha256"
     EN16931-CII resources/cii/16b/xsl/EN16931-CII-validation.xsl "$cen_cii_sha256"
     XRechnung-CII "resources/xrechnung/$xrechnung/xsl/XRechnung-CII-validation.xsl" "$xrechnung_cii_sha256"
+)
+
+# The scenarios of the configuration (source/configuration/scenarios.xml) that
+# give rule ids levels of their own (customLevel), in its order: syntax of the
+# bundle, name, root element, the specification identifier its match requires,
+# then the rule ids of the levels error, warning and information. They become
+# the [[scenario]] tables of the bundles (fatal, warning, other); `cargo xtask
+# xrechnung` checks them against scenarios.xml.
+scenarios=(
+    "ubl|EN16931 XRechnung (UBL Invoice)|Invoice|urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0|UBL-CR-646|BR-CL-23 BR-CL-21|"
+    "ubl|EN16931 XRechnung Extension (UBL Invoice)|Invoice|urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0||BR-CL-23|BR-CL-21 BR-CL-24 BR-CL-10 BR-CL-11 BR-CL-25 BR-CL-26 BR-CO-16 UBL-CR-470 UBL-CR-646"
+    "ubl|EN16931 XRechnung CVD (UBL Invoice)|Invoice|urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9|UBL-CR-646|BR-CL-23 BR-CL-21|BR-CL-13"
+    "ubl|EN16931 XRechnung (UBL CreditNote)|CreditNote|urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0||BR-CL-23 BR-CL-21|"
+    "ubl|EN16931 XRechnung CVD (UBL CreditNote)|CreditNote|urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9|UBL-CR-646|BR-CL-23 BR-CL-21|BR-CL-13"
+    "cii|EN16931 XRechnung (CII)|CrossIndustryInvoice|urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0|CII-SR-452 CII-SR-453 CII-SR-454 CII-SR-465 CII-SR-466|BR-CL-23 BR-CL-21|CII-SR-475 CII-SR-476"
+    "cii|EN16931 XRechnung Extension (CII)|CrossIndustryInvoice|urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0|CII-SR-452 CII-SR-453 CII-SR-454 CII-SR-465 CII-SR-466|BR-CL-23|BR-CL-21 BR-CL-11 BR-CL-10 BR-CL-24 BR-CL-25 BR-CL-26 CII-SR-475 CII-SR-476"
+    "cii|EN16931 XRechnung CVD (CII)|CrossIndustryInvoice|urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9|CII-SR-452 CII-SR-453 CII-SR-454 CII-SR-465 CII-SR-466|BR-CL-23 BR-CL-21|BR-CL-13 CII-SR-475 CII-SR-476"
 )
 
 cd "$(git rev-parse --show-toplevel)"
@@ -283,7 +302,10 @@ for syntax in ubl cii; do
         echo "# XRechnung $xrechnung ($upper), validator configuration $configuration: the"
         echo "# rule-set bundle manifest of einvoice-validator, as scripts/fetch-xrechnung.sh"
         echo "# and einvoice-validate rules fetch write it (einvoice-validate --bundle DIR)."
-        echo "format = 1"
+        echo "# As the KoSIT validator reads the reports: a failed assert without a flag is"
+        echo "# fatal, and the scenarios of the configuration give the rule ids they list"
+        echo "# their levels (customLevel: error is fatal, information other)."
+        echo "format = 2"
         echo "name = \"xrechnung-$syntax\""
         echo "title = \"XRechnung $upper\""
         echo "version = \"$xrechnung\""
@@ -301,6 +323,25 @@ for syntax in ubl cii; do
             EN16931-*) echo "version = \"$cen\"" ;;
             *) echo "version = \"$schematron\"" ;;
             esac
+            echo "unflagged-assert = \"fatal\""
+        done
+        for entry in "${scenarios[@]}"; do
+            IFS='|' read -r scenario_syntax name root identifier fatal warning other <<<"$entry"
+            [ "$scenario_syntax" = "$syntax" ] || continue
+            case $root in
+            Invoice) namespace=urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 ;;
+            CreditNote) namespace=urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2 ;;
+            *) namespace=urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100 ;;
+            esac
+            echo
+            echo "[[scenario]]"
+            echo "name = \"$name\""
+            echo "namespace = \"$namespace\""
+            echo "root = \"$root\""
+            echo "identifier = \"$identifier\""
+            [ -z "$fatal" ] || echo "fatal = \"$fatal\""
+            [ -z "$warning" ] || echo "warning = \"$warning\""
+            [ -z "$other" ] || echo "other = \"$other\""
         done
     } >"$bundle/bundle.toml"
 done

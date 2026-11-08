@@ -35,6 +35,7 @@ fn help() {
             "-f, --format FORMAT",
             "-j, --jobs N",
             "--fetch",
+            "--fail-closed",
             "rules list",
             "rules fetch NAME...",
             "rules path [NAME]",
@@ -463,6 +464,133 @@ fn external_bundles() {
         r.stdout,
         "-: error (transform): stylesheet f, line 3: FORG0001: Cannot convert string \"x\" to an integer\n"
     );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// A stylesheet whose report has a failed assert without a flag (`U-1`), one flagged
+/// `information` (`I-1`), one flagged `warning` (`W-1`) and a successful report without a
+/// flag (`R-1`), whatever the document.
+const SEVERITIES_STYLESHEET: &[u8] = br#"<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:svrl="http://purl.oclc.org/dsdl/svrl">
+<xsl:template match="/">
+<svrl:schematron-output>
+<svrl:fired-rule context="/"/>
+<svrl:failed-assert id="U-1" location="/" test="u"><svrl:text>unflagged</svrl:text></svrl:failed-assert>
+<svrl:failed-assert id="I-1" flag="information" location="/" test="i"><svrl:text>information</svrl:text></svrl:failed-assert>
+<svrl:failed-assert id="W-1" flag="warning" location="/" test="w"><svrl:text>warning</svrl:text></svrl:failed-assert>
+<svrl:successful-report id="R-1" location="/" test="r"><svrl:text>report</svrl:text></svrl:successful-report>
+</svrl:schematron-output>
+</xsl:template>
+</xsl:stylesheet>"#;
+
+/// A manifest, a document, options; the exit code and the severities of U-1, I-1, W-1, R-1.
+type SeverityCase = (
+    String,
+    String,
+    &'static [&'static str],
+    i32,
+    [&'static str; 4],
+);
+
+/// The severities the manifest gives findings (an unflagged failed assert, the levels of
+/// the scenario a document matches), and `--fail-closed`.
+#[test]
+fn severities_from_the_manifest_and_fail_closed() {
+    let dir = common::temp_dir("severities");
+    std::fs::write(dir.join("s.xsl"), SEVERITIES_STYLESHEET).unwrap();
+    let manifest = |extra: &str, scenario: &str| {
+        format!(
+            "format = 2\nname = \"s\"\ntitle = \"S\"\nversion = \"1\"\n\n[[stylesheet]]\nname = \"s\"\npath = \"s.xsl\"\nsha256 = \"{}\"\n{extra}{scenario}",
+            sha256(SEVERITIES_STYLESHEET)
+        )
+    };
+    let scenario = "\n[[scenario]]\nname = \"X\"\nnamespace = \"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\"\nroot = \"Invoice\"\nidentifier = \"urn:x\"\nwarning = \"U-1\"\nfatal = \"I-1\"\n";
+    let invoice = |id: &str| {
+        format!(
+            "<Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2' xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'><cbc:CustomizationID>{id}</cbc:CustomizationID></Invoice>"
+        )
+    };
+    let bundle = dir.to_str().unwrap();
+    // (manifest, document, options): exit code, then the severity of U-1, I-1, W-1, R-1.
+    let cases: [SeverityCase; 6] = [
+        (
+            manifest("", ""),
+            invoice("urn:x"),
+            &[],
+            0,
+            ["other", "other", "warning", "other"],
+        ),
+        (
+            manifest("", ""),
+            invoice("urn:x"),
+            &["--fail-closed"],
+            1,
+            ["fatal", "fatal", "warning", "fatal"],
+        ),
+        (
+            manifest("unflagged-assert = \"fatal\"\n", ""),
+            invoice("urn:x"),
+            &[],
+            1,
+            ["fatal", "other", "warning", "other"],
+        ),
+        // The scenario's levels, for the document it matches only.
+        (
+            manifest("unflagged-assert = \"fatal\"\n", scenario),
+            invoice("urn:x"),
+            &[],
+            1,
+            ["warning", "fatal", "warning", "other"],
+        ),
+        (
+            manifest(
+                "unflagged-assert = \"fatal\"\n",
+                &scenario.replace("fatal = \"I-1\"\n", ""),
+            ),
+            invoice("urn:x"),
+            &[],
+            0,
+            ["warning", "other", "warning", "other"],
+        ),
+        (
+            manifest("unflagged-assert = \"fatal\"\n", scenario),
+            invoice("urn:y"),
+            &[],
+            1,
+            ["fatal", "other", "warning", "other"],
+        ),
+    ];
+    for (manifest, document, options, code, severities) in cases {
+        std::fs::write(dir.join("bundle.toml"), &manifest).unwrap();
+        let mut args = vec!["--bundle", bundle, "-f", "json"];
+        args.extend_from_slice(options);
+        args.push("-");
+        let r = run(&args, Some(document.as_bytes()));
+        assert_eq!(
+            r.code, code,
+            "{manifest}\n{document} {options:?}: {}",
+            r.stderr
+        );
+        let output = json::parse(&r.stdout).unwrap();
+        let document = &output.get("documents").array()[0];
+        let found: Vec<&str> = document
+            .get("findings")
+            .array()
+            .iter()
+            .map(|f| f.get("severity").str().unwrap())
+            .collect();
+        assert_eq!(found, severities, "{manifest} {options:?}");
+        let expected = if code == 0 { "valid" } else { "invalid" };
+        assert_eq!(document.get("status").str(), Some(expected));
+    }
+    // An unflagged failed assert in format 1 is refused.
+    std::fs::write(
+        dir.join("bundle.toml"),
+        manifest("unflagged-assert = \"fatal\"\n", "").replace("format = 2", "format = 1"),
+    )
+    .unwrap();
+    let r = run(&["--bundle", bundle, "-"], Some(b"<a/>"));
+    assert_eq!(r.code, 2);
+    assert!(r.stderr.contains("needs format = 2"), "{}", r.stderr);
     std::fs::remove_dir_all(dir).unwrap();
 }
 

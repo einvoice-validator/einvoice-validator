@@ -90,8 +90,8 @@ broken.xml: invalid: 1 schema error, 11 fatal
 2 documents: 1 valid, 1 invalid, 0 not validated
 ```
 
-Exit status, the highest that applies: `0` every document is valid (no schema error, no finding
-with flag `fatal`); `1` a document is invalid (schema errors, fatal findings, or not well-formed
+Exit status, the highest that applies: `0` every document is valid (no schema error, no fatal
+finding); `1` a document is invalid (schema errors, fatal findings, or not well-formed
 XML); `2` usage error, or a file or bundle that cannot be read or is not valid (a PDF file without
 one embedded invoice included); `3` a construct the engine does not support (an encrypted PDF
 file included), a document beyond a limit, a stylesheet error on a document, or an internal
@@ -133,6 +133,15 @@ einvoice-validate rules fetch xrechnung        # once, from KoSIT's package regi
 einvoice-validate --rules xrechnung invoice.xml
 einvoice-validate rules list
 ```
+
+**Verdicts as the reference validators give them.** A finding is fatal when its flag is `fatal`,
+and the bundles of the rule sets whose reference validators read the reports otherwise say so in
+their manifests: a Factur-X failed assert without a flag (most of them have none) is fatal, as the
+Mustang validator reads it, and so is an XRechnung one, as the KoSIT validator reads it; the
+XRechnung bundles also carry the levels the scenarios of the KoSIT configuration give some rule
+ids (`customLevel`), applied to the documents each scenario matches. On every document of the
+test corpora, the verdict of each bundle is the one the reference validator's reading of the
+Saxon-HE reports gives. `--fail-closed` makes every other finding without a known severity fatal.
 
 Downloading uses rustls with the `ring` provider, which contains C and assembly: it is the
 `fetch` feature of `einvoice-cli` (on by default). The validation engine and the library are pure

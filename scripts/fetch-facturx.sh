@@ -32,7 +32,8 @@
 #     documents of the CII mutation catalogue.
 #  4. One rule-set bundle of einvoice-validator per profile,
 #     <profile>/bundle.toml with the stylesheet and its code list next to it (a resource
-#     of the bundle):
+#     of the bundle), a failed assert without a flag being fatal, as the Mustang
+#     validator reads the report (unflagged-assert = "fatal"):
 #     `einvoice-validate --bundle DIR/factur-x-1.09.2/en16931 FILE`.
 #     `einvoice-validate rules fetch` builds the same bundles, byte for byte,
 #     from the same pins (crates/einvoice-validator/pins/, a copy of the block
@@ -201,7 +202,8 @@ for ((i = 0; i < ${#profiles[@]}; i += 4)); do
 # rule-set bundle manifest of einvoice-validator, as scripts/fetch-facturx.sh and
 # einvoice-validate rules fetch write it (einvoice-validate --bundle DIR). The
 # stylesheet reads, with document(), the code list FACTUR-X_${file}_codedb.xml
-# next to it, a resource of the bundle.
+# next to it, a resource of the bundle. A failed assert without a flag is fatal,
+# as the Mustang validator reads the report.
 format = 2
 name = "factur-x-$profile"
 title = "Factur-X $file"
@@ -211,6 +213,7 @@ version = "$facturx"
 name = "FACTUR-X_$file"
 path = "FACTUR-X_$file.xslt"
 sha256 = "${profiles[i + 2]}"
+unflagged-assert = "fatal"
 
 [[resource]]
 path = "FACTUR-X_${file}_codedb.xml"

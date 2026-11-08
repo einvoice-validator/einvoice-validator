@@ -34,7 +34,10 @@ tracked tree, then checks them:
    `target/xrechnung/xrechnung-3.0.2/corpus-ubl/` (same layout and `cases.tsv` format as
    the committed corpora, see `../README.md`), applies `../mutations.toml` to the CEN documents `Invoice-Max_content.xml`, `CreditNote-Max_content.xml` and `ubl-tc434-example2.xml` (504 mutation cases), runs
    Saxon-HE with both stylesheets on every case (`golden-cen/`, `golden-xrechnung/`),
-   cross-checks the goldens with the expectations against `disagreements.tsv`, and writes
+   cross-checks the goldens with the expectations against `disagreements.tsv`, writes
+   `acceptance.tsv` (whether the findings of each stylesheet reject the case as the KoSIT
+   validator reads them, see `../README.md`), checks the levels of the bundle (its
+   `[[scenario]]` tables) against `source/configuration/scenarios.xml`, and writes
    `complete.txt`.
 3. The equivalence test of the engine, `tests/xrechnung_equivalence.rs` of `crates/einvoice-xslt-exec`
    (required by `scripts/check.sh xrechnung`), runs every stylesheet on every case and mutation

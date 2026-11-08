@@ -6,7 +6,7 @@
 //!
 //! ```ts
 //! const validator = new Validator("cen-ubl");       // "cen-cii", or Validator.builtin(name)
-//! const report = validator.validate(bytes, { documentUri, now, timezoneMinutes, maxDepth });
+//! const report = validator.validate(bytes, { documentUri, now, timezoneMinutes, maxDepth, failClosed });
 //! report.status;                                     // "valid" | "invalid"
 //! report.findings;                                   // [{ id, flag, severity, location, text, ... }]
 //! validator.validateSvrl(bytes);                     // [{ stylesheet, version, sha256, svrl }]
@@ -32,6 +32,11 @@
 //! a bound set by the native stacks of JavaScript engines, which the module cannot
 //! measure: Chrome's Web Workers overflow on about 600 levels) is refused with an error
 //! of kind `unsupported` whose `limit` is `depth`.
+//!
+//! With `failClosed: true`, every finding that would otherwise be of severity `other` (a
+//! flag other than `fatal` and `warning`, or none, that the rule set gives no severity of
+//! its own) is `fatal`
+//! ([`ValidateOptions::fail_closed`](einvoice_validator::ValidateOptions::fail_closed)).
 //!
 //! On other targets the crate builds too, so that its conversions are tested natively;
 //! its exported functions call JavaScript and only work in WebAssembly.
@@ -228,10 +233,17 @@ struct Options {
     document_uri: Option<String>,
     clock: Clock,
     max_depth: u32,
+    fail_closed: bool,
 }
 
 /// The names of the members of the options object.
-const OPTION_NAMES: [&str; 4] = ["documentUri", "now", "timezoneMinutes", "maxDepth"];
+const OPTION_NAMES: [&str; 5] = [
+    "documentUri",
+    "now",
+    "timezoneMinutes",
+    "maxDepth",
+    "failClosed",
+];
 
 /// The extreme value of a JavaScript `Date`, in milliseconds from the Unix epoch.
 const MAX_DATE_MILLIS: f64 = 8.64e15;
@@ -250,14 +262,16 @@ const MAX_DATE_MILLIS: f64 = 8.64e15;
 const MAX_DEPTH: u32 = 400;
 
 impl Options {
-    /// Reads `{ documentUri?, now?, timezoneMinutes?, maxDepth? }` (`undefined` or `null`
-    /// for all the defaults); a member set to `undefined` or `null` takes its default.
+    /// Reads `{ documentUri?, now?, timezoneMinutes?, maxDepth?, failClosed? }`
+    /// (`undefined` or `null` for all the defaults); a member set to `undefined` or `null`
+    /// takes its default.
     /// Other members are refused, so that a misspelt option is not silently ignored.
     fn read(value: &JsValue) -> Result<Self, JsValue> {
         let mut document_uri = None;
         let mut now = None;
         let mut timezone = 0;
         let mut max_depth = einvoice_validator::DEFAULT_MAX_DEPTH;
+        let mut fail_closed = false;
         if !value.is_undefined() && !value.is_null() {
             if !value.is_object() {
                 return Err(argument_error(
@@ -313,22 +327,15 @@ impl Options {
                     })?;
             }
             if let Some(v) = get("maxDepth")? {
-                let Some(depth) = v.as_f64() else {
-                    return Err(argument_error(
+                max_depth = max_depth_of(&v)?;
+            }
+            if let Some(v) = get("failClosed")? {
+                fail_closed = v.as_bool().ok_or_else(|| {
+                    argument_error(
                         ArgumentError::Type,
-                        "the option maxDepth must be a number",
-                    ));
-                };
-                max_depth = integer(depth, 1.0, f64::from(MAX_DEPTH))
-                    .and_then(|d| u32::try_from(d).ok())
-                    .ok_or_else(|| {
-                        argument_error(
-                            ArgumentError::Range,
-                            &format!(
-                                "the option maxDepth must be a whole number from 1 to {MAX_DEPTH}, not {depth}"
-                            ),
-                        )
-                    })?;
+                        "the option failClosed must be a boolean",
+                    )
+                })?;
             }
         }
         let millis = match now {
@@ -347,18 +354,40 @@ impl Options {
             document_uri,
             clock,
             max_depth,
+            fail_closed,
         })
     }
 
     fn validate_options(&self) -> ValidateOptions<'_> {
         let options = ValidateOptions::new()
             .clock(self.clock)
-            .max_depth(self.max_depth);
+            .max_depth(self.max_depth)
+            .fail_closed(self.fail_closed);
         match &self.document_uri {
             Some(uri) => options.document_uri(uri),
             None => options,
         }
     }
+}
+
+/// The option `maxDepth`: a whole number from 1 to [`MAX_DEPTH`].
+fn max_depth_of(value: &JsValue) -> Result<u32, JsValue> {
+    let Some(depth) = value.as_f64() else {
+        return Err(argument_error(
+            ArgumentError::Type,
+            "the option maxDepth must be a number",
+        ));
+    };
+    integer(depth, 1.0, f64::from(MAX_DEPTH))
+        .and_then(|d| u32::try_from(d).ok())
+        .ok_or_else(|| {
+            argument_error(
+                ArgumentError::Range,
+                &format!(
+                    "the option maxDepth must be a whole number from 1 to {MAX_DEPTH}, not {depth}"
+                ),
+            )
+        })
 }
 
 /// The option `now`: a `Date`, or milliseconds from the Unix epoch.

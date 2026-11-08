@@ -28,6 +28,7 @@ export async function check(bytes: Uint8Array): Promise<string[]> {
     now: new Date(),
     timezoneMinutes: 60,
     maxDepth: 1000,
+    failClosed: true,
   };
   const report: Report = validator.validate(bytes, options);
   const status: "valid" | "invalid" = report.status;

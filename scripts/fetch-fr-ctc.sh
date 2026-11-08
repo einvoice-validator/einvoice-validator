@@ -39,7 +39,9 @@
 #     documents (EN 16931 or EXTENDED-CTC-FR rules, then the BR-FR rules):
 #     cii-en16931, cii-extended-ctc-fr, ubl-en16931, ubl-extended-ctc-fr, cdar,
 #     each also as <name>-warning with the WARNING version of the French rules,
-#     factur-x-basic-wl, factur-x-en16931, factur-x-extended, and flux10.
+#     factur-x-basic-wl, factur-x-en16931, factur-x-extended (a failed assert
+#     of their Factur-X stylesheet without a flag is fatal, as the Mustang
+#     validator reads it: unflagged-assert = "fatal"), and flux10.
 #     `einvoice-validate --bundle DIR/fr-ctc-1.4.0.04/cii-en16931 FILE`.
 #     `einvoice-validate rules fetch` builds the same bundles, byte for byte,
 #     from the same pins (crates/einvoice-validator/pins/, a copy of the block
@@ -192,6 +194,16 @@ stylesheet() {
     fail "no stylesheet $1"
 }
 
+# factur_x NAME: whether the stylesheet NAME is a Factur-X profile (FACTUR-X_<P>),
+# whose failed asserts without a flag are fatal, as the Mustang validator reads
+# them (unflagged-assert = "fatal" in the bundles).
+factur_x() {
+    case $1 in
+    FACTUR-X_*) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
 # side_file PATH: the code list a Factur-X stylesheet reads with document()
 # (FACTUR-X_<P>.xslt reads FACTUR-X_<P>_codedb.xml next to it), or nothing.
 side_file() {
@@ -290,6 +302,12 @@ for entry in "${bundles[@]}"; do
             echo "# The stylesheet ${base%_codedb.xml}.xslt reads, with document(), the code list"
             echo "# $base next to it, a resource of the bundle."
         done
+        for stylesheet_name in $names; do
+            if factur_x "$stylesheet_name"; then
+                echo "# A failed assert of $stylesheet_name without a flag is fatal, as the"
+                echo "# Mustang validator reads the Factur-X reports."
+            fi
+        done
         echo "format = 2"
         echo "name = \"fr-ctc-$name\""
         echo "title = \"$title\""
@@ -305,6 +323,9 @@ for entry in "${bundles[@]}"; do
             echo "name = \"$stylesheet_name\""
             echo "path = \"$stylesheet_name.xslt\""
             echo "sha256 = \"$sha256\""
+            if factur_x "$stylesheet_name"; then
+                echo "unflagged-assert = \"fatal\""
+            fi
         done
         for file in "${side[@]}"; do
             echo

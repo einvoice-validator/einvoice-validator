@@ -3,13 +3,7 @@
 
 use std::fmt;
 
-/// The namespace of a UBL 2 invoice.
-const UBL_INVOICE: &str = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
-/// The namespace of a UBL 2 credit note.
-const UBL_CREDIT_NOTE: &str = "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2";
-/// The namespace of a UN/CEFACT Cross Industry Invoice (D16B and the other releases of
-/// version 100).
-const CII: &str = "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100";
+use crate::manifest::{CII, UBL_CREDIT_NOTE, UBL_INVOICE};
 
 /// The syntax of an e-invoice, as its root element names it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

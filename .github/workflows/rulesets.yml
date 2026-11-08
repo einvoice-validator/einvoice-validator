@@ -6,9 +6,16 @@ name: rulesets
 # job downloads the pinned inputs (scripts/fetch-facturx.sh,
 # fetch-xrechnung.sh, fetch-fr-ctc.sh, every input checked against its pinned
 # checksum; XRechnung also runs XML Mutate), extracts the cases, runs
-# Saxon-HE with every stylesheet and cross-checks the goldens with the
-# expectations (XML Mutate tests, documents the reference pipeline accepts)
-# against the committed records of disagreements (`cargo xtask <family>`).
+# Saxon-HE with every stylesheet, writes the acceptance table and
+# cross-checks the goldens with the expectations (XML Mutate tests, documents
+# the reference pipeline accepts) against the committed records of
+# disagreements (`cargo xtask <family>`), then runs the engine on the corpus.
+# The rules job builds the four corpora, Peppol BIS Billing's included, on
+# one runner (`scripts/check.sh corpora`, without the engine runs of the
+# other jobs and of peppol.yml) and runs `scripts/check.sh rules` on them:
+# `einvoice-validate --rules NAME`, with the bundles `rules fetch` builds in
+# its cache from the downloads, gives the Saxon-HE findings and the verdicts
+# of the acceptance tables on every corpus document.
 # Runs when the tooling, the pins, the records or the base documents of the
 # mutation catalogues change.
 
@@ -20,6 +27,7 @@ on:
       - "corpus/factur-x-*/**"
       - "corpus/xrechnung-*/**"
       - "corpus/fr-ctc-*/**"
+      - "corpus/peppol-bis-billing-ubl-*/**"
       - "corpus/mutations.toml"
       - "corpus/mutations-cii.toml"
       - "artefacts/cen-en16931-ubl-1.3.17/ubl/examples/**"
@@ -30,6 +38,7 @@ on:
       - "scripts/fetch-facturx.sh"
       - "scripts/fetch-xrechnung.sh"
       - "scripts/fetch-fr-ctc.sh"
+      - "scripts/fetch-peppol.sh"
       - "scripts/fetch-saxon.sh"
       - ".github/workflows/rulesets.yml"
       - ".cargo/**"
@@ -43,6 +52,7 @@ on:
       - "corpus/factur-x-*/**"
       - "corpus/xrechnung-*/**"
       - "corpus/fr-ctc-*/**"
+      - "corpus/peppol-bis-billing-ubl-*/**"
       - "corpus/mutations.toml"
       - "corpus/mutations-cii.toml"
       - "artefacts/cen-en16931-ubl-1.3.17/ubl/examples/**"
@@ -53,6 +63,7 @@ on:
       - "scripts/fetch-facturx.sh"
       - "scripts/fetch-xrechnung.sh"
       - "scripts/fetch-fr-ctc.sh"
+      - "scripts/fetch-peppol.sh"
       - "scripts/fetch-saxon.sh"
       - ".github/workflows/rulesets.yml"
       - ".cargo/**"
@@ -116,3 +127,35 @@ jobs:
         env:
           FAMILY: ${{ matrix.family }}
         run: scripts/check.sh "$FAMILY"
+
+  rules:
+    name: rules (every fetched rule set from the cache, on the four corpora)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: scripts/check.sh toolchain
+      # The downloads of the four fetch scripts, the compiled Peppol stylesheets
+      # and the Saxon-HE jars, keyed by the pins. A cached file is never
+      # trusted: the fetch scripts check every one against its pinned checksum
+      # (fetch-peppol.sh compiles again when a stylesheet does not match), and
+      # `rules fetch` checks again what it takes from them.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/downloads
+            target/peppol/downloads
+            target/peppol/peppol-bis-billing-ubl-3.0.22/xslt
+            target/oracle/saxon
+          key: rulesets-rules-${{ hashFiles('scripts/fetch-facturx.sh', 'scripts/fetch-xrechnung.sh', 'scripts/fetch-fr-ctc.sh', 'scripts/fetch-peppol.sh', 'scripts/fetch-saxon.sh') }}
+      # Fails, rather than skips, without Java or network access, and the rules
+      # tests require every corpus: CI=true on GitHub runners.
+      - name: corpora, then rules
+        run: scripts/check.sh corpora rules

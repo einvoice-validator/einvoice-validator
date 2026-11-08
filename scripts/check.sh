@@ -9,6 +9,7 @@
 #
 #   scripts/check.sh                # every job: fmt clippy doc test features wasm npm package deny actionlint zizmor pins guards oracle peppol facturx xrechnung fr-ctc rules privacy
 #   scripts/check.sh rules-online   # on demand: every fetched rule set from its publisher
+#   scripts/check.sh corpora rules  # on demand: the four fetched corpora, then the rules job
 #   scripts/check.sh clippy test    # selected jobs
 #   scripts/check.sh toolchain      # only install the pinned toolchain
 #
@@ -386,58 +387,33 @@ job_oracle() {
 # Without Java or without network access (and nothing cached yet), SKIPPED,
 # except in CI, where it fails.
 job_peppol() {
-    need_toolchain || return 1
-    # skipped REASON: SKIPPED locally, a failure in CI.
-    skipped() {
-        if [ -n "${CI:-}" ]; then
-            echo "$1: the Peppol corpus cannot be built" >&2
-            return 1
-        fi
-        echo "SKIPPED: Peppol corpus and equivalence ($1)"
-    }
-    if ! command -v "${JAVA:-java}" >/dev/null 2>&1; then
-        skipped "java is not installed"
-        return
-    fi
-    "${JAVA:-java}" -version 2>&1 | head -n 1
     local status=0
-    if [ -n "${SAXON_JAR:-}" ]; then
-        echo "using SAXON_JAR=$SAXON_JAR (checksum verified by xtask)"
-    else
-        scripts/fetch-saxon.sh || status=$?
-    fi
-    [ "$status" -eq 0 ] && { scripts/fetch-peppol.sh || status=$?; }
-    if [ "$status" -eq 75 ]; then
-        skipped "a download failed: no network access?"
-        return
-    fi
+    build_corpus peppol scripts/fetch-peppol.sh || status=$?
+    [ "$status" -ne 2 ] || return 0
     [ "$status" -eq 0 ] || return 1
-    cargo xtask peppol || return 1
     EINVOICE_PEPPOL_REQUIRED=1 cargo test --locked --all-features -p einvoice-xslt-exec \
         --test peppol_equivalence --test mutation_equivalence -- --nocapture || return 1
     EINVOICE_PEPPOL_REQUIRED=1 cargo test --locked --all-features -p einvoice-cli \
         --test peppol_bundle -- --nocapture
 }
-# A family of fetched rule sets (corpus/README.md): Factur-X, XRechnung or the
-# French rules, whose files are not committed (see the README of each
-# corpus/<rule set>/). The fetch script downloads the pinned inputs into
-# target/ (checksums verified), then `cargo xtask <family>` extracts the
-# cases, runs Saxon-HE with every stylesheet and cross-checks the goldens with
-# the expectations (XML Mutate, accepted documents) against the committed
-# records, then the equivalence test of the engine on the corpus
-# (tests/<family>_equivalence.rs of einvoice-xslt-exec, required).
-# Without Java or without network access (and nothing cached yet),
-# SKIPPED, except in CI, where it fails.
-#   fetched_family NAME SCRIPT
-fetched_family() {
+# build_corpus NAME SCRIPT: the corpus of a family of fetched rule sets in target/:
+# Saxon-HE (scripts/fetch-saxon.sh, unless SAXON_JAR names it), the fetch script
+# SCRIPT (the pinned inputs, checksums verified), then `cargo xtask NAME` (the cases,
+# the Saxon-HE goldens, the acceptance table, the cross-checks against the committed
+# records). Status 0 when built, 1 on a failure, 2 when SKIPPED: without Java, or
+# when a download fails (no network access, and nothing cached yet), which in CI is
+# a failure (status 1).
+build_corpus() {
     local name=$1 script=$2 status=0
     need_toolchain || return 1
+    # skipped REASON: SKIPPED locally (status 2), a failure in CI (status 1).
     skipped() {
         if [ -n "${CI:-}" ]; then
             echo "$1: the $name corpus cannot be built" >&2
             return 1
         fi
         echo "SKIPPED: $name corpus ($1)"
+        return 2
     }
     if ! command -v "${JAVA:-java}" >/dev/null 2>&1; then
         skipped "java is not installed"
@@ -456,6 +432,24 @@ fetched_family() {
     fi
     [ "$status" -eq 0 ] || return 1
     cargo xtask "$name" || return 1
+}
+# A family of fetched rule sets (corpus/README.md): Factur-X, XRechnung or the
+# French rules, whose files are not committed (see the README of each
+# corpus/<rule set>/). The fetch script downloads the pinned inputs into
+# target/ (checksums verified), then `cargo xtask <family>` extracts the
+# cases, runs Saxon-HE with every stylesheet, writes the acceptance table
+# and cross-checks the goldens with the expectations (XML Mutate, accepted
+# documents) against the committed records (build_corpus), then the
+# equivalence test of the engine on the corpus (tests/<family>_equivalence.rs
+# of einvoice-xslt-exec, required).
+# Without Java or without network access (and nothing cached yet),
+# SKIPPED, except in CI, where it fails.
+#   fetched_family NAME SCRIPT
+fetched_family() {
+    local name=$1 script=$2 status=0
+    build_corpus "$name" "$script" || status=$?
+    [ "$status" -ne 2 ] || return 0
+    [ "$status" -eq 0 ] || return 1
     # The engine on the corpus: every stylesheet, every case (a release build: some
     # ten thousand transformations).
     local test=${name//-/_} variable
@@ -473,11 +467,11 @@ job_fr-ctc() { fetched_family fr-ctc scripts/fetch-fr-ctc.sh; }
 # (tests/rulesets.rs of einvoice-validator); the rules command works end to end against
 # a local mirror (tests/rules.rs of einvoice-cli); and every corpus of the facturx,
 # xrechnung, fr-ctc and peppol jobs, validated with `einvoice-validate --rules NAME`
-# from the cache target/rules-cache/, gives the Saxon-HE results
-# (tests/rules_equivalence.rs, a release build; the Peppol bundle is compiled there
-# with Maven, which needs Java and Maven Central). Runs after those jobs, on their
-# outputs in target/: without them the tests say SKIPPED, except in CI, where they
-# are required.
+# from the cache target/rules-cache/, gives the Saxon-HE results and the verdicts of
+# the acceptance tables (tests/rules_equivalence.rs, a release build; the Peppol bundle
+# is compiled there with Maven, which needs Java and Maven Central). Runs after those
+# jobs, or after the corpora job, on their outputs in target/: without them the tests
+# say SKIPPED, except in CI, where they are required.
 job_rules() {
     need_toolchain || return 1
     local required=()
@@ -486,6 +480,20 @@ job_rules() {
         --test rulesets -- --nocapture &&
         env ${required[@]+"${required[@]}"} cargo test --locked --release --all-features -p einvoice-cli \
             --test rules --test rules_equivalence -- --nocapture
+}
+# On demand only (not part of a full run, where the peppol, facturx, xrechnung and
+# fr-ctc jobs build them and test the engine on them too): the corpora of the four
+# families of fetched rule sets, built as those jobs build them (build_corpus), for
+# the rules job: `scripts/check.sh corpora rules` (CI's rulesets workflow).
+job_corpora() {
+    local status=0 family code
+    for family in peppol:scripts/fetch-peppol.sh facturx:scripts/fetch-facturx.sh \
+        xrechnung:scripts/fetch-xrechnung.sh fr-ctc:scripts/fetch-fr-ctc.sh; do
+        code=0
+        build_corpus "${family%%:*}" "${family#*:}" || code=$?
+        [ "$code" -eq 0 ] || [ "$code" -eq 2 ] || status=1
+    done
+    return "$status"
 }
 # On demand only (not part of a full run, it downloads): fetches every rule set from
 # its publisher, for real, into target/rules-cache/, and compares each bundle with the

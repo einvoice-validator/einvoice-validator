@@ -197,6 +197,17 @@ test("an unknown rule-set name is a bundle error", () => {
   assert.ok(Validator.builtin("cen-ubl") instanceof Validator);
 });
 
+test("the option failClosed leaves the flags of the CEN rules as they are", () => {
+  // The CEN stylesheet flags every assert fatal or warning: no finding is "other", so
+  // failing closed changes nothing.
+  for (const path of [BR_02, BR_CO_10, DUPLICATE]) {
+    const open = validator.validate(read(path));
+    const closed = validator.validate(read(path), { failClosed: true });
+    assert.equal(open.counts.other, 0, path);
+    assert.deepEqual(closed, open, path);
+  }
+});
+
 test("raw SVRL", () => {
   const reports = validator.validateSvrl(read(BR_02), { documentUri: "urn:example:br-02" });
   assert.equal(reports.length, 1);
@@ -255,6 +266,9 @@ test("the options and the clock", () => {
     { documentUri: null, now: undefined, timezoneMinutes: null, maxDepth: null },
     { maxDepth: 256 },
     { maxDepth: 400 },
+    { failClosed: true },
+    { failClosed: false },
+    { failClosed: null },
   ]) {
     assert.equal(validator.validate(bytes, options).status, "valid", JSON.stringify(options));
   }
@@ -279,6 +293,9 @@ test("the options and the clock", () => {
     [{ maxDepth: 100_000 }, RangeError],
     [{ maxDepth: Number.POSITIVE_INFINITY }, RangeError],
     [{ maxdepth: 10 }, TypeError],
+    [{ failClosed: "yes" }, TypeError],
+    [{ failClosed: 1 }, TypeError],
+    [{ failclosed: true }, TypeError],
   ]) {
     const e = thrown(() => validator.validate(bytes, options));
     assert.ok(e instanceof Class, `${JSON.stringify(options)}: ${e}`);

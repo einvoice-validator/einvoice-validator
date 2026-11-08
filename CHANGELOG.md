@@ -26,6 +26,23 @@ against.
 
 ### Added
 
+- `einvoice-validate --fail-closed` (#36): every finding that is neither fatal nor a warning
+  (a flag other than `fatal` and `warning`, or none, that the rule set gives no severity of its
+  own) is fatal, as `ValidateOptions::fail_closed` makes it; the npm package takes the option
+  `failClosed`.
+- Rule-set bundles, manifest format 2 (#36): the `[[stylesheet]]` key `unflagged-assert`
+  (`fatal`, `warning` or `other`, by default `other`), the severity of a failed assert without a
+  flag (`StylesheetEntry::unflagged_assert`), and `[[scenario]]` tables (`Scenario`,
+  `RuleSet::scenarios`): the severities a scenario gives rule ids, whatever their flags, in the
+  documents whose root element and specification identifier (BT-24) it names, as the
+  `customLevel` elements of a KoSIT validator configuration do; `Report::scenario` names the
+  one a document matched. Format 1 manifests, and format 2 manifests without them, mean what
+  they meant.
+- `cargo xtask <family>` writes `acceptance.tsv` in each fetched corpus: for every case, whether
+  the findings of each stylesheet reject it as the reference validator reads them (an unflagged
+  failed assert is an error; the levels of the KoSIT scenario the document matches), and checks
+  the scenarios of the XRechnung bundles against the configuration. `tests/rules_equivalence.rs`
+  of `einvoice-cli` compares the verdict of every bundle on every corpus document with it.
 - Rule sets fetched on demand (#35): `einvoice-validate rules list|fetch|path|clear`, `--rules NAME`
   for Factur-X (`factur-x-minimum` … `factur-x-extended`), XRechnung (`xrechnung-ubl`,
   `xrechnung-cii`, alias `xrechnung`), the French rules (`fr-ctc-*`) and Peppol BIS Billing 3.0
@@ -290,6 +307,16 @@ against.
   New probes `unordered-paths`, `error-unordered-count` and `error-unordered-first` of
   `einvoice-xslt-exec`, their expected results from Saxon-HE 12.10. No result of the corpora
   changes.
+- Verdicts of the rule sets with unflagged asserts (#36): a failed assert without a flag made no
+  document invalid, so `einvoice-validate --rules factur-x-en16931` and the other Factur-X rule
+  sets (and the French bundles that run a Factur-X profile) said `valid` for documents whose
+  reports hold failed asserts that the Mustang validator rejects them for. Their bundles now say
+  `unflagged-assert = "fatal"`; the XRechnung bundles too (the KoSIT validator reads a missing
+  flag as an error), with the levels the scenarios of the configuration give rule ids
+  (`customLevel`: for instance `UBL-CR-646` is fatal in an XRechnung 3.0 invoice). On every
+  document of the corpora, the verdict of every bundle is now the reference validator's reading
+  of the Saxon-HE reports. The manifests change: fetch the Factur-X, XRechnung and French rule
+  sets again (`rules fetch factur-x xrechnung fr-ctc`).
 - `scripts/fetch-xrechnung.sh` builds the same XML Mutate mutants on every machine: XML Mutate
   numbers the mutants in the order it reads the unit tests, and writes the number into the name
   and the content of each; read from a directory, that order was the file system's. The script

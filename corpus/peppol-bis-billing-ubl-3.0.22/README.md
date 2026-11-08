@@ -27,7 +27,8 @@ checks it:
    `mutations.tsv` and `mutations/`), runs
    Saxon-HE with each stylesheet on every case (`golden-peppol/` and `golden-cen/`), cross-checks
    the goldens of both stylesheets together with the VEFA expectations against
-   `vefa-disagreements.tsv`, and writes `complete.txt` (number of cases and of mutation cases,
+   `vefa-disagreements.tsv`, writes `acceptance.tsv` (whether the findings of each stylesheet reject the case as the
+   reference validator reads them, see `../README.md`) and `complete.txt` (number of cases and of mutation cases,
    checksums of the stylesheets).
 3. `crates/einvoice-xslt-exec/tests/peppol_equivalence.rs`: the engine runs both stylesheets on
    every case; each canonical SVRL must equal its golden.

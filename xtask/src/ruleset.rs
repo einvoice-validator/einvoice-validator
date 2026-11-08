@@ -79,18 +79,25 @@ pub(crate) struct Acceptance {
 /// How the stylesheets of a document's profile are chosen.
 #[derive(Debug)]
 pub(crate) enum Profiles {
-    /// Specification identifier, the stylesheets that run on it. A failed
-    /// assert or successful report with flag `fatal` or `error` rejects the
-    /// document. A document whose identifier is not listed is an error.
+    /// Specification identifier, the stylesheets that run on it. A finding
+    /// of level `error` rejects the document: a failed assert unless its flag
+    /// is `warning` or `information`, a successful report with the flag
+    /// `fatal` or `error` (`crate::acceptance`). A document whose identifier
+    /// is not listed is an error.
     Listed(&'static [(&'static str, &'static [&'static str])]),
     /// The scenarios of a KoSIT validator configuration (`scenarios.xml`,
     /// relative to the base directory; the locations of its resources are
     /// relative to its directory): the scenario that matches the root element
     /// and the identifier of the document names the stylesheets, and its
     /// `customLevel` elements override the level of rule ids; a finding of
-    /// level `error` (flag `fatal` or `error` when not overridden) rejects the
-    /// document.
-    KositScenarios(&'static str),
+    /// level `error` (as for [`Profiles::Listed`] when not overridden)
+    /// rejects the document. `bundle` is the directory of the bundle the
+    /// fetch script writes for the rule set, relative to the base directory:
+    /// its `[[scenario]]` tables must be the levels of the configuration.
+    KositScenarios {
+        file: &'static str,
+        bundle: &'static str,
+    },
 }
 
 /// One rule set and the corpus built from it.
@@ -538,7 +545,10 @@ pub(crate) const XRECHNUNG_UBL: RuleSet = RuleSet {
     mutation_bases: CEN_UBL_BASES,
     acceptance: Some(Acceptance {
         cases: &["testsuite"],
-        profiles: Profiles::KositScenarios("source/configuration/scenarios.xml"),
+        profiles: Profiles::KositScenarios {
+            file: "source/configuration/scenarios.xml",
+            bundle: "ubl",
+        },
     }),
     record: RECORD,
 };
@@ -577,7 +587,10 @@ pub(crate) const XRECHNUNG_CII: RuleSet = RuleSet {
     mutation_bases: CEN_CII_BASES,
     acceptance: Some(Acceptance {
         cases: &["testsuite"],
-        profiles: Profiles::KositScenarios("source/configuration/scenarios.xml"),
+        profiles: Profiles::KositScenarios {
+            file: "source/configuration/scenarios.xml",
+            bundle: "cii",
+        },
     }),
     record: RECORD,
 };

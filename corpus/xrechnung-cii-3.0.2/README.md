@@ -34,7 +34,10 @@ tracked tree, then checks them:
    `target/xrechnung/xrechnung-3.0.2/corpus-cii/` (same layout and `cases.tsv` format as
    the committed corpora, see `../README.md`), applies `../mutations-cii.toml` to the CEN examples `CII_example5.xml`, `CII_example3.xml`, `CII_example2.xml`, `CII_business_example_Z.xml` and `XRechnung-O.xml` (808 mutation cases), runs
    Saxon-HE with both stylesheets on every case (`golden-cen/`, `golden-xrechnung/`),
-   cross-checks the goldens with the expectations against `disagreements.tsv`, and writes
+   cross-checks the goldens with the expectations against `disagreements.tsv`, writes
+   `acceptance.tsv` (whether the findings of each stylesheet reject the case as the KoSIT
+   validator reads them, see `../README.md`), checks the levels of the bundle (its
+   `[[scenario]]` tables) against `source/configuration/scenarios.xml`, and writes
    `complete.txt`.
 3. The equivalence test of the engine, `tests/xrechnung_equivalence.rs` of `crates/einvoice-xslt-exec`
    (required by `scripts/check.sh xrechnung`), runs every stylesheet on every case and mutation

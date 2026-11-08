@@ -2,8 +2,11 @@
 //! XRechnung, the French rules), built in the cache that the fetch script of
 //! their family fills (nothing of it is committed: see the README of each
 //! `corpus/<rule set>/`): the cases, the Saxon-HE goldens of every stylesheet,
-//! then the cross-check with the expectations (VEFA, XML Mutate, accepted
-//! documents) against the committed record of disagreements.
+//! what the reference validator makes of them (`crate::acceptance`: the table
+//! of the reference acceptance of every case, and for XRechnung the levels of
+//! the bundles checked against the configuration), then the cross-check with
+//! the expectations (VEFA, XML Mutate, accepted documents) against the
+//! committed record of disagreements.
 //!
 //! The stylesheets, and the files they read with `document()`, are checked
 //! against the SHA-256 pinned in the fetch script before Saxon runs. When
@@ -14,6 +17,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
+use crate::acceptance;
 use crate::corpus;
 use crate::crosscheck;
 use crate::oracle;
@@ -179,6 +183,13 @@ pub(crate) fn run(
                 outcome.errors,
                 outcome.warned
             );
+        }
+
+        // What the reference validator makes of the goldens, case by case, and
+        // the levels of the bundle the fetch script wrote.
+        let _ = writeln!(out, "{}", acceptance::write_table(root, rule_set)?);
+        if let Some(checked) = acceptance::check_bundle(root, rule_set)? {
+            let _ = writeln!(out, "{checked}");
         }
 
         let mut record = format!(

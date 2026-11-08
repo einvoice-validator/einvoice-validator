@@ -17,7 +17,7 @@ const SVRL_NS: &str = "http://purl.oclc.org/dsdl/svrl";
 pub enum Verdict {
     /// No schema error and no finding with severity [`Severity::Fatal`].
     Valid,
-    /// At least one schema error or one fatal finding.
+    /// At least one schema error or one finding with severity [`Severity::Fatal`].
     Invalid,
 }
 
@@ -39,7 +39,11 @@ impl fmt::Display for Verdict {
 }
 
 /// The severity of a finding, from its Schematron `flag`, as the official rule sets use
-/// it.
+/// it, and from the manifest of the rule set: a failed assert without a flag has the
+/// severity of its stylesheet's `unflagged-assert`
+/// ([`StylesheetEntry::unflagged_assert`](crate::StylesheetEntry::unflagged_assert)), and
+/// the scenario a document matches gives the rule ids it lists their severities, whatever
+/// their flags ([`Scenario`](crate::Scenario)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Severity {
     /// `flag="fatal"`: the document does not conform; the verdict is
@@ -126,7 +130,8 @@ pub struct Finding {
     pub id: Option<String>,
     /// The Schematron flag (`fatal`, `warning`), if any.
     pub flag: Option<String>,
-    /// The severity the flag stands for.
+    /// The severity of the finding (see [`Severity`]): the one the flag stands for,
+    /// unless the manifest of the rule set gives another.
     pub severity: Severity,
     /// The Schematron role, if any.
     pub role: Option<String>,
@@ -294,6 +299,10 @@ pub struct Report {
     pub rule_set: RuleSetVersion,
     /// The URI the document was given, if any (`document-uri(/)` in the stylesheets).
     pub document_uri: Option<String>,
+    /// The name of the scenario of the rule set the document matched, whose severities
+    /// apply to its findings ([`RuleSet::scenarios`](crate::RuleSet::scenarios)), if
+    /// any.
+    pub scenario: Option<String>,
     /// The schema validity errors, sorted by position; empty when the document is valid
     /// against the schema, or when the rule set has no schema.
     pub schema_errors: Vec<SchemaError>,
@@ -336,14 +345,57 @@ impl Report {
     }
 }
 
+/// How the findings of one stylesheet get their severities: from their flags, the
+/// stylesheet's severity of an unflagged failed assert, the levels of the scenario the
+/// document matched, and whether the validation fails closed.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Severities<'a> {
+    /// See [`crate::ValidateOptions::fail_closed`].
+    pub(crate) fail_closed: bool,
+    /// See [`crate::StylesheetEntry::unflagged_assert`].
+    pub(crate) unflagged_assert: Severity,
+    /// The scenario the document matched, if any.
+    pub(crate) scenario: Option<&'a crate::Scenario>,
+}
+
+impl Default for Severities<'_> {
+    fn default() -> Self {
+        Self {
+            fail_closed: false,
+            unflagged_assert: Severity::Other,
+            scenario: None,
+        }
+    }
+}
+
+impl Severities<'_> {
+    /// The severity of a finding: the scenario's level of its rule id, if it gives one;
+    /// otherwise the one its flag stands for ([`Severity::from_flag`]), a failed assert
+    /// without a flag taking the stylesheet's; and when the validation fails closed,
+    /// [`Severity::Fatal`] in place of [`Severity::Other`].
+    pub(crate) fn of(self, kind: FindingKind, flag: Option<&str>, id: Option<&str>) -> Severity {
+        let severity = id
+            .and_then(|id| self.scenario.and_then(|s| s.level(id)))
+            .unwrap_or_else(|| match (kind, flag) {
+                (FindingKind::FailedAssert, None) => self.unflagged_assert,
+                _ => Severity::from_flag(flag),
+            });
+        if self.fail_closed && severity == Severity::Other {
+            Severity::Fatal
+        } else {
+            severity
+        }
+    }
+}
+
 /// Reads the failed asserts and successful reports of an SVRL report as the stylesheet
 /// writes it, with the context of the last fired rule and the id of the last active
 /// pattern before each, and counts the fired rules: what a parser of the report's text
 /// reads, without the text.
 #[derive(Debug, Default)]
-pub(crate) struct SvrlReader {
-    /// See [`Severity::from_flag_fail_closed`].
-    fail_closed: bool,
+pub(crate) struct SvrlReader<'a> {
+    /// How the findings get their severities.
+    severities: Severities<'a>,
     /// The number of open elements.
     depth: usize,
     /// The number of elements at the top of the report: a document has one.
@@ -370,10 +422,10 @@ struct Reading {
     in_text: bool,
 }
 
-impl SvrlReader {
-    pub(crate) fn new(fail_closed: bool) -> Self {
+impl<'a> SvrlReader<'a> {
+    pub(crate) fn new(severities: Severities<'a>) -> Self {
         Self {
-            fail_closed,
+            severities,
             ..Self::default()
         }
     }
@@ -413,7 +465,7 @@ fn attribute(attributes: &[(QName, String)], local: &str) -> Option<String> {
         .map(|(_, value)| value.clone())
 }
 
-impl ResultObserver for SvrlReader {
+impl ResultObserver for SvrlReader<'_> {
     fn start_element(&mut self, name: &QName, attributes: &[(QName, String)]) {
         self.depth += 1;
         match self.depth {
@@ -442,14 +494,11 @@ impl ResultObserver for SvrlReader {
                     _ => return,
                 };
                 let flag = attribute(attributes, "flag");
-                let severity = if self.fail_closed {
-                    Severity::from_flag_fail_closed(flag.as_deref())
-                } else {
-                    Severity::from_flag(flag.as_deref())
-                };
+                let id = attribute(attributes, "id");
+                let severity = self.severities.of(kind, flag.as_deref(), id.as_deref());
                 let finding = Finding {
                     kind,
-                    id: attribute(attributes, "id"),
+                    id,
                     severity,
                     flag,
                     role: attribute(attributes, "role"),
@@ -523,7 +572,10 @@ mod tests {
             namespace: name.namespace.map(str::to_owned),
             local: name.local.to_owned(),
         };
-        let mut reader = SvrlReader::new(fail_closed);
+        let mut reader = SvrlReader::new(Severities {
+            fail_closed,
+            ..Severities::default()
+        });
         let mut parser = einvoice_xml::Reader::new(svrl);
         let mut depth = 0;
         while let Ok(Some(event)) = parser.next_event() {
@@ -630,7 +682,7 @@ mod tests {
         // What the serializer can write and a parser refuses (the parser stops before
         // giving the events): two elements at the top, comments that XML forbids.
         let root = svrl_name("schematron-output");
-        let mut reader = SvrlReader::new(false);
+        let mut reader = SvrlReader::default();
         for _ in 0..2 {
             reader.start_element(&root, &[]);
             reader.end_element();
@@ -641,7 +693,7 @@ mod tests {
             Err(parser_error(&text))
         );
         for comment in ["x -- y", "x-"] {
-            let mut reader = SvrlReader::new(false);
+            let mut reader = SvrlReader::default();
             reader.start_element(&root, &[]);
             reader.comment(comment);
             reader.end_element();
@@ -655,7 +707,7 @@ mod tests {
             );
         }
         // Events the text does not have, which the parser accepts.
-        let mut reader = SvrlReader::new(false);
+        let mut reader = SvrlReader::default();
         for _ in 0..2 {
             reader.start_element(&root, &[]);
             reader.end_element();
@@ -685,5 +737,78 @@ mod tests {
             Severity::Fatal
         );
         assert_eq!(Severity::from_flag_fail_closed(None), Severity::Fatal);
+    }
+
+    /// The severities of the findings of a stylesheet, as the manifest and the options
+    /// set them.
+    #[test]
+    fn severities_of_a_stylesheet() {
+        use FindingKind::{FailedAssert as A, SuccessfulReport as R};
+        let manifest = "format = 2\nname = \"n\"\ntitle = \"t\"\nversion = \"1\"\n\n[[stylesheet]]\nname = \"s\"\npath = \"s.xsl\"\nsha256 = \"0000000000000000000000000000000000000000000000000000000000000000\"\n\n[[scenario]]\nname = \"x\"\nnamespace = \"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\"\nroot = \"Invoice\"\nidentifier = \"urn:x\"\nfatal = \"UP\"\nother = \"DOWN\"\n";
+        let rule_set = crate::RuleSet::parse(manifest).unwrap();
+        let scenario = rule_set.scenarios().first();
+        let findings = [
+            (A, Some("fatal"), Some("R")),
+            (A, Some("warning"), Some("R")),
+            (A, Some("information"), Some("R")),
+            (A, None, Some("R")),
+            (A, None, None),
+            (R, None, Some("R")),
+            (R, Some("fatal"), None),
+            (A, Some("warning"), Some("UP")),
+            (R, None, Some("UP")),
+            (A, Some("fatal"), Some("DOWN")),
+            (A, None, Some("DOWN")),
+        ];
+        let severities = |severities: Severities<'_>| -> Vec<&str> {
+            findings
+                .iter()
+                .map(|(kind, flag, id)| severities.of(*kind, *flag, *id).as_str())
+                .collect()
+        };
+        let base = Severities::default();
+        assert_eq!(
+            severities(base),
+            [
+                "fatal", "warning", "other", "other", "other", "other", "fatal", "warning",
+                "other", "fatal", "other"
+            ]
+        );
+        // An unflagged failed assert is fatal: an unflagged successful report is not.
+        let unflagged = Severities {
+            unflagged_assert: Severity::Fatal,
+            ..base
+        };
+        assert_eq!(
+            severities(unflagged),
+            [
+                "fatal", "warning", "other", "fatal", "fatal", "other", "fatal", "warning",
+                "other", "fatal", "fatal"
+            ]
+        );
+        // The scenario's levels win over the flags and over the unflagged severity.
+        let with_scenario = Severities {
+            scenario,
+            ..unflagged
+        };
+        assert_eq!(
+            severities(with_scenario),
+            [
+                "fatal", "warning", "other", "fatal", "fatal", "other", "fatal", "fatal", "fatal",
+                "other", "other"
+            ]
+        );
+        // Failing closed: whatever is still other is fatal.
+        let closed = Severities {
+            fail_closed: true,
+            ..with_scenario
+        };
+        assert_eq!(
+            severities(closed),
+            [
+                "fatal", "warning", "fatal", "fatal", "fatal", "fatal", "fatal", "fatal", "fatal",
+                "fatal", "fatal"
+            ]
+        );
     }
 }

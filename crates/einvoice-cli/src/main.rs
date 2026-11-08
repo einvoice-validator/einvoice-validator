@@ -224,6 +224,9 @@ Options:
       --max-depth N    Refuse a document with an element nested deeper than N
                        (default: {max_depth}, as libxml2; the document element is at
                        depth 1).
+      --fail-closed    Count every finding that is not a warning as fatal: one
+                       with a flag other than fatal and warning, or none, that
+                       the rule set gives no severity of its own.
   -h, --help           Print this help.
   -V, --version        Print the version and the built-in rule sets.
       --licences       Print the licences of everything embedded in this program
@@ -486,7 +489,8 @@ fn validate_all(
     let stack = stack_size(options.max_depth);
     let limits = ValidateOptions::new()
         .max_depth(options.max_depth)
-        .max_stack(max_stack(stack));
+        .max_stack(max_stack(stack))
+        .fail_closed(options.fail_closed);
     std::thread::scope(|scope| {
         for _ in 0..workers {
             let sender = sender.clone();

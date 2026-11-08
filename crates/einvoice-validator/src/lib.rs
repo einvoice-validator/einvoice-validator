@@ -20,8 +20,9 @@
 //! The [`Report`] holds the schema errors, then, for each stylesheet, its raw SVRL
 //! report, its findings (failed asserts and successful reports, with their id, flag,
 //! location, rule context, test and message) and the canonical form of the SVRL. The
-//! verdict is [`Verdict::Valid`] when there is no schema error and no finding with flag
-//! `fatal`.
+//! verdict is [`Verdict::Valid`] when there is no schema error and no finding of severity
+//! [`Severity::Fatal`]: the flag `fatal`, or what the manifest of the rule set reads as
+//! fatal, as the reference validator of the rule set does (see [Severities](#severities)).
 //!
 //! ```
 //! # #[cfg(feature = "cen-ubl")] {
@@ -115,7 +116,7 @@
 //! the line concerned (unknown keys included).
 //!
 //! ```toml
-//! format = 2                   # the manifest format: 1, or MANIFEST_FORMAT for [[resource]]
+//! format = 2                   # the manifest format: 1, or MANIFEST_FORMAT for what says format 2
 //! name = "cen-ubl"             # ASCII letters, digits, '-', '.', '_'
 //! title = "CEN EN 16931 UBL"
 //! version = "1.3.17"           # the version of the official artefacts
@@ -126,15 +127,49 @@
 //! path = "ubl/xslt/EN16931-UBL-validation.xslt"   # relative, '/'-separated, no '..'
 //! sha256 = "fc4e6cfa8596bba0c2abd19038a98960c6ee9fc1f44566787c115efd4f4aca7c"
 //! # version = "..."            # optional: when it differs from the bundle's
+//! # unflagged-assert = "fatal" # format 2, optional: the severity of a failed assert
+//! #                            # without a flag (fatal, warning or other; default other)
 //!
 //! [[resource]]                 # format 2: zero or more files read with document()
 //! path = "ubl/xslt/codes.xml"  # relative, '/'-separated, no '..'
 //! sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+//!
+//! [[scenario]]                 # format 2: zero or more, tried in this order
+//! name = "EN16931 XRechnung (UBL Invoice)"        # unique in the bundle
+//! namespace = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+//! root = "Invoice"             # with namespace: a UBL Invoice or CreditNote, a CII CrossIndustryInvoice
+//! identifier = "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0"
+//! fatal = "UBL-CR-646"         # at least one of fatal, warning and other: rule ids,
+//! warning = "BR-CL-23 BR-CL-21"   # separated by spaces, each in one list only
 //! ```
 //!
 //! Accepted syntax: comments, `key = value` lines with a bare key, values that are
 //! basic strings (escapes `\"` and `\\` only), literal strings or non-negative integers,
-//! and `[[stylesheet]]` and `[[resource]]` headers.
+//! and `[[stylesheet]]`, `[[resource]]` and `[[scenario]]` headers.
+//!
+//! # Severities
+//!
+//! Each finding has a [`Severity`], and a fatal finding makes the document invalid. By
+//! default it is the one its Schematron flag stands for ([`Severity::from_flag`]: `fatal`,
+//! `warning`, any other flag or none [`Severity::Other`]), which is how the reference
+//! validators read the CEN and Peppol rules, which flag every assert. The manifest gives
+//! the others what their reference validators read:
+//!
+//! - `unflagged-assert`, for a stylesheet whose failed asserts may have no flag: the
+//!   Factur-X stylesheets leave it out of most of their asserts, which the Mustang validator
+//!   reads as errors, so the Factur-X bundles (and those of the French rules that run a
+//!   Factur-X profile) say `unflagged-assert = "fatal"`, as do the XRechnung bundles, the
+//!   KoSIT validator reading a missing flag as an error too. A successful report without a
+//!   flag stays [`Severity::Other`].
+//! - `[[scenario]]` ([`Scenario`]): the levels a scenario of a KoSIT validator
+//!   configuration gives rule ids (`customLevel`), whatever their flags, in the documents
+//!   it matches by their root element and their specification identifier (BT-24); the
+//!   XRechnung bundles have the scenarios of their configuration (`error` is
+//!   [`Severity::Fatal`], `information` [`Severity::Other`]). The [`Report`] names the
+//!   scenario the document matched.
+//!
+//! [`ValidateOptions::fail_closed`] then makes every finding that is still
+//! [`Severity::Other`] fatal, for rule sets whose flags the caller does not know.
 //!
 //! # PDF files
 //!
@@ -201,7 +236,7 @@ pub use detect::Syntax;
 pub use error::{Error, ErrorKind};
 pub use licences::{Licence, licences};
 pub use manifest::{
-    MANIFEST_FILE, MANIFEST_FORMAT, ResourceEntry, RuleSet, SchemaId, StylesheetEntry,
+    MANIFEST_FILE, MANIFEST_FORMAT, ResourceEntry, RuleSet, Scenario, SchemaId, StylesheetEntry,
 };
 pub use report::{
     Finding, FindingKind, Report, RuleSetVersion, SchemaError, SchemaErrorKind, Severity,

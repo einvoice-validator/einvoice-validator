@@ -11,9 +11,12 @@ use einvoice_xslt_exec::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::manifest::{MANIFEST_FILE, RuleSet, SchemaId, StylesheetEntry};
+use crate::manifest::{
+    CII, MANIFEST_FILE, RuleSet, Scenario, SchemaId, StylesheetEntry, UBL_CREDIT_NOTE, UBL_INVOICE,
+};
 use crate::report::{
-    Report, RuleSetVersion, SchemaError, StylesheetFailure, StylesheetReport, SvrlReader,
+    Report, RuleSetVersion, SchemaError, Severities, StylesheetFailure, StylesheetReport,
+    SvrlReader,
 };
 use crate::resources::{BUNDLE_URI, Resources};
 use crate::{Error, builtin};
@@ -49,11 +52,12 @@ impl<'a> ValidateOptions<'a> {
         }
     }
 
-    /// Fail closed: a finding whose flag is neither `fatal` nor `warning`, or that has
-    /// none, is of severity [`Severity::Fatal`](crate::Severity::Fatal) (it makes the
-    /// document invalid) instead of [`Severity::Other`](crate::Severity::Other). Off by
-    /// default. For rule sets whose flags the caller does not know in advance: an
-    /// unflagged rule then rejects the document, as the Factur-X rules mean it.
+    /// Fail closed: a finding that would otherwise be of severity
+    /// [`Severity::Other`](crate::Severity::Other) (a flag other than `fatal` and
+    /// `warning`, or none, unless the manifest of the rule set gives it a severity) is of
+    /// severity [`Severity::Fatal`](crate::Severity::Fatal): it makes the document
+    /// invalid. Off by default. For rule sets whose flags the caller does not know in
+    /// advance: every finding that is not a warning then rejects the document.
     #[must_use]
     pub const fn fail_closed(mut self, fail_closed: bool) -> Self {
         self.fail_closed = fail_closed;
@@ -349,7 +353,10 @@ impl Validator {
         text: Cow<'_, str>,
         options: &ValidateOptions<'_>,
     ) -> Result<Report, Error> {
-        let schema_errors = check(&text, options.max_depth, self.schema.as_deref())?;
+        let identify = !self.rule_set.scenarios().is_empty();
+        let checked = check(&text, options.max_depth, self.schema.as_deref(), identify)?;
+        let schema_errors = checked.schema_errors;
+        let scenario = checked.identification.scenario(self.rule_set.scenarios());
         let transform_options = TransformOptions {
             implicit_timezone: options.clock.map(|c| c.implicit_timezone()),
             current_date_time: options.clock.map(|c| c.current_date_time()),
@@ -377,7 +384,11 @@ impl Validator {
             }
             .ok_or_else(|| Error::internal("the document text was given away early"))?;
             // The findings are read as the stylesheet writes its report.
-            let mut reader = SvrlReader::new(options.fail_closed);
+            let mut reader = SvrlReader::new(Severities {
+                fail_closed: options.fail_closed,
+                unflagged_assert: entry.unflagged_assert(),
+                scenario,
+            });
             let result = executable.transform_compact(
                 source,
                 options.document_uri,
@@ -422,6 +433,7 @@ impl Validator {
                 schema: self.rule_set.schema(),
             },
             document_uri: options.document_uri.map(str::to_owned),
+            scenario: scenario.map(|s| s.name().to_owned()),
             schema_errors,
             stylesheets,
         })
@@ -629,11 +641,118 @@ fn declared_encoding(bytes: &[u8]) -> Option<&str> {
     value.find(quote).map(|end| &value[..end])
 }
 
+/// The namespace of the UBL basic components (`cbc:`).
+const UBL_CBC: &str = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2";
+/// The namespace of the CII aggregate components (`ram:`).
+const CII_RAM: &str =
+    "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100";
+
+/// The element that holds the specification identifier (BT-24) of a document with this
+/// root element: its path from the root, by namespace and local name.
+fn identifier_path(namespace: &str, local: &str) -> &'static [(&'static str, &'static str)] {
+    match (namespace, local) {
+        (UBL_INVOICE, "Invoice") | (UBL_CREDIT_NOTE, "CreditNote") => {
+            &[(UBL_CBC, "CustomizationID")]
+        }
+        (CII, "CrossIndustryInvoice") => &[
+            (CII, "ExchangedDocumentContext"),
+            (CII_RAM, "GuidelineSpecifiedDocumentContextParameter"),
+            (CII_RAM, "ID"),
+        ],
+        _ => &[],
+    }
+}
+
+/// The root element of a document and its specification identifiers (BT-24), read with
+/// the events of the XML check: what picks the scenario of the rule set that applies.
+#[derive(Debug, Default)]
+struct Identification {
+    /// The namespace and local name of the root element.
+    root: Option<(String, String)>,
+    /// The path of the identifier element from the root (see [`identifier_path`]).
+    path: &'static [(&'static str, &'static str)],
+    /// How many steps of the path the open elements below the root match.
+    matched: usize,
+    /// The text of the identifier element being read.
+    text: Option<String>,
+    /// The string value of every identifier element, in document order.
+    identifiers: Vec<String>,
+}
+
+impl Identification {
+    /// A start tag, the element at `depth` (the root at 1).
+    fn start(&mut self, name: &einvoice_xml::Name<'_, '_>, depth: u32) {
+        let Ok(depth) = usize::try_from(depth) else {
+            return;
+        };
+        let namespace = name.namespace.unwrap_or("");
+        if depth == 1 {
+            self.path = identifier_path(namespace, name.local);
+            self.root = Some((namespace.to_owned(), name.local.to_owned()));
+            return;
+        }
+        // The parent matches the path up to its own step: this element may be the next.
+        if self.matched + 2 == depth
+            && self
+                .path
+                .get(self.matched)
+                .is_some_and(|&(ns, local)| ns == namespace && local == name.local)
+        {
+            self.matched += 1;
+            if self.matched == self.path.len() {
+                self.text = Some(String::new());
+            }
+        }
+    }
+
+    /// The end of the element at `depth`.
+    fn end(&mut self, depth: u32) {
+        let Ok(depth) = usize::try_from(depth) else {
+            return;
+        };
+        if depth >= 2 && self.matched + 1 == depth {
+            if self.matched == self.path.len()
+                && let Some(text) = self.text.take()
+            {
+                self.identifiers.push(text);
+            }
+            self.matched -= 1;
+        }
+    }
+
+    /// Text, within the identifier element or not.
+    fn text(&mut self, text: &str) {
+        if let Some(value) = &mut self.text {
+            value.push_str(text);
+        }
+    }
+
+    /// The first of `scenarios` the document matches.
+    fn scenario<'s>(&self, scenarios: &'s [Scenario]) -> Option<&'s Scenario> {
+        let (namespace, local) = self.root.as_ref()?;
+        scenarios.iter().find(|s| {
+            s.namespace() == namespace
+                && s.root() == local
+                && self.identifiers.iter().any(|i| i == s.identifier())
+        })
+    }
+}
+
+/// What the XML check found.
+#[derive(Debug)]
+struct Checked {
+    /// The schema errors, sorted by position.
+    schema_errors: Vec<SchemaError>,
+    /// The root element and the specification identifiers, when asked for.
+    identification: Identification,
+}
+
 /// Reads the text once, with the streaming reader of `einvoice-xml`: checks that it is
 /// namespace-well-formed XML without a document type declaration, as the stylesheets'
 /// parser requires, and without an element nested deeper than `max_depth`, and
-/// validates it against `schema`, if any, in the same pass. The schema errors, sorted
-/// by position.
+/// validates it against `schema`, if any, in the same pass; with `identify`, reads the
+/// root element and the specification identifiers (BT-24) too. The schema errors,
+/// sorted by position.
 ///
 /// A well-formedness error comes first, wherever it is in the text; then an element
 /// nested too deep, the first in document order (the schema is not checked from it
@@ -642,9 +761,11 @@ fn check(
     text: &str,
     max_depth: u32,
     schema: Option<&einvoice_xsd::Schema>,
-) -> Result<Vec<SchemaError>, Error> {
+    identify: bool,
+) -> Result<Checked, Error> {
     let mut reader = einvoice_xml::Reader::new(text);
     let mut validation = schema.map(|schema| schema.validation(text));
+    let mut identification = Identification::default();
     let mut depth = 0u32;
     let mut too_deep = None;
     loop {
@@ -667,6 +788,9 @@ fn check(
         match &event {
             einvoice_xml::Event::Start(start) => {
                 depth = depth.saturating_add(1);
+                if identify {
+                    identification.start(&start.name(), depth);
+                }
                 if depth > max_depth && too_deep.is_none() {
                     let at = einvoice_xml::TextPos::at(text, start.range().start);
                     too_deep = Some(LimitExceeded::Depth {
@@ -678,7 +802,13 @@ fn check(
                     validation = None;
                 }
             }
-            einvoice_xml::Event::End(_) => depth = depth.saturating_sub(1),
+            einvoice_xml::Event::End(_) => {
+                if identify {
+                    identification.end(depth);
+                }
+                depth = depth.saturating_sub(1);
+            }
+            einvoice_xml::Event::Text(t) if identify => identification.text(&t.value),
             _ => {}
         }
         if let Some(validation) = &mut validation {
@@ -691,9 +821,18 @@ fn check(
             message: format!("document, {limit}"),
         });
     }
-    let Some(validation) = validation else {
-        return Ok(Vec::new());
+    let schema_errors = match validation {
+        None => Vec::new(),
+        Some(validation) => schema_errors(validation)?,
     };
+    Ok(Checked {
+        schema_errors,
+        identification,
+    })
+}
+
+/// The schema errors of a validation that read the whole document.
+fn schema_errors(validation: einvoice_xsd::Validation<'_, '_>) -> Result<Vec<SchemaError>, Error> {
     match validation.finish() {
         Ok(report) => Ok(report.errors),
         Err(einvoice_xsd::DocumentError::Malformed {
@@ -718,6 +857,73 @@ fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The schema errors of the XML check, without the identification.
+    fn check(
+        text: &str,
+        max_depth: u32,
+        schema: Option<&einvoice_xsd::Schema>,
+    ) -> Result<Vec<SchemaError>, Error> {
+        super::check(text, max_depth, schema, false).map(|c| c.schema_errors)
+    }
+
+    /// The root element and the specification identifiers the XML check reads.
+    fn identify(text: &str) -> (Option<(String, String)>, Vec<String>) {
+        let checked = super::check(text, DEFAULT_MAX_DEPTH, None, true).unwrap();
+        (
+            checked.identification.root,
+            checked.identification.identifiers,
+        )
+    }
+
+    #[test]
+    fn specification_identifiers() {
+        let root = |ns: &str, local: &str| Some((ns.to_owned(), local.to_owned()));
+        let ubl = format!(
+            "<Invoice xmlns='{UBL_INVOICE}' xmlns:cbc='{UBL_CBC}'><cbc:CustomizationID> urn:a</cbc:CustomizationID>\
+             <x><cbc:CustomizationID>no</cbc:CustomizationID></x>\
+             <cbc:CustomizationID>u<!-- c -->rn:<![CDATA[b]]><i>c</i></cbc:CustomizationID><CustomizationID>no</CustomizationID></Invoice>"
+        );
+        assert_eq!(
+            identify(&ubl),
+            (
+                root(UBL_INVOICE, "Invoice"),
+                vec![" urn:a".to_owned(), "urn:bc".to_owned()]
+            )
+        );
+        let credit_note = format!(
+            "<c:CreditNote xmlns:c='{UBL_CREDIT_NOTE}'><b:CustomizationID xmlns:b='{UBL_CBC}'>urn:x</b:CustomizationID></c:CreditNote>"
+        );
+        assert_eq!(
+            identify(&credit_note),
+            (
+                root(UBL_CREDIT_NOTE, "CreditNote"),
+                vec!["urn:x".to_owned()]
+            )
+        );
+        let cii = format!(
+            "<rsm:CrossIndustryInvoice xmlns:rsm='{CII}' xmlns:ram='{CII_RAM}'>\
+             <rsm:ExchangedDocumentContext><ram:ID>no</ram:ID>\
+             <ram:GuidelineSpecifiedDocumentContextParameter><ram:ID>urn:y</ram:ID><ram:Other>no</ram:Other></ram:GuidelineSpecifiedDocumentContextParameter>\
+             <ram:GuidelineSpecifiedDocumentContextParameter><ram:ID>urn:z</ram:ID></ram:GuidelineSpecifiedDocumentContextParameter>\
+             </rsm:ExchangedDocumentContext><ram:ID>no</ram:ID></rsm:CrossIndustryInvoice>"
+        );
+        assert_eq!(
+            identify(&cii),
+            (
+                root(CII, "CrossIndustryInvoice"),
+                vec!["urn:y".to_owned(), "urn:z".to_owned()]
+            )
+        );
+        // Another root element: no identifier is read.
+        assert_eq!(
+            identify(&format!(
+                "<Order xmlns='{UBL_INVOICE}'><CustomizationID xmlns='{UBL_CBC}'>x</CustomizationID></Order>"
+            )),
+            (root(UBL_INVOICE, "Order"), vec![])
+        );
+        assert_eq!(identify("<a/>"), (root("", "a"), vec![]));
+    }
 
     #[test]
     fn decoding_a_buffer_gives_the_same_result() {

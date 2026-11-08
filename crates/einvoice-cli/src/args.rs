@@ -78,6 +78,9 @@ pub(crate) struct Options {
     pub(crate) max_depth: u32,
     /// `--fetch`: a fetched rule set that is not in the cache may be downloaded.
     pub(crate) fetch: bool,
+    /// `--fail-closed`: a finding that is neither fatal nor a warning is fatal
+    /// (`einvoice_validator::ValidateOptions::fail_closed`).
+    pub(crate) fail_closed: bool,
     pub(crate) inputs: Vec<Input>,
 }
 
@@ -94,6 +97,7 @@ struct Seen {
     jobs: Option<NonZeroUsize>,
     max_depth: Option<u32>,
     fetch: bool,
+    fail_closed: bool,
 }
 
 impl Seen {
@@ -166,6 +170,7 @@ impl Seen {
             jobs: self.jobs.unwrap_or(NonZeroUsize::MIN),
             max_depth: self.max_depth.unwrap_or(DEFAULT_MAX_DEPTH),
             fetch: self.fetch,
+            fail_closed: self.fail_closed,
             inputs,
         }))
     }
@@ -206,14 +211,19 @@ pub(crate) fn parse(args: &[OsString]) -> Result<Command, UsageError> {
             (name, (!rest.is_empty()).then_some(rest))
         };
         match name {
-            "--fetch" => {
+            "--fetch" | "--fail-closed" => {
                 if inline.is_some() {
-                    return Err(usage("--fetch takes no value".to_owned()));
+                    return Err(usage(format!("{name} takes no value")));
                 }
-                if seen.fetch {
-                    return Err(usage("--fetch given twice".to_owned()));
+                let flag = if name == "--fetch" {
+                    &mut seen.fetch
+                } else {
+                    &mut seen.fail_closed
+                };
+                if *flag {
+                    return Err(usage(format!("{name} given twice")));
                 }
-                seen.fetch = true;
+                *flag = true;
                 continue;
             }
             "-h" | "--help" | "-V" | "--version" | "--licences" | "--licenses" => {
@@ -423,6 +433,23 @@ mod tests {
         let o = options(&["--bundle", "dir", "--format=svrl", "x"]);
         assert_eq!(o.rules, Rules::Bundle("dir".into()));
         assert_eq!(o.format, Format::Svrl);
+    }
+
+    #[test]
+    fn fail_closed_option() {
+        assert!(!options(&["a"]).fail_closed);
+        let o = options(&["--rules", "factur-x-en16931", "--fail-closed", "a"]);
+        assert!(o.fail_closed);
+        assert!(!o.fetch);
+        assert!(options(&["a", "--fail-closed", "--fetch"]).fail_closed);
+        assert_eq!(
+            error(&["--fail-closed=yes", "a"]),
+            "--fail-closed takes no value"
+        );
+        assert_eq!(
+            error(&["--fail-closed", "--fail-closed", "a"]),
+            "--fail-closed given twice"
+        );
     }
 
     #[test]

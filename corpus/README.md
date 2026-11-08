@@ -139,6 +139,22 @@ names the stylesheets and overrides the level of some rule ids (`customLevel`). 
 disagreements are listed with their explanation in `<rule set>/disagreements.tsv`, in the
 format of `vefa-disagreements.tsv`.
 
+### The acceptance table (fetched rule sets)
+
+`cargo xtask <family>` also writes `<corpus>/acceptance.tsv` in the cache: for every case
+(whole documents, test cases and mutation cases), the KoSIT scenario it matches (`-` for none,
+or a rule set without scenarios), then for each stylesheet, in a column named after its golden
+directory, `reject` when one of its findings rejects the case as the reference validator reads
+the report (a failed assert unless flagged `warning` or `information`, a successful report
+flagged `fatal` or `error`, the levels of the matching scenario first), `accept` when none
+does, `error` when Saxon-HE stopped on the case. A document matches a scenario when its root
+element has the name of the scenario's `match` and an element at the path of its predicate has
+the identifier as its value, compared as it is written. For XRechnung, it also checks that the
+`[[scenario]]` tables of the bundles the fetch script wrote are the scenarios of the
+configuration that give levels. `crates/einvoice-cli/tests/rules_equivalence.rs` requires the
+verdict of every bundle on every document to be that table's: invalid with schema errors or
+when one of its stylesheets rejects the document.
+
 ## Peppol BIS Billing 3.0.22: built locally, not committed
 
 The Peppol BIS Billing 3.0 repository publishes no licence, so its files, and everything derived

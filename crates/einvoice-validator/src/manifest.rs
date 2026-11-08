@@ -1,16 +1,19 @@
 //! The manifest of a rule-set bundle (`bundle.toml`): what the rule set is, which XML
 //! schema and which stylesheets it runs, the resources the stylesheets read with
-//! `document()`, and the SHA-256 of each file.
+//! `document()`, the SHA-256 of each file, and how the findings of the stylesheets are
+//! read: the severity of an unflagged failed assert, and the severities that scenarios
+//! give rule ids.
 
 use std::fmt;
 
-use crate::Error;
+use crate::{Error, Severity};
 
 /// The file name of the manifest in a bundle directory.
 pub const MANIFEST_FILE: &str = "bundle.toml";
 
-/// The newest manifest format this crate reads (the `format` key): format 2 adds the
-/// `[[resource]]` tables to format 1, which is read too.
+/// The newest manifest format this crate reads (the `format` key): format 2 adds to
+/// format 1, which is read too, the `[[resource]]` and `[[scenario]]` tables and the
+/// `unflagged-assert` key of `[[stylesheet]]`.
 pub const MANIFEST_FORMAT: u32 = 2;
 
 /// The XML schema a rule set validates documents against before running its
@@ -55,6 +58,7 @@ pub struct StylesheetEntry {
     version: String,
     path: String,
     sha256: String,
+    unflagged_assert: Severity,
 }
 
 impl StylesheetEntry {
@@ -82,7 +86,92 @@ impl StylesheetEntry {
     pub fn sha256(&self) -> &str {
         &self.sha256
     }
+
+    /// The severity of its failed asserts that have no flag (format 2,
+    /// `unflagged-assert`): [`Severity::Other`] unless the manifest says otherwise. The
+    /// rule sets whose reference validators reject a document for an unflagged failed
+    /// assert (Factur-X, XRechnung) say [`Severity::Fatal`].
+    #[must_use]
+    pub const fn unflagged_assert(&self) -> Severity {
+        self.unflagged_assert
+    }
 }
+
+/// The severities that a scenario gives rule ids, whatever their flags, in the documents
+/// it matches (format 2, `[[scenario]]`): the `customLevel` elements of a scenario of a
+/// KoSIT validator configuration. A document matches when its root element has the
+/// scenario's namespace and local name, and its specification identifier (BT-24) is the
+/// scenario's: the text of a `cbc:CustomizationID` child of the root of a UBL document,
+/// or of `rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID`
+/// in a CII document, compared as it is written. The first scenario of the manifest
+/// that matches applies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scenario {
+    name: String,
+    namespace: String,
+    root: String,
+    identifier: String,
+    levels: Vec<(String, Severity)>,
+}
+
+impl Scenario {
+    /// Its name (`EN16931 XRechnung (UBL Invoice)`).
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The namespace of the root element of the documents it matches.
+    #[must_use]
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+
+    /// The local name of the root element of the documents it matches (`Invoice`).
+    #[must_use]
+    pub fn root(&self) -> &str {
+        &self.root
+    }
+
+    /// The specification identifier (BT-24) of the documents it matches.
+    #[must_use]
+    pub fn identifier(&self) -> &str {
+        &self.identifier
+    }
+
+    /// The rule ids it gives a severity, with that severity, in the order of the
+    /// manifest (the ids of `fatal`, then `warning`, then `other`).
+    #[must_use]
+    pub fn levels(&self) -> &[(String, Severity)] {
+        &self.levels
+    }
+
+    /// The severity it gives the rule `id`, if any.
+    #[must_use]
+    pub fn level(&self, id: &str) -> Option<Severity> {
+        self.levels
+            .iter()
+            .find(|(rule, _)| rule == id)
+            .map(|(_, severity)| *severity)
+    }
+}
+
+/// The namespace of a UBL 2 invoice.
+pub(crate) const UBL_INVOICE: &str = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
+/// The namespace of a UBL 2 credit note.
+pub(crate) const UBL_CREDIT_NOTE: &str =
+    "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2";
+/// The namespace of a UN/CEFACT Cross Industry Invoice (D16B and the other releases of
+/// version 100).
+pub(crate) const CII: &str = "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100";
+
+/// The root elements whose specification identifier (BT-24) is known, which a scenario
+/// may name: namespace, local name.
+const IDENTIFIED_ROOTS: [(&str, &str); 3] = [
+    (UBL_INVOICE, "Invoice"),
+    (UBL_CREDIT_NOTE, "CreditNote"),
+    (CII, "CrossIndustryInvoice"),
+];
 
 /// A file of the bundle that the stylesheets read with `document()` (a code list, ...),
 /// as the manifest describes it (format 2, `[[resource]]`).
@@ -118,6 +207,7 @@ pub struct RuleSet {
     schema: Option<SchemaId>,
     stylesheets: Vec<StylesheetEntry>,
     resources: Vec<ResourceEntry>,
+    scenarios: Vec<Scenario>,
 }
 
 impl RuleSet {
@@ -127,8 +217,11 @@ impl RuleSet {
     ///
     /// [`Error::Bundle`] naming the line: a syntax outside the accepted TOML subset, an
     /// unknown or repeated key, a missing key, a value that is not valid for its key, an
-    /// unknown schema, a format other than 1 and [`MANIFEST_FORMAT`], a `[[resource]]`
-    /// in format 1, a path given twice.
+    /// unknown schema, a format other than 1 and [`MANIFEST_FORMAT`], a `[[resource]]`,
+    /// a `[[scenario]]` or an `unflagged-assert` in format 1, a path given twice, a
+    /// scenario named twice, for a root element other than a UBL `Invoice` or
+    /// `CreditNote` or a CII `CrossIndustryInvoice`, without a rule id, or giving a rule
+    /// id two severities.
     pub fn parse(manifest: &str) -> Result<Self, Error> {
         let tables = parse_tables(manifest)?;
         let mut tables = tables.into_iter();
@@ -174,40 +267,22 @@ impl RuleSet {
 
         let mut stylesheets: Vec<StylesheetEntry> = Vec::new();
         let mut resources: Vec<ResourceEntry> = Vec::new();
+        let mut scenarios: Vec<Scenario> = Vec::new();
         for raw in tables {
             let kind = raw.kind;
-            let mut table = Table::new(raw);
+            let table = Table::new(raw);
             if kind == TableKind::Resource {
                 let resource = resource(table, format, &stylesheets, &resources)?;
                 resources.push(resource);
                 continue;
             }
-            table.allow(&["name", "version", "path", "sha256"])?;
-            let entry_name = table.required_string("name")?;
-            check_name(&entry_name).map_err(|m| table.error("name", &m))?;
-            if stylesheets.iter().any(|s| s.name == entry_name) {
-                return Err(table.error("name", &format!("stylesheet {entry_name:?} twice")));
+            if kind == TableKind::Scenario {
+                let scenario = scenario(table, format, &scenarios)?;
+                scenarios.push(scenario);
+                continue;
             }
-            let entry_version = match table.optional_string("version")? {
-                Some(v) => {
-                    check_version(&v).map_err(|m| table.error("version", &m))?;
-                    v
-                }
-                None => version.clone(),
-            };
-            let path = table.required_string("path")?;
-            check_path(&path).map_err(|m| table.error("path", &m))?;
-            if resources.iter().any(|r| r.path == path) {
-                return Err(table.error("path", &format!("{path:?} twice in the bundle")));
-            }
-            let sha256 = table.sha256()?;
-            table.finish()?;
-            stylesheets.push(StylesheetEntry {
-                name: entry_name,
-                version: entry_version,
-                path,
-                sha256,
-            });
+            let entry = stylesheet(table, format, &version, &stylesheets, &resources)?;
+            stylesheets.push(entry);
         }
         if stylesheets.is_empty() {
             return Err(Error::bundle(format!(
@@ -221,6 +296,7 @@ impl RuleSet {
             schema,
             stylesheets,
             resources,
+            scenarios,
         })
     }
 
@@ -270,6 +346,139 @@ impl RuleSet {
     pub fn resources(&self) -> &[ResourceEntry] {
         &self.resources
     }
+
+    /// The scenarios (format 2), in the order of the manifest, which is the order they
+    /// are tried in.
+    #[must_use]
+    pub fn scenarios(&self) -> &[Scenario] {
+        &self.scenarios
+    }
+}
+
+/// A `[[stylesheet]]` table, whose name no stylesheet has yet and whose path no file of
+/// the bundle has yet; `version` is the bundle's.
+fn stylesheet(
+    mut table: Table,
+    format: u64,
+    version: &str,
+    stylesheets: &[StylesheetEntry],
+    resources: &[ResourceEntry],
+) -> Result<StylesheetEntry, Error> {
+    table.allow(&["name", "version", "path", "sha256", "unflagged-assert"])?;
+    let name = table.required_string("name")?;
+    check_name(&name).map_err(|m| table.error("name", &m))?;
+    if stylesheets.iter().any(|s| s.name == name) {
+        return Err(table.error("name", &format!("stylesheet {name:?} twice")));
+    }
+    let version = match table.optional_string("version")? {
+        Some(v) => {
+            check_version(&v).map_err(|m| table.error("version", &m))?;
+            v
+        }
+        None => version.to_owned(),
+    };
+    let path = table.required_string("path")?;
+    check_path(&path).map_err(|m| table.error("path", &m))?;
+    if resources.iter().any(|r| r.path == path) {
+        return Err(table.error("path", &format!("{path:?} twice in the bundle")));
+    }
+    let sha256 = table.sha256()?;
+    let unflagged_assert = match table.optional_string("unflagged-assert")? {
+        None => Severity::Other,
+        Some(_) if format < 2 => {
+            return Err(table.error("unflagged-assert", "needs format = 2"));
+        }
+        Some(s) => severity(&s).map_err(|m| table.error("unflagged-assert", &m))?,
+    };
+    table.finish()?;
+    Ok(StylesheetEntry {
+        name,
+        version,
+        path,
+        sha256,
+        unflagged_assert,
+    })
+}
+
+/// A severity named in a manifest: `fatal`, `warning` or `other`.
+fn severity(name: &str) -> Result<Severity, String> {
+    match name {
+        "fatal" => Ok(Severity::Fatal),
+        "warning" => Ok(Severity::Warning),
+        "other" => Ok(Severity::Other),
+        _ => Err(format!("{name:?}: expected fatal, warning or other")),
+    }
+}
+
+/// A `[[scenario]]` table (format 2).
+fn scenario(mut table: Table, format: u64, scenarios: &[Scenario]) -> Result<Scenario, Error> {
+    if format < 2 {
+        return Err(Error::bundle(format!(
+            "{MANIFEST_FILE}:{}: [[scenario]] needs format = 2",
+            table.header_line
+        )));
+    }
+    table.allow(&[
+        "name",
+        "namespace",
+        "root",
+        "identifier",
+        "fatal",
+        "warning",
+        "other",
+    ])?;
+    let name = table.required_string("name")?;
+    if name.trim().is_empty() || name.chars().any(char::is_control) {
+        return Err(table.error("name", "must be non-empty text on one line"));
+    }
+    if scenarios.iter().any(|s| s.name == name) {
+        return Err(table.error("name", &format!("scenario {name:?} twice")));
+    }
+    let namespace = table.required_string("namespace")?;
+    let root = table.required_string("root")?;
+    if !IDENTIFIED_ROOTS.contains(&(namespace.as_str(), root.as_str())) {
+        return Err(table.error(
+            "root",
+            &format!(
+                "{{{namespace}}}{root}: a scenario matches a UBL Invoice or CreditNote, or a CII CrossIndustryInvoice"
+            ),
+        ));
+    }
+    let identifier = table.required_string("identifier")?;
+    if identifier.is_empty() || identifier.chars().any(char::is_control) {
+        return Err(table.error("identifier", "must be non-empty text on one line"));
+    }
+    let mut levels: Vec<(String, Severity)> = Vec::new();
+    for key in ["fatal", "warning", "other"] {
+        let Some(ids) = table.optional_string(key)? else {
+            continue;
+        };
+        let level = severity(key).map_err(|m| table.error(key, &m))?;
+        let before = levels.len();
+        for id in ids.split([' ', '\t']).filter(|id| !id.is_empty()) {
+            if levels.iter().any(|(rule, _)| rule == id) {
+                return Err(table.error(key, &format!("rule id {id:?} given twice")));
+            }
+            levels.push((id.to_owned(), level));
+        }
+        if levels.len() == before {
+            return Err(table.error(key, "no rule id (rule ids separated by spaces)"));
+        }
+    }
+    if levels.is_empty() {
+        return Err(Error::bundle(format!(
+            "{}: no rule id (the keys fatal, warning and other)",
+            table.where_()
+        )));
+    }
+    table.finish()?;
+    Ok(Scenario {
+        name,
+        namespace,
+        root,
+        identifier,
+        levels,
+    })
 }
 
 /// A `[[resource]]` table (format 2), whose path no file of the bundle has yet.
@@ -347,12 +556,14 @@ enum Value {
     Integer(u64),
 }
 
-/// The kind of a table: the top-level one, `[[stylesheet]]` or `[[resource]]`.
+/// The kind of a table: the top-level one, `[[stylesheet]]`, `[[resource]]` or
+/// `[[scenario]]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TableKind {
     Top,
     Stylesheet,
     Resource,
+    Scenario,
 }
 
 /// The keys of one table, in order, with their lines. The top-level table has header
@@ -366,7 +577,8 @@ struct RawTable {
 
 /// Reads the accepted TOML subset: comments, blank lines, `key = value` lines with a
 /// bare key and a basic string (escapes `\"` and `\\` only), a literal string or a
-/// non-negative integer, and `[[stylesheet]]` and `[[resource]]` headers.
+/// non-negative integer, and `[[stylesheet]]`, `[[resource]]` and `[[scenario]]`
+/// headers.
 fn parse_tables(text: &str) -> Result<Vec<RawTable>, Error> {
     let mut tables = vec![RawTable {
         kind: TableKind::Top,
@@ -385,6 +597,7 @@ fn parse_tables(text: &str) -> Result<Vec<RawTable>, Error> {
             let header = [
                 ("[stylesheet]]", TableKind::Stylesheet),
                 ("[resource]]", TableKind::Resource),
+                ("[scenario]]", TableKind::Scenario),
             ]
             .into_iter()
             .find_map(|(h, kind)| rest.strip_prefix(h).map(|after| (after_value(after), kind)));
@@ -400,7 +613,7 @@ fn parse_tables(text: &str) -> Result<Vec<RawTable>, Error> {
                 Some((Err(m), _)) => return Err(fail(&m)),
                 None => {
                     return Err(fail(
-                        "the only tables allowed are [[stylesheet]] and [[resource]]",
+                        "the only tables allowed are [[stylesheet]], [[resource]] and [[scenario]]",
                     ));
                 }
             }
@@ -516,6 +729,9 @@ impl Table {
             ),
             TableKind::Resource => {
                 format!("{MANIFEST_FILE}: [[resource]] of line {}", self.header_line)
+            }
+            TableKind::Scenario => {
+                format!("{MANIFEST_FILE}: [[scenario]] of line {}", self.header_line)
             }
         }
     }
@@ -676,6 +892,146 @@ sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
             (
                 text.replace("path = \"b.xml\"\n", ""),
                 "[[resource]] of line 22: the `path` key is missing",
+            ),
+        ] {
+            let message = error(&bad);
+            assert!(
+                message.contains(expected),
+                "{expected:?} not in {message:?}"
+            );
+        }
+    }
+
+    /// [`GOOD`] in format 2, the second stylesheet failing closed on unflagged asserts,
+    /// with two scenarios.
+    fn with_severities() -> String {
+        format!(
+            "{}
+[[scenario]]
+name = \"S 1\"
+namespace = \"{UBL_INVOICE}\"
+root = \"Invoice\"
+identifier = \"urn:x\"
+fatal = \"R-1  R-2\"
+other = \"R-3\"
+
+[[scenario]]  # CII
+name = \"S 2\"
+namespace = \"{CII}\"
+root = \"CrossIndustryInvoice\"
+identifier = \"urn:y#z\"
+warning = \"R-1\"
+",
+            GOOD.replace("format = 1", "format = 2").replace(
+                "path = \"x.xsl\"",
+                "path = \"x.xsl\"\nunflagged-assert = \"fatal\""
+            )
+        )
+    }
+
+    #[test]
+    fn format_2_reads_severities() {
+        let text = with_severities();
+        let rule_set = RuleSet::parse(&text).unwrap();
+        let unflagged: Vec<Severity> = rule_set
+            .stylesheets()
+            .iter()
+            .map(StylesheetEntry::unflagged_assert)
+            .collect();
+        assert_eq!(unflagged, [Severity::Other, Severity::Fatal]);
+        let [s1, s2] = rule_set.scenarios() else {
+            panic!("{:?}", rule_set.scenarios());
+        };
+        assert_eq!(
+            (s1.name(), s1.namespace(), s1.root(), s1.identifier()),
+            ("S 1", UBL_INVOICE, "Invoice", "urn:x")
+        );
+        assert_eq!(
+            s1.levels(),
+            [
+                ("R-1".to_owned(), Severity::Fatal),
+                ("R-2".to_owned(), Severity::Fatal),
+                ("R-3".to_owned(), Severity::Other)
+            ]
+        );
+        assert_eq!(s1.level("R-2"), Some(Severity::Fatal));
+        assert_eq!(s1.level("R-4"), None);
+        assert_eq!(
+            (s2.root(), s2.identifier()),
+            ("CrossIndustryInvoice", "urn:y#z")
+        );
+        assert_eq!(s2.level("R-1"), Some(Severity::Warning));
+        // Format 1 and format 2 without them: as before.
+        assert_eq!(RuleSet::parse(GOOD).unwrap().scenarios(), []);
+        assert!(
+            RuleSet::parse(GOOD)
+                .unwrap()
+                .stylesheets()
+                .iter()
+                .all(|s| s.unflagged_assert() == Severity::Other)
+        );
+    }
+
+    #[test]
+    fn severities_are_refused_with_the_line() {
+        let text = with_severities();
+        let in_format_1 = text.replace("format = 2", "format = 1");
+        assert!(
+            error(&in_format_1).contains("bundle.toml:17: `unflagged-assert`: needs format = 2")
+        );
+        let scenario_in_format_1 = in_format_1.replace("unflagged-assert = \"fatal\"\n", "");
+        assert!(
+            error(&scenario_in_format_1).contains("bundle.toml:19: [[scenario]] needs format = 2"),
+            "{}",
+            error(&scenario_in_format_1)
+        );
+        for (bad, expected) in [
+            (
+                text.replace(
+                    "unflagged-assert = \"fatal\"",
+                    "unflagged-assert = \"error\"",
+                ),
+                "`unflagged-assert`: \"error\": expected fatal, warning or other",
+            ),
+            (
+                text.replace("name = \"S 2\"", "name = \"S 1\""),
+                "scenario \"S 1\" twice",
+            ),
+            (
+                text.replace("root = \"Invoice\"", "root = \"CreditNote\""),
+                "`root`: {urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}CreditNote: a scenario matches",
+            ),
+            (
+                text.replace("root = \"Invoice\"", "root = \"Order\""),
+                "a scenario matches a UBL Invoice or CreditNote, or a CII CrossIndustryInvoice",
+            ),
+            (
+                text.replace("other = \"R-3\"", "other = \"R-2\""),
+                "rule id \"R-2\" given twice",
+            ),
+            (
+                text.replace("warning = \"R-1\"", "warning = \" \""),
+                "`warning`: no rule id",
+            ),
+            (
+                text.replace("warning = \"R-1\"\n", ""),
+                "[[scenario]] of line 28: no rule id (the keys fatal, warning and other)",
+            ),
+            (
+                text.replace("identifier = \"urn:x\"", "identifier = \"\""),
+                "`identifier`",
+            ),
+            (
+                text.replace("name = \"S 1\"", "name = \" \""),
+                "`name`: must be non-empty",
+            ),
+            (
+                text.replace("identifier = \"urn:x\"\n", ""),
+                "[[scenario]] of line 20: the `identifier` key is missing",
+            ),
+            (
+                text.replace("other = \"R-3\"", "information = \"R-3\""),
+                "unknown key `information`",
             ),
         ] {
             let message = error(&bad);
