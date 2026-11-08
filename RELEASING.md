@@ -68,16 +68,35 @@ tagged commit:
 
 ```sh
 git checkout vX.Y.Z
-cargo publish --locked --workspace      # every crate but xtask (publish = false), in dependency order
+cargo publish --locked --workspace      # every crate but those with publish = false, in dependency order
 ```
+
+The crates not published are `xtask` (repository tooling), `einvoice-testkit` (helpers of the
+tests; the crates depend on it by path without a version, which cargo leaves out of their
+published manifests) and `einvoice-wasm` (the source of the npm package, published on npm
+below).
 
 `cargo publish --workspace` publishes the crates in dependency order and waits for each to be
 available before publishing those that depend on it (dev-dependencies included). It
 uploads them in this order, which also works one at a time (`cargo publish --locked -p NAME`):
-`einvoice-svrl`, `einvoice-xdm`, `einvoice-xpath`, `einvoice-xsd`, `einvoice-xpath-eval`,
-`einvoice-xslt`, `einvoice-xslt-exec`, `einvoice-validator`, `einvoice-cli`. A published
-version cannot be replaced: a mistake is fixed by the next patch version (and the faulty
-version yanked).
+`einvoice-pdf`, `einvoice-svrl`, `einvoice-xdm`, `einvoice-xml`, `einvoice-xpath`,
+`einvoice-xsd`, `einvoice-xpath-eval`, `einvoice-xslt`, `einvoice-xslt-exec`,
+`einvoice-validator`, `einvoice-cli`. `einvoice-pdf` must be published before
+`einvoice-validator`, which depends on it (feature `pdf`); `einvoice-xml` depends on no other
+crate of the workspace. A published version cannot be replaced: a mistake is fixed by the next
+patch version (and the faulty version yanked).
+
+## Publishing on npm
+
+The npm package `einvoice-validator` is built from `crates/einvoice-wasm` at the version of the
+workspace (`scripts/release.sh` sets the `version` of `crates/einvoice-wasm/npm/package.json`
+with the crates'). From the tagged commit, with the pinned tools:
+
+```sh
+crates/einvoice-wasm/npm.sh tools               # wasm-bindgen-cli and wasm-opt, pinned
+crates/einvoice-wasm/npm.sh build test pack     # target/npm/einvoice-validator/, tested
+(cd target/npm/einvoice-validator && npm publish)
+```
 
 Publishing from the release workflow with crates.io trusted publishing
 ([RFC 3691](https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html)), with a

@@ -2,11 +2,12 @@
 # The checks, run the same way locally and in CI (.github/workflows/ci.yml,
 # oracle.yml and peppol.yml call the jobs below): formatting, lints, docs,
 # tests, the crates without their default features, the WebAssembly build and
-# examples, the packages of the publishable crates, the dependency policy, the workflow linters, the upstream pins, the shell
+# examples, the npm package, the packages of the publishable crates, the
+# dependency policy, the workflow linters, the upstream pins, the shell
 # scripts and their tests, the reference oracles and, when something is
 # staged, the privacy guard.
 #
-#   scripts/check.sh                # every job: fmt clippy doc test features wasm package deny actionlint zizmor pins guards oracle peppol facturx xrechnung fr-ctc privacy
+#   scripts/check.sh                # every job: fmt clippy doc test features wasm npm package deny actionlint zizmor pins guards oracle peppol facturx xrechnung fr-ctc privacy
 #   scripts/check.sh clippy test    # selected jobs
 #   scripts/check.sh toolchain      # only install the pinned toolchain
 #
@@ -26,7 +27,11 @@
 # (Saxon-HE, the Peppol release, Maven and the Schematron compiler); without
 # them it prints SKIPPED, except in CI, where it fails. So do the facturx,
 # xrechnung and fr-ctc jobs (the Factur-X, XRechnung and French corpora, built
-# in target/ by their fetch scripts and cross-checked).
+# in target/ by their fetch scripts and cross-checked). The npm job needs the
+# wasm target, Node.js and npm, and the tools that crates/einvoice-wasm/npm.sh
+# tools installs (wasm-bindgen-cli, wasm-opt); without them it prints
+# SKIPPED, except in CI, where it fails (npm.sh itself skips a missing
+# browser or TypeScript locally and fails in CI).
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -112,13 +117,16 @@ wasm_imports() {
     echo 0
 }
 
-# The library builds for WebAssembly (wasm32-unknown-unknown); then the
-# wasm-smoke example of einvoice-xpath-eval (parse and evaluate) and the
-# wasm-validate example of einvoice-validator (the built-in rule set on two
-# embedded corpus documents) are built in release mode for that target, must
-# import nothing, and must return 0 under wasmtime (WASMTIME, default wasmtime
-# on PATH). Without wasmtime, the runs are SKIPPED, except in CI, where it
-# fails (CI installs a pinned release).
+# The library, the PDF reader and the streaming XML parser build for
+# WebAssembly (wasm32-unknown-unknown); then the wasm-smoke example of
+# einvoice-xpath-eval (parse and evaluate), the wasm-validate example of
+# einvoice-validator (the built-in rule set on two embedded corpus documents),
+# the wasm-extract example of einvoice-pdf (two PDF files built in memory) and
+# the wasm-smoke example of einvoice-xml (well-formed and malformed documents)
+# are built in release mode for that target, must import nothing, and must
+# return 0 under wasmtime (WASMTIME, default wasmtime on PATH). Without
+# wasmtime, the runs are SKIPPED, except in CI, where it fails (CI installs a
+# pinned release).
 job_wasm() {
     need_toolchain || return 1
     local target=wasm32-unknown-unknown
@@ -126,7 +134,7 @@ job_wasm() {
         missing "the $target target is not installed (rustup target add $target)"
         return
     fi
-    cargo build --locked --target "$target" -p einvoice-validator || return 1
+    cargo build --locked --target "$target" -p einvoice-validator -p einvoice-pdf -p einvoice-xml || return 1
     local status=0 package example wasm imports result
     local wasmtime=${WASMTIME:-wasmtime}
     if ! command -v "$wasmtime" >/dev/null 2>&1; then
@@ -135,7 +143,9 @@ job_wasm() {
     else
         "$wasmtime" --version
     fi
-    for package in einvoice-xpath-eval:wasm-smoke einvoice-validator:wasm-validate; do
+    # One at a time: two examples share the name wasm-smoke, and so the file.
+    for package in einvoice-xpath-eval:wasm-smoke einvoice-validator:wasm-validate \
+        einvoice-pdf:wasm-extract einvoice-xml:wasm-smoke; do
         example=${package#*:}
         package=${package%%:*}
         cargo build --locked --release --target "$target" -p "$package" --example "$example" || return 1
@@ -161,6 +171,38 @@ job_wasm() {
         fi
     done
     return "$status"
+}
+# The npm package einvoice-validator (crates/einvoice-wasm/README.md):
+# crates/einvoice-wasm/npm.sh builds it (opt-level 3, LTO, wasm-bindgen,
+# wasm-opt), runs its Node.js tests (the API, the CEN UBL and CII corpora
+# against the Saxon-HE goldens), the TypeScript check and the browser test
+# (headless Chrome and Firefox) on the packed package, then npm pack
+# --dry-run. Needs the wasm target, Node.js, npm and jq, and wasm-bindgen-cli
+# and wasm-opt at their pinned versions (crates/einvoice-wasm/npm.sh tools
+# installs them in EINVOICE_WASM_TOOLS; WASM_BINDGEN and WASM_OPT name others);
+# without them SKIPPED, except in CI, where it fails.
+job_npm() {
+    need_toolchain || return 1
+    local target=wasm32-unknown-unknown program
+    local tools=${EINVOICE_WASM_TOOLS:-${XDG_CACHE_HOME:-$HOME/.cache}/einvoice-validator/wasm-tools}
+    if ! rustup target list --installed --toolchain "$(toolchain_channel)" | grep -qx "$target"; then
+        missing "the npm package (the $target target is not installed: rustup target add $target)"
+        return
+    fi
+    for program in node npm jq; do
+        if ! command -v "$program" >/dev/null 2>&1; then
+            missing "the npm package ($program is not installed)"
+            return
+        fi
+    done
+    for program in wasm-bindgen:"${WASM_BINDGEN:-}" wasm-opt:"${WASM_OPT:-}"; do
+        if [ -z "${program#*:}" ] && [ ! -x "$tools/bin/${program%%:*}" ] &&
+            ! command -v "${program%%:*}" >/dev/null 2>&1; then
+            missing "the npm package (${program%%:*} is not installed: crates/einvoice-wasm/npm.sh tools)"
+            return
+        fi
+    done
+    crates/einvoice-wasm/npm.sh build test pack
 }
 # The publishable crates (every member whose publish is not false), packaged
 # as crates.io would receive them, then each built from its own package
@@ -296,7 +338,10 @@ job_guards() {
 # every disagreement must be explained); then Saxon-HE (fetched from Maven
 # Central, checksum verified) re-run on every case, on the atomic value probes
 # of einvoice-xdm, on the expression probes of einvoice-xpath-eval and on the
-# stylesheet probes of einvoice-xslt-exec: the goldens must not change.
+# stylesheet probes of einvoice-xslt-exec: the goldens must not change; and
+# Saxon-HE on the hand-written cases of einvoice-xml (its saxon-check example:
+# the same verdict and data, but for the differences it lists with their
+# reasons).
 # Without xmllint or Java, that run is SKIPPED, except in CI, where it fails.
 job_oracle() {
     need_toolchain || return 1
@@ -322,7 +367,8 @@ job_oracle() {
     cargo xtask oracle || return 1
     cargo run --locked -p einvoice-xdm --example saxon-oracle || return 1
     cargo run --locked -p einvoice-xpath-eval --example saxon-oracle || return 1
-    cargo run --locked -p einvoice-xslt-exec --example saxon-probes
+    cargo run --locked -p einvoice-xslt-exec --example saxon-probes || return 1
+    cargo run --locked -p einvoice-xml --example saxon-check
 }
 # The Peppol BIS Billing 3.0 corpus (corpus/README.md), which is not committed
 # because the Peppol files carry no licence: scripts/fetch-peppol.sh downloads
@@ -419,7 +465,7 @@ job_privacy() {
     scripts/privacy-guard.sh staged && echo "privacy guard: staged content clean"
 }
 
-ALL=(fmt clippy doc test features wasm package deny actionlint zizmor pins guards oracle peppol facturx xrechnung fr-ctc privacy)
+ALL=(fmt clippy doc test features wasm npm package deny actionlint zizmor pins guards oracle peppol facturx xrechnung fr-ctc privacy)
 
 jobs=("$@")
 [ ${#jobs[@]} -eq 0 ] && jobs=("${ALL[@]}")
