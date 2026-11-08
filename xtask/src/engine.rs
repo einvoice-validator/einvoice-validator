@@ -3,9 +3,11 @@
 //! default `target/release/einvoice-validate`) runs a bundle of that one
 //! stylesheet (and the files it reads with `document()`) on every case, with
 //! `--format svrl`; its report, in canonical form, is compared with the
-//! Saxon-HE golden. This is a report, not a check: it never fails on a
-//! difference. It is written to `<corpus>/engine-status.txt` in the cache and
-//! summarised on standard output.
+//! Saxon-HE golden. A case deeper than the default maximum depth runs with
+//! the maximum raised (`--max-depth`), as in the equivalence tests. This is a
+//! report, not a check: it never fails on a difference. It is written to
+//! `<corpus>/engine-status.txt` in the cache and summarised on standard
+//! output.
 //!
 //! Each case ends in one of: `pass` (the canonical report equals the golden,
 //! or the engine stops with the error code Saxon-HE stopped with), `differ`
@@ -99,7 +101,8 @@ pub(crate) fn run(root: &Path, family: &Family, cli: &Path) -> Result<String> {
 }
 
 /// `<corpus>/engine/<stylesheet>/`: a bundle of the stylesheet alone, without
-/// an XML schema, with copies of the stylesheet and of its side files.
+/// an XML schema, with copies of the stylesheet and of its side files, the
+/// resources of the bundle.
 fn write_bundle(
     corpus_dir: &Path,
     base: &Path,
@@ -115,14 +118,19 @@ fn write_bundle(
     let bytes = util::read(&util::join(base, stylesheet.xslt))?;
     let sha256 = util::sha256_hex(&bytes);
     util::write(&dir.join(file), &bytes)?;
+    let mut manifest = format!(
+        "# One stylesheet of {}, written by `cargo xtask engine-status`.\nformat = 2\nname = \"engine-status\"\ntitle = \"{} {}\"\nversion = \"0\"\n\n[[stylesheet]]\nname = \"{}\"\npath = \"{file}\"\nsha256 = \"{sha256}\"\n",
+        rule_set.name, rule_set.name, stylesheet.name, stylesheet.name
+    );
     for (side, _) in stylesheet.side_files {
         let bytes = util::read(&util::join(base, &format!("{source_dir}/{side}")))?;
         util::write(&util::join(&dir, side), &bytes)?;
+        let _ = write!(
+            manifest,
+            "\n[[resource]]\npath = \"{side}\"\nsha256 = \"{}\"\n",
+            util::sha256_hex(&bytes)
+        );
     }
-    let manifest = format!(
-        "# One stylesheet of {}, written by `cargo xtask engine-status`.\nformat = 1\nname = \"engine-status\"\ntitle = \"{} {}\"\nversion = \"0\"\n\n[[stylesheet]]\nname = \"{}\"\npath = \"{file}\"\nsha256 = \"{sha256}\"\n",
-        rule_set.name, rule_set.name, stylesheet.name, stylesheet.name
-    );
     util::write(&dir.join("bundle.toml"), manifest.as_bytes())?;
     Ok(dir)
 }
@@ -134,8 +142,37 @@ struct Run {
     stderr: String,
 }
 
+/// The maximum element depth of the engine (`--max-depth`), unless a case is
+/// deeper: then [`RAISED_MAX_DEPTH`], as the equivalence tests raise it to
+/// compare such a case with Saxon-HE, which has no limit.
+const DEFAULT_MAX_DEPTH: usize = 256;
+const RAISED_MAX_DEPTH: usize = 1024;
+
+/// The element depth of a document (the document element is at depth 1); 0
+/// for text that is not XML.
+fn depth(text: &str) -> usize {
+    let options = roxmltree::ParsingOptions {
+        allow_dtd: false,
+        nodes_limit: u32::MAX,
+        ..roxmltree::ParsingOptions::default()
+    };
+    let Ok(doc) = roxmltree::Document::parse_with_options(text, options) else {
+        return 0;
+    };
+    doc.descendants()
+        .filter(roxmltree::Node::is_element)
+        .map(|n| n.ancestors().filter(roxmltree::Node::is_element).count())
+        .max()
+        .unwrap_or(0)
+}
+
 fn invoke(cli: &Path, bundle: &Path, input: &Path) -> Result<Run> {
-    let output = Command::new(cli)
+    let deep = std::fs::read_to_string(input).is_ok_and(|t| depth(&t) > DEFAULT_MAX_DEPTH);
+    let mut command = Command::new(cli);
+    if deep {
+        command.arg("--max-depth").arg(RAISED_MAX_DEPTH.to_string());
+    }
+    let output = command
         .arg("--bundle")
         .arg(bundle)
         .arg("--format")
@@ -275,13 +312,13 @@ fn judge(
         .to_str()
         .ok_or_else(|| Error::new(format!("{}: not UTF-8", input.display())))?
         .to_owned();
-    let canonical = match svrl::split(
+    let canonical = match svrl::check(
         &run.stdout,
         stylesheet.generator,
         &|uri| svrl::is_document_uri(uri, &path),
         false,
     ) {
-        Ok((canonical, _)) => canonical,
+        Ok(canonical) => canonical,
         Err(e) => {
             return Ok(CaseResult::Differ(format!(
                 "report not canonicalisable: {e}"

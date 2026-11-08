@@ -107,9 +107,15 @@ the XML Mutate cases, on which Saxon-HE may stop too) are copied into another di
 with `-t` instead of `-threads`.
 
 The reports of a stylesheet compiled with SchXslt (XRechnung) start with an `svrl:metadata`
-element that the canonical form does not represent: it must record the fixed time, and is kept
-in `<case id>.metadata.txt`, one line per element; `<case id>.svrl.txt` is the canonical form of
-the rest of the report (`xtask/src/svrl.rs`).
+element, which must record the fixed time: their goldens are in version 2 of the canonical
+form, which represents it (`SVRL-CANONICAL.md`, `xtask/src/svrl.rs`).
+
+Saxon-HE keeps, in a compiled stylesheet, what it learns of the variables it evaluates over
+every document it transforms with it (its `LearningEvaluator`: a variable it has seen read 20
+times is evaluated where it is bound from then on): in a run over many documents, a later one
+can stop with a dynamic error raised by a value that nothing reads, where alone it would not.
+A golden is what Saxon-HE gives on its document alone: a mutation case (or XML Mutate case) on
+which the run of all of them stops is run again alone, and that run decides its golden.
 
 ## Cross-checks
 
@@ -167,15 +173,24 @@ The same way, `scripts/check.sh facturx`, `xrechnung` and `fr-ctc` (CI:
 `.github/workflows/rulesets.yml`) run `scripts/fetch-facturx.sh`, `fetch-xrechnung.sh` or
 `fetch-fr-ctc.sh` (every input pinned by its SHA-256, downloads cached in `target/downloads/`),
 then `cargo xtask facturx`, `xrechnung` or `fr-ctc`, which build each corpus in the cache,
-write its Saxon-HE goldens and run the cross-checks above. Why nothing of them is committed, what
-is fetched from where, and the cases, are in the README of each directory. The fetch scripts also
-write rule-set bundles (`bundle.toml`) for `einvoice-validate --bundle`.
+write its Saxon-HE goldens and run the cross-checks above, then run the equivalence test of the
+family (`tests/facturx_equivalence.rs`, `tests/xrechnung_equivalence.rs` or
+`tests/fr_ctc_equivalence.rs` of `crates/einvoice-xslt-exec`): every stylesheet on every case
+and mutation case, its canonical SVRL equal to the golden, or the error code Saxon-HE stopped
+with, the engine given the clock of the oracle, the code lists the Factur-X stylesheets read
+with `document()` and nothing else, and the maximum depth raised for a case deeper than the
+default, which must refuse it. Without the cache these tests print SKIPPED and pass, unless
+`EINVOICE_FACTURX_REQUIRED`, `EINVOICE_XRECHNUNG_REQUIRED` or `EINVOICE_FR_CTC_REQUIRED` is set,
+as the jobs set them. Why nothing of them is committed, what is fetched from where, and the
+cases, are in the README of each directory. The fetch scripts also write rule-set bundles
+(`bundle.toml`, format 2, the code lists as resources) for `einvoice-validate --bundle`.
 
 `cargo xtask engine-status <family>` runs `einvoice-validate` (`--cli`, by default
 `target/release/einvoice-validate`) on those corpora, one stylesheet at a time, and writes, for
 each rule set, which cases give the Saxon-HE result, which differ, which fail, and which
-stylesheets the engine refuses to load (`<corpus>/engine-status.txt` in the cache). It reports;
-it does not check.
+stylesheets the engine refuses to load (`<corpus>/engine-status.txt` in the cache); a case
+deeper than the default maximum depth runs with `--max-depth 1024`. It reports; it does not
+check.
 
 ## Commands
 
@@ -188,9 +203,9 @@ cargo xtask crosscheck          # goldens against the VEFA expectations
 scripts/fetch-peppol.sh         # Peppol release and its compiled stylesheets into target/peppol/, checksums verified
 cargo xtask peppol              # Peppol corpus, Saxon goldens and cross-check, in target/peppol/ (needs Java)
 scripts/check.sh peppol         # the two above, then the Peppol equivalence test
-scripts/check.sh facturx        # scripts/fetch-facturx.sh, then cargo xtask facturx (needs Java)
-scripts/check.sh xrechnung      # scripts/fetch-xrechnung.sh, then cargo xtask xrechnung (needs Java)
-scripts/check.sh fr-ctc         # scripts/fetch-fr-ctc.sh, then cargo xtask fr-ctc (needs Java)
+scripts/check.sh facturx        # scripts/fetch-facturx.sh, cargo xtask facturx, the equivalence test (needs Java)
+scripts/check.sh xrechnung      # scripts/fetch-xrechnung.sh, cargo xtask xrechnung, the equivalence test (needs Java)
+scripts/check.sh fr-ctc         # scripts/fetch-fr-ctc.sh, cargo xtask fr-ctc, the equivalence test (needs Java)
 cargo xtask engine-status FAMILY  # the engine on the corpora of a family: what passes, differs, fails
 ```
 

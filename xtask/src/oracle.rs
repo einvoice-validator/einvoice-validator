@@ -173,7 +173,7 @@ fn run_stylesheet(
                 ))
                 .join(staged_name(index));
             let raw = util::read_string(&report)?;
-            let (canonical, metadata) = svrl::split(
+            let canonical = svrl::check(
                 &raw,
                 stylesheet.generator,
                 &|uri| svrl::is_document_uri(uri, &staged),
@@ -181,17 +181,6 @@ fn run_stylesheet(
             )
             .map_err(|e| Error::new(format!("{}: {e}", case.id)))?;
             count(&canonical, &mut outcome)?;
-            if let Some(metadata) = metadata {
-                let golden = case.metadata_golden(rule_set, stylesheet);
-                compare_or_write(
-                    &base,
-                    &golden,
-                    &metadata,
-                    options.write,
-                    &mut outcome.problems,
-                )?;
-                goldens.insert(golden);
-            }
             (case.golden(rule_set, stylesheet), canonical)
         };
         if text.contains(&work_text) || text.contains(&staged_name(index)) {
@@ -261,10 +250,59 @@ fn run_saxon(
         };
         if mutation {
             diagnostics = run.diagnostics(indexes)?;
+            // Saxon-HE keeps, in the compiled stylesheet, what it learns of the
+            // variables it evaluates (`LearningEvaluator`), over every document
+            // of the run: a variable it has seen read 20 times is evaluated
+            // eagerly from then on, so a later document can fail on a value
+            // that nothing reads, where alone it would not. A golden is what
+            // Saxon-HE gives on the document alone: a case that failed is run
+            // again, alone.
+            let failed: Vec<usize> = diagnostics
+                .iter()
+                .filter(|(_, d)| d.error.is_some())
+                .map(|(i, _)| *i)
+                .collect();
+            for index in failed {
+                let alone = run_alone(options, class_path, &xslt, work, &input, &output, index)?;
+                diagnostics.insert(index, alone);
+            }
         } else if !run.success || !run.stdout.trim().is_empty() || !run.stderr.trim().is_empty() {
             return Err(run.failure("a clean run prints nothing"));
         }
     }
+    Ok(diagnostics)
+}
+
+/// Runs Saxon-HE with `xslt` on the staged case `index` of `input` alone, with
+/// `-t`, and returns its diagnostics; when it does not fail, its report
+/// replaces the one of the run of all the cases in `output`.
+fn run_alone(
+    options: &Options,
+    class_path: &OsString,
+    xslt: &Path,
+    work: &Path,
+    input: &Path,
+    output: &Path,
+    index: usize,
+) -> Result<Diagnostics> {
+    let dir = work.join(format!("alone-{index}"));
+    util::remove_dir(&dir)?;
+    let (alone_in, alone_out) = (dir.join("in"), dir.join("out"));
+    for d in [&alone_in, &alone_out] {
+        std::fs::create_dir_all(d)
+            .map_err(|e| Error::new(format!("cannot create {}: {e}", d.display())))?;
+    }
+    let name = staged_name(index);
+    util::write(&alone_in.join(&name), &util::read(&input.join(&name))?)?;
+    let run = saxon(options, class_path, xslt, &alone_in, &alone_out, &["-t"])?;
+    let diagnostics = run
+        .diagnostics(&[index])?
+        .remove(&index)
+        .unwrap_or_default();
+    if diagnostics.error.is_none() {
+        util::write(&output.join(&name), &util::read(&alone_out.join(&name))?)?;
+    }
+    util::remove_dir(&dir)?;
     Ok(diagnostics)
 }
 

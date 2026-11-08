@@ -37,8 +37,6 @@ pub(crate) const MUTATION_INDEX: &str = "mutations.tsv";
 pub(crate) const VEFA_DIR: &str = "vefa";
 /// Suffix of a golden file, appended to the case id.
 pub(crate) const GOLDEN_SUFFIX: &str = ".svrl.txt";
-/// Suffix of the golden of the `svrl:metadata` of a SchXslt report.
-pub(crate) const METADATA_SUFFIX: &str = ".metadata.txt";
 /// Suffix of the golden of a case on which Saxon-HE stops with an error.
 pub(crate) const ERROR_SUFFIX: &str = ".error.txt";
 
@@ -77,12 +75,6 @@ impl Case {
                 .expectation
                 .as_ref()
                 .is_some_and(|e| e.kind == ExpectationKind::Xmute)
-    }
-
-    /// The golden of the `svrl:metadata` of the report of a SchXslt
-    /// stylesheet (`crate::svrl::split`).
-    pub(crate) fn metadata_golden(&self, rule_set: &RuleSet, stylesheet: &Stylesheet) -> String {
-        self.golden_with(rule_set, stylesheet, METADATA_SUFFIX)
     }
 
     /// The error golden of this case for a stylesheet (mutation cases only).

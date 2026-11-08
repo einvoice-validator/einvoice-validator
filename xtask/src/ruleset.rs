@@ -42,8 +42,8 @@ pub(crate) enum Generator {
     IsoSkeleton,
     /// SchXslt (the XRechnung configuration): each report starts with an
     /// `svrl:metadata` element (the processor, the time of the run, the
-    /// compiler and the time of the compilation), outside what the canonical
-    /// form represents; it is checked and kept apart (`crate::svrl`).
+    /// compiler and the time of the compilation), which canonical form 2
+    /// represents; it is checked (`crate::svrl`).
     SchXslt,
 }
 

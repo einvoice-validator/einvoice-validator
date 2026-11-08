@@ -2,7 +2,10 @@
 //! Language of ISO/IEC 19757-3). The format is specified in `corpus/SVRL-CANONICAL.md` of
 //! the repository; in short:
 //!
-//! - the first line is `svrl-canonical 1`;
+//! - the first line is `svrl-canonical 1`, or `svrl-canonical 2` for a report with an
+//!   `svrl:metadata` element (SchXslt writes one), which version 2 represents: its
+//!   descendants, outside the SVRL namespace, one line each, named `{namespace}local`, the
+//!   time of the run written `{run-time}`;
 //! - then one line per SVRL element and comment, in document order:
 //!   `<indent><kind>( <attribute>="<value>")*( "<text>")?`, the root and its
 //!   children at indent 0, their children two spaces further in;
@@ -82,10 +85,17 @@ pub fn normalize_space(text: &str) -> String {
 const SVRL_NS: &str = "http://purl.oclc.org/dsdl/svrl";
 /// The XML namespace (`xml:lang`, ...).
 const XML_NS: &str = "http://www.w3.org/XML/1998/namespace";
-/// First line of every canonical file.
+/// First line of a canonical file of version 1: a report without `svrl:metadata`.
 pub const HEADER: &str = "svrl-canonical 1";
+/// First line of a canonical file of version 2: a report with an `svrl:metadata`.
+pub const HEADER_V2: &str = "svrl-canonical 2";
 /// Stands for the URI of the validated document.
 pub const DOCUMENT_PLACEHOLDER: &str = "{document}";
+/// Stands for the time of the run in `svrl:metadata` (version 2).
+pub const RUN_TIME_PLACEHOLDER: &str = "{run-time}";
+/// The Dublin Core terms namespace (`dct:created`, the time of the run in
+/// `svrl:metadata`).
+const DCT_NS: &str = "http://purl.org/dc/terms/";
 
 /// SVRL elements that hold other elements.
 const CONTAINERS: &[&str] = &[
@@ -126,11 +136,204 @@ pub fn canonicalize(svrl: &str, document_uri: &dyn Fn(&str) -> bool) -> Result<S
     for node in doc.root().children() {
         check_outside_root(node)?;
     }
+    let metadata = metadata_elements(root);
+    if metadata.len() > 1 {
+        return Err(Error::new("SVRL: more than one svrl:metadata"));
+    }
     let mut out = String::new();
-    out.push_str(HEADER);
+    out.push_str(if metadata.is_empty() {
+        HEADER
+    } else {
+        HEADER_V2
+    });
     out.push('\n');
     element(root, 0, 1, document_uri, &mut out)?;
     Ok(out)
+}
+
+/// The `svrl:metadata` children of the root.
+fn metadata_elements<'a, 'input>(root: Node<'a, 'input>) -> Vec<Node<'a, 'input>> {
+    root.children()
+        .filter(|n| {
+            n.is_element()
+                && n.tag_name().namespace() == Some(SVRL_NS)
+                && n.tag_name().name() == "metadata"
+        })
+        .collect()
+}
+
+/// The time of the run that a report's `svrl:metadata` records (its `dct:created`
+/// child, which [`canonicalize`] writes [`RUN_TIME_PLACEHOLDER`]), whitespace trimmed;
+/// `None` for a report without `svrl:metadata`.
+///
+/// # Errors
+///
+/// The text is not well-formed XML, the report has more than one `svrl:metadata`, or
+/// its `svrl:metadata` has not exactly one `dct:created`.
+pub fn run_time(svrl: &str) -> Result<Option<String>> {
+    let options = ParsingOptions {
+        allow_dtd: false,
+        nodes_limit: u32::MAX,
+        ..ParsingOptions::default()
+    };
+    let doc = Document::parse_with_options(svrl, options)
+        .map_err(|e| Error::new(format!("SVRL: {e}")))?;
+    let metadata = metadata_elements(doc.root_element());
+    match metadata.as_slice() {
+        [] => Ok(None),
+        [metadata] => run_time_of(*metadata).map(|(_, time)| Some(time)),
+        _ => Err(Error::new("SVRL: more than one svrl:metadata")),
+    }
+}
+
+/// The `dct:created` child of `svrl:metadata` and its text, trimmed.
+fn run_time_of<'a, 'input>(metadata: Node<'a, 'input>) -> Result<(Node<'a, 'input>, String)> {
+    let created: Vec<Node<'_, '_>> = metadata
+        .children()
+        .filter(|n| {
+            n.is_element()
+                && n.tag_name().namespace() == Some(DCT_NS)
+                && n.tag_name().name() == "created"
+        })
+        .collect();
+    let [created] = created.as_slice() else {
+        return Err(Error::new(
+            "SVRL: svrl:metadata without exactly one dct:created (the time of the run)",
+        ));
+    };
+    let text: String = created.children().filter_map(|c| c.text()).collect();
+    Ok((
+        *created,
+        text.trim_matches([' ', '\t', '\r', '\n']).to_owned(),
+    ))
+}
+
+/// Whether `text` is the lexical form of an `xs:dateTime` with a timezone, as
+/// `fn:current-dateTime()` writes it: `YYYY-MM-DDThh:mm:ss`, optional fractional
+/// seconds, then `Z` or `+hh:mm`/`-hh:mm`.
+fn is_date_time_with_timezone(text: &str) -> bool {
+    let b = text.as_bytes();
+    let digits = |range: std::ops::Range<usize>| {
+        b.get(range)
+            .is_some_and(|d| d.iter().all(u8::is_ascii_digit))
+    };
+    let fixed = b.len() >= 20
+        && digits(0..4)
+        && b[4] == b'-'
+        && digits(5..7)
+        && b[7] == b'-'
+        && digits(8..10)
+        && b[10] == b'T'
+        && digits(11..13)
+        && b[13] == b':'
+        && digits(14..16)
+        && b[16] == b':'
+        && digits(17..19);
+    if !fixed {
+        return false;
+    }
+    let mut rest = &text[19..];
+    if let Some(fraction) = rest.strip_prefix('.') {
+        let n = fraction.bytes().take_while(u8::is_ascii_digit).count();
+        if n == 0 {
+            return false;
+        }
+        rest = &fraction[n..];
+    }
+    rest == "Z"
+        || (rest.len() == 6
+            && matches!(rest.as_bytes()[0], b'+' | b'-')
+            && rest.as_bytes()[1..3].iter().all(u8::is_ascii_digit)
+            && rest.as_bytes()[3] == b':'
+            && rest.as_bytes()[4..6].iter().all(u8::is_ascii_digit))
+}
+
+/// The lines of `svrl:metadata` (version 2): `metadata` with its attributes, then each
+/// descendant element one level further in, `{namespace}local`, its attributes sorted
+/// (`{namespace}name` for a namespaced one), and its text (normalised) when it has no
+/// element child. The time of the run, the `dct:created` child, is written
+/// [`RUN_TIME_PLACEHOLDER`]. Comments, processing instructions and mixed content are
+/// refused. The descendants are walked with an explicit stack.
+fn metadata_lines(metadata: Node<'_, '_>, out: &mut String) -> Result<()> {
+    let (run_time_node, run_time) = run_time_of(metadata)?;
+    if !is_date_time_with_timezone(&run_time) {
+        return Err(Error::new(format!(
+            "SVRL: the time of the run in svrl:metadata is not a dateTime with a timezone: {run_time:?}"
+        )));
+    }
+    let mut pending: Vec<(Node<'_, '_>, usize)> = vec![(metadata, 0)];
+    while let Some((node, depth)) = pending.pop() {
+        if depth >= MAX_LEVEL {
+            return Err(Error::new(format!(
+                "SVRL: svrl:metadata nested more than {MAX_LEVEL} deep at byte {}",
+                node.range().start
+            )));
+        }
+        push_indent(out, depth);
+        if node == metadata {
+            out.push_str("metadata");
+        } else {
+            let _ = write!(
+                out,
+                "{{{}}}{}",
+                node.tag_name().namespace().unwrap_or(""),
+                node.tag_name().name()
+            );
+        }
+        let mut attributes: Vec<(String, String)> = node
+            .attributes()
+            .map(|a| {
+                let key = match a.namespace() {
+                    None => a.name().to_owned(),
+                    Some(XML_NS) => format!("xml:{}", a.name()),
+                    Some(ns) => format!("{{{ns}}}{}", a.name()),
+                };
+                (key, a.value().to_owned())
+            })
+            .collect();
+        attributes.sort();
+        for (key, value) in &attributes {
+            out.push(' ');
+            out.push_str(key);
+            out.push('=');
+            push_quoted(out, value);
+        }
+        let mut text = String::new();
+        let mut elements = Vec::new();
+        for child in node.children() {
+            match child.node_type() {
+                NodeType::Element => elements.push(child),
+                NodeType::Text => text.push_str(child.text().unwrap_or("")),
+                NodeType::Comment | NodeType::PI | NodeType::Root => {
+                    return Err(Error::new(format!(
+                        "SVRL: a comment or processing instruction in svrl:metadata at byte {}",
+                        child.range().start
+                    )));
+                }
+            }
+        }
+        let text = normalize_space(&text);
+        if !elements.is_empty() && !text.is_empty() {
+            return Err(Error::new(format!(
+                "SVRL: mixed content in svrl:metadata at byte {}",
+                node.range().start
+            )));
+        }
+        if elements.is_empty() && node != metadata {
+            out.push(' ');
+            push_quoted(
+                out,
+                if node == run_time_node {
+                    RUN_TIME_PLACEHOLDER
+                } else {
+                    &text
+                },
+            );
+        }
+        out.push('\n');
+        pending.extend(elements.into_iter().rev().map(|e| (e, depth + 1)));
+    }
+    Ok(())
 }
 
 fn check_outside_root(node: Node<'_, '_>) -> Result<()> {
@@ -165,6 +368,9 @@ fn element(
         )));
     }
     let name = svrl_name(node)?;
+    if name == "metadata" && level == 2 {
+        return metadata_lines(node, out);
+    }
     let is_container = CONTAINERS.contains(&name);
     if !is_container && !TEXT_HOLDERS.contains(&name) {
         return Err(Error::new(format!(
@@ -388,16 +594,18 @@ impl Line {
     }
 }
 
-/// Parses a canonical file back into lines (the header excluded).
+/// Parses a canonical file of either version back into lines (the header excluded).
+/// The lines of `svrl:metadata` (version 2) are kept: kind `metadata`, then
+/// `{namespace}local` for its descendants.
 ///
 /// # Errors
 ///
-/// The first line is not the header, or a line is not in the canonical syntax.
+/// The first line is not a header, or a line is not in the canonical syntax.
 pub fn parse(canonical: &str) -> Result<Vec<Line>> {
     let mut lines = canonical.lines();
-    if lines.next() != Some(HEADER) {
+    if !matches!(lines.next(), Some(HEADER | HEADER_V2)) {
         return Err(Error::new(format!(
-            "canonical SVRL: first line is not `{HEADER}`"
+            "canonical SVRL: first line is not `{HEADER}` or `{HEADER_V2}`"
         )));
     }
     lines
@@ -489,7 +697,7 @@ fn unquote(text: &str) -> Result<(String, &str)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{HEADER, canonicalize, is_document_uri, parse};
+    use super::{HEADER, HEADER_V2, canonicalize, is_document_uri, parse, run_time};
 
     const SVRL: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <svrl:schematron-output xmlns:svrl="http://purl.oclc.org/dsdl/svrl" title="T  t" schemaVersion=""><!--
@@ -611,6 +819,83 @@ mod tests {
             .unwrap()
             .unwrap_err();
         assert!(error.message().contains("nested more than 16"), "{error}");
+    }
+
+    fn schxslt(created: &str) -> String {
+        SVRL.replace(
+            "<svrl:ns-prefix-in-attribute-values prefix=\"cbc\" uri=\"urn:cbc\"/>",
+            &format!(
+                r#"<svrl:ns-prefix-in-attribute-values prefix="cbc" uri="urn:cbc"/>
+   <svrl:metadata xmlns:dct="http://purl.org/dc/terms/" xmlns:skos="http://www.w3.org/2004/02/skos/core#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+      <dct:creator><dct:Agent><skos:prefLabel>SAXON/HE 12.10</skos:prefLabel></dct:Agent></dct:creator>
+      <dct:created>{created}</dct:created>
+      <dct:source><rdf:Description rdf:about="x"><dct:created>2026-09-02T11:54:24.1Z</dct:created></rdf:Description></dct:source>
+   </svrl:metadata>"#
+            ),
+        )
+    }
+
+    #[test]
+    fn version_2_represents_the_metadata() {
+        let canonical = canonicalize(&schxslt(" 2000-01-01T00:00:00Z "), &uri).unwrap();
+        let lines: Vec<&str> = canonical.lines().collect();
+        assert_eq!(lines[0], HEADER_V2);
+        assert_eq!(
+            &lines[4..12],
+            [
+                "metadata",
+                "  {http://purl.org/dc/terms/}creator",
+                "    {http://purl.org/dc/terms/}Agent",
+                "      {http://www.w3.org/2004/02/skos/core#}prefLabel \"SAXON/HE 12.10\"",
+                "  {http://purl.org/dc/terms/}created \"{run-time}\"",
+                "  {http://purl.org/dc/terms/}source",
+                "    {http://www.w3.org/1999/02/22-rdf-syntax-ns#}Description {http://www.w3.org/1999/02/22-rdf-syntax-ns#}about=\"x\"",
+                "      {http://purl.org/dc/terms/}created \"2026-09-02T11:54:24.1Z\"",
+            ]
+        );
+        // The rest is version 1.
+        assert_eq!(
+            canonical.lines().skip(12).collect::<Vec<_>>(),
+            canonicalize(SVRL, &uri)
+                .unwrap()
+                .lines()
+                .skip(4)
+                .collect::<Vec<_>>()
+        );
+        // The time of the run does not change the canonical form.
+        assert_eq!(
+            canonicalize(&schxslt("2026-11-08T10:00:00.123+01:00"), &uri).unwrap(),
+            canonical
+        );
+        assert_eq!(
+            run_time(&schxslt(" 2000-01-01T00:00:00Z "))
+                .unwrap()
+                .as_deref(),
+            Some("2000-01-01T00:00:00Z")
+        );
+        assert_eq!(run_time(SVRL).unwrap(), None);
+        let lines = parse(&canonical).unwrap();
+        assert_eq!(lines[3].kind, "metadata");
+        assert_eq!(lines[7].text.as_deref(), Some("{run-time}"));
+    }
+
+    #[test]
+    fn version_2_refuses_what_it_cannot_represent() {
+        for bad in [
+            schxslt("yesterday"),
+            schxslt("2000-01-01T00:00:00"),
+            schxslt("2000-01-01T00:00:00Z").replace("<dct:source>", "<dct:source>t"),
+            schxslt("2000-01-01T00:00:00Z").replace("<dct:source>", "<dct:source><!--c-->"),
+            schxslt("2000-01-01T00:00:00Z")
+                .replace("<dct:created>2000", "<dct:modified>2000")
+                .replace("Z</dct:created>", "Z</dct:modified>"),
+            schxslt("2000-01-01T00:00:00Z").replace(
+                "</svrl:schematron-output>",
+                "<svrl:metadata/></svrl:schematron-output>",
+            ),
+        ] {
+            assert!(canonicalize(&bad, &uri).is_err(), "{bad}");
+        }
     }
 
     #[test]
