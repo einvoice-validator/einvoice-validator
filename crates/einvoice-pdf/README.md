@@ -63,9 +63,10 @@ and shared or cyclic name tree nodes are errors.
 
 ## Tests
 
-The committed tests build their PDF files in code (`tests/common/mod.rs`): every layout above,
-incremental updates, name trees, the five invoice names and the malformed and hostile cases,
-with property tests on arbitrary bytes and random edits. Published sample files can be checked
+The committed tests build their PDF files in code (the module `pdf` of `einvoice-testkit`, an
+unpublished crate of the repository, shared with the crates that read PDF files through this
+one): every layout above, incremental updates, name trees, the five invoice names and the
+malformed and hostile cases, with property tests on arbitrary bytes and random edits. Published sample files can be checked
 locally (`tests/samples.rs`): `EINVOICE_PDF_SAMPLES` lists manifest files whose lines are
 `PDF<TAB>EXPECTED`, where `EXPECTED` is the published XML (the extracted invoice must be
 byte-identical) or `error:<Kind>`; without the variable the test prints SKIPPED.

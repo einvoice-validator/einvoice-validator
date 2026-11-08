@@ -1,30 +1,41 @@
 //! A writer of small synthetic PDF files, and Factur-X-like fixtures built with it: classic
 //! cross-reference tables, cross-reference streams (with or without the PNG Up
-//! predictor), object streams, hybrid files and incremental updates.
-
-#![allow(
-    dead_code,
-    reason = "shared by several test targets, each using a part"
-)]
+//! predictor), object streams, hybrid files and incremental updates. Used by the tests
+//! of einvoice-pdf, and by those of the crates that read PDF files through it, with the
+//! documents of the test corpus as the embedded invoice.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use miniz_oxide::deflate::compress_to_vec_zlib;
 
-/// The synthetic invoice of `tests/data/invoice.xml`.
-pub(crate) const INVOICE: &[u8] = include_bytes!("../data/invoice.xml");
-/// Its MD5 digest (`md5sum tests/data/invoice.xml`).
-pub(crate) const INVOICE_MD5: &str = "e8c96c8e43f89c84c7e316693f242973";
+/// The synthetic invoice of `data/invoice.xml`.
+pub const INVOICE: &[u8] = include_bytes!("../data/invoice.xml");
+/// Its MD5 digest (`md5sum data/invoice.xml`).
+pub const INVOICE_MD5: &str = "e8c96c8e43f89c84c7e316693f242973";
 
-pub(crate) fn deflate(data: &[u8]) -> Vec<u8> {
+/// `data` compressed with zlib (the `FlateDecode` filter).
+#[must_use]
+pub fn deflate(data: &[u8]) -> Vec<u8> {
     compress_to_vec_zlib(data, 6)
+}
+
+/// `n` as a field of a cross-reference stream or an index in an object stream: the files
+/// written here are far below 4 GiB, with far fewer than 65536 objects per stream.
+#[expect(
+    clippy::expect_used,
+    reason = "a test fixture writer: a file of 4 GiB or more is a bug of the test"
+)]
+fn field<N, T: TryFrom<N>>(n: N) -> T {
+    T::try_from(n)
+        .ok()
+        .expect("a synthetic PDF stays far below the limits of its fields")
 }
 
 /// A PDF being written, object by object, then closed by cross-reference sections.
 #[derive(Debug)]
-pub(crate) struct Writer {
-    pub(crate) out: Vec<u8>,
+pub struct Writer {
+    pub out: Vec<u8>,
     /// Objects written since the last section: offset and generation.
     pending: BTreeMap<u32, (usize, u16)>,
     /// Objects put in object streams since the last section: (stream, index).
@@ -36,7 +47,8 @@ pub(crate) struct Writer {
 }
 
 impl Writer {
-    pub(crate) fn new(version: &str) -> Self {
+    #[must_use]
+    pub fn new(version: &str) -> Self {
         let mut out = format!("%PDF-{version}\n%").into_bytes();
         out.extend_from_slice(&[0xE2, 0xE3, 0xCF, 0xD3, b'\n']);
         Self {
@@ -53,11 +65,11 @@ impl Writer {
     }
 
     /// `num 0 obj` BODY `endobj`.
-    pub(crate) fn object(&mut self, num: u32, body: &[u8]) {
+    pub fn object(&mut self, num: u32, body: &[u8]) {
         self.object_gen(num, 0, body);
     }
 
-    pub(crate) fn object_gen(&mut self, num: u32, generation: u16, body: &[u8]) {
+    pub fn object_gen(&mut self, num: u32, generation: u16, body: &[u8]) {
         self.note(num);
         self.pending.insert(num, (self.out.len(), generation));
         self.out
@@ -67,7 +79,7 @@ impl Writer {
     }
 
     /// A stream object: `<< /Length n DICT >>`, then DATA.
-    pub(crate) fn stream(&mut self, num: u32, dict: &str, data: &[u8]) {
+    pub fn stream(&mut self, num: u32, dict: &str, data: &[u8]) {
         let mut body = format!("<< /Length {} {dict} >>\nstream\n", data.len()).into_bytes();
         body.extend_from_slice(data);
         body.extend_from_slice(b"\nendstream");
@@ -75,21 +87,20 @@ impl Writer {
     }
 
     /// Raw bytes, not an object.
-    pub(crate) fn raw(&mut self, bytes: &[u8]) {
+    pub fn raw(&mut self, bytes: &[u8]) {
         self.out.extend_from_slice(bytes);
     }
 
     /// An object stream `num` holding `objects` (number, body), Flate-compressed or not.
-    pub(crate) fn object_stream(&mut self, num: u32, objects: &[(u32, &str)], compress: bool) {
+    pub fn object_stream(&mut self, num: u32, objects: &[(u32, &str)], compress: bool) {
         let mut header = String::new();
         let mut bodies = String::new();
         for (index, (object, body)) in objects.iter().enumerate() {
-            write!(header, "{object} {} ", bodies.len()).unwrap();
+            let _ = write!(header, "{object} {} ", bodies.len());
             bodies.push_str(body);
             bodies.push('\n');
             self.note(*object);
-            self.compressed
-                .insert(*object, (num, u32::try_from(index).unwrap()));
+            self.compressed.insert(*object, (num, field(index)));
         }
         let first = header.len();
         let data = format!("{header}{bodies}").into_bytes();
@@ -133,7 +144,7 @@ impl Writer {
         Self::runs(numbers.iter().copied())
             .iter()
             .fold(String::new(), |mut out, (first, count)| {
-                write!(out, "{first} {count} ").unwrap();
+                let _ = write!(out, "{first} {count} ");
                 out
             })
     }
@@ -142,7 +153,7 @@ impl Writer {
     /// (every number from 0 for the first section, free when not written: objects put in
     /// object streams are free in it), its trailer (`/Size`, `/Prev` and TRAILER),
     /// `startxref` and `%%EOF`.
-    pub(crate) fn table(&mut self, trailer: &str) {
+    pub fn table(&mut self, trailer: &str) {
         self.table_of(trailer, self.prev.is_none());
     }
 
@@ -155,31 +166,30 @@ impl Writer {
             text.push_str("0 1\n0000000000 65535 f \n");
         }
         if every {
-            writeln!(text, "0 {}\n0000000000 65535 f ", self.size).unwrap();
+            let _ = writeln!(text, "0 {}\n0000000000 65535 f ", self.size);
             for num in 1..self.size {
                 match self.pending.get(&num) {
                     Some((at, generation)) => {
-                        writeln!(text, "{at:010} {generation:05} n ").unwrap();
+                        let _ = writeln!(text, "{at:010} {generation:05} n ");
                     }
                     None => text.push_str("0000000000 00000 f \n"),
                 }
             }
         } else {
             for (first, count) in Self::runs(self.pending.keys().copied()) {
-                writeln!(text, "{first} {count}").unwrap();
+                let _ = writeln!(text, "{first} {count}");
                 for num in first..first + count {
                     let (at, generation) = self.pending[&num];
-                    writeln!(text, "{at:010} {generation:05} n ").unwrap();
+                    let _ = writeln!(text, "{at:010} {generation:05} n ");
                 }
             }
         }
-        write!(
+        let _ = write!(
             text,
             "trailer\n<< /Size {}{} {trailer} >>\n",
             self.size,
             self.prev_entry()
-        )
-        .unwrap();
+        );
         self.out.extend_from_slice(text.as_bytes());
         self.pending.clear();
         self.tail(offset);
@@ -191,9 +201,9 @@ impl Writer {
             .iter()
             .map(|num| {
                 let (kind, a, b) = if let Some((at, generation)) = self.pending.get(num) {
-                    (1u8, u32::try_from(*at).unwrap(), *generation)
+                    (1u8, field(*at), *generation)
                 } else if let Some((stream, index)) = self.compressed.get(num) {
-                    (2, *stream, u16::try_from(*index).unwrap())
+                    (2, *stream, field(*index))
                 } else {
                     (0, 0, if *num == 0 { 65535 } else { 0 })
                 };
@@ -209,7 +219,7 @@ impl Writer {
     /// A cross-reference stream object `num` for the objects written or compressed since
     /// the last section (every number from 0 for the first section), with /W [1 4 2],
     /// Flate-compressed, with the PNG Up predictor when `predictor`.
-    pub(crate) fn xref_stream(&mut self, num: u32, trailer: &str, predictor: bool) {
+    pub fn xref_stream(&mut self, num: u32, trailer: &str, predictor: bool) {
         self.note(num);
         let offset = self.out.len();
         self.pending.insert(num, (offset, 0));
@@ -284,7 +294,11 @@ impl Writer {
     /// A hybrid section (ISO 32000-2, 7.5.8.4): a cross-reference stream `num` for the
     /// compressed objects, then a classic table that does not list them, whose trailer
     /// points to the stream with `/XRefStm`. Must be the first section.
-    pub(crate) fn hybrid(&mut self, num: u32, trailer: &str) {
+    ///
+    /// # Panics
+    ///
+    /// When it is not the first section.
+    pub fn hybrid(&mut self, num: u32, trailer: &str) {
         assert!(self.prev.is_none());
         let stream_offset = self.compressed_stream(num);
         self.table_of(&format!("{trailer} /XRefStm {stream_offset}"), false);
@@ -293,7 +307,11 @@ impl Writer {
     /// A hybrid file as word processors write it: a full classic table in which the
     /// compressed objects are free, then an update section with an empty table whose
     /// `/XRefStm` stream `num` lists them. Must be the first section.
-    pub(crate) fn hybrid_update(&mut self, num: u32, trailer: &str) {
+    ///
+    /// # Panics
+    ///
+    /// When it is not the first section.
+    pub fn hybrid_update(&mut self, num: u32, trailer: &str) {
         assert!(self.prev.is_none());
         let compressed = self.compressed.clone();
         self.table(trailer);
@@ -312,19 +330,20 @@ impl Writer {
 
     /// Continues a file already in `out`: its last section is at PREV, its object
     /// numbers are below SIZE.
-    pub(crate) fn prev_from(&mut self, prev: usize, size: u32) {
+    pub fn prev_from(&mut self, prev: usize, size: u32) {
         self.prev = Some(prev);
         self.size = self.size.max(size);
     }
 
     /// The offset of an object written since the last section.
-    pub(crate) fn pending_offset(&self, num: u32) -> usize {
+    #[must_use]
+    pub fn pending_offset(&self, num: u32) -> usize {
         self.pending[&num].0
     }
 
     /// Records objects as in object streams: (number, stream, index), for files whose
     /// object streams are written by hand.
-    pub(crate) fn compressed_for_tests(&mut self, entries: &[(u32, u32, u32)]) {
+    pub fn compressed_for_tests(&mut self, entries: &[(u32, u32, u32)]) {
         for (num, stream, index) in entries {
             self.note(*num);
             self.compressed.insert(*num, (*stream, *index));
@@ -333,7 +352,8 @@ impl Writer {
 
     /// A first section, a classic table in which the objects of OVERRIDES are given the
     /// offsets listed there, then the file.
-    pub(crate) fn finish_with_table_override(
+    #[must_use]
+    pub fn finish_with_table_override(
         mut self,
         trailer: &str,
         overrides: &[(u32, usize)],
@@ -346,14 +366,15 @@ impl Writer {
         self.out
     }
 
-    pub(crate) fn finish(self) -> Vec<u8> {
+    #[must_use]
+    pub fn finish(self) -> Vec<u8> {
         self.out
     }
 }
 
 /// How a fixture is laid out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Layout {
+pub enum Layout {
     /// Every object uncompressed, a classic table.
     Table,
     /// Every object uncompressed, a cross-reference stream without predictor.
@@ -372,7 +393,7 @@ pub(crate) enum Layout {
     HybridUpdate,
 }
 
-pub(crate) const LAYOUTS: [Layout; 7] = [
+pub const LAYOUTS: [Layout; 7] = [
     Layout::Table,
     Layout::XrefStream,
     Layout::XrefStreamPredictor,
@@ -384,22 +405,22 @@ pub(crate) const LAYOUTS: [Layout; 7] = [
 
 /// A Factur-X-like PDF/A-3 file with one embedded file.
 #[derive(Debug, Clone)]
-pub(crate) struct Fixture<'a> {
-    pub(crate) layout: Layout,
-    pub(crate) name: &'a str,
-    pub(crate) data: &'a [u8],
-    pub(crate) compress: bool,
+pub struct Fixture<'a> {
+    pub layout: Layout,
+    pub name: &'a str,
+    pub data: &'a [u8],
+    pub compress: bool,
     /// The `/CheckSum` value as written (such as `<...>` or `(...)`), or none.
-    pub(crate) checksum: Option<String>,
-    pub(crate) relationship: &'a str,
+    pub checksum: Option<String>,
+    pub relationship: &'a str,
     /// The XMP packet, or none (no `/Metadata`).
-    pub(crate) xmp: Option<String>,
+    pub xmp: Option<String>,
     /// List the file in the `/EmbeddedFiles` name tree.
-    pub(crate) in_names: bool,
+    pub in_names: bool,
     /// List the file in the catalog's `/AF`.
-    pub(crate) in_af: bool,
+    pub in_af: bool,
     /// More catalog entries, as text.
-    pub(crate) catalog_extra: String,
+    pub catalog_extra: String,
 }
 
 impl Default for Fixture<'_> {
@@ -420,7 +441,8 @@ impl Default for Fixture<'_> {
 }
 
 /// A PDF literal string for ASCII text.
-pub(crate) fn literal(text: &str) -> String {
+#[must_use]
+pub fn literal(text: &str) -> String {
     let mut out = String::from("(");
     for c in text.chars() {
         if matches!(c, '(' | ')' | '\\') {
@@ -433,7 +455,8 @@ pub(crate) fn literal(text: &str) -> String {
 }
 
 /// An XMP packet with the PDF/A-3B identification and the Factur-X properties.
-pub(crate) fn xmp(file_name: &str, level: &str) -> String {
+#[must_use]
+pub fn xmp(file_name: &str, level: &str) -> String {
     format!(
         "<?xpacket begin=\"\u{FEFF}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
          <x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n\
@@ -456,15 +479,15 @@ pub(crate) fn xmp(file_name: &str, level: &str) -> String {
 impl Fixture<'_> {
     /// Objects: 1 catalog, 2 pages, 3 page, 4 embedded file, 5 file specification,
     /// 6 metadata, 7 object stream, 8 cross-reference stream, 9 and 10 lengths.
-    pub(crate) fn build(&self) -> Vec<u8> {
+    #[must_use]
+    pub fn build(&self) -> Vec<u8> {
         let name = literal(self.name);
         let mut catalog = String::from("<< /Type /Catalog /Pages 2 0 R");
         if self.in_names {
-            write!(
+            let _ = write!(
                 catalog,
                 " /Names << /EmbeddedFiles << /Names [{name} 5 0 R] >> >>"
-            )
-            .unwrap();
+            );
         }
         if self.in_af {
             catalog.push_str(" /AF [5 0 R]");
@@ -472,7 +495,7 @@ impl Fixture<'_> {
         if self.xmp.is_some() {
             catalog.push_str(" /Metadata 6 0 R");
         }
-        write!(catalog, " {} >>", self.catalog_extra).unwrap();
+        let _ = write!(catalog, " {} >>", self.catalog_extra);
         let pages = "<< /Type /Pages /Count 1 /Kids [3 0 R] >>";
         let page = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>";
         let spec = format!(
@@ -481,7 +504,7 @@ impl Fixture<'_> {
         );
         let mut params = format!("/Size {}", self.data.len());
         if let Some(checksum) = &self.checksum {
-            write!(params, " /CheckSum {checksum}").unwrap();
+            let _ = write!(params, " /CheckSum {checksum}");
         }
         let content = if self.compress {
             deflate(self.data)
@@ -553,7 +576,7 @@ fn indirect_object_stream(w: &mut Writer, objects: &[(u32, &str)], length: usize
     let mut header = String::new();
     let mut bodies = String::new();
     for (object, body) in &objects {
-        write!(header, "{object} {} ", bodies.len()).unwrap();
+        let _ = write!(header, "{object} {} ", bodies.len());
         bodies.push_str(body);
         bodies.push('\n');
     }
@@ -567,13 +590,13 @@ fn indirect_object_stream(w: &mut Writer, objects: &[(u32, &str)], length: usize
     w.object(10, data.len().to_string().as_bytes());
     for (index, (object, _)) in objects.iter().enumerate() {
         w.note(*object);
-        w.compressed
-            .insert(*object, (7, u32::try_from(index).unwrap()));
+        w.compressed.insert(*object, (7, field(index)));
     }
 }
 
 /// A minimal PDF whose catalog is CATALOG (object 1), with EXTRA objects, classic table.
-pub(crate) fn with_catalog(catalog: &str, extra: &[(u32, &[u8])]) -> Vec<u8> {
+#[must_use]
+pub fn with_catalog(catalog: &str, extra: &[(u32, &[u8])]) -> Vec<u8> {
     let mut w = Writer::new("1.7");
     w.object(1, catalog.as_bytes());
     for (num, body) in extra {
@@ -584,7 +607,8 @@ pub(crate) fn with_catalog(catalog: &str, extra: &[(u32, &[u8])]) -> Vec<u8> {
 }
 
 /// A file specification body naming NAME, embedding object STREAM.
-pub(crate) fn filespec(name: &str, stream: u32) -> String {
+#[must_use]
+pub fn filespec(name: &str, stream: u32) -> String {
     let name = literal(name);
     format!(
         "<< /Type /Filespec /F {name} /UF {name} /AFRelationship /Data /EF << /F {stream} 0 R >> >>"
@@ -592,7 +616,8 @@ pub(crate) fn filespec(name: &str, stream: u32) -> String {
 }
 
 /// An embedded file stream body holding DATA, uncompressed.
-pub(crate) fn embedded(data: &[u8]) -> Vec<u8> {
+#[must_use]
+pub fn embedded(data: &[u8]) -> Vec<u8> {
     let mut body = format!(
         "<< /Length {} /Type /EmbeddedFile /Subtype /text#2Fxml >>\nstream\n",
         data.len()

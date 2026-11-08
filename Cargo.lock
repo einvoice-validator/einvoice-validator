@@ -117,6 +117,7 @@ dependencies = [
 name = "einvoice-pdf"
 version = "0.2.0"
 dependencies = [
+ "einvoice-testkit",
  "miniz_oxide",
  "peak_alloc",
  "proptest",
@@ -133,6 +134,9 @@ dependencies = [
 [[package]]
 name = "einvoice-testkit"
 version = "0.2.0"
+dependencies = [
+ "miniz_oxide",
+]
 
 [[package]]
 name = "einvoice-validator"

@@ -1,6 +1,6 @@
 [package]
 name = "einvoice-testkit"
-description = "Helpers shared by the tests of the workspace: the workspace crates a package is built from"
+description = "Helpers shared by the tests of the workspace: the workspace crates a package is built from, and a writer of synthetic PDF files"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,6 +10,9 @@ license.workspace = true
 # Only a dev-dependency of the other members, by path and without a version, which cargo
 # leaves out of their published manifests.
 publish = false
+
+[dependencies]
+miniz_oxide = "0.9.1"
 
 [lints]
 workspace = true

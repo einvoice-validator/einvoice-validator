@@ -17,6 +17,8 @@ miniz_oxide = "0.9.1"
 roxmltree = "0.21.2"
 
 [dev-dependencies]
+# Not published: without a version, cargo leaves it out of the published manifest.
+einvoice-testkit = { path = "../einvoice-testkit" }
 peak_alloc = "0.3.0"
 
 # Its random source (getrandom) does not build for wasm32-unknown-unknown, where the

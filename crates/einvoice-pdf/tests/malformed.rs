@@ -3,13 +3,13 @@
 
 #![cfg(test)]
 
-mod common;
-
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
-use common::{Fixture, INVOICE, Layout, Writer, deflate, embedded, filespec, with_catalog};
 use einvoice_pdf::{Error, Limits, attachments, extract, extract_with};
+use einvoice_testkit::pdf::{
+    Fixture, INVOICE, Layout, Writer, deflate, embedded, filespec, with_catalog,
+};
 
 fn malformed(result: Result<impl std::fmt::Debug, Error>, needle: &str) {
     match result {

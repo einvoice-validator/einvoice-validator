@@ -6,13 +6,11 @@
 // test exemptions (unwrap, expect, panic) to the helpers outside `#[test]` functions too.
 #![cfg(test)]
 
-mod common;
-
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
-use common::{Fixture, LAYOUTS, Layout, literal};
 use einvoice_pdf::{INVOICE_FILE_NAMES, attachments, extract};
+use einvoice_testkit::pdf::{Fixture, LAYOUTS, Layout, literal};
 use proptest::prelude::*;
 
 /// Far above what any of these inputs takes (well under a millisecond in release
@@ -191,6 +189,6 @@ proptest! {
         }
         .build();
         let embedded = bounded(|| extract(&pdf)).unwrap();
-        prop_assert_eq!(embedded.xml.data, common::INVOICE);
+        prop_assert_eq!(embedded.xml.data, einvoice_testkit::pdf::INVOICE);
     }
 }

@@ -5,13 +5,11 @@
 
 #![cfg(test)]
 
-mod common;
-
-use common::{
+use einvoice_pdf::{AfRelationship, Error, INVOICE_FILE_NAMES, Limits, attachments, extract};
+use einvoice_testkit::pdf::{
     Fixture, INVOICE, INVOICE_MD5, LAYOUTS, Layout, Writer, deflate, embedded, filespec, literal,
     with_catalog, xmp,
 };
-use einvoice_pdf::{AfRelationship, Error, INVOICE_FILE_NAMES, Limits, attachments, extract};
 
 fn md5_bytes() -> [u8; 16] {
     let mut out = [0u8; 16];
