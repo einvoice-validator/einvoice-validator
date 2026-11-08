@@ -163,18 +163,29 @@ job_wasm() {
 # The publishable crates (every member whose publish is not false), packaged
 # as crates.io would receive them, then each built from its own package
 # (cargo package, with the workspace's packages standing in for crates.io);
-# and every term of each crate's licence expression has its text,
+# every term of each crate's licence expression has its text,
 # LICENSES/<term>.txt, in the package, LICENSES/MIT.txt being the repository's
-# LICENSE. Needs jq.
+# LICENSE; and each has the metadata crates.io shows: a description, its
+# README (in the package), one to five keywords and one to five categories.
+# Cargo takes registry packages to be immutable: it reuses the copies of the
+# workspace crates it unpacks for the verification (CARGO_HOME/registry/src/
+# -<hash>/<name>-<version>, the local registry standing in for crates.io) and
+# their builds by name and version alone, so a crate changed without a version
+# change would be verified from a stale copy. Each run therefore removes those
+# copies and verifies in its own, fresh, target directory (target/package-check).
+# Needs jq.
 job_package() {
     need_toolchain || return 1
     if ! command -v jq >/dev/null 2>&1; then
         missing "package (jq is not installed)"
         return
     fi
-    local status=0 name dir license term list packages=()
-    while IFS=$'\t' read -r name dir license; do
+    local status=0 name version dir license description readme keywords categories term list packages=()
+    local cargo_home=${CARGO_HOME:-$HOME/.cargo}
+    while IFS=$'\t' read -r name version dir license description readme keywords categories; do
         packages+=(-p "$name")
+        # Only the local registry's copies: its source directory has an empty name.
+        rm -rf "$cargo_home"/registry/src/-*/"$name-$version"
         list=$(cargo package --locked --allow-dirty --no-verify --list -p "$name") || {
             status=1
             continue
@@ -191,11 +202,25 @@ job_package() {
                 status=1
             fi
         done
-        echo "$name: $license, $(wc -l <<<"$list") files"
+        if [ "$description" -eq 0 ]; then
+            echo "$name: no description" >&2
+            status=1
+        fi
+        if [ "$readme" = - ] || ! grep -qxF "$readme" <<<"$list"; then
+            echo "$name: no readme in the package (readme = \"$readme\")" >&2
+            status=1
+        fi
+        if [ "$keywords" -lt 1 ] || [ "$keywords" -gt 5 ] || [ "$categories" -lt 1 ] || [ "$categories" -gt 5 ]; then
+            echo "$name: $keywords keywords and $categories categories (1 to 5 of each)" >&2
+            status=1
+        fi
+        echo "$name: $license, $readme, $keywords keywords, $categories categories, $(wc -l <<<"$list") files"
     done < <(cargo metadata --locked --no-deps --format-version 1 |
-        jq -r '.packages[] | select(.publish != []) | [.name, (.manifest_path | rtrimstr("/Cargo.toml")), .license] | @tsv')
+        jq -r '.packages[] | select(.publish != []) | [.name, .version, (.manifest_path | rtrimstr("/Cargo.toml")),
+            .license, (.description // "" | length), (.readme // "-"), (.keywords | length), (.categories | length)] | @tsv')
     [ ${#packages[@]} -gt 0 ] || { echo "no publishable crate" >&2; return 1; }
-    cargo package --locked --allow-dirty "${packages[@]}" || status=1
+    rm -rf target/package-check
+    cargo package --locked --allow-dirty --target-dir target/package-check "${packages[@]}" || status=1
     return "$status"
 }
 job_deny() {

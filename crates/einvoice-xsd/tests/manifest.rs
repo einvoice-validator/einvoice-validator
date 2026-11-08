@@ -207,3 +207,43 @@ fn every_vendored_file_carries_the_terms_of_its_licence() {
     declared.retain(|id| *id != "MIT");
     assert_eq!(used.into_iter().collect::<Vec<_>>(), declared);
 }
+
+#[test]
+fn embedded_licences_are_the_shipped_texts() {
+    // One entry per term of the licence expression, in the order of the expression,
+    // each with the text of LICENSES/<term>.txt.
+    let ids: Vec<&str> = einvoice_xsd::LICENCES.iter().map(|l| l.id).collect();
+    assert_eq!(
+        ids,
+        env!("CARGO_PKG_LICENSE").split(" AND ").collect::<Vec<_>>()
+    );
+    for licence in einvoice_xsd::LICENCES {
+        assert_eq!(licence.text, licence_text(licence.id), "{}", licence.id);
+        assert!(!licence.covers.is_empty(), "{}", licence.id);
+    }
+    // Each schema term names the files it covers, as licence_of() assigns them.
+    let covers = |id: &str| {
+        einvoice_xsd::LICENCES
+            .iter()
+            .find(|l| l.id == id)
+            .unwrap()
+            .covers
+    };
+    for (path, _) in einvoice_xsd::UBL_2_1_FILES {
+        let licence = licence_of(path);
+        let file = path.rsplit('/').next().unwrap();
+        if licence == "LicenseRef-OASIS-Copyright-Notice" {
+            assert!(file.starts_with("UBL-"), "{path}");
+        } else {
+            assert!(
+                covers(licence).contains(path),
+                "{path}: {}",
+                covers(licence)
+            );
+        }
+    }
+    assert!(
+        covers("LicenseRef-OASIS-Copyright-Notice")
+            .contains("except UBL-xmldsig-core-schema-2.1.xsd")
+    );
+}

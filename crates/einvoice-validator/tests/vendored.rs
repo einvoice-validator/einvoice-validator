@@ -152,3 +152,52 @@ fn licence_texts_are_the_published_ones() {
         read(artefacts_dir().join("LICENSE.txt"))
     );
 }
+
+#[test]
+fn embedded_licences_are_the_shipped_texts() {
+    let licences = einvoice_validator::licences();
+    let ids: Vec<&str> = licences.iter().map(|l| l.id).collect();
+    let mut expected = vec!["MIT"];
+    if cfg!(feature = "cen-ubl") {
+        expected.push("EUPL-1.2");
+    }
+    expected.extend([
+        "LicenseRef-OASIS-Copyright-Notice",
+        "LicenseRef-UN-CEFACT-Copyright-Notice",
+        "W3C-19980720",
+    ]);
+    assert_eq!(ids, expected);
+    let text =
+        |path: PathBuf| std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
+    for licence in &licences {
+        assert!(!licence.covers.is_empty(), "{}", licence.id);
+        match licence.id {
+            "MIT" | "EUPL-1.2" => assert_eq!(
+                licence.text,
+                text(licences_dir().join(format!("{}.txt", licence.id)))
+            ),
+            _ => assert_eq!(
+                licence.text,
+                text(crate_dir().join(format!("../einvoice-xsd/LICENSES/{}.txt", licence.id)))
+            ),
+        }
+    }
+    // The MIT entry stands for every crate of the project this one is built from: each
+    // ships that same text and is named.
+    let mit = &licences[0];
+    let mut crates = 0;
+    for entry in std::fs::read_dir(crate_dir().join("..")).unwrap() {
+        let name = entry.unwrap().file_name().into_string().unwrap();
+        if name == "einvoice-validator" || name == "einvoice-cli" {
+            continue;
+        }
+        crates += 1;
+        assert!(mit.covers.contains(&name), "{name}: {}", mit.covers);
+        assert_eq!(
+            mit.text,
+            text(crate_dir().join(format!("../{name}/LICENSES/MIT.txt"))),
+            "{name}"
+        );
+    }
+    assert_eq!(crates, 7);
+}

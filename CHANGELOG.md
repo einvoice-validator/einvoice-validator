@@ -134,6 +134,14 @@ against.
   script and git hook, the tests of the privacy guard and of the release scripts); the `oracle`
   job also runs the xmllint oracle of `einvoice-xsd`, and zizmor also audits
   `.github/dependabot.yml`. CI runs them all (#6, #7, #9, #15).
+- `einvoice-validate --licences` (also `--licenses`) prints the licence of everything the binary
+  embeds, each with what it covers and its full text: MIT for the code, EUPL-1.2 for the CEN
+  stylesheet of the built-in rule set, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1
+  schemas. The same texts are available to other programs through `einvoice_validator::licences()`
+  and `einvoice_xsd::LICENCES` (#17).
+- Every published crate has a README and crates.io categories; the `package` job of
+  `scripts/check.sh` checks that each package has a description, its README, its licence texts,
+  and one to five keywords and categories (#17).
 
 ### Changed
 
@@ -213,5 +221,11 @@ against.
 - `einvoice-xsd` declares the licences of the OASIS UBL 2.1 schemas it embeds
   (`MIT AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND
   W3C-19980720`) instead of MIT alone, and ships their texts in `LICENSES/` (#6).
+- The `package` job of `scripts/check.sh` no longer verifies a crate against stale copies of the
+  other workspace crates: cargo reuses the copies it unpacks, and their builds, by name and
+  version alone, so a change made without a version change went unseen. The job removes those
+  copies and builds in its own target directory (#17).
+- `cargo package --workspace` no longer fails on the path dependency of the unpublished `xtask`
+  crate, which now carries the workspace version like the others (#17).
 
 [Unreleased]: https://github.com/einvoice-validator/einvoice-validator/commits/main

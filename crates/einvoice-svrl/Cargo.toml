@@ -2,12 +2,14 @@
 name = "einvoice-svrl"
 description = "Canonical, line-oriented form of SVRL validation reports, to compare the results of two Schematron engines with a plain diff"
 keywords = ["svrl", "schematron", "einvoice", "peppol", "en16931"]
+categories = ["text-processing", "development-tools::testing"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/einvoice-svrl"
+readme = "README.md"
 license.workspace = true
 
 [dependencies]

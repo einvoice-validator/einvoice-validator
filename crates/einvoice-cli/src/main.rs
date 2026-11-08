@@ -8,6 +8,7 @@ mod render;
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::io::{IsTerminal as _, Read as _, Write};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -35,6 +36,7 @@ fn main() -> ExitCode {
         }
         Ok(Command::Help) => print(&help()),
         Ok(Command::Version) => print(&version()),
+        Ok(Command::Licences) => print(&licences()),
         Ok(Command::Validate(options)) => run(&options),
     };
     ExitCode::from(code)
@@ -85,6 +87,45 @@ fn version() -> String {
     )
 }
 
+/// The MIT licence of this crate's code: the text of the library crates' (a test checks
+/// it), which `einvoice_validator::licences` lists for their code.
+const MIT: &str = include_str!("../LICENSES/MIT.txt");
+
+/// What the MIT licence covers in this binary.
+const MIT_COVERS: &str = "the code of einvoice-validate (crate einvoice-cli) and of the crates \
+    of the project it is built from (einvoice-validator, einvoice-svrl, einvoice-xdm, \
+    einvoice-xpath, einvoice-xpath-eval, einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)";
+
+/// The licence notices of everything the binary embeds, with their full texts: the
+/// code (MIT), then the other licences `einvoice_validator::licences` lists for this
+/// build (the CEN stylesheet of the built-in rule set, the UBL 2.1 schemas).
+fn licences() -> String {
+    let licences = einvoice_validator::licences();
+    let mut out = format!(
+        "{NAME} {VERSION}: the licences of the works embedded in this program.
+Each section names a licence, what it covers, then its full text.
+"
+    );
+    let total = licences.len();
+    for (i, licence) in licences.iter().enumerate() {
+        let (covers, text) = if licence.id == "MIT" {
+            (MIT_COVERS, MIT)
+        } else {
+            (licence.covers, licence.text)
+        };
+        let _ = write!(
+            out,
+            "\n== {n}/{total} {id}\nCovers: {covers}.\n\n{text}",
+            n = i + 1,
+            id = licence.id,
+        );
+        if !text.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+    out
+}
+
 fn help() -> String {
     format!(
         "{NAME} {VERSION}
@@ -103,6 +144,9 @@ Options:
   -j, --jobs N         Validate N documents at a time (default: 1).
   -h, --help           Print this help.
   -V, --version        Print the version and the built-in rule sets.
+      --licences       Print the licences of everything embedded in this program
+                       (its code, the CEN stylesheet, the UBL 2.1 schemas), with
+                       their full texts. Also --licenses.
 
 Built-in rule sets:
 {builtins}

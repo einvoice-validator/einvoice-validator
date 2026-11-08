@@ -59,10 +59,26 @@ release with that changelog section as its notes. If the workflow fails, fix the
 The release scripts are tested in throw-away repositories by `scripts/test-release.sh` (run in
 CI by the `workflows` job of `ci.yml`).
 
-## Later: crates.io
+## Publishing on crates.io
 
-The crates are not published on crates.io yet. When the public API is ready, publishing will
-be added to the release workflow with crates.io trusted publishing
-([RFC 3691](https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html)): a
-short-lived token that the workflow obtains through OpenID Connect, no long-lived API token,
-crates published in dependency order.
+The release workflow does not publish on crates.io. Once the tag is pushed and the workflow
+has passed, a maintainer with a crates.io token publishes every crate of the release from the
+tagged commit:
+
+```sh
+git checkout vX.Y.Z
+cargo publish --locked --workspace      # every crate but xtask (publish = false), in dependency order
+```
+
+`cargo publish --workspace` publishes the crates in dependency order and waits for each to be
+available before publishing those that depend on it (dev-dependencies included). It
+uploads them in this order, which also works one at a time (`cargo publish --locked -p NAME`):
+`einvoice-svrl`, `einvoice-xdm`, `einvoice-xpath`, `einvoice-xsd`, `einvoice-xpath-eval`,
+`einvoice-xslt`, `einvoice-xslt-exec`, `einvoice-validator`, `einvoice-cli`. A published
+version cannot be replaced: a mistake is fixed by the next patch version (and the faulty
+version yanked).
+
+Publishing from the release workflow with crates.io trusted publishing
+([RFC 3691](https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html)), with a
+short-lived token obtained through OpenID Connect instead of a long-lived API token, is not
+set up yet.

@@ -1,13 +1,23 @@
 # einvoice-validate
 
 Command-line validation of e-invoices against the official EN 16931 validation artefacts,
-with the [`einvoice-validator`](../einvoice-validator) library: for each document, the XML
-check (UTF-8, well-formed, no document type declaration), the XML schema of the rule set
-(UBL 2.1), then the official compiled Schematron stylesheets of the rule set, executed with
-the behaviour of Saxon-HE.
+with the [`einvoice-validator`](https://crates.io/crates/einvoice-validator) library: for each
+document, the XML check (UTF-8, well-formed, no document type declaration), the XML schema of
+the rule set (UBL 2.1), then the official compiled Schematron stylesheets of the rule set,
+executed with the behaviour of Saxon-HE. It is part of
+[einvoice-validator](https://github.com/einvoice-validator/einvoice-validator).
 
 ```sh
-cargo install --path crates/einvoice-cli        # installs einvoice-validate
+cargo install einvoice-cli                      # installs einvoice-validate, from crates.io
+```
+
+Or from a clone of the repository:
+
+```sh
+cargo install --locked --path crates/einvoice-cli
+```
+
+```sh
 einvoice-validate invoice.xml
 einvoice-validate --format json invoices/*.xml > report.json
 einvoice-validate --format svrl - < invoice.xml
@@ -34,6 +44,7 @@ einvoice-validate --bundle target/peppol/peppol-bis-billing-ubl-3.0.22 invoice.x
 | `-j`, `--jobs N` | Validate N documents at a time, on N threads sharing one loaded rule set (default 1). The output keeps the order of the command line. |
 | `-h`, `--help` | The help, then exit 0. |
 | `-V`, `--version` | The version and the built-in rule sets, then exit 0. |
+| `--licences`, `--licenses` | The licences of everything embedded in the binary, each with what it covers and its full text, then exit 0: MIT for the code, EUPL-1.2 for the CEN stylesheet of the built-in rule set, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1 schemas. |
 
 Options take their value as `--format json`, `--format=json`, `-f json` or `-fjson`. An option
 given twice is a usage error.
@@ -156,5 +167,7 @@ conditions a stylesheet reported (ambiguous template rule matches), as Saxon-HE 
 ## Licence
 
 `MIT AND EUPL-1.2`: the code is MIT, and the built-in `cen-ubl` rule set embeds the CEN
-EN 16931 validation stylesheet, which is under the EUPL-1.2 (see
-`crates/einvoice-validator/bundles/cen-ubl/`). The texts are in `LICENSES/`.
+EN 16931 validation stylesheet, which is under the EUPL-1.2 (see `bundles/cen-ubl/` of the
+`einvoice-validator` crate). The texts are in `LICENSES/`. The binary also embeds the OASIS
+UBL 2.1 schemas of the `einvoice-xsd` crate, which keep their own terms (OASIS, UN/CEFACT,
+W3C). `einvoice-validate --licences` prints every one of these licences in full.

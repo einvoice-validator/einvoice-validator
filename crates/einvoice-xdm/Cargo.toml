@@ -2,12 +2,14 @@
 name = "einvoice-xdm"
 description = "Atomic values of the XPath 2.0 data model (exact xs:decimal, xs:integer, xs:double, casts, comparisons, XSD regular expressions) with the behaviour of Saxon-HE 12.10"
 keywords = ["xpath", "xsd", "decimal", "einvoice", "peppol"]
+categories = ["mathematics", "parser-implementations"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/einvoice-xdm"
+readme = "README.md"
 license.workspace = true
 
 [dependencies]

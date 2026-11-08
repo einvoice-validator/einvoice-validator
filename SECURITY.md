@@ -15,7 +15,7 @@ credited in the advisory unless you prefer otherwise.
 
 ## Scope
 
-The project is pre-alpha and has no released version yet: reports are handled on the `main`
-branch. Validation code parses untrusted XML documents, so crashes, unbounded resource use and
+Before 1.0.0, fixes are made on the `main` branch and released as a new version of the
+latest release; older versions are not patched. Validation code parses untrusted XML documents, so crashes, unbounded resource use and
 validation results that differ from the official rule sets are all in scope. Vulnerabilities
 in the official validation artefacts themselves belong to their publishers.

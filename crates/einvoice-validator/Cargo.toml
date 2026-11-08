@@ -2,12 +2,14 @@
 name = "einvoice-validator"
 description = "Validate EN 16931 and Peppol BIS Billing 3.0 e-invoices against the official validation artefacts, in pure Rust"
 keywords = ["peppol", "en16931", "einvoice", "ubl", "schematron"]
+categories = ["finance", "parser-implementations", "wasm"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/einvoice-validator"
+readme = "README.md"
 # The code is MIT; the CEN EN 16931 stylesheet vendored in bundles/cen-ubl/ and embedded
 # by the default feature `cen-ubl` is EUPL-1.2 (bundles/cen-ubl/README.md). Texts in
 # LICENSES/.

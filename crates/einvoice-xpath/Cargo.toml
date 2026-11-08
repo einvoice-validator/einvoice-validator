@@ -2,12 +2,14 @@
 name = "einvoice-xpath"
 description = "Parser and syntax tree for the XPath 2.0 subset used by the official e-invoicing validation stylesheets"
 keywords = ["xpath", "xslt", "schematron", "parser", "einvoice"]
+categories = ["parser-implementations"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/einvoice-xpath"
+readme = "README.md"
 license.workspace = true
 
 [dev-dependencies]

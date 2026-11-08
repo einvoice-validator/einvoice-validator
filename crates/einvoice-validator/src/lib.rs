@@ -83,6 +83,13 @@
 //! [`Error::Unsupported`]. The `wasm-validate` example validates two embedded documents
 //! that way and runs under wasmtime.
 //!
+//! # Licences
+//!
+//! The code is MIT. The built-in rule set `cen-ubl` embeds the CEN stylesheet, under the
+//! EUPL-1.2, and [`einvoice_xsd`] embeds the OASIS UBL 2.1 schemas, which keep their own
+//! terms (OASIS, UN/CEFACT, W3C). [`licences()`] returns the full text of every licence
+//! of what this build embeds, for programs that must show them to their users.
+//!
 //! # Errors
 //!
 //! A schema error or a failed assert is not an error: it is in the [`Report`]. An
@@ -93,12 +100,14 @@
 
 mod builtin;
 mod error;
+mod licences;
 mod manifest;
 mod report;
 mod validator;
 
 pub use builtin::BUILTIN_RULE_SETS;
 pub use error::{Error, ErrorKind};
+pub use licences::{Licence, licences};
 pub use manifest::{MANIFEST_FILE, MANIFEST_FORMAT, RuleSet, SchemaId, StylesheetEntry};
 pub use report::{
     Finding, FindingKind, Report, RuleSetVersion, SchemaError, SchemaErrorKind, Severity,

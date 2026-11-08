@@ -2,13 +2,14 @@
 name = "einvoice-cli"
 description = "einvoice-validate: command-line validation of EN 16931 and Peppol BIS Billing 3.0 e-invoices against the official validation artefacts, in pure Rust"
 keywords = ["peppol", "en16931", "einvoice", "ubl", "cli"]
-categories = ["command-line-utilities"]
+categories = ["command-line-utilities", "finance"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/einvoice-cli"
+readme = "README.md"
 # The code is MIT; built with the default features, the binary embeds the CEN EN 16931
 # stylesheet of einvoice-validator's built-in rule set, which is EUPL-1.2. Texts in
 # LICENSES/.

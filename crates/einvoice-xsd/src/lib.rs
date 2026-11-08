@@ -87,6 +87,13 @@
 //! validates laxly with the shipped schemas. The `xmllint-oracle` example also runs
 //! this crate with the complete set, where the second kind does not occur.
 //!
+//! # Licences
+//!
+//! The code is MIT; the embedded schemas keep the terms stated in their own headers
+//! (OASIS, UN/CEFACT, W3C). [`LICENCES`] holds the full text of each, as shipped in
+//! the crate's `LICENSES/` directory, for programs that must show them to their
+//! users.
+//!
 //! # Inventory of the UBL 2.1 schemas
 //!
 //! Counted over the thirteen vendored documents by the `inventory` test, which fails
@@ -195,6 +202,7 @@
 mod automaton;
 mod datatypes;
 mod error;
+mod licences;
 mod load;
 mod model;
 mod ubl;
@@ -203,6 +211,7 @@ mod validate;
 
 pub use datatypes::Builtin;
 pub use error::{DocumentError, ErrorKind, LoadError, LoadErrorKind, Report, ValidationError};
+pub use licences::{LICENCES, Licence};
 pub use model::{OmittedImport, Schema};
 pub use ubl::{CREDIT_NOTE_ENTRY_POINT, INVOICE_ENTRY_POINT, UBL_2_1_FILES, XADES_NAMESPACES};
 

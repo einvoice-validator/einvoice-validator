@@ -12,6 +12,7 @@ pub(crate) const DEFAULT_RULES: &str = "cen-ubl";
 pub(crate) enum Command {
     Help,
     Version,
+    Licences,
     Validate(Options),
 }
 
@@ -120,8 +121,8 @@ impl Seen {
     }
 }
 
-/// Parses the arguments (without the program name). `--help` and `--version` win over
-/// anything after them.
+/// Parses the arguments (without the program name). `--help`, `--version` and
+/// `--licences` win over anything after them.
 pub(crate) fn parse(args: &[OsString]) -> Result<Command, UsageError> {
     let mut seen = Seen::default();
     let mut inputs = Vec::new();
@@ -151,14 +152,14 @@ pub(crate) fn parse(args: &[OsString]) -> Result<Command, UsageError> {
             (name, (!rest.is_empty()).then_some(rest))
         };
         match name {
-            "-h" | "--help" | "-V" | "--version" => {
+            "-h" | "--help" | "-V" | "--version" | "--licences" | "--licenses" => {
                 if inline.is_some() {
                     return Err(usage(format!("{name} takes no value")));
                 }
-                return Ok(if name == "-h" || name == "--help" {
-                    Command::Help
-                } else {
-                    Command::Version
+                return Ok(match name {
+                    "-h" | "--help" => Command::Help,
+                    "-V" | "--version" => Command::Version,
+                    _ => Command::Licences,
                 });
             }
             "-r" | "--rules" | "-b" | "--bundle" | "-f" | "--format" | "-j" | "--jobs" => {}
@@ -263,6 +264,12 @@ mod tests {
         assert_eq!(run(&["a", "-h", "--bogus"]), Ok(Command::Help));
         assert_eq!(run(&["-V"]), Ok(Command::Version));
         assert_eq!(run(&["--version"]), Ok(Command::Version));
+        assert_eq!(run(&["--licences"]), Ok(Command::Licences));
+        assert_eq!(run(&["--licenses"]), Ok(Command::Licences));
+        assert_eq!(
+            run(&["a.xml", "--licences", "--bogus"]),
+            Ok(Command::Licences)
+        );
         assert_eq!(
             run(&[]).unwrap_err().0,
             "no document given (use - to read standard input)"
@@ -271,7 +278,7 @@ mod tests {
 
     #[test]
     fn usage_errors() {
-        let cases: [(&[&str], &str); 11] = [
+        let cases: [(&[&str], &str); 13] = [
             (&["--bogus", "a"], "unknown option --bogus"),
             (&["-x", "a"], "unknown option -x"),
             (&["-f"], "-f needs a value"),
@@ -285,6 +292,8 @@ mod tests {
             (&["-f", "json", "-f", "text", "a"], "--format given twice"),
             (&["-", "-"], "standard input (-) can only be given once"),
             (&["--help=x"], "--help takes no value"),
+            (&["--licences=x"], "--licences takes no value"),
+            (&["--licence"], "unknown option --licence"),
             (&["-f", "json"], "no document given"),
         ];
         for (args, expected) in cases {

@@ -2,12 +2,14 @@
 name = "einvoice-xpath-eval"
 description = "Node model and evaluator of the XPath 2.0 subset used by the official e-invoicing validation stylesheets, with the behaviour of Saxon-HE 12.10"
 keywords = ["xpath", "xslt", "schematron", "einvoice", "peppol"]
+categories = ["text-processing", "wasm"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/einvoice-xpath-eval"
+readme = "README.md"
 license.workspace = true
 
 [dependencies]

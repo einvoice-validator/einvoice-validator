@@ -8,13 +8,16 @@ artefacts, in pure Rust: no JVM, no C library, no FFI.
 
 ## Status
 
-**Pre-alpha, no release yet:** nothing is published on crates.io; build from source (see
-[Usage](#usage)). The library and the `einvoice-validate` command-line tool validate UBL 2.1
-invoices and credit notes: the XML, the UBL 2.1 schema, then the official stylesheets of the rule
-set. The CEN EN 16931 UBL 1.3.17 rule set is built in; Peppol BIS Billing 3.0.22 (its own rules
-and the CEN rules it embeds) is used as a bundle built locally, since its files may not be
-redistributed. On every case of the test corpora of both rule sets, the engine produces the same
-SVRL report as Saxon-HE.
+**Version 0.1.0, released on crates.io:** the library is the crate
+[`einvoice-validator`](https://crates.io/crates/einvoice-validator), the command-line tool
+`einvoice-validate` the crate [`einvoice-cli`](https://crates.io/crates/einvoice-cli) (see
+[Usage](#usage)). Before 1.0.0, a minor version may break the public API
+([RELEASING.md](RELEASING.md)). The library and the tool validate UBL 2.1 invoices and credit
+notes: the XML, the UBL 2.1 schema, then the official stylesheets of the rule set. The CEN
+EN 16931 UBL 1.3.17 rule set is built in; Peppol BIS Billing 3.0.22 (its own rules and the CEN
+rules it embeds) is used as a bundle built locally, since its files may not be redistributed. On
+every case of the test corpora of both rule sets, the engine produces the same SVRL report as
+Saxon-HE.
 
 | Part | State |
 |---|---|
@@ -37,15 +40,25 @@ changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## Usage
 
-There is no release yet: install the command-line tool from a clone of this repository (the
-toolchain is pinned in `rust-toolchain.toml` and installed by rustup on first use).
+Install the command-line tool from crates.io (Rust 1.99 or later):
+
+```sh
+cargo install --locked einvoice-cli                  # installs einvoice-validate
+```
+
+or from a clone of this repository (the toolchain is pinned in `rust-toolchain.toml` and
+installed by rustup on first use):
 
 ```sh
 cargo install --locked --path crates/einvoice-cli    # installs einvoice-validate
+```
+
+```sh
 einvoice-validate invoice.xml                        # CEN EN 16931 UBL 1.3.17, the built-in rule set
 einvoice-validate --format json --jobs 4 invoices/*.xml > report.json
 einvoice-validate --format svrl - < invoice.xml      # the SVRL report, as the stylesheet wrote it
 einvoice-validate --bundle DIR invoice.xml           # a rule-set bundle: DIR/bundle.toml and its stylesheets
+einvoice-validate --licences                         # the licences of everything the binary embeds, in full
 ```
 
 ```text
@@ -78,12 +91,11 @@ einvoice-validate --bundle target/peppol/peppol-bis-billing-ubl-3.0.22 invoice.x
 ```
 
 **Library.** A `Validator` is built once from a rule set (schemas loaded, stylesheets prepared),
-is `Send + Sync`, and validates any number of documents. With no release yet, depend on the
-repository:
+is `Send + Sync`, and validates any number of documents:
 
 ```toml
 [dependencies]
-einvoice-validator = { git = "https://github.com/einvoice-validator/einvoice-validator" }
+einvoice-validator = "0.1"
 ```
 
 ```rust
@@ -218,7 +230,7 @@ cargo test -p einvoice-xsd --test oracle         # einvoice-xsd against the xmll
 | `test` | `cargo test --workspace --all-targets --all-features --locked`, then the doctests |
 | `features` | clippy and the tests of `einvoice-validator` with `--no-default-features` (no built-in rule set) |
 | `wasm` | `cargo build --locked --target wasm32-unknown-unknown -p einvoice-validator`, then the examples `wasm-smoke` (`einvoice-xpath-eval`) and `wasm-validate` (`einvoice-validator`, the built-in rule set on two corpus documents) built for that target: they must import nothing and return 0 under wasmtime (skipped locally without the target or wasmtime) |
-| `package` | the publishable crates packaged as crates.io would receive them and built from their packages; each term of a crate's licence expression has its text in the package's `LICENSES/` (needs `jq`) |
+| `package` | the publishable crates packaged as crates.io would receive them and built from their packages; each term of a crate's licence expression has its text in the package's `LICENSES/`, and each has a description, its README in the package, and one to five keywords and categories (needs `jq`) |
 | `deny` | `cargo deny --all-features check`: licences, duplicates, sources, advisories |
 | `actionlint` | `actionlint` on the GitHub workflows |
 | `zizmor` | `zizmor --persona=pedantic` on the GitHub workflows and `.github/dependabot.yml` |
@@ -264,9 +276,11 @@ upstream.toml        every pinned upstream version and the files that record it
   `#[expect(lint, reason = "...")]` attributes next to the code they concern.
 - `unsafe` code is forbidden. Integer overflow is checked in release builds too.
 - Property tests (proptest) and golden tests against the reference engine.
-- `cargo-deny`: permissive licences only (today only MIT, plus the schema terms of
-  `einvoice-xsd`, allowed for that crate only), no duplicate versions, crates.io as
-  the only source, advisories and yanked releases are errors.
+- `cargo-deny`: dependencies under permissive licences only (today only MIT); the terms of
+  the official files the crates embed are allowed only for the crates that embed them (the
+  EUPL-1.2 of the CEN stylesheet for `einvoice-validator` and `einvoice-cli`, the schema
+  terms for `einvoice-xsd`); no duplicate versions, crates.io as the only source, advisories
+  and yanked releases are errors.
 - The toolchain is pinned, `Cargo.lock` is committed and every cargo command uses `--locked`.
 - CI on GitHub-hosted runners: Linux for every check, macOS and Windows tests on pull requests.
   Actions are pinned by full commit SHA, run with minimal permissions and without persisted
@@ -287,7 +301,9 @@ upstream.toml        every pinned upstream version and the files that record it
   `einvoice-validate` binary. `einvoice-validator` and `einvoice-cli` are therefore licensed
   `MIT AND EUPL-1.2`. Built with `default-features = false`, the library embeds no rule set and
   uses only the bundles it is given. Every crate ships the texts of its licences in its
-  `LICENSES/` directory.
+  `LICENSES/` directory. `einvoice-validate --licences` prints the licences of everything the
+  binary embeds (MIT, EUPL-1.2, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1
+  schemas) in full, and `einvoice_validator::licences()` returns them to other programs.
 - Saxon-HE 12.10 (MPL-2.0) is the reference engine of the tests only, with the XML Resolver
   5.3.3 (Apache-2.0) it needs at run time. `scripts/fetch-saxon.sh` downloads them from Maven
   Central into `target/`; they are neither part of the repository nor distributed.

@@ -2,12 +2,14 @@
 name = "einvoice-xslt"
 description = "Loader for the XSLT 2.0 subset used by the official e-invoicing validation stylesheets"
 keywords = ["xslt", "schematron", "svrl", "einvoice", "peppol"]
+categories = ["parser-implementations"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/einvoice-xslt"
+readme = "README.md"
 license.workspace = true
 
 [dependencies]
