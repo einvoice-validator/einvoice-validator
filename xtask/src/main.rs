@@ -18,6 +18,10 @@
 //! cargo xtask engine-status FAMILY [--cli PATH]
 //!                                   run einvoice-validate on those corpora, one stylesheet at a
 //!                                   time, and report what passes, differs, fails or is refused
+//! cargo xtask bench [--families NAME,...] [--runs N] [--threads N,...] [--write]
+//!                   [--cli PATH] [--java JAVA] [--saxon JAR]
+//!                                   time and memory of the whole job on every corpus,
+//!                                   einvoice-validate against Saxon-HE (docs/benchmarks.md)
 //! ```
 //!
 //! `manifest`, `corpus`, `oracle` and `crosscheck` work on the vendored rule
@@ -29,10 +33,13 @@
 //! the PATH, and the Saxon-HE jar from `--saxon`, else `$SAXON_JAR`, else
 //! where `scripts/fetch-saxon.sh` puts it; the two XML Resolver jars that
 //! Saxon-HE 12.10 needs are taken from the directory of Saxon's jar.
-//! `engine-status` takes the tool from `--cli`, else
-//! `target/release/einvoice-validate`.
+//! `engine-status` and `bench` take the tool from `--cli`, else
+//! `target/release/einvoice-validate`; `bench` takes Java and Saxon-HE as
+//! `oracle` does (see the `bench` module). `bench-measure` is its helper.
 
 mod acceptance;
+mod bench;
+mod bench_report;
 mod corpus;
 mod crosscheck;
 mod engine;
@@ -53,7 +60,7 @@ use std::process::ExitCode;
 
 use util::{Error, Result};
 
-const USAGE: &str = "usage: cargo xtask (manifest [--write] | corpus [--write] | oracle [--write] [--java JAVA] [--saxon JAR] | crosscheck | (peppol | facturx | xrechnung | fr-ctc) [--java JAVA] [--saxon JAR] | engine-status (peppol | facturx | xrechnung | fr-ctc) [--cli PATH])";
+const USAGE: &str = "usage: cargo xtask (manifest [--write] | corpus [--write] | oracle [--write] [--java JAVA] [--saxon JAR] | crosscheck | (peppol | facturx | xrechnung | fr-ctc) [--java JAVA] [--saxon JAR] | engine-status (peppol | facturx | xrechnung | fr-ctc) [--cli PATH] | bench [--families NAME,...] [--runs N] [--threads N,...] [--write] [--cli PATH] [--java JAVA] [--saxon JAR])";
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -69,6 +76,11 @@ fn main() -> ExitCode {
 fn dispatch(args: &[OsString]) -> Result<()> {
     let (command, rest) = args.split_first().ok_or_else(|| Error::new(USAGE))?;
     let command = command.to_str().ok_or_else(|| Error::new(USAGE))?;
+    match command {
+        "bench" => return run_bench(rest),
+        "bench-measure" => return bench::measure_main(rest),
+        _ => {}
+    }
     let family = |name: &str| ruleset::FAMILIES.iter().copied().find(|f| f.name == name);
     let mut write = false;
     let mut java = None;
@@ -137,6 +149,29 @@ fn dispatch(args: &[OsString]) -> Result<()> {
         },
         _ => Err(Error::new(USAGE)),
     }
+}
+
+fn run_bench(args: &[OsString]) -> Result<()> {
+    let args = bench::parse_args(args)?;
+    let root = util::repo_root();
+    let options = bench::Options {
+        cli: args
+            .cli
+            .clone()
+            .unwrap_or_else(|| util::join(&root, engine::CLI_DEFAULT)),
+        java: args
+            .java
+            .clone()
+            .or_else(|| std::env::var_os("JAVA"))
+            .unwrap_or_else(|| OsString::from("java")),
+        saxon: args
+            .saxon
+            .clone()
+            .or_else(|| std::env::var_os("SAXON_JAR").map(PathBuf::from))
+            .unwrap_or_else(|| util::join(&root, oracle::SAXON_DEFAULT)),
+        args,
+    };
+    bench::run(&root, &options)
 }
 
 fn run_manifest(root: &Path, write: bool) -> Result<()> {

@@ -145,12 +145,12 @@ struct Run {
 /// The maximum element depth of the engine (`--max-depth`), unless a case is
 /// deeper: then [`RAISED_MAX_DEPTH`], as the equivalence tests raise it to
 /// compare such a case with Saxon-HE, which has no limit.
-const DEFAULT_MAX_DEPTH: usize = 256;
-const RAISED_MAX_DEPTH: usize = 1024;
+pub(crate) const DEFAULT_MAX_DEPTH: usize = 256;
+pub(crate) const RAISED_MAX_DEPTH: usize = 1024;
 
 /// The element depth of a document (the document element is at depth 1); 0
 /// for text that is not XML.
-fn depth(text: &str) -> usize {
+pub(crate) fn depth(text: &str) -> usize {
     let options = roxmltree::ParsingOptions {
         allow_dtd: false,
         nodes_limit: u32::MAX,

@@ -526,7 +526,7 @@ fn absolute(path: &Path) -> Result<String> {
 
 /// The class path of the oracle ([`SAXON_JARS`]), from Saxon's jar and its
 /// directory. Refuses a missing jar or one that is not the pinned release.
-fn saxon_class_path(saxon: &Path) -> Result<OsString> {
+pub(crate) fn saxon_class_path(saxon: &Path) -> Result<OsString> {
     let dir = saxon.parent().unwrap_or_else(|| Path::new(""));
     let mut jars = Vec::with_capacity(SAXON_JARS.len());
     for (index, (name, sha256)) in SAXON_JARS.iter().enumerate() {
