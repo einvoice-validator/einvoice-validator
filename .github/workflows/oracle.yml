@@ -74,6 +74,10 @@ env:
   RUSTFLAGS: -D warnings
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # Transient download failures (HTTP 5xx, resets) are retried: cargo for the
+  # crates, rustup for the toolchain (both default to 3 attempts).
+  CARGO_NET_RETRY: "10"
+  RUSTUP_MAX_RETRIES: "10"
 
 defaults:
   run:
@@ -98,11 +102,17 @@ jobs:
       # xmllint (libxml2), the reference of einvoice-xsd.
       - name: Install xmllint
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends libxml2-utils
+          sudo apt-get -o Acquire::Retries=5 update -qq
+          sudo apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends libxml2-utils
           xmllint --version 2>&1 | head -n 1
       - name: Install the toolchain pinned in rust-toolchain.toml
         run: scripts/check.sh toolchain
+      # The Saxon-HE jars, keyed by their pins. A cached jar is never trusted:
+      # scripts/fetch-saxon.sh checks each one against its pinned SHA-256.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/oracle/saxon
+          key: saxon-${{ hashFiles('scripts/fetch-saxon.sh') }}
       # Fetches Saxon-HE from Maven Central (checksum verified) and fails,
       # rather than skips, if Java or xmllint is missing: CI=true on GitHub
       # runners.

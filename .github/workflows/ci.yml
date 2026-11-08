@@ -41,6 +41,10 @@ env:
   RUSTDOCFLAGS: -D warnings
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # Transient download failures (HTTP 5xx, resets) are retried: cargo for the
+  # crates, rustup for the toolchain (both default to 3 attempts).
+  CARGO_NET_RETRY: "10"
+  RUSTUP_MAX_RETRIES: "10"
 
 defaults:
   run:
@@ -62,6 +66,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The release archives of cargo-deny and wasmtime, keyed by their pins.
+      # A cached archive is never trusted: the install steps check it against
+      # its pinned SHA-256 and download it again when it does not match.
+      - name: Cache the tool archives
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/downloads
+          key: tools-${{ runner.os }}-cargo-deny-${{ env.CARGO_DENY_VERSION }}-${{ env.CARGO_DENY_SHA256 }}-wasmtime-${{ env.WASMTIME_VERSION }}-${{ env.WASMTIME_SHA256 }}
       - name: Install the toolchain pinned in rust-toolchain.toml
         run: scripts/check.sh toolchain
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -73,11 +85,16 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
-          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/$name.tar.gz" \
-            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/$name.tar.gz"
-          echo "${CARGO_DENY_SHA256}  $RUNNER_TEMP/$name.tar.gz" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/bin"
-          tar -xzf "$RUNNER_TEMP/$name.tar.gz" -C "$RUNNER_TEMP/bin" --strip-components=1 "$name/cargo-deny"
+          archive="$RUNNER_TEMP/downloads/$name.tar.gz"
+          mkdir -p "$RUNNER_TEMP/downloads" "$RUNNER_TEMP/bin"
+          if ! echo "${CARGO_DENY_SHA256}  $archive" | sha256sum -c --status - 2>/dev/null; then
+            rm -f "$archive"
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              --retry 5 --retry-all-errors --retry-delay 5 --retry-max-time 120 -o "$archive" \
+              "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/$name.tar.gz"
+          fi
+          echo "${CARGO_DENY_SHA256}  $archive" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP/bin" --strip-components=1 "$name/cargo-deny"
       - name: deny
         if: ${{ !cancelled() }}
         run: PATH="$RUNNER_TEMP/bin:$PATH" scripts/check.sh deny
@@ -101,11 +118,16 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           name="wasmtime-v${WASMTIME_VERSION}-x86_64-linux"
-          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/$name.tar.xz" \
-            "https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/$name.tar.xz"
-          echo "${WASMTIME_SHA256}  $RUNNER_TEMP/$name.tar.xz" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/bin"
-          tar -xJf "$RUNNER_TEMP/$name.tar.xz" -C "$RUNNER_TEMP/bin" --strip-components=1 "$name/wasmtime"
+          archive="$RUNNER_TEMP/downloads/$name.tar.xz"
+          mkdir -p "$RUNNER_TEMP/downloads" "$RUNNER_TEMP/bin"
+          if ! echo "${WASMTIME_SHA256}  $archive" | sha256sum -c --status - 2>/dev/null; then
+            rm -f "$archive"
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              --retry 5 --retry-all-errors --retry-delay 5 --retry-max-time 120 -o "$archive" \
+              "https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/$name.tar.xz"
+          fi
+          echo "${WASMTIME_SHA256}  $archive" | sha256sum -c -
+          tar -xJf "$archive" -C "$RUNNER_TEMP/bin" --strip-components=1 "$name/wasmtime"
       - name: wasm
         if: ${{ !cancelled() }}
         run: PATH="$RUNNER_TEMP/bin:$PATH" scripts/check.sh wasm
@@ -147,14 +169,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The release archive of actionlint, keyed by its pin; checked against
+      # its pinned SHA-256 by the install step, like a fresh download.
+      - name: Cache the actionlint archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/downloads
+          key: tools-${{ runner.os }}-actionlint-${{ env.ACTIONLINT_VERSION }}-${{ env.ACTIONLINT_SHA256 }}
       - name: Install actionlint (pinned version and checksum)
         run: |
           name="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/$name" \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$name"
-          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/$name" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/bin"
-          tar -xzf "$RUNNER_TEMP/$name" -C "$RUNNER_TEMP/bin" actionlint
+          archive="$RUNNER_TEMP/downloads/$name"
+          mkdir -p "$RUNNER_TEMP/downloads" "$RUNNER_TEMP/bin"
+          if ! echo "${ACTIONLINT_SHA256}  $archive" | sha256sum -c --status - 2>/dev/null; then
+            rm -f "$archive"
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              --retry 5 --retry-all-errors --retry-delay 5 --retry-max-time 120 -o "$archive" \
+              "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$name"
+          fi
+          echo "${ACTIONLINT_SHA256}  $archive" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP/bin" actionlint
       - name: actionlint
         run: PATH="$RUNNER_TEMP/bin:$PATH" scripts/check.sh actionlint
       # Same audit as `scripts/check.sh zizmor`; the action installs zizmor

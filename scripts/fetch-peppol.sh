@@ -88,7 +88,10 @@ fetch() {
     local url=$1 file=$2 algorithm=$3 digest=$4 actual
     if [ ! -e "$file" ]; then
         mkdir -p "$(dirname "$file")"
-        if ! curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$tmp/download" "$url"; then
+        # Every failure is retried (an HTTP 504 or a reset connection
+        # included), five times, five seconds apart, for two minutes at most.
+        if ! curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-all-errors --retry-delay 5 \
+            --retry-max-time 120 -o "$tmp/download" "$url"; then
             echo "fetch-peppol: cannot download $url" >&2
             exit 75
         fi
@@ -238,9 +241,20 @@ cat >"$work/pom.xml" <<EOF
   </build>
 </project>
 EOF
+# Maven 3.9 downloads through the native HTTP transport of Maven Resolver
+# (selected explicitly, so that the settings below apply): a failed request is
+# retried five times, with an exponential back-off from five seconds, on an
+# I/O error and on the HTTP statuses listed (by default only 429 and 503).
+maven_retries=(
+    -Dmaven.resolver.transport=native
+    -Daether.connector.http.retryHandler.count=5
+    -Daether.connector.http.retryHandler.interval=5000
+    '-Daether.connector.http.retryHandler.serviceUnavailable=429,500,502,503,504'
+)
 say "compiling with ph-schematron-maven-plugin $plugin (Maven $maven)"
 status=0
 MAVEN_SKIP_RC=1 "$mvn" --batch-mode --strict-checksums --no-transfer-progress --quiet \
+    "${maven_retries[@]}" \
     --settings "$work/settings.xml" --file "$work/pom.xml" validate >"$tmp/maven.log" 2>&1 || status=$?
 if [ "$status" -ne 0 ]; then
     cat "$tmp/maven.log" >&2

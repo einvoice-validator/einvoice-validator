@@ -59,6 +59,10 @@ env:
   RUSTFLAGS: -D warnings
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # Transient download failures (HTTP 5xx, resets) are retried: cargo for the
+  # crates, rustup for the toolchain (both default to 3 attempts).
+  CARGO_NET_RETRY: "10"
+  RUSTUP_MAX_RETRIES: "10"
 
 defaults:
   run:
@@ -79,15 +83,17 @@ jobs:
           java-version: "21"
       - name: Install the toolchain pinned in rust-toolchain.toml
         run: scripts/check.sh toolchain
-      # The downloads and the compiled stylesheets, keyed by the pins. A cached
-      # file is never trusted: scripts/fetch-peppol.sh checks every one against
-      # its pinned checksum, and compiles again when a stylesheet does not match.
+      # The downloads, the compiled stylesheets and the Saxon-HE jars, keyed by
+      # the pins. A cached file is never trusted: scripts/fetch-peppol.sh and
+      # scripts/fetch-saxon.sh check every one against its pinned checksum,
+      # and fetch-peppol.sh compiles again when a stylesheet does not match.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             target/peppol/downloads
             target/peppol/peppol-bis-billing-ubl-3.0.22/xslt
-          key: peppol-${{ hashFiles('scripts/fetch-peppol.sh') }}
+            target/oracle/saxon
+          key: peppol-${{ hashFiles('scripts/fetch-peppol.sh', 'scripts/fetch-saxon.sh') }}
       # Fails, rather than skips, without Java or network access: CI=true on
       # GitHub runners.
       - name: peppol

@@ -68,7 +68,10 @@ fetch() {
     fi
     mkdir -p "$dir"
     tmp=$(mktemp "$dir/.download.XXXXXX")
-    if ! curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$tmp" "$url"; then
+    # Every failure is retried (an HTTP 504 or a reset connection included),
+    # five times, five seconds apart, for two minutes at most.
+    if ! curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-all-errors --retry-delay 5 \
+        --retry-max-time 120 -o "$tmp" "$url"; then
         echo "fetch-saxon: cannot download $url" >&2
         exit 75
     fi
