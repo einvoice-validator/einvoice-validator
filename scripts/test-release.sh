@@ -9,8 +9,9 @@
 #
 # Covers every refusal of release.sh (usage, branch, clean tree, origin,
 # version order, existing tag, empty Unreleased, upstream pins, check.sh), a
-# dry run (nothing changes), two real releases (versions, Cargo.lock,
-# changelog sections and links, signed commit and tag, nothing pushed),
+# dry run (nothing changes), two real releases (versions, Cargo.lock, the npm
+# package manifest, changelog sections and links, signed commit and tag,
+# nothing pushed),
 # --verify, the rule sets noted in the release (release-name for a name that
 # ends with a version), and the pull-request check of changelog.sh. The repository's
 # scripts/check.sh is replaced by a stub there; scripts/freshness.sh is the
@@ -137,6 +138,18 @@ license.workspace = true
 
 [dependencies]
 alpha = { path = "../alpha", version = "0.0.0" }
+EOF
+# An npm package built from a crate: its top-level version follows the
+# workspace's; a nested "version" member is left alone.
+mkdir -p crates/beta/npm
+cat >crates/beta/npm/package.json <<'EOF'
+{
+  "name": "beta",
+  "version": "0.0.0",
+  "config": {
+    "version": "keep"
+  }
+}
 EOF
 echo 'pub fn a() {}' >crates/alpha/src/lib.rs
 echo 'pub fn b() { alpha::a() }' >crates/beta/src/lib.rs
@@ -334,7 +347,9 @@ check "0.1.0: tag message" grep -qF "einvoice-validator 0.1.0" <(git cat-file ta
 check "0.1.0: tag message keeps headings" grep -qF "### Added" <(git cat-file tag v0.1.0)
 check "0.1.0: tree clean" tree_clean
 check "0.1.0: worktree removed" one_worktree
-check "0.1.0: only the version files changed" test "$(git diff --name-only HEAD~1 HEAD | tr '\n' ' ')" = "CHANGELOG.md Cargo.lock Cargo.toml crates/beta/Cargo.toml "
+check "0.1.0: only the version files changed" test "$(git diff --name-only HEAD~1 HEAD | tr '\n' ' ')" = "CHANGELOG.md Cargo.lock Cargo.toml crates/beta/Cargo.toml crates/beta/npm/package.json "
+check "0.1.0: npm package version" grep -qx '  "version": "0.1.0",' crates/beta/npm/package.json
+check "0.1.0: nested npm member kept" grep -qx '    "version": "keep"' crates/beta/npm/package.json
 check "0.1.0: workspace version" grep -qx 'version = "0.1.0"' Cargo.toml
 check "0.1.0: path dependency" grep -qF 'alpha = { path = "../alpha", version = "0.1.0" }' crates/beta/Cargo.toml
 check "0.1.0: Cargo.lock" test "$(grep -A1 -E '^name = "(alpha|beta)"$' Cargo.lock | grep -c '^version = "0.1.0"$')" -eq 2
@@ -364,6 +379,12 @@ git checkout --quiet -- crates/beta/Cargo.toml
 sed -i.bak '/^name = "alpha"$/{n;s/.*/version = "0.0.9"/;}' Cargo.lock && rm Cargo.lock.bak
 expect "verify: Cargo.lock version" 1 "alpha@0.0.9" release --verify v0.1.0
 git checkout --quiet -- Cargo.lock
+sed -i.bak 's/^  "version": "0.1.0",$/  "version": "0.0.9",/' crates/beta/npm/package.json && rm crates/beta/npm/package.json.bak
+expect "verify: npm package version" 1 "crates/beta/npm/package.json: version 0.0.9, not 0.1.0" release --verify v0.1.0
+git checkout --quiet -- crates/beta/npm/package.json
+sed -i.bak '/^  "version": "0.1.0",$/d' crates/beta/npm/package.json && rm crates/beta/npm/package.json.bak
+expect "verify: npm package without version" 1 "no single top-level \"version\" line" release --verify v0.1.0
+git checkout --quiet -- crates/beta/npm/package.json
 sed -i.bak "s/^## \[0.1.0\] - $today\$/## [0.1.0]/" CHANGELOG.md && rm CHANGELOG.md.bak
 expect "verify: section without date" 1 "no single heading" release --verify v0.1.0
 git checkout --quiet -- CHANGELOG.md
@@ -393,6 +414,7 @@ check "0.2.0-rc.2: sections in order" test "$(grep '^## \[' CHANGELOG.md | tr '\
 check "0.2.0-rc.2: fix in its section" grep -qF -- "- A fix." <(scripts/changelog.sh section 0.2.0-rc.2)
 check "0.2.0-rc.2: fix not in 0.1.0" lacks "A fix." <(scripts/changelog.sh section 0.1.0)
 check "0.2.0-rc.2: path dependency" grep -qF 'version = "0.2.0-rc.2" }' crates/beta/Cargo.toml
+check "0.2.0-rc.2: npm package version" grep -qx '  "version": "0.2.0-rc.2",' crates/beta/npm/package.json
 expect "verify v0.2.0-rc.2" 0 "agree" release --verify v0.2.0-rc.2
 git push --quiet --atomic origin main v0.2.0-rc.2
 sed -i.bak 's/^## \[Unreleased\]$/## [Unreleased]\

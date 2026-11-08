@@ -23,7 +23,9 @@
 #
 # The version lives in [workspace.package] of Cargo.toml; members inherit it
 # (version.workspace = true) and their path dependencies on each other carry
-# it too (inline tables: `name = { path = "...", version = "X" }`). The new
+# it too (inline tables: `name = { path = "...", version = "X" }`), and so does
+# every tracked npm package manifest (package.json, its top-level "version":
+# the npm package built from a crate is released with the crates). The new
 # section starts with the official rule sets the release was tested against:
 # the upstreams of upstream.toml with severity "high" that are in use, each
 # as its `release-name` (or else its `name`) and its pinned version.
@@ -116,8 +118,22 @@ workspace_version() {
 # the root one).
 member_manifests() { git -C "$1" ls-files -- '*/Cargo.toml'; }
 
-# Sets the workspace version of the tree $1 to $2, and the version of every
-# path dependency in its manifests.
+# The tracked npm package manifests of the tree $1 (package.json, at any depth).
+npm_manifests() { git -C "$1" ls-files -- 'package.json' '*/package.json'; }
+
+# The top-level "version" of the npm package manifest $1: its single line
+# `  "version": "X"` (the member at two spaces of indentation, as npm writes
+# it); fails unless there is exactly one.
+npm_version() {
+    awk '
+        /^  "version" *: *"/ { v = $0; sub(/^  "version" *: *"/, "", v); sub(/".*/, "", v); print v; n++ }
+        END { if (n != 1) exit 1 }
+    ' "$1"
+}
+
+# Sets the workspace version of the tree $1 to $2, the version of every path
+# dependency in its manifests, and the top-level version of its npm package
+# manifests.
 set_version() {
     local dir=$1 version=$2 manifest tmp
     tmp=$(mktemp)
@@ -127,20 +143,32 @@ set_version() {
         { print }
     ' "$dir/Cargo.toml" >"$tmp"
     cat "$tmp" >"$dir/Cargo.toml"
-    rm -f "$tmp"
     local -a manifests
     mapfile -t manifests < <(member_manifests "$dir")
     for manifest in Cargo.toml "${manifests[@]}"; do
         sed -E -i.bak "/path *= *\"/s/(version *= *\")[^\"]*\"/\\1$version\"/" "$dir/$manifest"
         rm -f "$dir/$manifest.bak"
     done
+    mapfile -t manifests < <(npm_manifests "$dir")
+    for manifest in "${manifests[@]}"; do
+        npm_version "$dir/$manifest" >/dev/null || {
+            rm -f "$tmp"
+            die "$manifest: no single top-level \"version\" line"
+        }
+        awk -v v="$version" '
+            /^  "version" *: *"/ { sub(/"version" *: *"[^"]*"/, "\"version\": \"" v "\"") }
+            { print }
+        ' "$dir/$manifest" >"$tmp"
+        cat "$tmp" >"$dir/$manifest"
+    done
+    rm -f "$tmp"
 }
 
 # Checks that every version recorded in the tree $1 is $2: the workspace
-# version, every member's (inherited), every path dependency, and the
-# workspace packages in Cargo.lock.
+# version, every member's (inherited), every path dependency, the workspace
+# packages in Cargo.lock and the npm package manifests.
 check_versions() {
-    local dir=$1 version=$2 current manifest names="" name bad=""
+    local dir=$1 version=$2 current manifest names="" name bad="" npm
     local -a manifests
     current=$(workspace_version "$dir") || die "Cargo.toml: no single version in [workspace.package]"
     [ "$current" = "$version" ] || die "Cargo.toml: the workspace version is $current, not $version"
@@ -182,6 +210,11 @@ check_versions() {
         }
     ' "$dir/Cargo.lock")
     [ -z "$bad" ] || die "Cargo.lock: workspace packages not at version $version:$bad"
+    mapfile -t manifests < <(npm_manifests "$dir")
+    for manifest in "${manifests[@]}"; do
+        npm=$(npm_version "$dir/$manifest") || die "$manifest: no single top-level \"version\" line"
+        [ "$npm" = "$version" ] || die "$manifest: version $npm, not $version"
+    done
 }
 
 # The official rule sets the release is tested against: "NAME VERSION, ..."

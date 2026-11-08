@@ -44,7 +44,8 @@ git push --atomic origin main v0.1.0    # printed by the script, which never pus
 - `scripts/check.sh` passes.
 
 It then sets the workspace version (root `Cargo.toml`, the path dependencies between crates,
-`Cargo.lock`), moves the `Unreleased` entries into a new section `## [X.Y.Z] - YYYY-MM-DD`
+`Cargo.lock`, and the `version` of the npm package, `crates/einvoice-wasm/npm/package.json`:
+every tracked `package.json`), moves the `Unreleased` entries into a new section `## [X.Y.Z] - YYYY-MM-DD`
 headed by the rule-set versions, updates the compare links at the bottom of the changelog,
 commits `Release X.Y.Z` (signed) and creates the signed annotated tag `vX.Y.Z`, whose message
 holds the release notes. The changes are prepared and checked in a temporary worktree first:
