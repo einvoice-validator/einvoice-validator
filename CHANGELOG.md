@@ -187,6 +187,16 @@ against.
 - `scripts/release.sh` sets the version of the npm package
   (`crates/einvoice-wasm/npm/package.json`) with the workspace's, and `--verify` checks it.
 
+### Fixed
+
+- `scripts/fetch-xrechnung.sh` builds the same XML Mutate mutants on every machine: XML Mutate
+  numbers the mutants in the order it reads the unit tests, and writes the number into the name
+  and the content of each; read from a directory, that order was the file system's. The script
+  now gives it the tests one by one, sorted by name; new listing pins for the UBL and CII
+  mutants.
+- `scripts/fetch-xrechnung.sh` decompresses the XRechnung Schematron archive to a file before
+  reading its commit id: no `gzip: stdout: Broken pipe` where SIGPIPE is ignored.
+
 ## [0.2.0] - 2026-11-08
 
 Tested against the official rule sets: CEN EN 16931 validation artefacts 1.3.17, Peppol BIS Billing 3.0.22.
