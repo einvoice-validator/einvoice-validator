@@ -1,0 +1,29 @@
+[package]
+name = "einvoice-xml"
+description = "A streaming (pull) XML 1.0 parser with namespace resolution, zero-copy where it can be, for well-formedness checking and one-pass validation without a tree, in pure Rust"
+keywords = ["xml", "parser", "streaming", "namespaces", "einvoice"]
+categories = ["parser-implementations", "wasm"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/einvoice-xml"
+readme = "README.md"
+license.workspace = true
+
+[dependencies]
+memchr = "2.8.3"
+
+[dev-dependencies]
+peak_alloc = "0.3.0"
+roxmltree = "0.21.2"
+sha2 = "0.11.1"
+
+# Its random source (getrandom) does not build for wasm32-unknown-unknown, where the
+# examples must build (examples/wasm-smoke.rs).
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true

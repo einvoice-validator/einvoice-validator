@@ -159,6 +159,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "einvoice-xml"
+version = "0.2.0"
+dependencies = [
+ "memchr",
+ "peak_alloc",
+ "proptest",
+ "roxmltree",
+ "sha2",
+]
+
+[[package]]
 name = "einvoice-xpath"
 version = "0.2.0"
 dependencies = [
