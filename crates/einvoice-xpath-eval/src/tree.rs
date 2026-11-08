@@ -231,15 +231,32 @@ pub struct Document {
 /// The fewest nodes a search for elements of a name must span to use an index.
 const INDEXED_SEARCH: u32 = 64;
 
-/// The elements of a document by local name, then namespace, each list in document
-/// order.
+/// The elements of a document by expanded name, in two allocations: the elements of
+/// each name in document order, one name after the other, and for each name its hash
+/// ([`name_hash`]), a node name number with it and the range of its elements, by hash.
 #[derive(Debug, Default)]
 struct ElementIndex {
-    by_local: HashMap<String, ByNamespace>,
+    names: Vec<IndexedName>,
+    elements: Vec<u32>,
 }
 
-/// The elements of one local name, by namespace.
-type ByNamespace = Vec<(Option<String>, Vec<u32>)>;
+/// A name of [`ElementIndex`].
+#[derive(Debug, Clone, Copy)]
+struct IndexedName {
+    hash: u64,
+    /// The number of a name with it in [`Document::names`].
+    name: u32,
+    start: u32,
+    len: u32,
+}
+
+/// The hash of an expanded name, for [`ElementIndex`].
+fn name_hash(namespace: Option<&str>, local: &str) -> u64 {
+    use std::hash::{Hash as _, Hasher as _};
+    let mut hasher = std::hash::DefaultHasher::new();
+    (namespace, local).hash(&mut hasher);
+    hasher.finish()
+}
 
 impl fmt::Debug for Document {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -489,11 +506,21 @@ impl Document {
             }
             self.elements.get_or_init(|| self.index_elements())
         };
-        let all = index
-            .by_local
-            .get(local)
-            .and_then(|by_ns| by_ns.iter().find(|(ns, _)| ns.as_deref() == namespace))
-            .map_or(&[][..], |(_, elements)| elements.as_slice());
+        let hash = name_hash(namespace, local);
+        let first = index.names.partition_point(|n| n.hash < hash);
+        let all = index.names[first..]
+            .iter()
+            .take_while(|n| n.hash == hash)
+            .find(|n| {
+                self.names.get(n.name as usize).is_some_and(|name| {
+                    name.local == local && name.namespace.as_deref() == namespace
+                })
+            })
+            .and_then(|n| {
+                let start = n.start as usize;
+                index.elements.get(start..start + n.len as usize)
+            })
+            .unwrap_or_default();
         let from = all.partition_point(|&i| i < start);
         let to = all.partition_point(|&i| i < end);
         all.get(from..to)
@@ -501,40 +528,59 @@ impl Document {
 
     /// The index of the elements by expanded name.
     fn index_elements(&self) -> ElementIndex {
-        // The list of each name: names that differ only by prefix share one.
-        let mut lists: Vec<Vec<u32>> = Vec::new();
-        let mut keys: Vec<(Option<&str>, &str)> = Vec::new();
-        let mut list_of_key: HashMap<(Option<&str>, &str), usize> = HashMap::new();
-        let list_of_name: Vec<usize> = self
-            .names
-            .iter()
-            .map(|name| {
-                let key = (name.namespace.as_deref(), name.local.as_str());
-                *list_of_key.entry(key).or_insert_with(|| {
-                    keys.push(key);
-                    lists.push(Vec::new());
-                    lists.len() - 1
-                })
+        // The list of each name: names that differ only by prefix share one, numbered
+        // by its first name.
+        let mut first_of_key: HashMap<(Option<&str>, &str), u32> =
+            HashMap::with_capacity(self.names.len());
+        let list_of_name: Vec<u32> = (0_u32..)
+            .zip(&self.names)
+            .map(|(id, name)| {
+                *first_of_key
+                    .entry((name.namespace.as_deref(), name.local.as_str()))
+                    .or_insert(id)
             })
             .collect();
+        drop(first_of_key);
+        let element_list = |record: &Record| {
+            (record.kind == NodeKind::Element)
+                .then(|| list_of_name.get(record.name as usize).copied())
+                .flatten()
+        };
+        let mut counts = vec![0_u32; self.names.len()];
+        for record in &self.records {
+            if let Some(count) = element_list(record).and_then(|l| counts.get_mut(l as usize)) {
+                *count += 1;
+            }
+        }
+        let mut names = Vec::new();
+        let mut next = vec![0_u32; self.names.len()];
+        let mut total = 0_u32;
+        for (list, (&count, next)) in (0_u32..).zip(counts.iter().zip(next.iter_mut())) {
+            if count > 0 {
+                let name = &self.names[list as usize];
+                names.push(IndexedName {
+                    hash: name_hash(name.namespace.as_deref(), &name.local),
+                    name: list,
+                    start: total,
+                    len: count,
+                });
+                *next = total;
+                total += count;
+            }
+        }
+        drop(counts);
+        let mut elements = vec![0_u32; total as usize];
         for (index, record) in (0_u32..).zip(&self.records) {
-            if record.kind == NodeKind::Element
-                && let Some(&list) = list_of_name.get(record.name as usize)
-                && let Some(elements) = lists.get_mut(list)
+            if let Some(next) = element_list(record).and_then(|l| next.get_mut(l as usize))
+                && let Some(slot) = elements.get_mut(*next as usize)
             {
-                elements.push(index);
+                *slot = index;
+                *next += 1;
             }
         }
-        let mut by_local: HashMap<String, ByNamespace> = HashMap::new();
-        for ((namespace, local), elements) in keys.into_iter().zip(lists) {
-            if !elements.is_empty() {
-                by_local
-                    .entry(local.to_owned())
-                    .or_default()
-                    .push((namespace.map(str::to_owned), elements));
-            }
-        }
-        ElementIndex { by_local }
+        names.sort_by_key(|n| n.hash);
+        names.shrink_to_fit();
+        ElementIndex { names, elements }
     }
 
     /// The first index after the attributes of the node at `index` and the first after
