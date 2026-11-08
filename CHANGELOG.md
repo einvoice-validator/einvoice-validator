@@ -54,7 +54,7 @@ against.
   evaluated at nodes of corpus documents, and on hand-written edge cases.
 - `einvoice-xsd`: XML Schema validation of UBL 2.1 Invoice and CreditNote documents against the
   official OASIS UBL 2.1 schemas, vendored unmodified (under their own notices, not MIT) and
-  embedded. Exactly the XML Schema 1.0 constructs those schemas use are implemented; any other
+  embedded, except the two ETSI XAdES schemas (see Changed). Exactly the XML Schema 1.0 constructs those schemas use are implemented; any other
   is refused when a schema set is loaded. Errors carry a stable kind, the line and column.
   Compared with xmllint on the corpus and on mutations; every difference is listed with its
   cause.
@@ -178,6 +178,19 @@ against.
   licence texts in `LICENSES/` and has repository, homepage and docs.rs links.
 - `einvoice-xslt-exec`: `Transformation::warnings` holds each distinct warning once, in the
   order first reported, as Saxon-HE's error reporter prints them (it held every occurrence).
+- `einvoice-xsd` no longer ships the two ETSI XAdES schemas of the OASIS UBL 2.1 package
+  (`UBL-XAdESv132-2.1.xsd`, `UBL-XAdESv141-2.1.xsd`), which no licence allows to redistribute;
+  its licence is `MIT AND LicenseRef-OASIS-Copyright-Notice AND
+  LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720`. The loader leaves out an import of
+  one of their two namespaces (`XADES_NAMESPACES`) when its document is not in the set, and
+  lists it in `Schema::omitted_imports`; any other missing document is still an error, and so
+  is a reference to a component of an omitted namespace. XAdES elements (in UBL extensions
+  and in `ds:Object`) are then validated laxly, as `xs:anyType`: their own content is not
+  checked, their descendants with a global declaration still are. Given the two files,
+  `Schema::load` loads the complete set and validates them strictly. The xmllint oracle uses the
+  complete OASIS set (the two files are downloaded, checksums verified, for the tests only),
+  checks this crate with both sets, and lists the 47 resulting disagreements, all on mutations
+  with XAdES content; every corpus case still agrees (#6).
 
 ### Fixed
 
@@ -196,7 +209,6 @@ against.
   as Saxon-HE does, not the line of its `xsl:choose` (#3).
 - `einvoice-xsd` declares the licences of the OASIS UBL 2.1 schemas it embeds
   (`MIT AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND
-  W3C-19980720 AND LicenseRef-ETSI-XAdES`) instead of MIT alone, and ships their texts in
-  `LICENSES/` (#6).
+  W3C-19980720`) instead of MIT alone, and ships their texts in `LICENSES/` (#6).
 
 [Unreleased]: https://github.com/einvoice-validator/einvoice-validator/commits/main

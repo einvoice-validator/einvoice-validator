@@ -27,7 +27,7 @@ SVRL report as Saxon-HE.
 | Same results as Saxon-HE on the whole CEN corpus | done: 1179 / 1179 cases and 504 / 504 mutation cases identical (the same SVRL, or the same error code where Saxon-HE stops with a dynamic error) ([#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
 | Test corpus of Peppol BIS Billing 3.0.22 (707 cases, and 505 mutation cases), built locally from the pinned release (not redistributed) with the Saxon-HE results of both stylesheets | done ([#4](https://github.com/einvoice-validator/einvoice-validator/issues/4)) |
 | Same results as Saxon-HE on the whole Peppol corpus | done: 707 / 707 cases and 505 / 505 mutation cases identical with each of the two stylesheets ([#5](https://github.com/einvoice-validator/einvoice-validator/issues/5), [#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
-| `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1546 cases, every corpus case agrees, the other differences are listed with their cause | done ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6) follow-ups) |
+| `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1555 cases, every corpus case agrees, the other differences are listed with their cause (XAdES content is validated laxly: its schemas are not redistributable) | done ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6) follow-ups) |
 | Public API (`einvoice-validator`: rule-set bundles, `Validator`, `Report`) and command-line tool (`einvoice-validate`); verdicts and findings agree with Saxon-HE on all 1179 CEN cases and 504 mutation cases and, with the Peppol bundle, on all 707 Peppol cases and 505 mutation cases | done ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
 | WebAssembly build | in progress: the library runs on `wasm32-unknown-unknown`, with the current date and time given by the caller (CI validates two corpus documents with the built-in rule set under wasmtime); bindings and an npm package are pending ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
 | Other rule sets (CEN CII, XRechnung, Factur-X / ZUGFeRD) | planned ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
@@ -137,7 +137,7 @@ is documented in the crate.
 | CEN EN 16931, UBL syntax | 1.3.17 | Artefacts vendored unmodified in `artefacts/`; test corpus and Saxon-HE results in `corpus/`. Built into `einvoice-validator` as the rule set `cen-ubl` (default feature `cen-ubl`). |
 | Peppol BIS Billing 3.0, UBL syntax | 3.0.22 | Not vendored: the upstream repository publishes no licence. `scripts/fetch-peppol.sh` fetches the pinned tag and compiles its two Schematron files to XSLT (ISO skeleton of ph-schematron) into `target/peppol/`, every input and output checked against a pinned checksum, with the `bundle.toml` that makes the directory a rule-set bundle; `scripts/check.sh peppol` builds the corpus and the Saxon-HE results there. |
 | CEN EN 16931 CII, XRechnung, Factur-X / ZUGFeRD | | Planned. |
-| OASIS UBL 2.1 schemas (Invoice, CreditNote) | 2.1 | Vendored unmodified in `crates/einvoice-xsd/schemas/`; `einvoice-xsd` validates against them. |
+| OASIS UBL 2.1 schemas (Invoice, CreditNote) | 2.1 | Vendored unmodified in `crates/einvoice-xsd/schemas/`, except the two ETSI XAdES schemas, which are not redistributable; `einvoice-xsd` validates against them. |
 
 The pinned versions are listed in `upstream.toml`; a weekly workflow reports newer upstream
 releases.
@@ -197,7 +197,8 @@ Requirements: [rustup](https://rustup.rs/) (the toolchain, Rust 1.99.1, is pinne
 (`rustup target add wasm32-unknown-unknown`): the checks that need them are skipped when they
 are missing. Java with network access for the Saxon-HE oracle and the Peppol corpus (CI uses
 Java 21, which regenerating the `einvoice-xdm` results needs), and `xmllint` for the xmllint
-oracle of `einvoice-xsd` (its results were produced with libxml2 2.9.14); the tests themselves
+oracle of `einvoice-xsd` (its results were produced with libxml2 2.9.14), with `curl` and network
+access the first time, to fetch the two XAdES schemas from OASIS; the tests themselves
 need neither.
 
 ```sh
@@ -223,7 +224,7 @@ cargo test -p einvoice-xsd --test oracle         # einvoice-xsd against the xmll
 | `zizmor` | `zizmor --persona=pedantic` on the GitHub workflows and `.github/dependabot.yml` |
 | `pins` | `scripts/freshness.sh pins` (every pin of `upstream.toml` matches the files that record it, offline) and the tests of `scripts/freshness.sh` (needs `jq`) |
 | `guards` | ShellCheck on `scripts/*.sh` and `.githooks/*`, then the tests of the privacy guard and of the release scripts (need `jq`) |
-| `oracle` | artefact checksums, corpus extraction and VEFA cross-check, then xmllint on the oracle cases of `einvoice-xsd` (needs `xmllint`), then Saxon-HE on every corpus case and on the probes of `einvoice-xdm`, `einvoice-xpath-eval` and `einvoice-xslt-exec`: the goldens must not change (needs Java; each part skipped locally without its tool) |
+| `oracle` | artefact checksums, corpus extraction and VEFA cross-check, then xmllint on the oracle cases of `einvoice-xsd` (needs `xmllint`, and `curl` and network access the first time), then Saxon-HE on every corpus case and on the probes of `einvoice-xdm`, `einvoice-xpath-eval` and `einvoice-xslt-exec`: the goldens must not change (needs Java; each part skipped locally without its tool) |
 | `peppol` | the Peppol corpus in `target/peppol/`: fetch and compile the pinned release, extract the cases, Saxon-HE with both stylesheets, VEFA cross-check, then the engine, and `einvoice-validate` with the Peppol bundle, must match every golden, mutation cases included (needs Java and network access the first time; skipped locally without them) |
 | `privacy` | the repository's pre-commit checks on staged changes (maintainers; skipped when nothing is staged) |
 
@@ -294,13 +295,19 @@ upstream.toml        every pinned upstream version and the files that record it
   redistributed; nothing derived from them (compiled stylesheets, extracted documents, goldens)
   is committed. The tools that compile their Schematron, ph-schematron-maven-plugin and Apache
   Maven (both Apache-2.0), are downloaded there too, for the tests only.
-- `crates/einvoice-xsd/schemas/oasis-ubl-2.1/` holds the fifteen schema documents of the OASIS
-  UBL 2.1 Standard reachable from the Invoice and CreditNote schemas, vendored unmodified and
-  embedded in `einvoice-xsd`. They are not under the MIT licence: each keeps the terms in its
-  own header (OASIS, UN/CEFACT, W3C; the two ETSI XAdES schemas carry none). The crate declares
-  `MIT AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND
-  W3C-19980720 AND LicenseRef-ETSI-XAdES`, with the texts in `crates/einvoice-xsd/LICENSES/`, as
-  the README of the schema directory explains.
+- `crates/einvoice-xsd/schemas/oasis-ubl-2.1/` holds thirteen of the fifteen schema documents
+  of the OASIS UBL 2.1 Standard reachable from the Invoice and CreditNote schemas, vendored
+  unmodified and embedded in `einvoice-xsd`. They are not under the MIT licence: each keeps the
+  terms in its own header (OASIS, UN/CEFACT, W3C). The crate declares `MIT AND
+  LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND
+  W3C-19980720`, with the texts in `crates/einvoice-xsd/LICENSES/`, as the README of the schema
+  directory explains.
+- The other two, the ETSI XAdES schemas of the OASIS package (`UBL-XAdESv132-2.1.xsd` and
+  `UBL-XAdESv141-2.1.xsd`), are not redistributed: they carry no licence notice and the ETSI
+  deliverable they come from allows no reproduction without written permission. `einvoice-xsd`
+  therefore validates XAdES content (in UBL extensions and signatures) laxly; the README of the
+  schema directory says what that means. The xmllint oracle of `einvoice-xsd` downloads the two
+  files from OASIS (checksums verified) into `target/`, for the tests only.
 - xmllint (libxml2) is the reference of the `einvoice-xsd` tests only; it is neither part of the
   repository nor a dependency.
 

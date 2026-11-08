@@ -1547,3 +1547,12 @@ mutation/date-year-twenty-digits	invalid	134:element-value
 mutation/xsi-type-complex-derived-from-declared-simple	valid	
 mutation/dtd-internal-entity	valid	
 mutation/dtd-attribute-default	invalid	10:attribute-missing
+mutation/xades-extension-valid	valid	
+mutation/xades-extension-wrong-order	invalid	129:unexpected-element
+mutation/xades-extension-bad-time	invalid	129:element-value
+mutation/xades-extension-missing-target	invalid	129:attribute-missing
+mutation/xades-extension-ds-missing-algorithm	invalid	129:attribute-missing
+mutation/xades-extension-ds-bad-serial	invalid	129:element-value
+mutation/xades-extension-unknown-element	invalid	129:element-value
+mutation/xades141-extension-valid	valid	
+mutation/xades141-extension-invalid	invalid	129:unexpected-element

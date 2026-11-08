@@ -64,6 +64,34 @@ fn every_corpus_verdict_agrees() {
 }
 
 #[test]
+fn xades_disagreements_concern_xades_content() {
+    // A disagreement put down to the XAdES schemas not being shipped is on a mutation
+    // whose document has XAdES content; none is on a corpus case.
+    let (cases, _, documented) = load();
+    let xades: Vec<&format::Disagreement> = documented
+        .iter()
+        .filter(|x| format::caused_by_unshipped_xades(x))
+        .collect();
+    assert!(xades.len() > 40, "{} XAdES disagreements", xades.len());
+    for x in xades {
+        assert!(x.case.starts_with("mutation/"), "{}", x.case);
+        let case = cases.iter().find(|c| c.id == x.case).unwrap();
+        assert!(
+            einvoice_xsd::XADES_NAMESPACES
+                .iter()
+                .any(|ns| case.text.contains(ns)),
+            "{}",
+            x.case
+        );
+        assert!(
+            x.explanation.len() > format::XADES_NOT_SHIPPED.len() + 20,
+            "{}: the explanation must say what XAdES would check",
+            x.case
+        );
+    }
+}
+
+#[test]
 fn expected_file_is_canonical() {
     let (_, expected, _) = load();
     let text = format::read(&format::oracle_dir().join("expected.tsv")).unwrap();

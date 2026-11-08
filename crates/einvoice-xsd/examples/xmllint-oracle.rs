@@ -1,9 +1,17 @@
 //! The xmllint oracle of this crate: validates every case of the oracle (the CEN UBL
 //! corpus, `tests/oracle/documents/` and the mutations of `tests/oracle/mutations.tsv`)
-//! with xmllint (libxml2) against the vendored UBL 2.1 schemas, and compares xmllint's
-//! verdicts and errors with `tests/oracle/expected.tsv` (or writes them). It then runs
-//! this crate on every case and reports how it compares with xmllint, listing each
-//! disagreement and whether `tests/oracle/disagreements.tsv` explains it.
+//! with xmllint (libxml2) against the complete OASIS UBL 2.1 schema set, and compares
+//! xmllint's verdicts and errors with `tests/oracle/expected.tsv` (or writes them). It
+//! then runs this crate on every case, twice, and reports how it compares with
+//! xmllint, listing each disagreement and whether `tests/oracle/disagreements.tsv`
+//! explains it:
+//!
+//! * with the schemas this crate ships ([`einvoice_xsd::Schema::ubl_2_1`]): every
+//!   difference must be documented, and every documented one must occur (as
+//!   `tests/oracle.rs` checks);
+//! * with the complete set, loaded with [`einvoice_xsd::Schema::load`]: the same,
+//!   except for the disagreements caused by the `XAdES` schemas not being shipped,
+//!   which must then not occur.
 //!
 //! ```text
 //! cargo run -p einvoice-xsd --example xmllint-oracle             run xmllint, compare with expected.tsv
@@ -14,6 +22,14 @@
 //! produced with libxml2 2.9.14. Both entry points are loaded together, through a
 //! generated schema that imports `UBL-Invoice-2.1.xsd` and `UBL-CreditNote-2.1.xsd`
 //! (this crate does the same).
+//!
+//! The complete set is assembled in `target/xsd-oracle/oasis-ubl-2.1/`: the vendored
+//! schema documents, and the two ETSI `XAdES` schemas of the OASIS package, which are
+//! not part of the repository. These are read from an extracted copy of the OASIS
+//! UBL 2.1 package when `$OASIS_UBL_2_1_DIR` names its root directory (whose copies
+//! of the vendored documents must then be identical to them), else downloaded from
+//! `docs.oasis-open.org` with `curl`. Their SHA-256 are checked either way, and so
+//! is a copy left in the directory by an earlier run.
 
 #[path = "../tests/oracle/format.rs"]
 mod format;
@@ -62,7 +78,8 @@ fn run() -> Result<bool, String> {
             .unwrap_or("xmllint: unknown version")
     );
 
-    let observed = run_xmllint(&xmllint, &cases)?;
+    let full = full_set(&oracle_work_dir())?;
+    let observed = run_xmllint(&xmllint, &cases, &full)?;
     let expected_path = format::oracle_dir().join("expected.tsv");
     let mut ok = true;
     if write {
@@ -100,18 +117,92 @@ fn run() -> Result<bool, String> {
             ok = false;
         }
     }
-    // This crate against what xmllint said just now.
+    // This crate against what xmllint said just now, with the shipped schemas and
+    // with the complete set.
     let documented = format::parse_disagreements(&format::read(
         &format::oracle_dir().join("disagreements.tsv"),
     )?)?;
-    let schema = einvoice_xsd::Schema::ubl_2_1().map_err(|e| e.to_string())?;
     let observed_map: BTreeMap<String, Expected> = observed.iter().cloned().collect();
-    let differences = format::differences(&schema, &cases, &observed_map)?;
+    let shipped = einvoice_xsd::Schema::ubl_2_1().map_err(|e| e.to_string())?;
+    let shipped_ok = compare(
+        "einvoice-xsd (shipped schemas) vs xmllint",
+        &shipped,
+        &cases,
+        &observed_map,
+        &documented,
+    )?;
+    let complete = load_complete(&full)?;
+    let with_xades: Vec<format::Disagreement> = documented
+        .iter()
+        .filter(|x| !format::caused_by_unshipped_xades(x))
+        .cloned()
+        .collect();
+    let complete_ok = compare(
+        "einvoice-xsd (complete OASIS set) vs xmllint",
+        &complete,
+        &cases,
+        &observed_map,
+        &with_xades,
+    )?;
+    Ok(ok && shipped_ok && complete_ok)
+}
+
+/// Loads the complete set with this crate; every document must be loaded and no
+/// import omitted.
+fn load_complete(full: &FullSet) -> Result<einvoice_xsd::Schema, String> {
+    let texts: Vec<(String, String)> = full
+        .files
+        .iter()
+        .map(|(path, bytes)| {
+            String::from_utf8(bytes.clone())
+                .map(|text| (path.clone(), text))
+                .map_err(|e| format!("{path}: {e}"))
+        })
+        .collect::<Result<_, _>>()?;
+    let files: Vec<(&str, &str)> = texts
+        .iter()
+        .map(|(p, t)| (p.as_str(), t.as_str()))
+        .collect();
+    let complete = einvoice_xsd::Schema::load(
+        &files,
+        &[
+            einvoice_xsd::INVOICE_ENTRY_POINT,
+            einvoice_xsd::CREDIT_NOTE_ENTRY_POINT,
+        ],
+    )
+    .map_err(|e| format!("complete OASIS UBL 2.1 schema set: {e}"))?;
+    if !complete.omitted_imports().is_empty() || complete.documents().len() != files.len() {
+        return Err(format!(
+            "complete OASIS UBL 2.1 schema set: {} of {} documents loaded, imports omitted: {:?}",
+            complete.documents().len(),
+            files.len(),
+            complete.omitted_imports()
+        ));
+    }
+    Ok(complete)
+}
+
+/// Runs this crate with `schema` on every case, prints how it compares with xmllint
+/// and whether `documented` explains each difference. Whether they match exactly.
+fn compare(
+    title: &str,
+    schema: &einvoice_xsd::Schema,
+    cases: &[Case],
+    observed: &BTreeMap<String, Expected>,
+    documented: &[format::Disagreement],
+) -> Result<bool, String> {
+    let differences = format::differences(schema, cases, observed)?;
     let count = |kind: &str| differences.iter().filter(|d| d.kind == kind).count();
     let verdicts = count("verdict");
+    let corpus = cases.iter().filter(|c| c.id.starts_with("corpus/")).count();
+    let corpus_differences = differences
+        .iter()
+        .filter(|d| d.case.starts_with("corpus/"))
+        .count();
     println!(
-        "einvoice-xsd vs xmllint: {} cases, {} same verdict ({} identical including errors), \
-         {verdicts} different verdicts, {} same verdict with different errors, {} refused as unsupported",
+        "{title}: {} cases, {} same verdict ({} identical including errors), \
+         {verdicts} different verdicts, {} same verdict with different errors, {} refused as unsupported; \
+         corpus: {corpus} cases, {corpus_differences} differences",
         cases.len(),
         cases.len() - verdicts - count("unsupported"),
         cases.len() - differences.len(),
@@ -128,23 +219,141 @@ fn run() -> Result<bool, String> {
             d.case, d.kind, d.ours.verdict, d.ours.errors, d.xmllint.verdict, d.xmllint.errors
         );
     }
-    let problems = format::unexplained(&differences, &documented);
+    let problems = format::unexplained(&differences, documented);
     for problem in &problems {
         println!("{problem}");
     }
-    Ok(ok && problems.is_empty())
+    Ok(problems.is_empty() && corpus_differences == 0)
 }
 
 fn oracle_work_dir() -> PathBuf {
     format::workspace_root().join("target/xsd-oracle")
 }
 
-/// The schema xmllint loads: imports both entry points of the vendored schemas.
-fn wrapper_schema(dir: &Path) -> Result<PathBuf, String> {
-    let schemas = format::crate_dir()
-        .join("schemas/oasis-ubl-2.1/xsd/maindoc")
+/// The ETSI `XAdES` schemas of the OASIS UBL 2.1 package, which the repository does
+/// not ship: path in the package, SHA-256 (the published files).
+const XADES: [(&str, &str); 2] = [
+    (
+        "xsd/common/UBL-XAdESv132-2.1.xsd",
+        "a4f726bcf8cc3f7d9ffa4dab99e005535a8e8b60dced1e5d94578d2e05afa96e",
+    ),
+    (
+        "xsd/common/UBL-XAdESv141-2.1.xsd",
+        "1fa4625e9cefcb7a9abb5ac1b64315547450031eece8a55bd584e4ba4b79dbc1",
+    ),
+];
+
+/// Where the OASIS UBL 2.1 package is published, file by file.
+const OASIS_UBL_2_1_URL: &str = "https://docs.oasis-open.org/ubl/os-UBL-2.1";
+
+/// The complete OASIS UBL 2.1 schema set, written to a directory.
+struct FullSet {
+    /// The root of the set (the layout of the OASIS package).
+    root: PathBuf,
+    /// Every schema document: path relative to the root, bytes.
+    files: Vec<(String, Vec<u8>)>,
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for byte in sha2::Sha256::digest(bytes) {
+        // Writing to a String cannot fail.
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+/// Assembles the complete set: the vendored documents and the `XAdES` schemas, from
+/// `$OASIS_UBL_2_1_DIR` or downloaded, all checked.
+fn full_set(dir: &Path) -> Result<FullSet, String> {
+    let root = dir.join("oasis-ubl-2.1");
+    let package = std::env::var_os("OASIS_UBL_2_1_DIR").map(PathBuf::from);
+    let mut files = Vec::new();
+    for (path, text) in einvoice_xsd::UBL_2_1_FILES {
+        if let Some(package) = &package {
+            let theirs = package.join(path);
+            let bytes = std::fs::read(&theirs).map_err(|e| format!("{}: {e}", theirs.display()))?;
+            if bytes != text.as_bytes() {
+                return Err(format!(
+                    "{} differs from the vendored {path}: OASIS_UBL_2_1_DIR is not the OASIS UBL 2.1 package",
+                    theirs.display()
+                ));
+            }
+        }
+        files.push(((*path).to_owned(), text.as_bytes().to_vec()));
+    }
+    for (path, sha256) in XADES {
+        let target = root.join(path);
+        let bytes = if let Some(package) = &package {
+            let source = package.join(path);
+            std::fs::read(&source).map_err(|e| format!("{}: {e}", source.display()))?
+        } else if target.exists() {
+            std::fs::read(&target).map_err(|e| format!("{}: {e}", target.display()))?
+        } else {
+            download(&format!("{OASIS_UBL_2_1_URL}/{path}"), dir)?
+        };
+        let actual = sha256_hex(&bytes);
+        if actual != sha256 {
+            return Err(format!(
+                "{path}: SHA-256 {actual}, expected {sha256} (delete {} and run again)",
+                target.display()
+            ));
+        }
+        files.push((path.to_owned(), bytes));
+    }
+    for (path, bytes) in &files {
+        let target = root.join(path);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
+        std::fs::write(&target, bytes).map_err(|e| format!("{}: {e}", target.display()))?;
+    }
+    println!(
+        "complete OASIS UBL 2.1 schema set: {} documents in {} (XAdES schemas from {}, checksums verified)",
+        files.len(),
+        root.display(),
+        package
+            .as_ref()
+            .map_or_else(|| OASIS_UBL_2_1_URL.to_owned(), |p| p.display().to_string()),
+    );
+    Ok(FullSet { root, files })
+}
+
+/// Downloads `url` with curl (HTTPS only) and returns the bytes.
+fn download(url: &str, dir: &Path) -> Result<Vec<u8>, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let tmp = dir.join(".download");
+    let status = Command::new("curl")
+        .args([
+            "--proto",
+            "=https",
+            "--tlsv1.2",
+            "-fsSL",
+            "--retry",
+            "3",
+            "-o",
+        ])
+        .arg(&tmp)
+        .arg(url)
+        .status()
+        .map_err(|e| format!("cannot run curl: {e}"))?;
+    if !status.success() {
+        return Err(format!("cannot download {url} (curl: {status})"));
+    }
+    let bytes = std::fs::read(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    std::fs::remove_file(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    Ok(bytes)
+}
+
+/// The schema xmllint loads: imports both entry points of the complete set.
+fn wrapper_schema(dir: &Path, full: &FullSet) -> Result<PathBuf, String> {
+    let schemas = full
+        .root
+        .join("xsd/maindoc")
         .canonicalize()
-        .map_err(|e| format!("vendored schemas: {e}"))?;
+        .map_err(|e| format!("complete schema set: {e}"))?;
     let location = |file: &str| format!("file://{}", schemas.join(file).display());
     let text = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
@@ -161,14 +370,18 @@ fn wrapper_schema(dir: &Path) -> Result<PathBuf, String> {
 }
 
 /// Runs xmllint once on all cases, each written to its own file.
-fn run_xmllint(xmllint: &str, cases: &[Case]) -> Result<Vec<(String, Expected)>, String> {
+fn run_xmllint(
+    xmllint: &str,
+    cases: &[Case],
+    full: &FullSet,
+) -> Result<Vec<(String, Expected)>, String> {
     let dir = oracle_work_dir();
     let docs = dir.join("cases");
     if docs.exists() {
         std::fs::remove_dir_all(&docs).map_err(|e| format!("{}: {e}", docs.display()))?;
     }
     std::fs::create_dir_all(&docs).map_err(|e| format!("{}: {e}", docs.display()))?;
-    let schema = wrapper_schema(&dir)?;
+    let schema = wrapper_schema(&dir, full)?;
     let mut paths = Vec::new();
     for (index, case) in cases.iter().enumerate() {
         let path = docs.join(format!("case-{index:05}.xml"));

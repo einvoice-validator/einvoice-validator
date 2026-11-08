@@ -99,14 +99,23 @@ fn only_schema_and_annotation_content() {
     // `walk` asserts that no foreign element appears outside annotations; the
     // inventory must also have found every kind of document.
     let table = inventory();
+    for construct in ["xs:schema", "xs:import", "xs:include", "xs:any"] {
+        assert!(table.contains(&format!("`{construct}`")), "{construct}");
+    }
+    // The XAdES schemas are not shipped: the constructs only they use are absent, and
+    // their namespaces are imported once each, by the signature aggregate components.
     for construct in [
-        "xs:schema",
-        "xs:import",
-        "xs:include",
-        "xs:any",
         "xs:anyAttribute",
         "xs:enumeration",
+        "xs:complexContent",
+        "xs:complexType @abstract=\"true\"",
     ] {
-        assert!(table.contains(&format!("`{construct}`")), "{construct}");
+        assert!(!table.contains(&format!("`{construct}`")), "{construct}");
+    }
+    for namespace in einvoice_xsd::XADES_NAMESPACES {
+        assert!(
+            table.contains(&format!("`xs:import @namespace=\"{namespace}\"` | 1 |")),
+            "{namespace}"
+        );
     }
 }

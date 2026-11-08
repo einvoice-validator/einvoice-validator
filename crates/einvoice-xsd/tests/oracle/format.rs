@@ -39,6 +39,16 @@ pub(crate) struct Disagreement {
     pub(crate) explanation: String,
 }
 
+/// How the explanation of a disagreement caused by the `XAdES` schemas not being
+/// shipped begins. Those disagreements occur with the shipped schemas only: with
+/// the complete OASIS set (in the `xmllint-oracle` example) they must not.
+pub(crate) const XADES_NOT_SHIPPED: &str = "XAdES schemas not shipped: content validated laxly.";
+
+/// Whether a disagreement is one caused by the `XAdES` schemas not being shipped.
+pub(crate) fn caused_by_unshipped_xades(disagreement: &Disagreement) -> bool {
+    disagreement.explanation.starts_with(XADES_NOT_SHIPPED)
+}
+
 pub(crate) fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }

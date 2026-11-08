@@ -8,8 +8,6 @@ fcee77a11870208e6377ea6311b9f2a050bca24bdad8606ea02d71e9f9e72f8d  xsd/common/UBL
 17bb6b62d709b4fd81449a37655af36aa6a1276ad4fdb1b2e249a5ed4b7c2172  xsd/common/UBL-SignatureAggregateComponents-2.1.xsd
 cef924d7ba3d1d8ade14469325cde1364f8c174e46f0198ec02da8e9e748a489  xsd/common/UBL-SignatureBasicComponents-2.1.xsd
 09052d406b4293e2a5f9c2bfee6df10ad4d8d5f0b36e24a6349d7f7936d89eb6  xsd/common/UBL-UnqualifiedDataTypes-2.1.xsd
-a4f726bcf8cc3f7d9ffa4dab99e005535a8e8b60dced1e5d94578d2e05afa96e  xsd/common/UBL-XAdESv132-2.1.xsd
-1fa4625e9cefcb7a9abb5ac1b64315547450031eece8a55bd584e4ba4b79dbc1  xsd/common/UBL-XAdESv141-2.1.xsd
 101909c9f06456d61ddcc4fb982f1d40dc357b439f393b1a2eb46e42acd60809  xsd/common/UBL-xmldsig-core-schema-2.1.xsd
 a54651b1225052f811bf2ba01346f13f2454e7cc3e0be290c91dd680dc7b7b1a  xsd/maindoc/UBL-CreditNote-2.1.xsd
 40fae8cb436f3a9506d7acce65ba162caef3b0bed4d5cbc0992b2153ded4edf4  xsd/maindoc/UBL-Invoice-2.1.xsd

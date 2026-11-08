@@ -178,6 +178,27 @@ pub struct Schema {
     pub(crate) global_types: HashMap<Option<String>, HashMap<String, TypeId>>,
     /// The schema documents that were loaded, in load order.
     pub(crate) documents: Vec<String>,
+    /// The imports that were not loaded, in the order they were found.
+    pub(crate) omitted_imports: Vec<OmittedImport>,
+}
+
+/// An `xs:import` that was not loaded: it imports one of the namespaces of
+/// [`XADES_NAMESPACES`](crate::XADES_NAMESPACES) and the schema document it names
+/// is not in the schema set. Elements of that namespace then have no declaration;
+/// where a lax wildcard allows them (the UBL extension content, `ds:Object`) they
+/// are validated laxly, as `xs:anyType`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OmittedImport {
+    /// The importing schema document, as its path relative to the root of the
+    /// schema set.
+    pub file: String,
+    /// 1-based line of the `xs:import` element in that document.
+    pub line: u32,
+    /// The imported namespace.
+    pub namespace: String,
+    /// The schema document the import names, resolved against the importing
+    /// document: a path that is not in the schema set.
+    pub location: String,
 }
 
 impl Schema {
@@ -210,6 +231,15 @@ impl Schema {
     #[must_use]
     pub fn documents(&self) -> &[String] {
         &self.documents
+    }
+
+    /// The imports that were not loaded because their namespace is one of
+    /// [`XADES_NAMESPACES`](crate::XADES_NAMESPACES) and the schema document they
+    /// name is not in the set, in the order they were found. Empty when every
+    /// import was loaded.
+    #[must_use]
+    pub fn omitted_imports(&self) -> &[OmittedImport] {
+        &self.omitted_imports
     }
 
     /// The number of global element declarations.

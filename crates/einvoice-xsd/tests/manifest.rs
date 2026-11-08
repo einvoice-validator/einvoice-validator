@@ -59,7 +59,7 @@ fn files_under(dir: &Path, root: &Path, out: &mut Vec<String>) {
 #[test]
 fn vendored_files_match_their_checksums() {
     let manifest = manifest();
-    assert_eq!(manifest.len(), 15);
+    assert_eq!(manifest.len(), 13);
     for (path, digest) in &manifest {
         let bytes = std::fs::read(schemas_dir().join(path)).unwrap();
         assert_eq!(&sha256_hex(&bytes), digest, "{path}");
@@ -89,6 +89,36 @@ fn embedded_files_are_the_vendored_files() {
     for (path, text) in einvoice_xsd::UBL_2_1_FILES {
         let bytes = std::fs::read(schemas_dir().join(path)).unwrap();
         assert_eq!(text.as_bytes(), bytes.as_slice(), "{path}");
+    }
+}
+
+#[test]
+fn xades_schemas_are_not_vendored() {
+    // No licence allows the ETSI XAdES schemas to be redistributed: they must not be
+    // in the vendored directory, and the only vendored document that names their
+    // namespaces is the one importing them.
+    let root = schemas_dir();
+    let mut found = Vec::new();
+    files_under(&root, &root, &mut found);
+    assert!(
+        found
+            .iter()
+            .all(|p| !p.to_ascii_lowercase().contains("xades")),
+        "{found:?}"
+    );
+    for (path, text) in einvoice_xsd::UBL_2_1_FILES {
+        let mentions = text.matches("http://uri.etsi.org/01903/").count();
+        if *path == "xsd/common/UBL-SignatureAggregateComponents-2.1.xsd" {
+            assert_eq!(mentions, 2, "{path}");
+            for namespace in einvoice_xsd::XADES_NAMESPACES {
+                assert!(
+                    text.contains(&format!("<xsd:import namespace=\"{namespace}\"")),
+                    "{path}: {namespace}"
+                );
+            }
+        } else {
+            assert_eq!(mentions, 0, "{path}");
+        }
     }
 }
 
@@ -125,9 +155,6 @@ fn licence_of(path: &str) -> &'static str {
     match path {
         "xsd/common/CCTS_CCT_SchemaModule-2.1.xsd" => "LicenseRef-UN-CEFACT-Copyright-Notice",
         "xsd/common/UBL-xmldsig-core-schema-2.1.xsd" => "W3C-19980720",
-        "xsd/common/UBL-XAdESv132-2.1.xsd" | "xsd/common/UBL-XAdESv141-2.1.xsd" => {
-            "LicenseRef-ETSI-XAdES"
-        }
         _ => "LicenseRef-OASIS-Copyright-Notice",
     }
 }
@@ -173,11 +200,7 @@ fn every_vendored_file_carries_the_terms_of_its_licence() {
                         .contains("http://www.w3.org/Consortium/Legal/copyright-software-19980720"),
                 "{path}"
             ),
-            _ => assert!(
-                text.contains("This is a copy of http://uri.etsi.org/01903/")
-                    && !text.contains("Copyright"),
-                "{path}"
-            ),
+            other => panic!("{path}: no check for {other}"),
         }
     }
     let mut declared = declared_licences();

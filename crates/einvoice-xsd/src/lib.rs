@@ -25,12 +25,29 @@
 //!
 //! # Schemas
 //!
-//! The fifteen schema documents reachable from the two entry points are vendored
-//! byte for byte in `schemas/oasis-ubl-2.1/` and embedded ([`UBL_2_1_FILES`]);
-//! [`Schema::ubl_2_1`] loads both entry points into one schema set, as an XML Schema
-//! processor given both does. [`Schema::load`] loads any set of schema documents
-//! within the supported subset, from memory: `xs:import` and `xs:include` are
-//! resolved as paths relative to the importing document, never fetched.
+//! Thirteen of the fifteen schema documents reachable from the two entry points are
+//! vendored byte for byte in `schemas/oasis-ubl-2.1/` and embedded
+//! ([`UBL_2_1_FILES`]); [`Schema::ubl_2_1`] loads both entry points into one schema
+//! set, as an XML Schema processor given both does. [`Schema::load`] loads any set of
+//! schema documents within the supported subset, from memory: `xs:import` and
+//! `xs:include` are resolved as paths relative to the importing document, never
+//! fetched.
+//!
+//! The other two are the ETSI `XAdES` schemas (`UBL-XAdESv132-2.1.xsd` and
+//! `UBL-XAdESv141-2.1.xsd`), which the OASIS package includes but no licence allows
+//! to redistribute, so they are not shipped. Their two namespaces
+//! ([`XADES_NAMESPACES`]) are the only ones whose import may be left out: an
+//! `xs:import` of one of them whose document is not in the set is not loaded, and is
+//! listed by [`Schema::omitted_imports`]; any other missing document is a
+//! [`LoadErrorKind::MissingFile`] error. The UBL schemas only import these
+//! namespaces and never refer to their components, so `XAdES` elements can only occur
+//! where a lax wildcard allows them (in `ext:ExtensionContent` and in `ds:Object`,
+//! where a `XAdES` signature puts its `xades:QualifyingProperties`): without the
+//! schemas they have no declaration and are validated laxly, as `xs:anyType`. Their
+//! content models, values and attributes are then not checked; their descendants that
+//! have a global declaration (`ds:DigestMethod`, `cbc:` elements, ...) still are. A
+//! user who has the two files can add them to the embedded ones and load the
+//! complete set with [`Schema::load`]: they are then loaded and validated strictly.
 //!
 //! # Validation
 //!
@@ -61,25 +78,29 @@
 //!
 //! # Comparison with xmllint
 //!
-//! The test suite compares every verdict with xmllint (libxml2 2.9.14) on the CEN
-//! EN 16931 UBL test corpus and on synthetic mutations covering each construct
-//! (`tests/oracle/`). The cases where xmllint departs from XML Schema 1.0 and this
-//! crate does not are listed with their cause in `tests/oracle/disagreements.tsv`.
+//! The test suite compares every verdict with xmllint (libxml2 2.9.14), which loads
+//! the complete OASIS schema set (`XAdES` schemas included), on the CEN EN 16931 UBL
+//! test corpus and on synthetic mutations covering each construct (`tests/oracle/`).
+//! Every corpus case agrees. The other differences are listed with their cause in
+//! `tests/oracle/disagreements.tsv`: the cases where xmllint departs from XML Schema
+//! 1.0 and this crate does not, and the cases with `XAdES` content, which this crate
+//! validates laxly with the shipped schemas. The `xmllint-oracle` example also runs
+//! this crate with the complete set, where the second kind does not occur.
 //!
 //! # Inventory of the UBL 2.1 schemas
 //!
-//! Counted over the fifteen vendored documents by the `inventory` test, which fails
+//! Counted over the thirteen vendored documents by the `inventory` test, which fails
 //! when this table no longer matches them. Annotations are not descended into.
 //!
-//! In short: 15 schema documents, all with `elementFormDefault="qualified"`; 24
-//! `xs:import` and one `xs:include` (the extension content type, included by the
-//! common extension components); 1,622 global element declarations and 1,219 named
-//! complex types; content models made of `xs:sequence` and `xs:choice` of element
-//! references, local elements and wildcards, with `minOccurs` 0 or 1 and `maxOccurs`
-//! 1 or `unbounded` only. There are no anonymous types, no groups or attribute groups,
-//! no substitution groups, no identity constraints, no default or fixed values, no
-//! `xs:all`, no lists or unions, and no facet other than `xs:enumeration` (two
-//! values, on the `XAdES` `QualifierType`).
+//! In short: 13 schema documents, all with `elementFormDefault="qualified"`; 22
+//! `xs:import` (two of them, of the `XAdES` namespaces, not loaded) and one
+//! `xs:include` (the extension content type, included by the common extension
+//! components); 1,581 global element declarations and 1,168 named complex types;
+//! content models made of `xs:sequence` and `xs:choice` of element references, local
+//! elements and wildcards, with `minOccurs` 0 or 1 and `maxOccurs` 1 or `unbounded`
+//! only. There are no anonymous types, no groups or attribute groups, no substitution
+//! groups, no identity constraints, no default or fixed values, no `xs:all`, no lists
+//! or unions, and no facets.
 //!
 //! * The UBL extension point: `ext:UBLExtensions` holds one or more `ext:UBLExtension`,
 //!   each ending with `ext:ExtensionContent`, whose type is a sequence of exactly one
@@ -94,64 +115,61 @@
 //!   `xs:time`, `xs:boolean`), and seven of them are simple-content restrictions
 //!   making one attribute required (`currencyID`, `mimeCode`, `unitCode`). Every
 //!   `cbc:` type extends one of these.
-//! * The W3C XML Signature and ETSI `XAdES` 1.3.2/1.4.1 schemas bring the rest: mixed
-//!   content, nested and repeated choices and sequences, strict and lax wildcards, an
-//!   attribute wildcard (strict), an abstract type with two complex-content
-//!   restrictions, `xs:ID` attributes, local elements typed directly with built-in
-//!   types, and the four simple types (restrictions of `xs:base64Binary` twice,
-//!   `xs:integer`, and `xs:string` with the only enumeration).
+//! * The W3C XML Signature schema brings the rest: mixed content, nested and
+//!   repeated choices and sequences, strict and lax wildcards, `xs:ID` attributes,
+//!   local elements typed directly with built-in types, and the three simple types
+//!   (restrictions of `xs:base64Binary` twice and of `xs:integer`).
+//!
+//! The supported subset also covers what the two `XAdES` schemas add, so that the
+//! complete OASIS set loads: an attribute wildcard (`xs:anyAttribute`, strict), an
+//! abstract type with two complex-content restrictions, and a simple type
+//! restricting `xs:string` with the `enumeration` facet.
 //!
 //! INVENTORY-START
 //! | Construct | Count |
 //! |---|---:|
-//! | `built-in type xs:ID` | 27 |
-//! | `built-in type xs:anyURI` | 30 |
-//! | `built-in type xs:base64Binary` | 13 |
-//! | `built-in type xs:boolean` | 2 |
+//! | `built-in type xs:ID` | 9 |
+//! | `built-in type xs:anyURI` | 15 |
+//! | `built-in type xs:base64Binary` | 11 |
+//! | `built-in type xs:boolean` | 1 |
 //! | `built-in type xs:date` | 1 |
-//! | `built-in type xs:dateTime` | 5 |
+//! | `built-in type xs:dateTime` | 1 |
 //! | `built-in type xs:decimal` | 4 |
-//! | `built-in type xs:integer` | 4 |
+//! | `built-in type xs:integer` | 2 |
 //! | `built-in type xs:language` | 2 |
 //! | `built-in type xs:normalizedString` | 26 |
-//! | `built-in type xs:string` | 32 |
+//! | `built-in type xs:string` | 20 |
 //! | `built-in type xs:time` | 1 |
 //! | `xs:annotation` | 2566 |
-//! | `xs:any` | 15 |
+//! | `xs:any` | 13 |
 //! | `xs:any @maxOccurs="1"` | 1 |
 //! | `xs:any @maxOccurs="unbounded"` | 5 |
 //! | `xs:any @minOccurs="0"` | 6 |
 //! | `xs:any @minOccurs="1"` | 1 |
-//! | `xs:any @namespace="##any"` | 3 |
-//! | `xs:any @namespace="##other"` | 12 |
-//! | `xs:any @processContents="lax"` | 12 |
-//! | `xs:anyAttribute` | 1 |
-//! | `xs:anyAttribute @namespace="##any"` | 1 |
-//! | `xs:attribute` | 92 |
-//! | `xs:attribute @use="optional"` | 75 |
-//! | `xs:attribute @use="required"` | 16 |
-//! | `xs:choice` | 15 |
-//! | `xs:choice @maxOccurs="unbounded"` | 7 |
-//! | `xs:choice @minOccurs="0"` | 3 |
-//! | `xs:complexContent` | 2 |
-//! | `xs:complexType` | 1219 |
-//! | `xs:complexType @abstract="true"` | 1 |
-//! | `xs:complexType @mixed="true"` | 9 |
-//! | `xs:element (global)` | 1622 |
-//! | `xs:element (local, name)` | 118 |
-//! | `xs:element (local, name) @maxOccurs="unbounded"` | 18 |
-//! | `xs:element (local, name) @minOccurs="0"` | 46 |
-//! | `xs:element (local, ref)` | 2293 |
+//! | `xs:any @namespace="##any"` | 2 |
+//! | `xs:any @namespace="##other"` | 11 |
+//! | `xs:any @processContents="lax"` | 11 |
+//! | `xs:attribute` | 62 |
+//! | `xs:attribute @use="optional"` | 49 |
+//! | `xs:attribute @use="required"` | 12 |
+//! | `xs:choice` | 6 |
+//! | `xs:choice @maxOccurs="unbounded"` | 3 |
+//! | `xs:choice @minOccurs="0"` | 1 |
+//! | `xs:complexType` | 1168 |
+//! | `xs:complexType @mixed="true"` | 8 |
+//! | `xs:element (global)` | 1581 |
+//! | `xs:element (local, name)` | 22 |
+//! | `xs:element (local, name) @minOccurs="0"` | 4 |
+//! | `xs:element (local, ref)` | 2278 |
 //! | `xs:element (local, ref) @maxOccurs="1"` | 1657 |
-//! | `xs:element (local, ref) @maxOccurs="unbounded"` | 607 |
-//! | `xs:element (local, ref) @minOccurs="0"` | 2034 |
+//! | `xs:element (local, ref) @maxOccurs="unbounded"` | 603 |
+//! | `xs:element (local, ref) @minOccurs="0"` | 2026 |
 //! | `xs:element (local, ref) @minOccurs="1"` | 233 |
-//! | `xs:enumeration` | 2 |
-//! | `xs:extension (in xs:simpleContent)` | 907 |
-//! | `xs:import` | 24 |
-//! | `xs:import @namespace="http://uri.etsi.org/01903/v1.3.2#"` | 2 |
+//! | `xs:extension (in xs:simpleContent)` | 905 |
+//! | `xs:import` | 22 |
+//! | `xs:import @namespace="http://uri.etsi.org/01903/v1.3.2#"` | 1 |
 //! | `xs:import @namespace="http://uri.etsi.org/01903/v1.4.1#"` | 1 |
-//! | `xs:import @namespace="http://www.w3.org/2000/09/xmldsig#"` | 2 |
+//! | `xs:import @namespace="http://www.w3.org/2000/09/xmldsig#"` | 1 |
 //! | `xs:import @namespace="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"` | 2 |
 //! | `xs:import @namespace="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"` | 5 |
 //! | `xs:import @namespace="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2"` | 2 |
@@ -162,17 +180,16 @@
 //! | `xs:import @namespace="urn:oasis:names:specification:ubl:schema:xsd:UnqualifiedDataTypes-2"` | 4 |
 //! | `xs:import @namespace="urn:un:unece:uncefact:data:specification:CoreComponentTypeSchemaModule:2"` | 1 |
 //! | `xs:include` | 1 |
-//! | `xs:restriction (in xs:complexContent)` | 2 |
 //! | `xs:restriction (in xs:simpleContent)` | 7 |
-//! | `xs:restriction (in xs:simpleType)` | 4 |
-//! | `xs:schema` | 15 |
+//! | `xs:restriction (in xs:simpleType)` | 3 |
+//! | `xs:schema` | 13 |
 //! | `xs:schema @attributeFormDefault="unqualified"` | 12 |
-//! | `xs:schema @elementFormDefault="qualified"` | 15 |
-//! | `xs:sequence` | 298 |
-//! | `xs:sequence @maxOccurs="unbounded"` | 5 |
-//! | `xs:sequence @minOccurs="0"` | 4 |
-//! | `xs:simpleContent` | 914 |
-//! | `xs:simpleType` | 4 |
+//! | `xs:schema @elementFormDefault="qualified"` | 13 |
+//! | `xs:sequence` | 255 |
+//! | `xs:sequence @maxOccurs="unbounded"` | 3 |
+//! | `xs:sequence @minOccurs="0"` | 3 |
+//! | `xs:simpleContent` | 912 |
+//! | `xs:simpleType` | 3 |
 //! INVENTORY-END
 
 mod automaton;
@@ -186,14 +203,15 @@ mod validate;
 
 pub use datatypes::Builtin;
 pub use error::{DocumentError, ErrorKind, LoadError, LoadErrorKind, Report, ValidationError};
-pub use model::Schema;
-pub use ubl::{CREDIT_NOTE_ENTRY_POINT, INVOICE_ENTRY_POINT, UBL_2_1_FILES};
+pub use model::{OmittedImport, Schema};
+pub use ubl::{CREDIT_NOTE_ENTRY_POINT, INVOICE_ENTRY_POINT, UBL_2_1_FILES, XADES_NAMESPACES};
 
 impl Schema {
     /// Loads a schema set from memory. `files` maps paths (relative,
     /// `/`-separated) to the text of each schema document; `entry_points` are the
     /// paths to start from. Every document reachable through `xs:import` and
-    /// `xs:include` must be in `files`.
+    /// `xs:include` must be in `files`, except that of an import of one of
+    /// [`XADES_NAMESPACES`], which is then not loaded ([`Schema::omitted_imports`]).
     ///
     /// # Errors
     ///
@@ -204,7 +222,9 @@ impl Schema {
     }
 
     /// Loads the embedded OASIS UBL 2.1 schemas, with both entry points
-    /// ([`INVOICE_ENTRY_POINT`] and [`CREDIT_NOTE_ENTRY_POINT`]).
+    /// ([`INVOICE_ENTRY_POINT`] and [`CREDIT_NOTE_ENTRY_POINT`]). The two imports
+    /// of the `XAdES` namespaces are not loaded ([`Schema::omitted_imports`]):
+    /// `XAdES` content is validated laxly.
     ///
     /// # Errors
     ///

@@ -3,7 +3,9 @@
 //!
 //! Everything outside the supported subset is refused with
 //! [`LoadErrorKind::Unsupported`] naming the construct and its line; nothing is
-//! silently ignored except the content of `xs:annotation`.
+//! silently ignored except the content of `xs:annotation`. The one import that may
+//! be left unloaded is that of a namespace of [`XADES_NAMESPACES`] whose schema
+//! document is not in the set: it is recorded in [`Schema::omitted_imports`].
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -14,8 +16,9 @@ use crate::datatypes::{self, Builtin, UNIMPLEMENTED_BUILTINS};
 use crate::error::{LoadError, LoadErrorKind};
 use crate::model::{
     ANY_TYPE, AttributeUse, ComplexType, Content, ElementDecl, ElementId, NamespaceConstraint,
-    ProcessContents, QName, Schema, SimpleType, TypeDef, TypeId, Wildcard, XS,
+    OmittedImport, ProcessContents, QName, Schema, SimpleType, TypeDef, TypeId, Wildcard, XS,
 };
+use crate::ubl::XADES_NAMESPACES;
 
 /// A parsed schema document.
 struct Doc<'a> {
@@ -150,6 +153,8 @@ fn children<'a, 'i>(doc: &Doc<'_>, node: Node<'a, 'i>) -> Result<Vec<Node<'a, 'i
 
 struct Loader<'d, 'a> {
     docs: &'d [Doc<'a>],
+    /// The imports that were not loaded.
+    omitted: &'d [OmittedImport],
     types: Vec<TypeDef>,
     elements: Vec<ElementDecl>,
     global_types: HashMap<Option<String>, HashMap<String, TypeId>>,
@@ -167,9 +172,10 @@ struct Loader<'d, 'a> {
 /// document texts; `entry_points` are paths among them.
 pub(crate) fn load(files: &[(&str, &str)], entry_points: &[&str]) -> Result<Schema> {
     let texts: HashMap<&str, &str> = files.iter().copied().collect();
-    let docs = discover(&texts, entry_points)?;
+    let (docs, omitted) = discover(&texts, entry_points)?;
     let mut loader = Loader {
         docs: &docs,
+        omitted: &omitted,
         types: Vec::new(),
         elements: Vec::new(),
         global_types: HashMap::new(),
@@ -193,12 +199,19 @@ pub(crate) fn load(files: &[(&str, &str)], entry_points: &[&str]) -> Result<Sche
         global_elements: loader.global_elements,
         global_types: loader.global_types,
         documents: docs.iter().map(|d| d.path.clone()).collect(),
+        omitted_imports: omitted,
     })
 }
 
-/// Parses the entry points and every document they import or include.
-fn discover<'a>(texts: &HashMap<&str, &'a str>, entry_points: &[&str]) -> Result<Vec<Doc<'a>>> {
+/// Parses the entry points and every document they import or include, except for
+/// the imports of a namespace of [`XADES_NAMESPACES`] whose document is not in
+/// `texts`, which are returned.
+fn discover<'a>(
+    texts: &HashMap<&str, &'a str>,
+    entry_points: &[&str],
+) -> Result<(Vec<Doc<'a>>, Vec<OmittedImport>)> {
     let mut docs: Vec<Doc<'a>> = Vec::new();
+    let mut omitted: Vec<OmittedImport> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
     // (path, expected target namespace or None for an entry point, includer target
     // for include)
@@ -244,6 +257,18 @@ fn discover<'a>(texts: &HashMap<&str, &'a str>, entry_points: &[&str]) -> Result
                         ));
                     }
                     let location = location(&doc, child)?;
+                    if let Some(namespace) = namespace.as_deref()
+                        && XADES_NAMESPACES.contains(&namespace)
+                        && !texts.contains_key(location.as_str())
+                    {
+                        omitted.push(OmittedImport {
+                            file: doc.path.clone(),
+                            line: doc.xml.text_pos_at(child.range().start).row,
+                            namespace: namespace.to_owned(),
+                            location,
+                        });
+                        continue;
+                    }
                     found.push((location, Expect::Namespace(namespace)));
                 } else if is_xs(child, "include") {
                     check_attributes(&doc, child, &["schemaLocation"])?;
@@ -273,7 +298,7 @@ fn discover<'a>(texts: &HashMap<&str, &'a str>, entry_points: &[&str]) -> Result
             }
         }
     }
-    Ok(docs)
+    Ok((docs, omitted))
 }
 
 enum Expect {
@@ -567,12 +592,37 @@ impl<'d, 'a> Loader<'d, 'a> {
                 format!("built-in type {name}"),
             ));
         }
-        Err(error(
-            d,
-            node,
-            LoadErrorKind::Invalid,
-            format!("unresolved type {name}"),
-        ))
+        Err(self.unresolved(doc, node, "type", &name))
+    }
+
+    /// The error for a reference to a global component that does not exist: a
+    /// [`LoadErrorKind::MissingFile`] when the component is in a namespace whose
+    /// import was omitted (and that no loaded document has as target namespace),
+    /// else [`LoadErrorKind::Invalid`].
+    fn unresolved(&self, doc: usize, node: Node<'_, '_>, what: &str, name: &QName) -> LoadError {
+        let d = self.doc(doc);
+        let omitted = self
+            .omitted
+            .iter()
+            .find(|o| name.namespace.as_deref() == Some(o.namespace.as_str()))
+            .filter(|_| !self.docs.iter().any(|x| x.target == name.namespace));
+        match omitted {
+            Some(import) => error(
+                d,
+                node,
+                LoadErrorKind::MissingFile,
+                format!(
+                    "{what} {name}: its namespace is not loaded, because {} (imported at {}:{}) is not in the schema set",
+                    import.location, import.file, import.line
+                ),
+            ),
+            None => error(
+                d,
+                node,
+                LoadErrorKind::Invalid,
+                format!("unresolved {what} {name}"),
+            ),
+        }
     }
 
     fn resolve_qname(&self, doc: usize, node: Node<'_, '_>, value: &str) -> Result<QName> {
@@ -1035,14 +1085,7 @@ impl<'d, 'a> Loader<'d, 'a> {
                     .get(&name.namespace)
                     .and_then(|m| m.get(&name.local))
                     .copied()
-                    .ok_or_else(|| {
-                        error(
-                            d,
-                            node,
-                            LoadErrorKind::Invalid,
-                            format!("unresolved element {name}"),
-                        )
-                    })?
+                    .ok_or_else(|| self.unresolved(doc, node, "element", &name))?
             }
             (None, Some(local)) => {
                 let namespace = if d.qualified_elements {
@@ -1467,5 +1510,83 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(wrong_namespace.kind, LoadErrorKind::Invalid);
+    }
+
+    const XADES: &str = "http://uri.etsi.org/01903/v1.3.2#";
+
+    fn importing(namespace: &str, body: &str) -> String {
+        format!(
+            r#"{HEAD}<xs:import namespace="{namespace}" schemaLocation="x/X.xsd"/>{body}</xs:schema>"#
+        )
+    }
+
+    #[test]
+    fn xades_imports_may_be_absent() {
+        let main = importing(XADES, r#"<xs:element name="e"/>"#);
+        let schema = load(&[("s.xsd", main.as_str())], &["s.xsd"]).unwrap();
+        assert_eq!(schema.documents, ["s.xsd"]);
+        assert_eq!(
+            schema.omitted_imports,
+            [OmittedImport {
+                file: "s.xsd".to_owned(),
+                line: 1,
+                namespace: XADES.to_owned(),
+                location: "x/X.xsd".to_owned(),
+            }]
+        );
+        // Present, it is loaded like any other import.
+        let xades = format!(
+            r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="{XADES}"><xs:element name="Q"/></xs:schema>"#
+        );
+        let schema = load(
+            &[("s.xsd", main.as_str()), ("x/X.xsd", xades.as_str())],
+            &["s.xsd"],
+        )
+        .unwrap();
+        assert_eq!(schema.documents, ["s.xsd", "x/X.xsd"]);
+        assert_eq!(schema.omitted_imports, []);
+        assert!(schema.global_element(Some(XADES), "Q").is_some());
+        // Its location is still checked.
+        let remote = format!(
+            r#"{HEAD}<xs:import namespace="{XADES}" schemaLocation="http://example.org/X.xsd"/></xs:schema>"#
+        );
+        assert_eq!(kind_of(&remote), LoadErrorKind::Unsupported);
+    }
+
+    #[test]
+    fn other_imports_may_not_be_absent() {
+        for namespace in [
+            "urn:x",
+            "http://uri.etsi.org/01903/v1.3.2",
+            "http://uri.etsi.org/01903/v1.3.3#",
+        ] {
+            let main = importing(namespace, "");
+            let error = load(&[("s.xsd", main.as_str())], &["s.xsd"]).unwrap_err();
+            assert_eq!(error.kind, LoadErrorKind::MissingFile, "{namespace}");
+            assert_eq!(error.file, "x/X.xsd");
+        }
+    }
+
+    #[test]
+    fn references_into_an_omitted_namespace_are_refused() {
+        for body in [
+            r#"<xs:element name="e" type="x:T"/>"#,
+            r#"<xs:complexType name="c"><xs:sequence><xs:element ref="x:Q"/></xs:sequence></xs:complexType>"#,
+            r#"<xs:complexType name="c"><xs:simpleContent><xs:extension base="x:T"/></xs:simpleContent></xs:complexType>"#,
+        ] {
+            let main = importing(XADES, body).replacen(
+                "<xs:schema ",
+                &format!(r#"<xs:schema xmlns:x="{XADES}" "#),
+                1,
+            );
+            let error = load_one(&main).unwrap_err();
+            assert_eq!(error.kind, LoadErrorKind::MissingFile, "{body}");
+            assert_eq!(error.file, "s.xsd", "{body}");
+            assert!(
+                error.message.contains("its namespace is not loaded")
+                    && error.message.contains("x/X.xsd"),
+                "{error}"
+            );
+        }
     }
 }

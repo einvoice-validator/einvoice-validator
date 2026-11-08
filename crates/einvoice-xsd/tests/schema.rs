@@ -35,10 +35,103 @@ fn every_vendored_file_is_reachable_from_the_entry_points() {
     let mut vendored: Vec<String> = UBL_2_1_FILES.iter().map(|(p, _)| (*p).to_owned()).collect();
     vendored.sort();
     assert_eq!(loaded, vendored);
-    assert_eq!(schema.global_element_count(), 1622);
-    // 1219 named complex types, 4 named simple types, anyType and the 16
+    assert_eq!(schema.global_element_count(), 1581);
+    // 1168 named complex types, 3 named simple types, anyType and the 16
     // implemented built-in simple types.
-    assert_eq!(schema.type_count(), 1219 + 4 + 1 + 16);
+    assert_eq!(schema.type_count(), 1168 + 3 + 1 + 16);
+}
+
+#[test]
+fn only_the_xades_imports_are_omitted() {
+    let schema = ubl();
+    let omitted: Vec<(&str, u32, &str, &str)> = schema
+        .omitted_imports()
+        .iter()
+        .map(|o| {
+            (
+                o.file.as_str(),
+                o.line,
+                o.namespace.as_str(),
+                o.location.as_str(),
+            )
+        })
+        .collect();
+    let importer = "xsd/common/UBL-SignatureAggregateComponents-2.1.xsd";
+    assert_eq!(
+        omitted,
+        [
+            (
+                importer,
+                32,
+                "http://uri.etsi.org/01903/v1.3.2#",
+                "xsd/common/UBL-XAdESv132-2.1.xsd"
+            ),
+            (
+                importer,
+                34,
+                "http://uri.etsi.org/01903/v1.4.1#",
+                "xsd/common/UBL-XAdESv141-2.1.xsd"
+            ),
+        ]
+    );
+    // Any other missing document is still an error.
+    let without_dsig: Vec<(&str, &str)> = UBL_2_1_FILES
+        .iter()
+        .copied()
+        .filter(|(p, _)| !p.ends_with("UBL-xmldsig-core-schema-2.1.xsd"))
+        .collect();
+    let error = Schema::load(&without_dsig, &[INVOICE_ENTRY_POINT]).unwrap_err();
+    assert_eq!(error.kind, LoadErrorKind::MissingFile);
+    assert!(
+        error.file.ends_with("UBL-xmldsig-core-schema-2.1.xsd"),
+        "{error}"
+    );
+}
+
+/// A credit note whose single extension holds `content`.
+fn with_extension(content: &str) -> String {
+    credit_note(&format!(
+        "<ext:UBLExtensions><ext:UBLExtension><ext:ExtensionContent \
+         xmlns:xades=\"http://uri.etsi.org/01903/v1.3.2#\" \
+         xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\">{content}\
+         </ext:ExtensionContent></ext:UBLExtension></ext:UBLExtensions>{MINIMAL_BODY}"
+    ))
+}
+
+#[test]
+fn xades_content_is_validated_laxly() {
+    let schema = ubl();
+    // Content XAdES 1.3.2 would reject (wrong order, a bad xs:dateTime, a missing
+    // required attribute) has no declaration here: lax, as xs:anyType.
+    let xades = with_extension(
+        "<xades:QualifyingProperties><xades:SignedProperties><xades:SignedSignatureProperties>\
+         <xades:SigningCertificate/><xades:SigningTime>yesterday</xades:SigningTime>\
+         </xades:SignedSignatureProperties></xades:SignedProperties></xades:QualifyingProperties>",
+    );
+    let report = schema.validate(&xades).unwrap();
+    assert!(report.is_valid(), "{:?}", report.errors);
+    // Below it, elements with a global declaration are still validated.
+    let declared = with_extension(
+        "<xades:QualifyingProperties><xades:CertDigest><ds:DigestMethod/>\
+         <cbc:IssueDate>2024-02-30</cbc:IssueDate></xades:CertDigest></xades:QualifyingProperties>",
+    );
+    let kinds: Vec<ErrorKind> = schema
+        .validate(&declared)
+        .unwrap()
+        .errors
+        .iter()
+        .map(|e| e.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        [ErrorKind::MissingAttribute, ErrorKind::InvalidValue]
+    );
+    // An xsi:type naming a XAdES type does not resolve.
+    let typed =
+        with_extension("<xades:QualifyingProperties xsi:type=\"xades:QualifyingPropertiesType\"/>");
+    let report = schema.validate(&typed).unwrap();
+    assert_eq!(report.errors.len(), 1);
+    assert_eq!(report.errors[0].kind, ErrorKind::InvalidXsiType);
 }
 
 #[test]

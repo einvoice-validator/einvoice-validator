@@ -36,7 +36,6 @@ exceptions = [
         "LicenseRef-OASIS-Copyright-Notice",
         "LicenseRef-UN-CEFACT-Copyright-Notice",
         "W3C-19980720",
-        "LicenseRef-ETSI-XAdES",
     ] },
 ]
 
