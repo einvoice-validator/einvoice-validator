@@ -143,6 +143,10 @@ file = "scripts/fetch-peppol.sh"
 pattern = 'tag=(?<v>[^\s]+)'
 
 [[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-peppol.pins"
+pattern = 'tag=(?<v>[^\s]+)'
+
+[[upstream.pin]]
 file = "scripts/fetch-peppol.sh"
 pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 
@@ -233,6 +237,10 @@ file = "scripts/fetch-facturx.sh"
 pattern = 'facturx=(?<v>[^\s]+)'
 
 [[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-facturx.pins"
+pattern = 'facturx=(?<v>[^\s]+)'
+
+[[upstream.pin]]
 file = "scripts/fetch-facturx.sh"
 pattern = 'Factur-X (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
 
@@ -266,6 +274,10 @@ file = "scripts/fetch-facturx.sh"
 pattern = 'mustang=(?<v>[^\s]+)'
 
 [[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-facturx.pins"
+pattern = 'mustang=(?<v>[^\s]+)'
+
+[[upstream.pin]]
 file = "scripts/fetch-facturx.sh"
 pattern = 'Mustang validator (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
 
@@ -283,6 +295,10 @@ version-pattern = 'XRechnung Bundle (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
 
 [[upstream.pin]]
 file = "scripts/fetch-xrechnung.sh"
+pattern = 'xrechnung=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-xrechnung.pins"
 pattern = 'xrechnung=(?<v>[^\s]+)'
 
 [[upstream.pin]]
@@ -322,6 +338,10 @@ file = "scripts/fetch-xrechnung.sh"
 pattern = 'schematron=(?<v>[^\s]+)'
 
 [[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-xrechnung.pins"
+pattern = 'schematron=(?<v>[^\s]+)'
+
+[[upstream.pin]]
 file = "scripts/fetch-xrechnung.sh"
 pattern = 'tag v(?<v>[0-9]+\.[0-9]+\.[0-9]+)'
 
@@ -342,6 +362,10 @@ file = "scripts/fetch-xrechnung.sh"
 pattern = '\nconfiguration=(?<v>[^\s]+)'
 
 [[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-xrechnung.pins"
+pattern = '\nconfiguration=(?<v>[^\s]+)'
+
+[[upstream.pin]]
 file = "corpus/xrechnung-ubl-3.0.2/README.md"
 pattern = 'validator configuration (?<v>[0-9]{4}-[0-9]{2}-[0-9]{2})'
 
@@ -355,6 +379,10 @@ version-pattern = '<version>(?<v>[0-9]{4}-[0-9]{2}-[0-9]{2})</version>'
 
 [[upstream.pin]]
 file = "scripts/fetch-xrechnung.sh"
+pattern = '\ntestsuite=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-xrechnung.pins"
 pattern = '\ntestsuite=(?<v>[^\s]+)'
 
 [[upstream.pin]]
@@ -376,6 +404,10 @@ file = "scripts/fetch-xrechnung.sh"
 pattern = 'xmute=(?<v>[^\s]+)'
 
 [[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-xrechnung.pins"
+pattern = 'xmute=(?<v>[^\s]+)'
+
+[[upstream.pin]]
 file = "scripts/fetch-xrechnung.sh"
 pattern = 'XML Mutate (?<v>[0-9]+(?:\.[0-9]+)+)'
 
@@ -389,6 +421,10 @@ version-pattern = 'SCHEMATRONS_FR_CTC_V(?<v>[0-9]+(?:\.[0-9]+)*)\.zip'
 
 [[upstream.pin]]
 file = "scripts/fetch-fr-ctc.sh"
+pattern = 'pack=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-fr-ctc.pins"
 pattern = 'pack=(?<v>[^\s]+)'
 
 [[upstream.pin]]
@@ -430,7 +466,15 @@ file = "scripts/fetch-facturx.sh"
 pattern = 'z12_012=(?<v>[^\s]+)'
 
 [[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-facturx.pins"
+pattern = 'z12_012=(?<v>[^\s]+)'
+
+[[upstream.pin]]
 file = "scripts/fetch-fr-ctc.sh"
+pattern = 'z12_012=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-fr-ctc.pins"
 pattern = 'z12_012=(?<v>[^\s]+)'
 
 [[upstream]]
@@ -446,7 +490,15 @@ file = "scripts/fetch-facturx.sh"
 pattern = 'z12_014=(?<v>[^\s]+)'
 
 [[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-facturx.pins"
+pattern = 'z12_014=(?<v>[^\s]+)'
+
+[[upstream.pin]]
 file = "scripts/fetch-fr-ctc.sh"
+pattern = 'z12_014=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-fr-ctc.pins"
 pattern = 'z12_014=(?<v>[^\s]+)'
 
 [[upstream]]
@@ -645,6 +697,10 @@ file = "scripts/fetch-peppol.sh"
 pattern = 'plugin=(?<v>[^\s]+)'
 
 [[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-peppol.pins"
+pattern = 'plugin=(?<v>[^\s]+)'
+
+[[upstream.pin]]
 file = "scripts/fetch-peppol.sh"
 pattern = 'ph-schematron-maven-plugin (?<v>[0-9]+(?:\.[0-9]+)+)'
 
@@ -664,6 +720,10 @@ series = "3"
 
 [[upstream.pin]]
 file = "scripts/fetch-peppol.sh"
+pattern = 'maven=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-validator/pins/fetch-peppol.pins"
 pattern = 'maven=(?<v>[^\s]+)'
 
 [[upstream.pin]]

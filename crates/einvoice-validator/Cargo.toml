@@ -28,6 +28,12 @@ cen-cii = []
 # The module `pdf`: the invoice XML embedded in a Factur-X, ZUGFeRD or Order-X PDF file,
 # with einvoice-pdf (pure Rust; adds miniz_oxide for Flate).
 pdf = ["dep:einvoice-pdf"]
+# RuleSetCache::fetch: downloads the rule sets that are not redistributed (Factur-X,
+# XRechnung, the French rules, Peppol BIS Billing 3.0) from their publishers, at pinned
+# URLs, checked against pinned digests, and assembles their bundles in the cache. A
+# minimal HTTPS client on rustls (the ring provider, the Mozilla roots of webpki-roots)
+# and ZIP, gzip and tar readers on miniz_oxide. Ignored on WebAssembly.
+fetch = ["dep:miniz_oxide", "dep:rustls", "dep:webpki-roots"]
 
 [dependencies]
 einvoice-pdf = { path = "../einvoice-pdf", version = "0.2.0", optional = true }
@@ -39,6 +45,11 @@ einvoice-xsd = { path = "../einvoice-xsd", version = "0.2.0" }
 einvoice-xslt = { path = "../einvoice-xslt", version = "0.2.0" }
 einvoice-xslt-exec = { path = "../einvoice-xslt-exec", version = "0.2.0" }
 sha2 = "0.11.1"
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+miniz_oxide = { version = "0.9.1", optional = true }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+webpki-roots = { version = "1.0.11", optional = true }
 
 [dev-dependencies]
 # Not published: without a version, cargo leaves it out of the published manifest.
@@ -66,6 +77,10 @@ required-features = ["cen-ubl"]
 [[example]]
 name = "wasm-validate"
 required-features = ["cen-ubl"]
+
+[[test]]
+name = "rulesets"
+required-features = ["fetch"]
 
 [lints]
 workspace = true

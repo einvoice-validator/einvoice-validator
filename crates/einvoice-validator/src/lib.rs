@@ -62,6 +62,54 @@
 //!   `<dir>`. This is how rule sets whose artefacts cannot be redistributed are used:
 //!   fetch them into a directory, add the manifest.
 //! - From memory ([`Validator::from_bundle`]).
+//! - Fetched on demand from their publishers, and kept in a cache
+//!   ([`RuleSetCache`], [`Validator::from_cache`]): see the next section.
+//!
+//! # Rule sets fetched on demand
+//!
+//! Factur-X (the five profiles), XRechnung (UBL and CII), the French rules (the
+//! fourteen bundles of the FNFE-MPE package) and Peppol BIS Billing 3.0 may not be
+//! redistributed, so the crate does not embed them: [`fetched_rule_sets`] is their
+//! catalogue, which gives, for each, the files of its family at their publishers (pinned
+//! URL and SHA-256 or SHA-512, the pins of the fetch scripts of the repository) and the
+//! manifest of its bundle. Not on WebAssembly.
+//!
+//! - With the feature `fetch` (off by default; on in `einvoice-cli`),
+//!   `RuleSetCache::fetch` downloads the files of a family (or takes them from a
+//!   local directory, `FetchOptions::from_dir`), checks each against its pinned
+//!   digest, assembles the bundles exactly as the fetch scripts do (a test checks they
+//!   are the same, byte for byte) and installs them in the cache in one rename. Peppol
+//!   BIS Billing publishes its rules as Schematron only: its bundle is built by
+//!   compiling them with ph-schematron as the reference validators do, through Apache
+//!   Maven, which needs Java and network access to Maven Central. The HTTP client is
+//!   minimal and pure Rust but for its cryptography (rustls with the ring provider and
+//!   the Mozilla roots of webpki-roots): HTTPS only (plain HTTP only to a loopback
+//!   address, for a local mirror), at most five redirects, never from HTTPS to HTTP,
+//!   five attempts with a doubling delay on an I/O error and on HTTP 408, 429 and 5xx
+//!   (honouring `Retry-After`), an interrupted download resumed where it stopped, a
+//!   size limit (`DEFAULT_MAX_SIZE`, 64 MiB); the archives (ZIP, gzip, tar) are read in
+//!   memory, refusing absolute paths, `..`, links and sizes beyond their limits.
+//! - Nothing is downloaded otherwise: [`RuleSetCache::load`] and
+//!   [`Validator::from_cache`] read the cache only, and fail with
+//!   [`Error::NotCached`] for a rule set that has not been fetched. On every load the
+//!   cached manifest must be, byte for byte, the catalogue's, and every file must have
+//!   its SHA-256, so a cache works offline and is never trusted.
+//!
+//! ```no_run
+//! # #[cfg(feature = "fetch")] {
+//! use einvoice_validator::{FetchOptions, RuleSetCache, Validator};
+//!
+//! // The platform's cache directory, or EINVOICE_VALIDATOR_CACHE.
+//! let cache = RuleSetCache::new()?;
+//! // Downloads and builds xrechnung-ubl and xrechnung-cii (once: then from the cache).
+//! cache.fetch("xrechnung", &FetchOptions::new())?;
+//! let validator = cache.load("xrechnung-ubl")?;
+//! // The same, from the default cache, never downloading.
+//! let same = Validator::from_cache("xrechnung-ubl")?;
+//! assert_eq!(validator.rule_set(), same.rule_set());
+//! # }
+//! # Ok::<(), einvoice_validator::Error>(())
+//! ```
 //!
 //! The manifest is TOML, restricted to the subset below; anything else is refused with
 //! the line concerned (unknown keys included).
@@ -144,6 +192,8 @@ mod manifest;
 pub mod pdf;
 mod report;
 mod resources;
+#[cfg(not(target_family = "wasm"))]
+mod rulesets;
 mod validator;
 
 pub use builtin::BUILTIN_RULE_SETS;
@@ -158,6 +208,14 @@ pub use report::{
     StylesheetFailure, StylesheetReport, Verdict,
 };
 pub use validator::{ValidateOptions, Validator, file_uri};
+
+#[cfg(not(target_family = "wasm"))]
+pub use rulesets::{
+    CACHE_ENV, CacheStatus, FetchedRuleSet, RuleSetCache, Source, fetched_rule_set,
+    fetched_rule_set_aliases, fetched_rule_sets,
+};
+#[cfg(all(feature = "fetch", not(target_family = "wasm")))]
+pub use rulesets::{DEFAULT_MAX_SIZE, FetchOptions, Fetched, Progress};
 
 /// The clock of a validation ([`ValidateOptions::clock`]): the implicit timezone and the
 /// value of `fn:current-dateTime()`.

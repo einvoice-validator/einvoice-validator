@@ -86,6 +86,22 @@ pub enum Error {
         /// What went wrong.
         message: String,
     },
+    /// A fetched rule set ([`fetched_rule_sets`](crate::fetched_rule_sets)) that is not
+    /// in the cache: it must be fetched first (`RuleSetCache::fetch`, feature `fetch`;
+    /// `einvoice-validate rules fetch NAME`). Nothing is downloaded without being asked.
+    NotCached {
+        /// The rule set.
+        name: String,
+        /// The cache directory.
+        dir: PathBuf,
+    },
+    /// A rule set could not be fetched: a download failed or did not have its pinned
+    /// digest, an archive is not as published, or its bundle could not be built (no
+    /// Java for the Schematron compiler of Peppol BIS Billing, ...).
+    Fetch {
+        /// What went wrong, naming the URL or file concerned.
+        message: String,
+    },
     /// No invoice XML could be extracted from a PDF file ([`crate::pdf::extract`]): its
     /// kind is [`ErrorKind::Unsupported`] for an encrypted file, a PDF feature outside the
     /// subset read or a limit exceeded, and [`ErrorKind::Io`] otherwise (not a PDF, a
@@ -100,10 +116,10 @@ pub enum Error {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ErrorKind {
-    /// [`Error::Io`], and an `Error::Pdf` (feature `pdf`) for a PDF file no invoice can be
-    /// read from.
+    /// [`Error::Io`] and [`Error::Fetch`], and an `Error::Pdf` (feature `pdf`) for a PDF
+    /// file no invoice can be read from.
     Io,
-    /// [`Error::Bundle`] and [`Error::Checksum`].
+    /// [`Error::Bundle`], [`Error::Checksum`] and [`Error::NotCached`].
     Bundle,
     /// [`Error::NotXml`].
     NotXml,
@@ -145,8 +161,10 @@ impl Error {
     #[must_use]
     pub const fn kind(&self) -> ErrorKind {
         match self {
-            Self::Io { .. } => ErrorKind::Io,
-            Self::Bundle { .. } | Self::Checksum { .. } => ErrorKind::Bundle,
+            Self::Io { .. } | Self::Fetch { .. } => ErrorKind::Io,
+            Self::Bundle { .. } | Self::Checksum { .. } | Self::NotCached { .. } => {
+                ErrorKind::Bundle
+            }
             Self::NotXml { .. } => ErrorKind::NotXml,
             Self::Unsupported { .. } | Self::Limit { .. } => ErrorKind::Unsupported,
             Self::Transform { .. } => ErrorKind::Transform,
@@ -214,6 +232,12 @@ impl fmt::Display for Error {
                 write!(f, ": {code}: {message}")
             }
             Self::Internal { message } => write!(f, "internal error: {message}"),
+            Self::NotCached { name, dir } => write!(
+                f,
+                "rule set {name} is not in the cache ({}): it must be fetched first",
+                dir.display()
+            ),
+            Self::Fetch { message } => write!(f, "cannot fetch the rule set: {message}"),
             #[cfg(feature = "pdf")]
             Self::Pdf(error) => error.fmt(f),
         }

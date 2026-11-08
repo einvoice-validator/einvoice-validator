@@ -53,9 +53,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - Bundles: a directory or in-memory set of files with a `bundle.toml` manifest naming the
   stylesheets, the resources they read with `document()` (code lists), and their SHA-256
   (`Validator::from_bundle_dir`, `Validator::from_bundle`).
-  Peppol BIS Billing 3.0 is used this way, since its files may not be redistributed: the
-  repository's `scripts/fetch-peppol.sh` downloads the pinned release, compiles its
-  stylesheets and writes the manifest.
+- Fetched on demand: Factur-X (five profiles), XRechnung (UBL and CII), the French rules
+  (fourteen bundles) and Peppol BIS Billing 3.0 may not be redistributed, so the crate does
+  not embed them. `fetched_rule_sets()` is their catalogue (pinned URLs and digests of the
+  publishers' files, the manifest of each bundle); `RuleSetCache` keeps their bundles in the
+  platform's cache directory (or `EINVOICE_VALIDATOR_CACHE`), and `Validator::from_cache(name)`
+  loads one, every file checked, never downloading. With the feature `fetch`,
+  `RuleSetCache::fetch(name, &FetchOptions::new())` downloads the files of the family, checks
+  their digests and builds the bundles exactly as the repository's `scripts/fetch-*.sh` do
+  (Peppol BIS Billing, published as Schematron only, is compiled with ph-schematron, which
+  needs Java). The feature adds a minimal HTTPS client on rustls (ring, webpki-roots); it is
+  ignored on WebAssembly.
 
 With the default feature `pdf`, the module `pdf` extracts the invoice XML a Factur-X, ZUGFeRD
 or Order-X PDF/A-3 file embeds (`pdf::extract`, with

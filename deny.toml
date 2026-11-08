@@ -64,6 +64,21 @@ exceptions = [
     # crates/einvoice-wasm/THIRD-PARTY-NOTICES all the same, which covers the whole graph
     # of normal dependencies of the module.
     { crate = "unicode-ident", allow = ["Unicode-3.0"] },
+    # The HTTPS client of the feature `fetch` of einvoice-validator (on by default in
+    # einvoice-cli, never built for WebAssembly), which downloads the rule sets that are
+    # not redistributed: rustls itself is "Apache-2.0 OR ISC OR MIT" (MIT chosen), and its
+    # cryptography and certificate verification come under permissive licences without an
+    # MIT alternative. ring (the crypto provider: "Apache-2.0 AND ISC", the
+    # BoringSSL-derived code under Apache-2.0, the rest ISC) was chosen over aws-lc-rs,
+    # whose aws-lc-sys adds the OpenSSL licence and a larger C build; rustls-webpki and
+    # untrusted are ISC; subtle (constant-time comparisons) is BSD-3-Clause; the Mozilla
+    # root certificates of webpki-roots are data under CDLA-Permissive-2.0. Each allowed
+    # for its crate only; their texts are in crates/einvoice-cli/THIRD-PARTY-NOTICES.
+    { crate = "ring", allow = ["Apache-2.0", "ISC"] },
+    { crate = "rustls-webpki", allow = ["ISC"] },
+    { crate = "untrusted", allow = ["ISC"] },
+    { crate = "subtle", allow = ["BSD-3-Clause"] },
+    { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
 ]
 
 [bans]
@@ -74,7 +89,12 @@ wildcards = "deny"
 # Workspace members depend on each other by path.
 allow-wildcard-paths = true
 highlight = "all"
-skip = []
+skip = [
+    # ring 0.17 (the crypto provider of rustls, feature `fetch`) needs getrandom 0.2;
+    # proptest (dev-dependency) needs rand 0.10 and getrandom 0.4. No release of ring
+    # uses a newer getrandom yet.
+    { crate = "getrandom@0.2", reason = "ring 0.17 needs getrandom 0.2, proptest's rand 0.10 needs 0.4" },
+]
 
 [sources]
 # Only crates.io. A git or alternative-registry dependency is a supply-chain
