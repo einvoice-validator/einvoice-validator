@@ -1,0 +1,1698 @@
+{
+  "format": "einvoice-validator-benchmarks",
+  "format_version": 1,
+  "date": "2026-11-08",
+  "commit": "f5358b52eb52",
+  "runs": 5,
+  "threads": [1, 8],
+  "machine": {
+    "cpu": "Intel(R) Core(TM) Ultra 7 265K",
+    "logical_cpus": 20,
+    "physical_cores": 20,
+    "memory_kib": 65300520,
+    "os": "Debian GNU/Linux 13 (trixie)",
+    "kernel": "6.12.111+deb13-amd64",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "einvoice_validate": "einvoice-validate 0.2.0",
+    "java": "openjdk version \"21.0.12.1\" 2026-08-18; OpenJDK Runtime Environment (build 21.0.12.1+1-1-deb13u1-Debian)",
+    "saxon": "12.10 (Maven Central net.sf.saxon:Saxon-HE)",
+    "load_average_before": "12.22 10.26 10.02",
+    "load_average_after": "11.43 8.87 9.65"
+  },
+  "rule_sets": [
+    {
+      "key": "cen-ubl",
+      "title": "CEN EN 16931 UBL 1.3.17",
+      "documents": 1683,
+      "stylesheets": 1,
+      "schema": "ubl-2.1",
+      "max_depth": null,
+      "results": [
+        {
+          "tool": "einvoice-validate",
+          "threads": 1,
+          "wall_s": {
+            "median": 2.427341,
+            "min": 2.374141,
+            "max": 2.520400
+          },
+          "cpu_s": {
+            "median": 2.502473,
+            "min": 2.458359,
+            "max": 2.599536
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 33848,
+          "outcome": {
+            "documents": 1683,
+            "valid": 204,
+            "invalid": 1478,
+            "errors": 1
+          },
+          "samples": {
+            "wall_s": [2.505037, 2.417350, 2.374141, 2.427341, 2.520400],
+            "user_s": [2.538175, 2.463084, 2.402306, 2.466380, 2.567786],
+            "system_s": [0.047814, 0.032197, 0.056053, 0.036093, 0.031750],
+            "peak_rss_kib": [33516, 34024, 33448, 35372, 33848],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 1,
+          "wall_s": {
+            "median": 2.430415,
+            "min": 2.370082,
+            "max": 2.526141
+          },
+          "cpu_s": {
+            "median": 2.497469,
+            "min": 2.442406,
+            "max": 2.602510
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 27172,
+          "outcome": {
+            "documents": 1683,
+            "valid": 244,
+            "invalid": 1405,
+            "errors": 34
+          },
+          "samples": {
+            "wall_s": [2.436695, 2.370082, 2.381174, 2.430415, 2.526141],
+            "user_s": [2.455383, 2.410480, 2.390395, 2.469720, 2.554464],
+            "system_s": [0.059984, 0.031926, 0.056056, 0.027749, 0.048046],
+            "peak_rss_kib": [27212, 27152, 27208, 27012, 27172],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 1,
+          "wall_s": {
+            "median": 3.333192,
+            "min": 2.677034,
+            "max": 3.546386
+          },
+          "cpu_s": {
+            "median": 11.780420,
+            "min": 10.437678,
+            "max": 12.731140
+          },
+          "saxon_without_jvm_start_s": {
+            "median": 3.026496,
+            "min": 2.391591,
+            "max": 3.247819
+          },
+          "peak_rss_kib": 886532,
+          "outcome": {
+            "failed_transformations": 34
+          },
+          "samples": {
+            "wall_s": [3.546386, 2.677034, 2.731416, 3.475524, 3.333192],
+            "user_s": [12.150436, 9.902516, 10.714751, 11.097847, 11.335885],
+            "system_s": [0.580704, 0.535162, 0.522184, 0.682573, 0.590743],
+            "peak_rss_kib": [1042532, 856364, 886532, 1065004, 879104],
+            "saxon_without_jvm_start_s": [3.247819, 2.391591, 2.485739, 3.150023, 3.026496]
+          }
+        },
+        {
+          "tool": "einvoice-validate",
+          "threads": 8,
+          "wall_s": {
+            "median": 0.393061,
+            "min": 0.375321,
+            "max": 0.404030
+          },
+          "cpu_s": {
+            "median": 2.678325,
+            "min": 2.575933,
+            "max": 2.707654
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 42604,
+          "outcome": {
+            "documents": 1683,
+            "valid": 204,
+            "invalid": 1478,
+            "errors": 1
+          },
+          "samples": {
+            "wall_s": [0.375321, 0.393061, 0.381475, 0.404030, 0.399326],
+            "user_s": [2.528231, 2.677097, 2.579876, 2.647927, 2.621598],
+            "system_s": [0.047702, 0.028053, 0.035942, 0.059727, 0.056727],
+            "peak_rss_kib": [48128, 36844, 36808, 50628, 42604],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 8,
+          "wall_s": {
+            "median": 0.380454,
+            "min": 0.356577,
+            "max": 0.397365
+          },
+          "cpu_s": {
+            "median": 2.630760,
+            "min": 2.510380,
+            "max": 2.735102
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 32352,
+          "outcome": {
+            "documents": 1683,
+            "valid": 244,
+            "invalid": 1405,
+            "errors": 34
+          },
+          "samples": {
+            "wall_s": [0.397365, 0.373364, 0.391914, 0.380454, 0.356577],
+            "user_s": [2.699009, 2.570022, 2.640681, 2.598727, 2.454417],
+            "system_s": [0.036093, 0.039969, 0.056270, 0.032033, 0.055963],
+            "peak_rss_kib": [34936, 32120, 32352, 36844, 31456],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 8,
+          "wall_s": {
+            "median": 1.794854,
+            "min": 1.575393,
+            "max": 1.897596
+          },
+          "cpu_s": {
+            "median": 13.785817,
+            "min": 12.316394,
+            "max": 15.742522
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 1108592,
+          "outcome": {
+            "failed_transformations": 34
+          },
+          "samples": {
+            "wall_s": [1.745776, 1.897596, 1.575393, 1.794854, 1.889510],
+            "user_s": [12.616654, 14.992689, 11.633956, 12.952741, 13.923012],
+            "system_s": [0.777519, 0.749833, 0.682438, 0.833076, 0.845412],
+            "peak_rss_kib": [1129768, 1117344, 1017896, 1069820, 1108592],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        }
+      ]
+    },
+    {
+      "key": "cen-cii",
+      "title": "CEN EN 16931 CII 1.3.17",
+      "documents": 832,
+      "stylesheets": 1,
+      "schema": "none",
+      "max_depth": 1024,
+      "results": [
+        {
+          "tool": "einvoice-validate",
+          "threads": 1,
+          "wall_s": {
+            "median": 0.903326,
+            "min": 0.876228,
+            "max": 0.983871
+          },
+          "cpu_s": {
+            "median": 0.911855,
+            "min": 0.895468,
+            "max": 0.940720
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 21948,
+          "outcome": {
+            "documents": 832,
+            "valid": 297,
+            "invalid": 481,
+            "errors": 54
+          },
+          "samples": {
+            "wall_s": [0.921230, 0.903326, 0.891643, 0.876228, 0.983871],
+            "user_s": [0.921040, 0.885956, 0.887754, 0.875377, 0.871157],
+            "system_s": [0.019680, 0.031926, 0.024101, 0.027980, 0.024311],
+            "peak_rss_kib": [22144, 21688, 21988, 21652, 21948],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 1,
+          "wall_s": {
+            "median": 2.386871,
+            "min": 2.024079,
+            "max": 2.592900
+          },
+          "cpu_s": {
+            "median": 9.943141,
+            "min": 8.999902,
+            "max": 11.334633
+          },
+          "saxon_without_jvm_start_s": {
+            "median": 2.084165,
+            "min": 1.731335,
+            "max": 2.277221
+          },
+          "peak_rss_kib": 852252,
+          "outcome": {
+            "failed_transformations": 54
+          },
+          "samples": {
+            "wall_s": [2.592900, 2.541772, 2.386871, 2.024079, 2.374596],
+            "user_s": [10.746401, 9.830655, 9.425520, 8.961652, 8.537234],
+            "system_s": [0.588232, 0.559240, 0.517621, 0.469988, 0.462668],
+            "peak_rss_kib": [896468, 852252, 965684, 850044, 839672],
+            "saxon_without_jvm_start_s": [2.277221, 2.251140, 2.084165, 1.731335, 1.975184]
+          }
+        },
+        {
+          "tool": "einvoice-validate",
+          "threads": 8,
+          "wall_s": {
+            "median": 0.146972,
+            "min": 0.143470,
+            "max": 0.148063
+          },
+          "cpu_s": {
+            "median": 0.983341,
+            "min": 0.967003,
+            "max": 1.008420
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 25280,
+          "outcome": {
+            "documents": 832,
+            "valid": 297,
+            "invalid": 481,
+            "errors": 54
+          },
+          "samples": {
+            "wall_s": [0.148063, 0.147680, 0.145064, 0.146972, 0.143470],
+            "user_s": [0.992477, 0.965906, 0.951086, 0.977459, 0.963753],
+            "system_s": [0.015943, 0.011779, 0.015917, 0.015765, 0.019588],
+            "peak_rss_kib": [25708, 25688, 25240, 25280, 25228],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 8,
+          "wall_s": {
+            "median": 1.230031,
+            "min": 1.121928,
+            "max": 1.474648
+          },
+          "cpu_s": {
+            "median": 10.582715,
+            "min": 9.791351,
+            "max": 11.471346
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 1071396,
+          "outcome": {
+            "failed_transformations": 54
+          },
+          "samples": {
+            "wall_s": [1.474648, 1.230031, 1.121928, 1.164757, 1.270832],
+            "user_s": [10.702049, 9.931348, 9.168552, 10.092783, 9.685827],
+            "system_s": [0.769297, 0.651367, 0.622799, 0.576154, 0.799374],
+            "peak_rss_kib": [1188428, 1091276, 1033904, 920876, 1071396],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        }
+      ]
+    },
+    {
+      "key": "peppol",
+      "title": "Peppol BIS Billing 3.0.22 (UBL)",
+      "documents": 1212,
+      "stylesheets": 2,
+      "schema": "ubl-2.1",
+      "max_depth": null,
+      "results": [
+        {
+          "tool": "einvoice-validate",
+          "threads": 1,
+          "wall_s": {
+            "median": 2.683852,
+            "min": 2.571527,
+            "max": 2.727980
+          },
+          "cpu_s": {
+            "median": 2.740788,
+            "min": 2.631958,
+            "max": 2.778519
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 35912,
+          "outcome": {
+            "documents": 1212,
+            "valid": 149,
+            "invalid": 1062,
+            "errors": 1
+          },
+          "samples": {
+            "wall_s": [2.713619, 2.675944, 2.683852, 2.727980, 2.571527],
+            "user_s": [2.715167, 2.716796, 2.716676, 2.750734, 2.596177],
+            "system_s": [0.048198, 0.016051, 0.024112, 0.027785, 0.035781],
+            "peak_rss_kib": [36104, 35568, 35912, 35872, 36296],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 1,
+          "wall_s": {
+            "median": 2.509794,
+            "min": 2.496754,
+            "max": 2.538600
+          },
+          "cpu_s": {
+            "median": 2.572698,
+            "min": 2.559086,
+            "max": 2.604737
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 25196,
+          "outcome": {
+            "documents": 2424,
+            "valid": 721,
+            "invalid": 1660,
+            "errors": 43
+          },
+          "samples": {
+            "wall_s": [2.509794, 2.496754, 2.538600, 2.516192, 2.501485],
+            "user_s": [2.515907, 2.522690, 2.548710, 2.521528, 2.528204],
+            "system_s": [0.052462, 0.036396, 0.056027, 0.051784, 0.044494],
+            "peak_rss_kib": [25352, 25304, 24668, 25196, 24720],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 1,
+          "wall_s": {
+            "median": 4.707593,
+            "min": 4.333221,
+            "max": 5.320423
+          },
+          "cpu_s": {
+            "median": 19.906215,
+            "min": 18.386186,
+            "max": 20.828832
+          },
+          "saxon_without_jvm_start_s": {
+            "median": 4.184549,
+            "min": 3.814938,
+            "max": 4.659166
+          },
+          "peak_rss_kib": 870268,
+          "outcome": {
+            "failed_transformations": 43
+          },
+          "samples": {
+            "wall_s": [5.122163, 5.320423, 4.333221, 4.707593, 4.355591],
+            "user_s": [19.198758, 19.672712, 17.334184, 18.819029, 17.633666],
+            "system_s": [1.139778, 1.156120, 1.052002, 1.087186, 0.989860],
+            "peak_rss_kib": [870268, 872864, 851096, 879940, 865980],
+            "saxon_without_jvm_start_s": [4.599131, 4.659166, 3.814938, 4.184549, 3.847201]
+          }
+        },
+        {
+          "tool": "einvoice-validate",
+          "threads": 8,
+          "wall_s": {
+            "median": 0.401703,
+            "min": 0.389411,
+            "max": 0.406112
+          },
+          "cpu_s": {
+            "median": 2.653442,
+            "min": 2.620297,
+            "max": 2.726328
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 39636,
+          "outcome": {
+            "documents": 1212,
+            "valid": 149,
+            "invalid": 1062,
+            "errors": 1
+          },
+          "samples": {
+            "wall_s": [0.403538, 0.406112, 0.392353, 0.401703, 0.389411],
+            "user_s": [2.609084, 2.669949, 2.620343, 2.674747, 2.600203],
+            "system_s": [0.044358, 0.056379, 0.016051, 0.023810, 0.020094],
+            "peak_rss_kib": [39672, 39048, 39636, 39908, 38836],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 8,
+          "wall_s": {
+            "median": 0.420544,
+            "min": 0.405940,
+            "max": 0.425983
+          },
+          "cpu_s": {
+            "median": 2.782890,
+            "min": 2.764501,
+            "max": 2.850548
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 28984,
+          "outcome": {
+            "documents": 2424,
+            "valid": 721,
+            "invalid": 1660,
+            "errors": 43
+          },
+          "samples": {
+            "wall_s": [0.420544, 0.425983, 0.421003, 0.413101, 0.405940],
+            "user_s": [2.786085, 2.748564, 2.781936, 2.728845, 2.726949],
+            "system_s": [0.064463, 0.032031, 0.043879, 0.035656, 0.055941],
+            "peak_rss_kib": [28688, 30952, 28908, 28984, 29100],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 8,
+          "wall_s": {
+            "median": 2.686866,
+            "min": 2.363405,
+            "max": 3.021819
+          },
+          "cpu_s": {
+            "median": 21.551816,
+            "min": 20.559213,
+            "max": 22.032211
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 1101220,
+          "outcome": {
+            "failed_transformations": 43
+          },
+          "samples": {
+            "wall_s": [2.648449, 2.857074, 3.021819, 2.686866, 2.363405],
+            "user_s": [19.593001, 20.282736, 20.719710, 20.460308, 19.333336],
+            "system_s": [1.522679, 1.269080, 1.312501, 1.332275, 1.225877],
+            "peak_rss_kib": [1101220, 1109508, 1057300, 1082664, 1120040],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        }
+      ]
+    },
+    {
+      "key": "facturx",
+      "title": "Factur-X 1.09.2 (CII), five profiles",
+      "documents": 850,
+      "stylesheets": 5,
+      "schema": "none",
+      "max_depth": 1024,
+      "results": [
+        {
+          "tool": "einvoice-validate",
+          "threads": 1,
+          "wall_s": {
+            "median": 25.656126,
+            "min": 24.875913,
+            "max": 25.848109
+          },
+          "cpu_s": {
+            "median": 25.729914,
+            "min": 24.962939,
+            "max": 25.898377
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 51800,
+          "outcome": {
+            "documents": 850,
+            "valid": 802,
+            "invalid": 0,
+            "errors": 48
+          },
+          "samples": {
+            "wall_s": [25.848109, 25.656126, 25.761415, 25.363917, 24.875913],
+            "user_s": [25.818469, 25.661952, 25.770765, 25.377525, 24.902904],
+            "system_s": [0.079908, 0.067962, 0.075949, 0.079966, 0.060035],
+            "peak_rss_kib": [51388, 51628, 51812, 51800, 51888],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 1,
+          "wall_s": {
+            "median": 25.508658,
+            "min": 24.838745,
+            "max": 25.527257
+          },
+          "cpu_s": {
+            "median": 25.616971,
+            "min": 24.824538,
+            "max": 25.710611
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 41420,
+          "outcome": {
+            "documents": 4250,
+            "valid": 4097,
+            "invalid": 0,
+            "errors": 153
+          },
+          "samples": {
+            "wall_s": [25.471378, 25.508935, 25.527257, 24.838745, 25.508658],
+            "user_s": [25.464960, 25.439032, 25.538429, 24.676401, 24.965424],
+            "system_s": [0.152011, 0.215362, 0.172182, 0.148137, 0.140301],
+            "peak_rss_kib": [41420, 41168, 41804, 41420, 41712],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 1,
+          "wall_s": {
+            "median": 27.612167,
+            "min": 24.191417,
+            "max": 28.525843
+          },
+          "cpu_s": {
+            "median": 71.991488,
+            "min": 63.717055,
+            "max": 72.407327
+          },
+          "saxon_without_jvm_start_s": {
+            "median": 26.096428,
+            "min": 22.949483,
+            "max": 26.991860
+          },
+          "peak_rss_kib": 1137140,
+          "outcome": {
+            "failed_transformations": 153
+          },
+          "samples": {
+            "wall_s": [27.836642, 28.525843, 27.612167, 24.191417, 27.424844],
+            "user_s": [68.775117, 69.298845, 68.680167, 60.949579, 62.449777],
+            "system_s": [3.216371, 3.108482, 3.322328, 2.767476, 2.610244],
+            "peak_rss_kib": [1147468, 1135620, 1137140, 1247896, 1135628],
+            "saxon_without_jvm_start_s": [26.402999, 26.991860, 26.096428, 22.949483, 25.780048]
+          }
+        },
+        {
+          "tool": "einvoice-validate",
+          "threads": 8,
+          "wall_s": {
+            "median": 3.250543,
+            "min": 3.223440,
+            "max": 3.267409
+          },
+          "cpu_s": {
+            "median": 25.121788,
+            "min": 24.927008,
+            "max": 25.292703
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 68468,
+          "outcome": {
+            "documents": 850,
+            "valid": 802,
+            "invalid": 0,
+            "errors": 48
+          },
+          "samples": {
+            "wall_s": [3.267409, 3.250543, 3.230760, 3.223440, 3.252050],
+            "user_s": [25.240677, 25.121710, 25.002031, 24.883081, 25.081824],
+            "system_s": [0.052026, 0.051995, 0.032017, 0.043927, 0.039964],
+            "peak_rss_kib": [68612, 68288, 68508, 68468, 68048],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 8,
+          "wall_s": {
+            "median": 3.306904,
+            "min": 3.298264,
+            "max": 3.486158
+          },
+          "cpu_s": {
+            "median": 25.436394,
+            "min": 25.395026,
+            "max": 26.890533
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 55848,
+          "outcome": {
+            "documents": 4250,
+            "valid": 4097,
+            "invalid": 0,
+            "errors": 153
+          },
+          "samples": {
+            "wall_s": [3.304927, 3.306904, 3.298264, 3.486158, 3.327785],
+            "user_s": [25.267563, 25.312899, 25.301706, 26.834470, 25.555702],
+            "system_s": [0.127463, 0.123495, 0.116431, 0.056063, 0.091866],
+            "peak_rss_kib": [55800, 55848, 56668, 56176, 55612],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 8,
+          "wall_s": {
+            "median": 9.278395,
+            "min": 8.269566,
+            "max": 10.599832
+          },
+          "cpu_s": {
+            "median": 90.347754,
+            "min": 87.223321,
+            "max": 92.572013
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 1763124,
+          "outcome": {
+            "failed_transformations": 153
+          },
+          "samples": {
+            "wall_s": [8.411345, 8.269566, 9.278395, 10.599832, 10.530448],
+            "user_s": [86.208307, 85.081766, 83.033809, 88.419206, 87.168982],
+            "system_s": [4.139447, 3.656954, 4.189512, 4.152807, 4.298351],
+            "peak_rss_kib": [1746400, 1494272, 1763124, 1846564, 1904784],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        }
+      ]
+    },
+    {
+      "key": "xrechnung-ubl",
+      "title": "XRechnung 3.0.2 UBL",
+      "documents": 1700,
+      "stylesheets": 2,
+      "schema": "ubl-2.1",
+      "max_depth": null,
+      "results": [
+        {
+          "tool": "einvoice-validate",
+          "threads": 1,
+          "wall_s": {
+            "median": 6.458970,
+            "min": 6.404646,
+            "max": 6.584162
+          },
+          "cpu_s": {
+            "median": 6.588606,
+            "min": 6.516480,
+            "max": 6.692736
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 41716,
+          "outcome": {
+            "documents": 1700,
+            "valid": 398,
+            "invalid": 1300,
+            "errors": 2
+          },
+          "samples": {
+            "wall_s": [6.584162, 6.556871, 6.458970, 6.404646, 6.406020],
+            "user_s": [6.644674, 6.625481, 6.508890, 6.479268, 6.444827],
+            "system_s": [0.048062, 0.063975, 0.079716, 0.068329, 0.071653],
+            "peak_rss_kib": [41712, 42116, 41632, 41832, 41716],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 1,
+          "wall_s": {
+            "median": 6.342692,
+            "min": 6.308012,
+            "max": 6.447666
+          },
+          "cpu_s": {
+            "median": 6.526294,
+            "min": 6.484740,
+            "max": 6.651025
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 32484,
+          "outcome": {
+            "documents": 3400,
+            "valid": 1720,
+            "invalid": 1618,
+            "errors": 62
+          },
+          "samples": {
+            "wall_s": [6.318635, 6.447666, 6.381635, 6.342692, 6.308012],
+            "user_s": [6.412518, 6.530473, 6.439801, 6.386584, 6.384821],
+            "system_s": [0.072222, 0.120552, 0.116082, 0.139710, 0.104659],
+            "peak_rss_kib": [32484, 32664, 32424, 32292, 32796],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 1,
+          "wall_s": {
+            "median": 5.943257,
+            "min": 5.850596,
+            "max": 6.621437
+          },
+          "cpu_s": {
+            "median": 21.274797,
+            "min": 21.001674,
+            "max": 21.922025
+          },
+          "saxon_without_jvm_start_s": {
+            "median": 5.448115,
+            "min": 5.388142,
+            "max": 6.096496
+          },
+          "peak_rss_kib": 894716,
+          "outcome": {
+            "failed_transformations": 62
+          },
+          "samples": {
+            "wall_s": [6.621437, 5.943257, 6.037431, 5.882634, 5.850596],
+            "user_s": [20.447905, 20.111683, 20.948943, 19.891415, 20.166294],
+            "system_s": [1.254239, 1.126190, 0.973082, 1.110259, 1.108503],
+            "peak_rss_kib": [1075628, 887648, 905684, 894092, 894716],
+            "saxon_without_jvm_start_s": [6.096496, 5.448115, 5.547819, 5.388460, 5.388142]
+          }
+        },
+        {
+          "tool": "einvoice-validate",
+          "threads": 8,
+          "wall_s": {
+            "median": 0.907428,
+            "min": 0.906054,
+            "max": 0.914759
+          },
+          "cpu_s": {
+            "median": 6.775335,
+            "min": 6.764602,
+            "max": 6.835515
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 52028,
+          "outcome": {
+            "documents": 1700,
+            "valid": 398,
+            "invalid": 1300,
+            "errors": 2
+          },
+          "samples": {
+            "wall_s": [0.906054, 0.907428, 0.911593, 0.914759, 0.906908],
+            "user_s": [6.744589, 6.743020, 6.728552, 6.787575, 6.715483],
+            "system_s": [0.020013, 0.048078, 0.044029, 0.047940, 0.059852],
+            "peak_rss_kib": [52028, 52040, 51852, 51984, 52640],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 8,
+          "wall_s": {
+            "median": 0.905127,
+            "min": 0.898809,
+            "max": 0.910111
+          },
+          "cpu_s": {
+            "median": 6.795145,
+            "min": 6.762802,
+            "max": 6.800820
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 38808,
+          "outcome": {
+            "documents": 3400,
+            "valid": 1720,
+            "invalid": 1618,
+            "errors": 62
+          },
+          "samples": {
+            "wall_s": [0.905127, 0.905030, 0.906684, 0.910111, 0.898809],
+            "user_s": [6.705643, 6.722025, 6.727199, 6.748676, 6.706592],
+            "system_s": [0.091840, 0.067856, 0.067946, 0.052144, 0.056210],
+            "peak_rss_kib": [39012, 38944, 38572, 38316, 38808],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 8,
+          "wall_s": {
+            "median": 2.548456,
+            "min": 2.525605,
+            "max": 2.688933
+          },
+          "cpu_s": {
+            "median": 27.974157,
+            "min": 27.357710,
+            "max": 29.442889
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 1132872,
+          "outcome": {
+            "failed_transformations": 62
+          },
+          "samples": {
+            "wall_s": [2.525605, 2.688933, 2.548456, 2.571792, 2.534728],
+            "user_s": [26.076561, 27.923895, 26.511095, 26.595898, 25.782475],
+            "system_s": [1.529039, 1.518994, 1.463062, 1.559261, 1.575235],
+            "peak_rss_kib": [1114048, 1138276, 1132872, 1132044, 1144204],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        }
+      ]
+    },
+    {
+      "key": "xrechnung-cii",
+      "title": "XRechnung 3.0.2 CII",
+      "documents": 1494,
+      "stylesheets": 2,
+      "schema": "none",
+      "max_depth": 1024,
+      "results": [
+        {
+          "tool": "einvoice-validate",
+          "threads": 1,
+          "wall_s": {
+            "median": 3.752074,
+            "min": 3.648530,
+            "max": 3.801801
+          },
+          "cpu_s": {
+            "median": 3.845111,
+            "min": 3.833502,
+            "max": 3.906557
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 24364,
+          "outcome": {
+            "documents": 1494,
+            "valid": 249,
+            "invalid": 1169,
+            "errors": 76
+          },
+          "samples": {
+            "wall_s": [3.769267, 3.752074, 3.648530, 3.729306, 3.801801],
+            "user_s": [3.798984, 3.804571, 3.740691, 3.774052, 3.842384],
+            "system_s": [0.040158, 0.044711, 0.092811, 0.071059, 0.064173],
+            "peak_rss_kib": [24420, 24496, 24364, 24256, 24216],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 1,
+          "wall_s": {
+            "median": 3.806652,
+            "min": 3.716663,
+            "max": 3.845692
+          },
+          "cpu_s": {
+            "median": 3.930164,
+            "min": 3.894500,
+            "max": 3.967974
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 23684,
+          "outcome": {
+            "documents": 2988,
+            "valid": 1053,
+            "invalid": 1851,
+            "errors": 84
+          },
+          "samples": {
+            "wall_s": [3.806652, 3.809012, 3.716663, 3.793044, 3.845692],
+            "user_s": [3.810549, 3.867931, 3.809540, 3.862105, 3.895213],
+            "system_s": [0.099232, 0.087908, 0.084960, 0.068059, 0.072761],
+            "peak_rss_kib": [23600, 23692, 23540, 23684, 24016],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 1,
+          "wall_s": {
+            "median": 5.066871,
+            "min": 4.906338,
+            "max": 7.601413
+          },
+          "cpu_s": {
+            "median": 19.913738,
+            "min": 19.651279,
+            "max": 23.620187
+          },
+          "saxon_without_jvm_start_s": {
+            "median": 4.584872,
+            "min": 4.436039,
+            "max": 6.976854
+          },
+          "peak_rss_kib": 887108,
+          "outcome": {
+            "failed_transformations": 84
+          },
+          "samples": {
+            "wall_s": [5.167391, 4.946942, 4.906338, 7.601413, 5.066871],
+            "user_s": [18.800354, 18.715358, 18.847775, 22.576940, 18.846888],
+            "system_s": [0.947189, 0.935921, 1.065963, 1.043247, 1.154175],
+            "peak_rss_kib": [888760, 877944, 877512, 1029128, 887108],
+            "saxon_without_jvm_start_s": [4.686436, 4.477182, 4.436039, 6.976854, 4.584872]
+          }
+        },
+        {
+          "tool": "einvoice-validate",
+          "threads": 8,
+          "wall_s": {
+            "median": 0.521793,
+            "min": 0.519945,
+            "max": 0.524042
+          },
+          "cpu_s": {
+            "median": 3.970658,
+            "min": 3.965201,
+            "max": 3.974655
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 35452,
+          "outcome": {
+            "documents": 1494,
+            "valid": 249,
+            "invalid": 1169,
+            "errors": 76
+          },
+          "samples": {
+            "wall_s": [0.521948, 0.519945, 0.521793, 0.521412, 0.524042],
+            "user_s": [3.941683, 3.953174, 3.938501, 3.958547, 3.942583],
+            "system_s": [0.031819, 0.012027, 0.027932, 0.016108, 0.028075],
+            "peak_rss_kib": [35240, 35956, 35896, 35452, 35084],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 8,
+          "wall_s": {
+            "median": 0.536991,
+            "min": 0.532862,
+            "max": 0.538806
+          },
+          "cpu_s": {
+            "median": 4.063256,
+            "min": 4.042299,
+            "max": 4.086732
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 31120,
+          "outcome": {
+            "documents": 2988,
+            "valid": 1053,
+            "invalid": 1851,
+            "errors": 84
+          },
+          "samples": {
+            "wall_s": [0.536991, 0.537863, 0.533494, 0.538806, 0.532862],
+            "user_s": [4.027258, 4.049818, 3.966443, 4.042913, 3.992470],
+            "system_s": [0.035998, 0.027957, 0.075856, 0.043819, 0.052266],
+            "peak_rss_kib": [31292, 31120, 31140, 31120, 30316],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 8,
+          "wall_s": {
+            "median": 2.470017,
+            "min": 2.405890,
+            "max": 5.635009
+          },
+          "cpu_s": {
+            "median": 26.387626,
+            "min": 25.214224,
+            "max": 27.035583
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 1153732,
+          "outcome": {
+            "failed_transformations": 84
+          },
+          "samples": {
+            "wall_s": [2.470017, 2.506414, 2.427638, 2.405890, 5.635009],
+            "user_s": [24.824899, 25.183192, 24.667497, 24.093475, 24.045477],
+            "system_s": [1.778361, 1.852391, 1.720129, 1.486845, 1.168747],
+            "peak_rss_kib": [1153732, 1159476, 1144908, 1208288, 1082356],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        }
+      ]
+    },
+    {
+      "key": "fr-ctc-cii",
+      "title": "French rules 1.4.0.04 CII",
+      "documents": 861,
+      "stylesheets": 7,
+      "schema": "none",
+      "max_depth": 1024,
+      "results": [
+        {
+          "tool": "einvoice-validate",
+          "threads": 1,
+          "wall_s": {
+            "median": 23.310605,
+            "min": 22.543162,
+            "max": 24.558987
+          },
+          "cpu_s": {
+            "median": 23.560104,
+            "min": 22.730749,
+            "max": 24.362192
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 65152,
+          "outcome": {
+            "documents": 861,
+            "valid": 22,
+            "invalid": 770,
+            "errors": 69
+          },
+          "samples": {
+            "wall_s": [24.558987, 22.543162, 24.037817, 22.670776, 23.310605],
+            "user_s": [24.326166, 22.654900, 23.865534, 22.814577, 23.475990],
+            "system_s": [0.036026, 0.075849, 0.075953, 0.131714, 0.084114],
+            "peak_rss_kib": [65152, 65168, 65500, 64952, 65132],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 1,
+          "wall_s": {
+            "median": 24.081384,
+            "min": 23.352405,
+            "max": 24.768656
+          },
+          "cpu_s": {
+            "median": 24.256305,
+            "min": 23.845212,
+            "max": 25.050348
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 41120,
+          "outcome": {
+            "documents": 6027,
+            "valid": 4058,
+            "invalid": 1733,
+            "errors": 236
+          },
+          "samples": {
+            "wall_s": [24.081384, 24.768656, 23.352405, 24.196605, 23.789747],
+            "user_s": [24.087808, 24.805213, 23.608296, 24.379187, 24.048974],
+            "system_s": [0.168497, 0.245135, 0.236916, 0.236391, 0.164416],
+            "peak_rss_kib": [41228, 40824, 41064, 41120, 41200],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 1,
+          "wall_s": {
+            "median": 26.062452,
+            "min": 25.720898,
+            "max": 29.635746
+          },
+          "cpu_s": {
+            "median": 84.045200,
+            "min": 82.699172,
+            "max": 90.239645
+          },
+          "saxon_without_jvm_start_s": {
+            "median": 24.400518,
+            "min": 24.126369,
+            "max": 27.812650
+          },
+          "peak_rss_kib": 1138004,
+          "outcome": {
+            "failed_transformations": 250
+          },
+          "samples": {
+            "wall_s": [25.720898, 29.635746, 26.062452, 26.019550, 26.212320],
+            "user_s": [79.853498, 86.792993, 79.186289, 80.385936, 81.023294],
+            "system_s": [3.456467, 3.446652, 3.512883, 3.659264, 3.728678],
+            "peak_rss_kib": [1146612, 1149140, 1119360, 1128352, 1138004],
+            "saxon_without_jvm_start_s": [24.126369, 27.812650, 24.400518, 24.390162, 24.587217]
+          }
+        },
+        {
+          "tool": "einvoice-validate",
+          "threads": 8,
+          "wall_s": {
+            "median": 3.068456,
+            "min": 3.059373,
+            "max": 3.081558
+          },
+          "cpu_s": {
+            "median": 23.688749,
+            "min": 23.619837,
+            "max": 23.763065
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 89096,
+          "outcome": {
+            "documents": 861,
+            "valid": 22,
+            "invalid": 770,
+            "errors": 69
+          },
+          "samples": {
+            "wall_s": [3.081558, 3.068456, 3.059373, 3.080678, 3.061446],
+            "user_s": [23.681839, 23.596917, 23.540000, 23.687043, 23.598806],
+            "system_s": [0.035978, 0.091832, 0.079837, 0.076022, 0.080090],
+            "peak_rss_kib": [89332, 89184, 88404, 88328, 89096],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 8,
+          "wall_s": {
+            "median": 3.266717,
+            "min": 3.254546,
+            "max": 3.272812
+          },
+          "cpu_s": {
+            "median": 24.791180,
+            "min": 24.728689,
+            "max": 24.869000
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 55724,
+          "outcome": {
+            "documents": 6027,
+            "valid": 4058,
+            "invalid": 1733,
+            "errors": 236
+          },
+          "samples": {
+            "wall_s": [3.272812, 3.266717, 3.254546, 3.270598, 3.258110],
+            "user_s": [24.680472, 24.643459, 24.620462, 24.703434, 24.604136],
+            "system_s": [0.188528, 0.147721, 0.108227, 0.136406, 0.135780],
+            "peak_rss_kib": [55724, 55356, 55448, 55836, 55820],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 8,
+          "wall_s": {
+            "median": 10.059353,
+            "min": 9.873911,
+            "max": 10.275846
+          },
+          "cpu_s": {
+            "median": 109.309407,
+            "min": 106.531033,
+            "max": 111.473795
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 1728192,
+          "outcome": {
+            "failed_transformations": 250
+          },
+          "samples": {
+            "wall_s": [10.227425, 10.059353, 9.873911, 10.004089, 10.275846],
+            "user_s": [106.446854, 103.568092, 101.060776, 101.409773, 105.590251],
+            "system_s": [5.026941, 5.741315, 5.470257, 5.532907, 5.506665],
+            "peak_rss_kib": [1733452, 1728192, 1707040, 1708480, 1743924],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        }
+      ]
+    },
+    {
+      "key": "fr-ctc-ubl",
+      "title": "French rules 1.4.0.04 UBL",
+      "documents": 579,
+      "stylesheets": 4,
+      "schema": "ubl-2.1",
+      "max_depth": null,
+      "results": [
+        {
+          "tool": "einvoice-validate",
+          "threads": 1,
+          "wall_s": {
+            "median": 9.216784,
+            "min": 9.168776,
+            "max": 9.802397
+          },
+          "cpu_s": {
+            "median": 9.337089,
+            "min": 9.256676,
+            "max": 9.905397
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 42748,
+          "outcome": {
+            "documents": 579,
+            "valid": 18,
+            "invalid": 557,
+            "errors": 4
+          },
+          "samples": {
+            "wall_s": [9.168776, 9.433742, 9.212157, 9.216784, 9.802397],
+            "user_s": [9.192699, 9.459703, 9.300993, 9.252038, 9.857410],
+            "system_s": [0.063977, 0.068084, 0.036096, 0.047979, 0.047987],
+            "peak_rss_kib": [42924, 42796, 42568, 42620, 42748],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 1,
+          "wall_s": {
+            "median": 9.327902,
+            "min": 9.212680,
+            "max": 9.414539
+          },
+          "cpu_s": {
+            "median": 9.553481,
+            "min": 9.448745,
+            "max": 9.638062
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 28496,
+          "outcome": {
+            "documents": 2316,
+            "valid": 1160,
+            "invalid": 1080,
+            "errors": 76
+          },
+          "samples": {
+            "wall_s": [9.274035, 9.396696, 9.327902, 9.212680, 9.414539],
+            "user_s": [9.332818, 9.515396, 9.421014, 9.331814, 9.534106],
+            "system_s": [0.124002, 0.091837, 0.132467, 0.116931, 0.103956],
+            "peak_rss_kib": [28496, 28728, 28424, 28496, 28500],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 1,
+          "wall_s": {
+            "median": 11.184392,
+            "min": 10.838509,
+            "max": 12.785666
+          },
+          "cpu_s": {
+            "median": 43.184041,
+            "min": 41.626885,
+            "max": 47.827829
+          },
+          "saxon_without_jvm_start_s": {
+            "median": 10.326794,
+            "min": 10.033677,
+            "max": 11.843351
+          },
+          "peak_rss_kib": 1155188,
+          "outcome": {
+            "failed_transformations": 78
+          },
+          "samples": {
+            "wall_s": [10.838509, 10.860766, 12.467108, 11.184392, 12.785666],
+            "user_s": [39.791253, 40.474197, 44.124122, 41.442789, 45.767184],
+            "system_s": [1.835632, 1.817444, 1.969946, 1.741252, 2.060645],
+            "peak_rss_kib": [1037468, 1152960, 1155188, 1164956, 1176340],
+            "saxon_without_jvm_start_s": [10.033677, 10.037576, 11.585677, 10.326794, 11.843351]
+          }
+        },
+        {
+          "tool": "einvoice-validate",
+          "threads": 8,
+          "wall_s": {
+            "median": 1.386592,
+            "min": 1.375107,
+            "max": 1.651047
+          },
+          "cpu_s": {
+            "median": 9.850522,
+            "min": 9.737980,
+            "max": 11.180996
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 62704,
+          "outcome": {
+            "documents": 579,
+            "valid": 18,
+            "invalid": 557,
+            "errors": 4
+          },
+          "samples": {
+            "wall_s": [1.382407, 1.412629, 1.375107, 1.386592, 1.651047],
+            "user_s": [9.810512, 9.972458, 9.666055, 9.813786, 11.145134],
+            "system_s": [0.040010, 0.056002, 0.071925, 0.024014, 0.035862],
+            "peak_rss_kib": [62712, 62544, 62888, 62704, 62420],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 8,
+          "wall_s": {
+            "median": 1.438652,
+            "min": 1.421116,
+            "max": 1.557322
+          },
+          "cpu_s": {
+            "median": 10.091462,
+            "min": 10.008815,
+            "max": 10.512395
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 31640,
+          "outcome": {
+            "documents": 2316,
+            "valid": 1160,
+            "invalid": 1080,
+            "errors": 76
+          },
+          "samples": {
+            "wall_s": [1.421116, 1.434275, 1.438652, 1.443169, 1.557322],
+            "user_s": [9.941061, 10.003032, 10.060544, 9.987401, 10.408697],
+            "system_s": [0.067754, 0.052099, 0.087811, 0.104061, 0.103698],
+            "peak_rss_kib": [31456, 31640, 31840, 32260, 31420],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 8,
+          "wall_s": {
+            "median": 5.571073,
+            "min": 5.183250,
+            "max": 6.649057
+          },
+          "cpu_s": {
+            "median": 58.637878,
+            "min": 56.718403,
+            "max": 63.827107
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 1495640,
+          "outcome": {
+            "failed_transformations": 78
+          },
+          "samples": {
+            "wall_s": [6.649057, 5.400298, 5.183250, 6.039107, 5.571073],
+            "user_s": [60.745024, 56.103959, 53.980160, 58.226331, 54.007392],
+            "system_s": [3.082083, 2.533919, 2.738243, 2.622397, 2.879778],
+            "peak_rss_kib": [1461368, 1426088, 1495640, 1748932, 1648236],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        }
+      ]
+    },
+    {
+      "key": "fr-ctc-cdar",
+      "title": "French rules 1.4.0.04 CDAR (life-cycle statuses)",
+      "documents": 70,
+      "stylesheets": 2,
+      "schema": "none",
+      "max_depth": null,
+      "results": [
+        {
+          "tool": "einvoice-validate",
+          "threads": 1,
+          "wall_s": {
+            "median": 0.141458,
+            "min": 0.134368,
+            "max": 0.164536
+          },
+          "cpu_s": {
+            "median": 0.142096,
+            "min": 0.134710,
+            "max": 0.160917
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 12592,
+          "outcome": {
+            "documents": 70,
+            "valid": 70,
+            "invalid": 0,
+            "errors": 0
+          },
+          "samples": {
+            "wall_s": [0.141458, 0.136906, 0.141834, 0.164536, 0.134368],
+            "user_s": [0.142096, 0.133665, 0.136248, 0.156895, 0.130501],
+            "system_s": [0.000000, 0.003931, 0.008014, 0.004022, 0.004209],
+            "peak_rss_kib": [12592, 12660, 12308, 12868, 12580],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 1,
+          "wall_s": {
+            "median": 0.155378,
+            "min": 0.144394,
+            "max": 0.192830
+          },
+          "cpu_s": {
+            "median": 0.156869,
+            "min": 0.145512,
+            "max": 0.157644
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 10256,
+          "outcome": {
+            "documents": 140,
+            "valid": 140,
+            "invalid": 0,
+            "errors": 0
+          },
+          "samples": {
+            "wall_s": [0.156387, 0.148965, 0.155378, 0.192830, 0.144394],
+            "user_s": [0.156869, 0.135514, 0.149121, 0.148616, 0.137429],
+            "system_s": [0.000000, 0.015942, 0.008042, 0.009028, 0.008083],
+            "peak_rss_kib": [10244, 10172, 10400, 10256, 10268],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 1,
+          "wall_s": {
+            "median": 2.095480,
+            "min": 1.237214,
+            "max": 3.055945
+          },
+          "cpu_s": {
+            "median": 7.509380,
+            "min": 6.136162,
+            "max": 9.742140
+          },
+          "saxon_without_jvm_start_s": {
+            "median": 1.521732,
+            "min": 0.870829,
+            "max": 2.400636
+          },
+          "peak_rss_kib": 337508,
+          "outcome": {
+            "failed_transformations": 0
+          },
+          "samples": {
+            "wall_s": [1.237214, 2.271144, 3.055945, 2.095480, 1.283708],
+            "user_s": [5.731433, 8.280565, 9.337911, 7.114559, 5.989938],
+            "system_s": [0.404729, 0.407356, 0.404229, 0.394821, 0.363581],
+            "peak_rss_kib": [337508, 319028, 334904, 340968, 360104],
+            "saxon_without_jvm_start_s": [0.870829, 1.738472, 2.400636, 1.521732, 0.916137]
+          }
+        },
+        {
+          "tool": "einvoice-validate",
+          "threads": 8,
+          "wall_s": {
+            "median": 0.029764,
+            "min": 0.028910,
+            "max": 0.033751
+          },
+          "cpu_s": {
+            "median": 0.146773,
+            "min": 0.146227,
+            "max": 0.150070
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 13700,
+          "outcome": {
+            "documents": 70,
+            "valid": 70,
+            "invalid": 0,
+            "errors": 0
+          },
+          "samples": {
+            "wall_s": [0.028910, 0.033751, 0.029764, 0.030114, 0.029600],
+            "user_s": [0.146773, 0.140400, 0.146301, 0.142172, 0.142166],
+            "system_s": [0.000000, 0.008509, 0.000000, 0.007898, 0.004061],
+            "peak_rss_kib": [13676, 13868, 13700, 13932, 13640],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "einvoice-validate-same-work",
+          "threads": 8,
+          "wall_s": {
+            "median": 0.033467,
+            "min": 0.031585,
+            "max": 0.034257
+          },
+          "cpu_s": {
+            "median": 0.159677,
+            "min": 0.150612,
+            "max": 0.166987
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 11412,
+          "outcome": {
+            "documents": 140,
+            "valid": 140,
+            "invalid": 0,
+            "errors": 0
+          },
+          "samples": {
+            "wall_s": [0.031585, 0.033511, 0.033453, 0.033467, 0.034257],
+            "user_s": [0.142633, 0.138371, 0.152093, 0.144777, 0.162369],
+            "system_s": [0.007979, 0.015744, 0.007584, 0.020083, 0.004618],
+            "peak_rss_kib": [11548, 11528, 11328, 11412, 11296],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        },
+        {
+          "tool": "saxon-he",
+          "threads": 8,
+          "wall_s": {
+            "median": 1.176169,
+            "min": 1.130251,
+            "max": 1.426214
+          },
+          "cpu_s": {
+            "median": 6.943818,
+            "min": 6.540587,
+            "max": 7.229524
+          },
+          "saxon_without_jvm_start_s": null,
+          "peak_rss_kib": 327540,
+          "outcome": {
+            "failed_transformations": 0
+          },
+          "samples": {
+            "wall_s": [1.426214, 1.261726, 1.152972, 1.176169, 1.130251],
+            "user_s": [6.212355, 6.353849, 6.472346, 6.535908, 6.747527],
+            "system_s": [0.328232, 0.405744, 0.585971, 0.407910, 0.481997],
+            "peak_rss_kib": [327540, 322112, 324472, 327728, 328800],
+            "saxon_without_jvm_start_s": [null, null, null, null, null]
+          }
+        }
+      ]
+    }
+  ],
+  "single_document": {
+    "document": "artefacts/cen-en16931-ubl-1.3.17/ubl/examples/ubl-tc434-example9.xml",
+    "bytes": 5790,
+    "results": [
+      {
+        "tool": "einvoice-validate",
+        "threads": 1,
+        "wall_s": {
+          "median": 0.043528,
+          "min": 0.039778,
+          "max": 0.044547
+        },
+        "cpu_s": {
+          "median": 0.043323,
+          "min": 0.039634,
+          "max": 0.044229
+        },
+        "saxon_without_jvm_start_s": null,
+        "peak_rss_kib": 33848,
+        "outcome": {
+          "documents": 1,
+          "valid": 1,
+          "invalid": 0,
+          "errors": 0
+        },
+        "samples": {
+          "wall_s": [0.039778, 0.044547, 0.043431, 0.043620, 0.043528],
+          "user_s": [0.039634, 0.044229, 0.039327, 0.039385, 0.035519],
+          "system_s": [0.000000, 0.000000, 0.003932, 0.003938, 0.007893],
+          "peak_rss_kib": [33160, 33848, 33552, 34840, 33936],
+          "saxon_without_jvm_start_s": [null, null, null, null, null]
+        }
+      },
+      {
+        "tool": "einvoice-validate-same-work",
+        "threads": 1,
+        "wall_s": {
+          "median": 0.028750,
+          "min": 0.028088,
+          "max": 0.030349
+        },
+        "cpu_s": {
+          "median": 0.028742,
+          "min": 0.027876,
+          "max": 0.030236
+        },
+        "saxon_without_jvm_start_s": null,
+        "peak_rss_kib": 24180,
+        "outcome": {
+          "documents": 1,
+          "valid": 1,
+          "invalid": 0,
+          "errors": 0
+        },
+        "samples": {
+          "wall_s": [0.030313, 0.028750, 0.030349, 0.028291, 0.028088],
+          "user_s": [0.026457, 0.025150, 0.018792, 0.016103, 0.023894],
+          "system_s": [0.003779, 0.003592, 0.011275, 0.012077, 0.003982],
+          "peak_rss_kib": [24200, 24120, 24180, 24280, 24032],
+          "saxon_without_jvm_start_s": [null, null, null, null, null]
+        }
+      },
+      {
+        "tool": "saxon-he",
+        "threads": 1,
+        "wall_s": {
+          "median": 0.659603,
+          "min": 0.610769,
+          "max": 0.760371
+        },
+        "cpu_s": {
+          "median": 3.725667,
+          "min": 3.372619,
+          "max": 4.165878
+        },
+        "saxon_without_jvm_start_s": {
+          "median": 0.490845,
+          "min": 0.452033,
+          "max": 0.591341
+        },
+        "peak_rss_kib": 251284,
+        "outcome": {
+          "failed_transformations": 0
+        },
+        "samples": {
+          "wall_s": [0.760371, 0.659603, 0.610769, 0.623797, 0.685293],
+          "user_s": [3.985103, 3.659757, 3.231194, 3.534294, 3.211269],
+          "system_s": [0.180775, 0.154694, 0.199155, 0.191373, 0.161350],
+          "peak_rss_kib": [249272, 251284, 234120, 269976, 252836],
+          "saxon_without_jvm_start_s": [0.591341, 0.506082, 0.452033, 0.468847, 0.490845]
+        }
+      }
+    ]
+  }
+}
