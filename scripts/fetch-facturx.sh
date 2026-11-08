@@ -33,8 +33,10 @@
 #  4. One rule-set bundle of einvoice-validator per profile,
 #     <profile>/bundle.toml with the stylesheet and its code list next to it (a resource
 #     of the bundle):
-#     `einvoice-validate --bundle DIR/factur-x-1.09.2/en16931 FILE`. The
-#     manifest format cannot list the code list yet; it is named in a comment.
+#     `einvoice-validate --bundle DIR/factur-x-1.09.2/en16931 FILE`.
+#     `einvoice-validate rules fetch` builds the same bundles, byte for byte,
+#     from the same pins (crates/einvoice-validator/pins/, a copy of the block
+#     below, and crates/einvoice-validator/src/rulesets/).
 #
 # Needs bash, curl, unzip and git.
 # Exit status: 0 done; 75 a download failed (no network); 1 anything else,
@@ -195,10 +197,11 @@ for ((i = 0; i < ${#profiles[@]}; i += 4)); do
     mkdir -p "$bundle"
     cp "$mustang_dir/xslt/ZF_250/FACTUR-X_$file.xslt" "$mustang_dir/xslt/ZF_250/FACTUR-X_${file}_codedb.xml" "$bundle/"
     cat >"$bundle/bundle.toml" <<EOF
-# Factur-X $facturx, profile $file, built by scripts/fetch-facturx.sh from the
-# Mustang validator $mustang: the rule-set bundle manifest of einvoice-validator
-# (einvoice-validate --bundle DIR). The stylesheet reads, with document(), the
-# code list FACTUR-X_${file}_codedb.xml next to it, a resource of the bundle.
+# Factur-X $facturx, profile $file, from the Mustang validator $mustang: the
+# rule-set bundle manifest of einvoice-validator, as scripts/fetch-facturx.sh and
+# einvoice-validate rules fetch write it (einvoice-validate --bundle DIR). The
+# stylesheet reads, with document(), the code list FACTUR-X_${file}_codedb.xml
+# next to it, a resource of the bundle.
 format = 2
 name = "factur-x-$profile"
 title = "Factur-X $file"

@@ -41,6 +41,9 @@
 #     each also as <name>-warning with the WARNING version of the French rules,
 #     factur-x-basic-wl, factur-x-en16931, factur-x-extended, and flux10.
 #     `einvoice-validate --bundle DIR/fr-ctc-1.4.0.04/cii-en16931 FILE`.
+#     `einvoice-validate rules fetch` builds the same bundles, byte for byte,
+#     from the same pins (crates/einvoice-validator/pins/, a copy of the block
+#     below, and crates/einvoice-validator/src/rulesets/).
 #
 # Needs bash, curl, unzip and git.
 # Exit status: 0 done; 75 a download failed (no network); 1 anything else,
@@ -273,9 +276,9 @@ for entry in "${bundles[@]}"; do
     bundle=$tmp/release/$name
     mkdir -p "$bundle"
     {
-        echo "# $title, FNFE-MPE package $pack, built by"
-        echo "# scripts/fetch-fr-ctc.sh: the rule-set bundle manifest of einvoice-validator"
-        echo "# (einvoice-validate --bundle DIR)."
+        echo "# $title, FNFE-MPE package $pack: the rule-set bundle"
+        echo "# manifest of einvoice-validator, as scripts/fetch-fr-ctc.sh and"
+        echo "# einvoice-validate rules fetch write it (einvoice-validate --bundle DIR)."
         side=()
         for stylesheet_name in $names; do
             read -r path _ <<<"$(stylesheet "$stylesheet_name")"

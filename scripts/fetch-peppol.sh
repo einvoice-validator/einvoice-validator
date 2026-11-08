@@ -26,8 +26,12 @@
 #  3. Write DIR/peppol-bis-billing-ubl-3.0.22/bundle.toml, the rule-set
 #     bundle manifest of einvoice-validator naming both stylesheets with
 #     their pinned SHA-256, CEN rules first, as Peppol validation runs them,
-#     the CEN stylesheet with the version its Schematron file states:
+#     the CEN stylesheet with the version its Schematron file states, which
+#     must be the pin cen below:
 #     `einvoice-validate --bundle DIR/peppol-bis-billing-ubl-3.0.22 FILE`.
+#     `einvoice-validate rules fetch peppol` runs the same steps, from the
+#     same pins (crates/einvoice-validator/pins/, a copy of the block below),
+#     and writes the same bundle, byte for byte.
 #
 # Needs bash, curl, tar, gzip, git and Java (CI uses Java 21).
 # Exit status: 0 done; 75 a download failed (no network); 1 anything else,
@@ -45,6 +49,7 @@ set -euo pipefail
 tag=3.0.22
 commit=38d693d71d28d813781323a6ca97324edcc4d239
 archive_sha256=0bec0d84c444fd5afa3a4a2d6462e162afc157560bd100052b7e589bd94ebd13
+cen=1.3.16
 maven=3.9.16
 maven_sha512=831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6
 plugin=10.3.1
@@ -155,9 +160,12 @@ write_bundle() {
     cen_version=$(sed -n 's/.*Schematron version \([0-9][0-9.]*[0-9]\) .*/\1/p' \
         "$release/source/rules/sch/CEN-EN16931-UBL.sch" | head -n 1)
     [ -n "$cen_version" ] || fail "rules/sch/CEN-EN16931-UBL.sch states no Schematron version"
+    [ "$cen_version" = "$cen" ] ||
+        fail "rules/sch/CEN-EN16931-UBL.sch states Schematron version $cen_version, expected $cen"
     cat >"$tmp/bundle.toml" <<EOF
-# Peppol BIS Billing $tag (UBL), built by scripts/fetch-peppol.sh: the rule-set
-# bundle manifest of einvoice-validator (einvoice-validate --bundle DIR).
+# Peppol BIS Billing $tag (UBL): the rule-set bundle manifest of
+# einvoice-validator, as scripts/fetch-peppol.sh and einvoice-validate rules
+# fetch write it (einvoice-validate --bundle DIR).
 format = 1
 name = "peppol-bis-billing-ubl"
 title = "Peppol BIS Billing 3.0 UBL"
@@ -168,7 +176,7 @@ schema = "ubl-2.1"
 name = "CEN-EN16931-UBL"
 path = "xslt/CEN-EN16931-UBL.xslt"
 sha256 = "$cen_xslt_sha256"
-version = "$cen_version"
+version = "$cen"
 
 [[stylesheet]]
 name = "PEPPOL-EN16931-UBL"

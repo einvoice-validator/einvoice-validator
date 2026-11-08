@@ -46,6 +46,9 @@
 #     bundle.toml and the two stylesheets in the order the configuration runs
 #     them (EN 16931, then XRechnung):
 #     `einvoice-validate --bundle DIR/xrechnung-3.0.2/ubl FILE`.
+#     `einvoice-validate rules fetch` builds the same bundles, byte for byte,
+#     from the same pins (crates/einvoice-validator/pins/, a copy of the block
+#     below, and crates/einvoice-validator/src/rulesets/).
 #
 # Needs bash, curl, tar, gzip, unzip, git and Java (CI uses Java 21).
 # Exit status: 0 done; 75 a download failed (no network); 1 anything else,
@@ -277,9 +280,9 @@ for syntax in ubl cii; do
     bundle=$tmp/release/$syntax
     mkdir -p "$bundle"
     {
-        echo "# XRechnung $xrechnung ($upper), validator configuration $configuration, built by"
-        echo "# scripts/fetch-xrechnung.sh: the rule-set bundle manifest of einvoice-validator"
-        echo "# (einvoice-validate --bundle DIR)."
+        echo "# XRechnung $xrechnung ($upper), validator configuration $configuration: the"
+        echo "# rule-set bundle manifest of einvoice-validator, as scripts/fetch-xrechnung.sh"
+        echo "# and einvoice-validate rules fetch write it (einvoice-validate --bundle DIR)."
         echo "format = 1"
         echo "name = \"xrechnung-$syntax\""
         echo "title = \"XRechnung $upper\""
