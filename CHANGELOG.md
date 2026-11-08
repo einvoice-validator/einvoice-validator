@@ -12,6 +12,11 @@ against.
 
 ### Added
 
+- `einvoice-xsd`: the XML Schema constructs of the CII-family schemas (UN/CEFACT CII D16B and
+  D22B, Factur-X profiles) (#25): `fixed` and `default` values on attributes and elements, fixed
+  values compared in the value space of their type; anonymous complex types in local element
+  declarations; `minLength` and `maxLength` on the string types. A synthetic xmllint oracle suite
+  (180 document cases, 69 schema mutations) covers them.
 - `einvoice-xpath-eval`: `ValueType` and `BindingValue`, the static type of a host variable or
   function result, inferred as Saxon-HE 12.10 does in a stylesheet; `VariableInfo::value_type`,
   `StaticContext::function_type`, `SimpleStaticContext::declare_typed_variable` and
