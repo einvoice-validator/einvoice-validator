@@ -471,6 +471,7 @@ fn prepare(
                     | LoadErrorKind::UnsupportedAttribute { .. }
                     | LoadErrorKind::UnsupportedValue { .. }
                     | LoadErrorKind::XPath { .. }
+                    | LoadErrorKind::TooDeep { .. }
             )
         });
         let message = format!("{what}: {}", first_lines(&errors.to_string()));

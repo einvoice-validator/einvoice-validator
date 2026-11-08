@@ -10,6 +10,20 @@ against.
 
 ## [Unreleased]
 
+### Security
+
+- A deeply nested stylesheet (an untrusted rule-set bundle) no longer aborts the process with a
+  stack overflow when it is loaded, prepared or run (#33). Expressions and patterns nested
+  deeper than `einvoice_xpath::MAX_DEPTH` (128) are refused with `ErrorKind::TooDeep`, sequence
+  constructors nested deeper than `einvoice_xslt::MAX_NESTING` (64) with
+  `LoadErrorKind::TooDeep`; the official stylesheets need a depth of 32 and a nesting of 9.
+  `einvoice-validator` and `einvoice-validate` report both as unsupported (exit status 3).
+- The stack per nesting level is now 7 KB to parse, 5 KB to compile and 4 KB to evaluate in a
+  debug build (was 44, 21 and 21 KB). `StackLimit` and `DynamicContext::with_stack_limit` bound
+  an evaluation (`ErrorCode::Limit`); transformations pass their `max_stack` to the evaluator.
+- `DEFAULT_MAX_STACK` on WebAssembly is 256 KiB (was 640 KiB): wasmtime's 512 KiB engine stack
+  ran out first.
+
 ### Added
 
 - The engine runs the Factur-X 1.09.2, XRechnung 3.0.2 and French (FNFE-MPE 1.4.0.04) rule

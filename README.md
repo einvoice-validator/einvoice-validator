@@ -115,6 +115,10 @@ a debug build too. The stylesheets' template and function invocations are bounde
 nesting and in the stack they use (`ValidateOptions::max_stack`, 1.5 MiB by default): a rule set
 that recurses without end fails with `Error::Limit` instead of overflowing the stack.
 
+**Deeply nested stylesheets.** A rule-set bundle whose expressions nest deeper than 128 levels,
+or whose instructions nest deeper than 64, is refused when it is loaded rather than overflowing
+the stack; the official rule sets need 32 and 9.
+
 **Peppol BIS Billing 3.0.** Its files carry no licence, so they are not part of this repository:
 `scripts/fetch-peppol.sh` (needs Java and network access the first time) downloads the pinned
 release, compiles its two stylesheets and writes, next to them, the `bundle.toml` that names
