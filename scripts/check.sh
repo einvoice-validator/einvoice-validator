@@ -312,14 +312,15 @@ job_pins() {
     fi
     scripts/freshness.sh pins && scripts/freshness-test.sh
 }
-# The shell scripts and git hooks: ShellCheck, then the tests of the privacy
+# The shell scripts (scripts/, and those of the crates: crates/einvoice-wasm/npm.sh)
+# and git hooks: ShellCheck, then the tests of the privacy
 # guard and of the release scripts (synthetic data, throw-away repositories),
 # which need jq.
 job_guards() {
     local status=0
     if command -v shellcheck >/dev/null 2>&1; then
         shellcheck --version | sed -n 2p
-        shellcheck scripts/*.sh .githooks/* && echo "shellcheck: scripts and hooks clean" || status=1
+        shellcheck scripts/*.sh crates/*/*.sh .githooks/* && echo "shellcheck: scripts and hooks clean" || status=1
     else
         missing "ShellCheck (shellcheck is not installed)" || status=1
     fi
