@@ -1,6 +1,6 @@
 [package]
 name = "einvoice-testkit"
-description = "Helpers shared by the tests of the workspace: the workspace crates a package is built from, and a writer of synthetic PDF files"
+description = "Helpers shared by the tests of the workspace: the workspace crates a package is built from, a writer of synthetic PDF files, synthetic invoices with many lines"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

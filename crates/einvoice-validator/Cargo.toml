@@ -55,6 +55,10 @@ name = "bench"
 required-features = ["cen-ubl"]
 
 [[example]]
+name = "footprint"
+required-features = ["cen-ubl"]
+
+[[example]]
 name = "heap"
 required-features = ["cen-ubl"]
 
