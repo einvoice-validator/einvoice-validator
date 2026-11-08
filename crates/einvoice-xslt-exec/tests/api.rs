@@ -27,24 +27,21 @@ fn messages(body: &str) -> Vec<String> {
 }
 
 #[test]
-fn node_construction_in_a_sequence_is_refused() {
-    let errors = messages(
-        r#"<xsl:function name="f:a" as="xs:string"><xsl:param name="p"/><xsl:value-of select="$p"/></xsl:function>
-<xsl:function name="f:b"><e/></xsl:function>
-<xsl:function name="f:c"><xsl:apply-templates select="."/></xsl:function>
-<xsl:template match="/"><xsl:variable name="v" as="xs:string*"><xsl:text>t</xsl:text><xsl:comment/></xsl:variable></xsl:template>"#,
+fn nodes_are_constructed_in_sequences() {
+    let executable = prepare(
+        r#"<xsl:output omit-xml-declaration="yes"/>
+<xsl:function name="f:a" as="xs:string"><xsl:param name="p"/><xsl:value-of select="$p"/></xsl:function>
+<xsl:function name="f:b"><e a="1"><xsl:value-of select="2"/></e></xsl:function>
+<xsl:function name="f:c" as="xs:string*"><xsl:text>t</xsl:text><xsl:comment>c</xsl:comment><xsl:value-of select="''"/></xsl:function>
+<xsl:template match="/"><xsl:variable name="v" as="node()*"><xsl:attribute name="x">y</xsl:attribute><xsl:call-template name="t"/></xsl:variable><r a="{f:a(1)}" n="{count(f:c())}" c="{string-join(f:c(), ',')}" p="{count(f:b()/..)}" v="{count($v)}"><xsl:sequence select="$v, f:b()"/></r></xsl:template>
+<xsl:template name="t"><t/><xsl:apply-templates select="/i"/></xsl:template>"#,
+    )
+    .unwrap();
+    let result = executable.transform("<i>x</i>", None).unwrap();
+    assert_eq!(
+        result.output,
+        format!(r#"<r{NS} a="1" n="3" c="t,c," p="0" v="3" x="y"><t/>x<e a="1">2</e></r>"#)
     );
-    assert_eq!(errors.len(), 5, "{errors:#?}");
-    for (error, what) in errors.iter().zip([
-        "line 2: xsl:value-of",
-        "line 3: a literal result element",
-        "line 4: xsl:apply-templates",
-        "line 5: text",
-        "line 5: xsl:comment",
-    ]) {
-        assert!(error.starts_with(what), "{error}");
-        assert!(error.contains("in a sequence"), "{error}");
-    }
 }
 
 #[test]
@@ -53,7 +50,7 @@ fn static_errors_are_all_reported() {
         r#"<xsl:template match="/"><xsl:value-of select="$nope, f:nope(1)"/><xsl:call-template name="missing"/><xsl:call-template name="t"><xsl:with-param name="q" select="1"/></xsl:call-template></xsl:template>
 <xsl:template name="t"><xsl:param name="p"/></xsl:template>
 <xsl:template match="(a | b)[1]" mode="m"/>
-<xsl:template match="/"><xsl:value-of select="system-property('xsl:version')"/></xsl:template>"#,
+<xsl:template match="/"><xsl:value-of select="system-property('nope:version')"/></xsl:template>"#,
     );
     let all = errors.join("\n");
     assert_eq!(errors.len(), 5, "{all}");
@@ -61,10 +58,7 @@ fn static_errors_are_all_reported() {
     assert!(all.contains("XTSE0650"), "{all}");
     assert!(all.contains("XTSE0680"), "{all}");
     assert!(all.contains("may depend on the position"), "{all}");
-    assert!(
-        all.contains("system-property() with a prefixed name"),
-        "{all}"
-    );
+    assert!(all.contains("XTDE1390"), "{all}");
 }
 
 #[test]

@@ -449,16 +449,9 @@ pub enum PatternAlternative {
     /// `root()` (an XSLT 3.0 `RootedPath`, accepted by XSLT 3.0 processors running a 2.0
     /// stylesheet): matches the root of any tree.
     RootFunction,
-    /// A path pattern (XSLT 2.0 production \[2\] `PathPattern`, without `IdKeyPattern`).
+    /// A path pattern (XSLT 2.0 production \[2\] `PathPattern`, without `IdKeyPattern`),
+    /// whose steps may be XSLT 3.0 parenthesized patterns.
     Path(PathPattern),
-    /// `(pattern)[predicate]...` (XSLT 3.0 `PostfixExprP`): at least one predicate, and
-    /// nothing after it.
-    Parenthesized {
-        /// The pattern inside the parentheses.
-        inner: Box<Pattern>,
-        /// The predicates (at least one).
-        predicates: Vec<Expr>,
-    },
 }
 
 /// A path pattern: `step`, `/step`, `//step`, then steps separated by `/` or `//`.
@@ -467,9 +460,39 @@ pub struct PathPattern {
     /// What precedes the first step.
     pub anchor: PatternAnchor,
     /// The first step.
-    pub first: PatternStep,
+    pub first: PathStep,
     /// The following steps, each with the separator before it.
-    pub rest: Vec<(PatternLink, PatternStep)>,
+    pub rest: Vec<(PatternLink, PathStep)>,
+}
+
+impl PathPattern {
+    /// A path of one axis step and nothing else.
+    #[must_use]
+    pub const fn single(anchor: PatternAnchor, step: PatternStep) -> Self {
+        Self {
+            anchor,
+            first: PathStep::Axis(step),
+            rest: Vec::new(),
+        }
+    }
+}
+
+/// A step of a path pattern.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathStep {
+    /// An axis step (XSLT 2.0 production \[4\] `PatternStep`).
+    Axis(PatternStep),
+    /// `(pattern)[predicate]...`, an XSLT 3.0 `PostfixExprP` used as a step, in the forms
+    /// the parser keeps (see [`parse_pattern`](crate::parse_pattern)): the first step of
+    /// a path, with or without predicates (with at least one when it is the whole
+    /// path), or a step between two others, without predicates, whose alternatives are
+    /// single steps.
+    Parenthesized {
+        /// The pattern inside the parentheses.
+        inner: Box<Pattern>,
+        /// The predicates.
+        predicates: Vec<Expr>,
+    },
 }
 
 /// What precedes the first step of a path pattern.

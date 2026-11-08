@@ -11,8 +11,13 @@
 //! whitespace-only ones included, as Saxon does with `-strip:none`, and the namespace
 //! prefixes as written in the source (they appear in `fn:name`).
 //!
-//! The model has no namespace nodes and no type annotations: every element and attribute is
-//! untyped, so its typed value is `xs:untypedAtomic`.
+//! A built tree may have no document node: a parentless element, attribute, text node or
+//! comment ([`TreeBuilder::parentless`]), as the XSLT layer constructs them in a sequence
+//! (the root of its tree is the node itself). The elements of a built tree have the
+//! namespace nodes they were given ([`TreeBuilder::start_element_with_namespaces`]), and
+//! those of their ancestors in the tree; a parsed document keeps none (only the namespaces
+//! of the names of its elements and attributes). There are no type annotations: every
+//! element and attribute is untyped, so its typed value is `xs:untypedAtomic`.
 //!
 //! A parsed document may be nested at most [`DEFAULT_MAX_DEPTH`] elements deep, or the
 //! maximum given to [`Document::parse_with_max_depth`]: beyond it the parse fails with
@@ -28,8 +33,10 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
+use std::sync::Arc;
+
 use einvoice_xdm::AtomicValue;
-use einvoice_xpath::{QName, XML_NAMESPACE};
+use einvoice_xpath::{NamespaceBinding, QName, XML_NAMESPACE};
 
 use crate::limit::{DEFAULT_MAX_DEPTH, LimitExceeded};
 
@@ -204,6 +211,9 @@ pub struct Document {
     has_xml_base: bool,
     records: Vec<Record>,
     names: Vec<QName>,
+    /// The namespace nodes given to elements of a built tree, by element index, in
+    /// document order.
+    namespaces: Vec<(u32, Arc<[NamespaceBinding]>)>,
     /// The source text, or empty when the texts were copied out of it.
     source: String,
     /// The texts that are not in `source`.
@@ -639,10 +649,36 @@ impl Node {
             .map(|p| Self::new(Rc::clone(&self.doc), p))
     }
 
-    /// The root of the tree: always the document node.
+    /// The root of the tree: the document node, or the parentless node of a tree built
+    /// without one ([`TreeBuilder::parentless`]).
     #[must_use]
     pub fn root(&self) -> Self {
         Self::new(Rc::clone(&self.doc), 0)
+    }
+
+    /// The namespace nodes of an element of a built tree (XDM `dm:namespace-nodes`): those
+    /// it was given and those of its ancestors, the nearest binding of a prefix winning,
+    /// innermost element first. Empty for other nodes and for the elements of a parsed
+    /// document.
+    #[must_use]
+    pub fn namespaces_in_scope(&self) -> Vec<NamespaceBinding> {
+        let doc = &self.doc;
+        let mut out: Vec<NamespaceBinding> = Vec::new();
+        if doc.namespaces.is_empty() || self.kind() != NodeKind::Element {
+            return out;
+        }
+        let mut index = self.index;
+        while index != NONE {
+            if let Ok(i) = doc.namespaces.binary_search_by_key(&index, |(e, _)| *e) {
+                for binding in doc.namespaces[i].1.iter() {
+                    if !out.iter().any(|b| b.prefix == binding.prefix) {
+                        out.push(binding.clone());
+                    }
+                }
+            }
+            index = doc.record(index).parent;
+        }
+        out
     }
 
     /// The string value (XDM `dm:string-value`).
@@ -714,18 +750,22 @@ impl Iterator for Axis {
 /// Builds a [`Document`] from events, in document order.
 ///
 /// Adjacent text is merged into one text node and empty text is dropped, as the XDM
-/// requires. Attributes must come right after their element's start, before its content;
+/// requires (except at the top of a parentless tree, see [`TreeBuilder::parentless`]). Attributes must come right after their element's start, before its content;
 /// an attribute whose expanded name is already on the element replaces it.
 #[derive(Debug)]
 pub struct TreeBuilder {
     records: Vec<Record>,
     names: Vec<QName>,
     name_ids: HashMap<QName, u32>,
+    /// The namespace nodes given to elements, by element index.
+    namespaces: Vec<(u32, Arc<[NamespaceBinding]>)>,
+    /// Whether the tree has no document node: its one top-level node is its root.
+    parentless: bool,
     /// The length of the source text the text space starts with (see [`Document`]): the
     /// texts added are stored from that offset on.
     source_len: usize,
     text: String,
-    /// The open nodes, the document node first.
+    /// The open nodes, the document node first (none for a parentless tree).
     open: Vec<u32>,
     /// The last child of each open node, or [`NONE`].
     last_child: Vec<u32>,
@@ -762,11 +802,27 @@ impl TreeBuilder {
             records: vec![Record::new(NodeKind::Document, NONE, NONE, NONE, 0, (0, 0))],
             names: Vec::new(),
             name_ids: HashMap::new(),
+            namespaces: Vec::new(),
+            parentless: false,
             source_len: 0,
             text: String::new(),
             open: vec![0],
             last_child: vec![NONE],
             has_xml_base: false,
+        }
+    }
+
+    /// A builder of a tree without document node, whose root is the one node added at
+    /// the top: a parentless element (with its content), attribute, text node or comment
+    /// (XDM nodes without parent, as XSLT constructs them in a sequence). Text added at
+    /// the top makes one text node; anything added after the top-level node is an error.
+    #[must_use]
+    pub fn parentless() -> Self {
+        Self {
+            records: Vec::new(),
+            open: Vec::new(),
+            parentless: true,
+            ..Self::new()
         }
     }
 
@@ -811,8 +867,14 @@ impl TreeBuilder {
         }
     }
 
+    /// The innermost open node, or [`NONE`] at the top of a parentless tree.
     fn top(&self) -> u32 {
-        self.open.last().copied().unwrap_or(0)
+        self.open.last().copied().unwrap_or(NONE)
+    }
+
+    /// The number of open nodes that are not elements (the document node).
+    const fn base(&self) -> usize {
+        if self.parentless { 0 } else { 1 }
     }
 
     /// Appends a child of the innermost open node and returns its index: an element (its
@@ -825,6 +887,11 @@ impl TreeBuilder {
     ) -> Result<u32, DocumentError> {
         let index = to_u32(self.records.len())?;
         to_u32(self.records.len() + 1)?;
+        if self.parentless && self.open.is_empty() && !self.records.is_empty() {
+            return Err(DocumentError::new(
+                "a second node at the top of a parentless tree",
+            ));
+        }
         let text = if kind == NodeKind::Element {
             (0, 0)
         } else {
@@ -851,6 +918,25 @@ impl TreeBuilder {
         self.open_element(name)
     }
 
+    /// Opens an element with namespace nodes (besides those it inherits from its
+    /// ancestors in the tree, see [`Node::namespaces_in_scope`]).
+    ///
+    /// # Errors
+    ///
+    /// A document too large for the arena.
+    pub fn start_element_with_namespaces(
+        &mut self,
+        name: QName,
+        namespaces: Arc<[NamespaceBinding]>,
+    ) -> Result<(), DocumentError> {
+        self.start_element(name)?;
+        if !namespaces.is_empty() {
+            let element = self.top();
+            self.namespaces.push((element, namespaces));
+        }
+        Ok(())
+    }
+
     fn open_element(&mut self, name: u32) -> Result<(), DocumentError> {
         let index = self.append(NodeKind::Element, name, NodeText::Copy(""))?;
         self.open.push(index);
@@ -864,9 +950,22 @@ impl TreeBuilder {
     ///
     /// No element is open, or the element already has content.
     pub fn attribute(&mut self, name: QName, value: &str) -> Result<(), DocumentError> {
+        if self.parentless && self.records.is_empty() {
+            // A parentless attribute: the root of its tree.
+            let xml_base = is_xml_base(name.namespace.as_deref(), &name.local);
+            let id = self.intern(name)?;
+            let text = self.store_text(NodeText::Copy(value))?;
+            self.records
+                .push(Record::new(NodeKind::Attribute, id, NONE, NONE, 0, text));
+            self.has_xml_base |= xml_base;
+            return Ok(());
+        }
         let element = self.top();
         let has_content = self.last_child.last().is_some_and(|&l| l != NONE);
-        if element == 0 || has_content {
+        if element == NONE
+            || self.records[element as usize].kind != NodeKind::Element
+            || has_content
+        {
             return Err(DocumentError::new(format!(
                 "attribute {name} outside an element start"
             )));
@@ -926,6 +1025,13 @@ impl TreeBuilder {
     /// A document too large for the arena.
     pub fn text(&mut self, value: &str) -> Result<(), DocumentError> {
         if value.is_empty() {
+            // At the top of a parentless tree, a zero-length text node (XSLT constructs
+            // them in sequences); dropped anywhere else.
+            if self.parentless && self.records.is_empty() {
+                return self
+                    .append(NodeKind::Text, NONE, NodeText::Copy(""))
+                    .map(drop);
+            }
             return Ok(());
         }
         let last = self.last_child.last().copied().unwrap_or(NONE);
@@ -980,7 +1086,7 @@ impl TreeBuilder {
     ///
     /// No element is open.
     pub fn end_element(&mut self) -> Result<(), DocumentError> {
-        if self.open.len() < 2 {
+        if self.open.len() <= self.base() {
             return Err(DocumentError::new("end of element without a start"));
         }
         let element = self.top();
@@ -1012,13 +1118,19 @@ impl TreeBuilder {
         document_uri: Option<String>,
         base_uri: Option<String>,
     ) -> Result<Rc<Document>, DocumentError> {
-        if self.open.len() != 1 {
+        if self.open.len() != self.base() {
             return Err(DocumentError::new("unclosed element"));
         }
         if source.len() != self.source_len {
             return Err(DocumentError::new("source text of another length"));
         }
-        self.records[0].end = to_u32(self.records.len())?;
+        if self.parentless {
+            if self.records.is_empty() {
+                return Err(DocumentError::new("a parentless tree without a node"));
+            }
+        } else {
+            self.records[0].end = to_u32(self.records.len())?;
+        }
         // No spare capacity is kept: a parsed tree is sized exactly, a built one is
         // trimmed once.
         self.records.shrink_to_fit();
@@ -1031,6 +1143,7 @@ impl TreeBuilder {
             has_xml_base: self.has_xml_base,
             records: self.records,
             names: self.names,
+            namespaces: self.namespaces,
             source,
             text: self.text,
         }))

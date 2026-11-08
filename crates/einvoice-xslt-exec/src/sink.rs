@@ -9,11 +9,13 @@
 //! - simple content (attribute values, comments, `xsl:value-of`): [`TextSink`]
 //!   concatenates the string values, adjacent text merged, with a separator between the
 //!   other items;
-//! - a sequence (`xsl:function` bodies, variables with `as`): [`SequenceSink`] keeps the
-//!   items. Instructions that construct nodes are refused there when the stylesheet is
-//!   prepared.
+//! - a sequence (`xsl:function` bodies, variables and parameters with `as`):
+//!   [`SequenceSink`] keeps the items, and each node an instruction constructs at its top
+//!   is a new parentless node (an element with its content, an attribute, a text node,
+//!   even a zero-length one, or a comment), as Saxon-HE 12.10 constructs them.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use einvoice_xpath::{QName, XML_NAMESPACE};
 use einvoice_xpath_eval::tree::Axis;
@@ -24,8 +26,9 @@ use crate::error::{Result, TransformError, err};
 
 /// The receiver of the events of a sequence constructor.
 pub(crate) trait Sink {
-    /// Opens an element with the namespace nodes of a literal result element.
-    fn start_element(&mut self, name: &QName, namespaces: &[NamespaceBinding]) -> Result<()>;
+    /// Opens an element with namespace nodes: those of a literal result element, or of a
+    /// copied element.
+    fn start_element(&mut self, name: &QName, namespaces: &Arc<[NamespaceBinding]>) -> Result<()>;
     /// Adds an attribute to the element just opened.
     fn attribute(&mut self, name: &QName, value: &str) -> Result<()>;
     /// Closes the innermost open element.
@@ -39,8 +42,10 @@ pub(crate) trait Sink {
 }
 
 /// Copies an existing node into complex content (deep copy, as XSLT 2.0 section 5.7.1
-/// prescribes for nodes in a sequence constructor). The subtree is walked with an
-/// explicit stack, not a recursion: its depth is only bounded by the document's.
+/// prescribes for nodes in a sequence constructor), each element with its namespace
+/// nodes (`copy-namespaces="yes"`; the elements of a parsed document have none, see
+/// [`Node::namespaces_in_scope`]). The subtree is walked with an explicit stack, not a
+/// recursion: its depth is only bounded by the document's.
 fn copy_node(sink: &mut dyn Sink, node: &Node) -> Result<()> {
     // The document node or elements being copied, innermost last, each with its children
     // not copied yet, and whether it is an element (to close).
@@ -54,7 +59,8 @@ fn copy_node(sink: &mut dyn Sink, node: &Node) -> Result<()> {
                     let Some(name) = node.name() else {
                         return err("INTERNAL", "element without name");
                     };
-                    sink.start_element(name, &[])?;
+                    let namespaces: Arc<[NamespaceBinding]> = node.namespaces_in_scope().into();
+                    sink.start_element(name, &namespaces)?;
                     for attribute in node.attributes() {
                         copy_attribute(sink, &attribute)?;
                     }
@@ -342,12 +348,12 @@ impl XmlWriter {
 }
 
 impl Sink for XmlWriter {
-    fn start_element(&mut self, name: &QName, namespaces: &[NamespaceBinding]) -> Result<()> {
+    fn start_element(&mut self, name: &QName, namespaces: &Arc<[NamespaceBinding]>) -> Result<()> {
         self.flush();
         self.last_atomic = false;
         self.before_markup();
         let mut declarations = Vec::new();
-        for ns in namespaces {
+        for ns in namespaces.iter() {
             let already = self.bound(ns.prefix.as_deref()).unwrap_or("") == ns.uri;
             if !already {
                 declarations.push((ns.prefix.clone(), ns.uri.clone()));
@@ -471,8 +477,9 @@ fn escape_attribute(out: &mut String, text: &str) {
     }
 }
 
-/// Builds a temporary tree (a variable whose value is a sequence constructor, without
-/// `as`): a new document node.
+/// Builds a tree: a temporary tree (a variable whose value is a sequence constructor,
+/// without `as`), a new document node; or the content of an element constructed in a
+/// sequence, a parentless element.
 #[derive(Debug)]
 pub(crate) struct TreeSink {
     builder: TreeBuilder,
@@ -482,9 +489,19 @@ pub(crate) struct TreeSink {
 }
 
 impl TreeSink {
+    /// A temporary tree: a document node.
     pub(crate) fn new() -> Self {
+        Self::with(TreeBuilder::new())
+    }
+
+    /// A tree without document node, for one parentless node.
+    fn parentless() -> Self {
+        Self::with(TreeBuilder::parentless())
+    }
+
+    const fn with(builder: TreeBuilder) -> Self {
         Self {
-            builder: TreeBuilder::new(),
+            builder,
             last_atomic: false,
             in_start_tag: false,
         }
@@ -502,11 +519,11 @@ fn tree_error(e: &einvoice_xpath_eval::DocumentError) -> TransformError {
 }
 
 impl Sink for TreeSink {
-    fn start_element(&mut self, name: &QName, _namespaces: &[NamespaceBinding]) -> Result<()> {
+    fn start_element(&mut self, name: &QName, namespaces: &Arc<[NamespaceBinding]>) -> Result<()> {
         self.last_atomic = false;
         self.in_start_tag = true;
         self.builder
-            .start_element(name.clone())
+            .start_element_with_namespaces(name.clone(), Arc::clone(namespaces))
             .map_err(|e| tree_error(&e))
     }
 
@@ -600,7 +617,11 @@ impl TextSink {
 }
 
 impl Sink for TextSink {
-    fn start_element(&mut self, _name: &QName, _namespaces: &[NamespaceBinding]) -> Result<()> {
+    fn start_element(
+        &mut self,
+        _name: &QName,
+        _namespaces: &Arc<[NamespaceBinding]>,
+    ) -> Result<()> {
         if self.depth == 0 {
             self.parts.push(String::new());
             self.last_text = false;
@@ -656,43 +677,90 @@ impl Sink for TextSink {
     }
 }
 
-/// A sequence of items (function bodies, variables with `as`).
+/// A sequence of items (function bodies, variables and parameters with `as`). A node
+/// constructed at the top of the sequence is a new parentless node: an element is built
+/// with its content, as complex content; each attribute, text (each instruction's, not
+/// merged with the next, and kept when of zero length, as Saxon does) and comment is a
+/// node of its own. Items of `xsl:sequence` are kept as they are (nodes are not copied).
 #[derive(Debug, Default)]
 pub(crate) struct SequenceSink {
     pub(crate) items: Vec<Item>,
+    /// The element being constructed at the top, and how many elements are open in it
+    /// (boxed: a function call holds a sink on the stack of each level of recursion).
+    element: Option<Box<(TreeSink, usize)>>,
 }
 
 impl SequenceSink {
-    fn refuse<T>(what: &str) -> Result<T> {
-        err(
-            "INTERNAL",
-            format!("{what} constructed in a sequence (refused when the stylesheet is prepared)"),
-        )
+    /// The tree of the element being constructed, if any.
+    fn open(&mut self) -> Option<&mut TreeSink> {
+        self.element.as_mut().map(|e| &mut e.0)
+    }
+
+    /// A parentless node built by `build`.
+    fn push_parentless(
+        &mut self,
+        build: impl FnOnce(
+            &mut TreeBuilder,
+        ) -> std::result::Result<(), einvoice_xpath_eval::DocumentError>,
+    ) -> Result<()> {
+        let mut builder = TreeBuilder::parentless();
+        build(&mut builder).map_err(|e| tree_error(&e))?;
+        let tree = builder
+            .finish(None, None)
+            .map_err(|e| TransformError::new("INTERNAL", e.message()))?;
+        self.items.push(Item::Node(tree.root()));
+        Ok(())
     }
 }
 
 impl Sink for SequenceSink {
-    fn start_element(&mut self, _name: &QName, _namespaces: &[NamespaceBinding]) -> Result<()> {
-        Self::refuse("an element")
+    fn start_element(&mut self, name: &QName, namespaces: &Arc<[NamespaceBinding]>) -> Result<()> {
+        let element = self
+            .element
+            .get_or_insert_with(|| Box::new((TreeSink::parentless(), 0)));
+        element.1 += 1;
+        element.0.start_element(name, namespaces)
     }
 
-    fn attribute(&mut self, _name: &QName, _value: &str) -> Result<()> {
-        Self::refuse("an attribute")
+    fn attribute(&mut self, name: &QName, value: &str) -> Result<()> {
+        if let Some(tree) = self.open() {
+            return tree.attribute(name, value);
+        }
+        self.push_parentless(|b| b.attribute(name.clone(), value))
     }
 
     fn end_element(&mut self) -> Result<()> {
-        Self::refuse("an element")
+        let Some(element) = self.element.as_mut() else {
+            return err("INTERNAL", "end of an element that is not open");
+        };
+        element.0.end_element()?;
+        element.1 -= 1;
+        if element.1 == 0
+            && let Some(element) = self.element.take()
+        {
+            self.items.push(Item::Node(element.0.finish()?.root()));
+        }
+        Ok(())
     }
 
-    fn text(&mut self, _text: &str) -> Result<()> {
-        Self::refuse("a text node")
+    fn text(&mut self, text: &str) -> Result<()> {
+        if let Some(tree) = self.open() {
+            return tree.text(text);
+        }
+        self.push_parentless(|b| b.text(text))
     }
 
-    fn comment(&mut self, _text: &str) -> Result<()> {
-        Self::refuse("a comment")
+    fn comment(&mut self, text: &str) -> Result<()> {
+        if let Some(tree) = self.open() {
+            return tree.comment(text);
+        }
+        self.push_parentless(|b| b.comment(text))
     }
 
     fn item(&mut self, item: &Item) -> Result<()> {
+        if let Some(tree) = self.open() {
+            return tree.item(item);
+        }
         self.items.push(item.clone());
         Ok(())
     }

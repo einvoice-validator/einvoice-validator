@@ -10,6 +10,15 @@ pub const XS_NAMESPACE: &str = "http://www.w3.org/2001/XMLSchema";
 /// The namespace bound to the `xml` prefix in every XML document.
 pub const XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
 
+/// A namespace binding: a namespace node of an element, or a namespace declaration.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NamespaceBinding {
+    /// The prefix; `None` for the default namespace.
+    pub prefix: Option<String>,
+    /// The namespace URI.
+    pub uri: String,
+}
+
 /// A qualified name as written (`prefix:local` or `local`) together with the namespace
 /// it was resolved to when it was parsed.
 ///

@@ -701,3 +701,15 @@ static-75	edge.xml	/	v	xs:decimal(-(-1, 2.5)[1]) div 300
 static-76	edge.xml	/	v	((3000 div 10, 2.5)[1] - 301) div 300
 static-77	edge.xml	/	v	(sum((300, 2.5)[1]) - 301) div 300
 static-78	edge.xml	/	v	(abs((-300, 2.5)[1]) - 301) div 300
+empty-01	edge.xml	/	vb	empty(//d:item)
+empty-02	edge.xml	/	vb	empty(//d:nothing)
+empty-03	edge.xml	/	vb	empty(())
+empty-04	edge.xml	/	vb	empty(//d:empty)
+empty-05	edge.xml	/	vb	empty(//d:item[1]/@id)
+empty-06	edge.xml	//d:item	vb	empty(@n[. > 1])
+empty-07	edge.xml	/	vb	empty(p:any((1, 2)))
+empty-08	edge.xml	/	vb	empty(p:any(''))
+empty-09	edge.xml	/	vb	not(empty(//d:c)) and empty(//d:c[@id = 'none'])
+empty-10	edge.xml	/	vb	empty(//d:item | //d:nothing)
+empty-11	edge.xml	/	vb	empty(p:any((1, xs:decimal(p:any('x')))))
+empty-12	edge.xml	/	vb	empty(p:any((xs:decimal(p:any('x')), 1)))

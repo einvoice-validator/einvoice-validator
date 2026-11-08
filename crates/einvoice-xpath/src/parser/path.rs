@@ -7,6 +7,7 @@ use crate::ast::{
 };
 use crate::error::{ErrorKind, Result};
 use crate::lexer::Tok;
+use crate::names::{QName, is_ncname, is_xml_whitespace};
 
 /// The names that cannot be function names (XPath 2.0 appendix A.3), because a name
 /// followed by `(` is a kind test or an expression keyword.
@@ -417,7 +418,32 @@ impl Parser<'_> {
                 break;
             }
         }
+        self.resolve_property_name(&name, &mut args);
         Ok(Expr::FunctionCall { name, args })
+    }
+
+    /// The argument of `system-property("prefix:local")`, a lexical `QName` resolved with the
+    /// in-scope namespaces of the expression (XSLT 2.0 section 16.6.5), is rewritten as the
+    /// equivalent `Q{uri}local` (an `EQName`, which XSLT 3.0 accepts there), so that the name
+    /// no longer depends on namespaces the compiler does not see. A prefix that is not
+    /// bound is left for the compiler to report.
+    fn resolve_property_name(&self, name: &QName, args: &mut [Expr]) {
+        if name.namespace.as_deref() != Some(crate::FN_NAMESPACE) || name.local != "system-property"
+        {
+            return;
+        }
+        let [Expr::Literal(Literal::String(text))] = args else {
+            return;
+        };
+        let Some((prefix, local)) = text.trim_matches(is_xml_whitespace).split_once(':') else {
+            return;
+        };
+        if !is_ncname(prefix) || !is_ncname(local) {
+            return;
+        }
+        if let Some(uri) = self.namespaces.namespace_uri(prefix) {
+            *text = format!("Q{{{uri}}}{local}");
+        }
     }
 
     fn bump_if_comma(&mut self) -> Result<bool> {

@@ -155,6 +155,7 @@ impl<'a> Run<'a> {
             Builtin::False => boolean(false),
             Builtin::Boolean => boolean(self.ebv(&args[0], ctx)?),
             Builtin::Exists => boolean(self.non_empty(&args[0], ctx)?),
+            Builtin::Empty => boolean(!self.non_empty(&args[0], ctx)?),
             Builtin::Count => {
                 let mut count = 0;
                 for item in self.seq(&args[0], ctx)? {

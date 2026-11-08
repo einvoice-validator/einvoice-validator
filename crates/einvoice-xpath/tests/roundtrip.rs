@@ -12,9 +12,9 @@
 use einvoice_xpath::{
     ArithmeticOp, AtomicKind, AtomicType, Axis, AxisStep, Binding, CompareKind, ComparisonOp, Expr,
     FN_NAMESPACE, ItemType, KindTest, Literal, NameOrWildcard, NameTest, NamespaceMap, NodeTest,
-    Occurrence, PathExpr, PathPattern, PathStart, Pattern, PatternAlternative, PatternAnchor,
-    PatternAxis, PatternLink, PatternStep, QName, Quantifier, SequenceType, SingleType, Step,
-    XS_NAMESPACE, parse_expr, parse_pattern, parse_sequence_type,
+    Occurrence, PathExpr, PathPattern, PathStart, PathStep, Pattern, PatternAlternative,
+    PatternAnchor, PatternAxis, PatternLink, PatternStep, QName, Quantifier, SequenceType,
+    SingleType, Step, XS_NAMESPACE, parse_expr, parse_pattern, parse_sequence_type,
 };
 use proptest::prelude::*;
 
@@ -371,46 +371,94 @@ fn path_pattern() -> impl Strategy<Value = PatternAlternative> {
         .prop_map(|(anchor, first, rest)| {
             PatternAlternative::Path(PathPattern {
                 anchor,
-                first,
-                rest,
+                first: PathStep::Axis(first),
+                rest: rest
+                    .into_iter()
+                    .map(|(link, step)| (link, PathStep::Axis(step)))
+                    .collect(),
             })
         })
 }
 
-fn pattern() -> impl Strategy<Value = Pattern> {
-    let alternative = prop_oneof![
-        Just(PatternAlternative::DocumentRoot),
-        Just(PatternAlternative::RootFunction),
-        path_pattern()
-    ];
-    alternative
-        .prop_recursive(2, 8, 3, |inner| {
-            prop_oneof![
-                inner.clone(),
-                (
-                    proptest::collection::vec(inner, 1..3),
-                    proptest::collection::vec(expr(), 1..2)
-                )
-                    .prop_map(|(alternatives, predicates)| {
-                        PatternAlternative::Parenthesized {
+/// A relative path of one axis step.
+fn single_step() -> impl Strategy<Value = PatternAlternative> {
+    pattern_step().prop_map(|step| {
+        PatternAlternative::Path(PathPattern::single(PatternAnchor::Relative, step))
+    })
+}
+
+/// A path whose first step is parenthesized, in the forms the parser keeps: with
+/// predicates when alone, else followed by axis steps and, between them, parenthesized
+/// steps without predicate whose alternatives are single steps.
+fn parenthesized_path() -> impl Strategy<Value = PatternAlternative> {
+    let link = prop_oneof![Just(PatternLink::Child), Just(PatternLink::Descendant)];
+    let inner = proptest::collection::vec(
+        prop_oneof![Just(PatternAlternative::DocumentRoot), path_pattern()],
+        1..3,
+    );
+    let middle = proptest::collection::vec(single_step(), 1..3);
+    (
+        inner,
+        proptest::collection::vec(expr(), 0..2),
+        proptest::collection::vec((link.clone(), middle), 0..2),
+        proptest::option::of((link, pattern_step())),
+    )
+        .prop_map(|(inner, predicates, middle, last)| {
+            let first = PathStep::Parenthesized {
+                inner: Box::new(Pattern {
+                    alternatives: inner,
+                }),
+                predicates,
+            };
+            let mut rest: Vec<(PatternLink, PathStep)> = middle
+                .into_iter()
+                .map(|(link, alternatives)| {
+                    (
+                        link,
+                        PathStep::Parenthesized {
                             inner: Box::new(Pattern { alternatives }),
-                            predicates,
-                        }
-                    }),
-            ]
-        })
-        .prop_map(|a| vec![a])
-        .prop_flat_map(|first| {
-            proptest::collection::vec(
-                prop_oneof![Just(PatternAlternative::DocumentRoot), path_pattern()],
-                0..3,
-            )
-            .prop_map(move |rest| {
-                let mut alternatives = first.clone();
-                alternatives.extend(rest);
-                Pattern { alternatives }
+                            predicates: Vec::new(),
+                        },
+                    )
+                })
+                .collect();
+            if !rest.is_empty() || last.is_some() {
+                let (link, step) = last.unwrap_or((
+                    PatternLink::Child,
+                    PatternStep {
+                        axis: PatternAxis::Child,
+                        test: NodeTest::Kind(KindTest::Text),
+                        predicates: Vec::new(),
+                    },
+                ));
+                rest.push((link, PathStep::Axis(step)));
+            }
+            PatternAlternative::Path(PathPattern {
+                anchor: PatternAnchor::Relative,
+                first,
+                rest,
             })
         })
+        .prop_filter("a parenthesized step alone has predicates", |a| {
+            !matches!(a, PatternAlternative::Path(PathPattern {
+                first: PathStep::Parenthesized { predicates, .. },
+                rest,
+                ..
+            }) if predicates.is_empty() && rest.is_empty())
+        })
+}
+
+fn pattern() -> impl Strategy<Value = Pattern> {
+    proptest::collection::vec(
+        prop_oneof![
+            Just(PatternAlternative::DocumentRoot),
+            Just(PatternAlternative::RootFunction),
+            path_pattern(),
+            parenthesized_path(),
+        ],
+        1..4,
+    )
+    .prop_map(|alternatives| Pattern { alternatives })
 }
 
 proptest! {

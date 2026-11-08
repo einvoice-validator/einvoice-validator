@@ -8,18 +8,19 @@
 //! statically (see `compile`) are materialised and sorted.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use einvoice_xdm::{AtomicValue, Integer, ops};
 
 use crate::compile::{
-    Calculator, CompareStrategy, CompiledExpr, Expr, ItemTest, PathMode, Predicate, PredicateKind,
-    Step,
+    Calculator, CompareStrategy, CompiledExpr, Expr, HostArg, ItemTest, PathMode, Predicate,
+    PredicateKind, Step,
 };
-use crate::context::{Context, DynamicContext};
+use crate::context::{Context, DynamicContext, FunctionId};
 use crate::error::{Error, ErrorCode, Result, err};
 use crate::functions::Builtin;
 use crate::item::Item;
-use crate::tree::{Node, NodeAxis};
+use crate::tree::{Node, NodeAxis, NodeKind};
 
 /// A lazily produced sequence.
 pub(crate) type Iter<'s> = Box<dyn Iterator<Item = Result<Item>> + 's>;
@@ -64,6 +65,71 @@ impl Ctx {
 }
 
 /// One evaluation: the dynamic context and the current item.
+/// An argument of a call to a host function ([`Host::call_function`](crate::Host::call_function)):
+/// its value, or, for an argument Saxon evaluates lazily, what computes it when the host
+/// asks for it ([`Argument::evaluate`]), any number of times later during the call.
+#[derive(Debug, Clone)]
+pub struct Argument(ArgumentValue);
+
+#[derive(Debug, Clone)]
+enum ArgumentValue {
+    Value(Rc<[Item]>),
+    Lazy {
+        expr: Arc<Expr>,
+        ctx: Ctx,
+        current: Option<Item>,
+    },
+}
+
+impl Argument {
+    pub(crate) fn value(items: Vec<Item>) -> Self {
+        Self(ArgumentValue::Value(items.into()))
+    }
+
+    pub(crate) const fn lazy(expr: Arc<Expr>, ctx: Ctx, current: Option<Item>) -> Self {
+        Self(ArgumentValue::Lazy { expr, ctx, current })
+    }
+
+    /// An argument already evaluated, for a host's own calls.
+    #[must_use]
+    pub fn of(items: Vec<Item>) -> Self {
+        Self::value(items)
+    }
+
+    /// The call site of a lazy argument: the same number for every evaluation of this
+    /// argument of this call in the compiled expression, which stays valid as long as the
+    /// expression lives (the host may keep state per call site, as Saxon's
+    /// `LearningEvaluator`). `None` for an argument evaluated before the call (one that
+    /// depends on the current item or on the position or size of the focus, or calls a
+    /// host function).
+    #[must_use]
+    pub fn site(&self) -> Option<usize> {
+        match &self.0 {
+            ArgumentValue::Value(_) => None,
+            ArgumentValue::Lazy { expr, .. } => Some(Arc::as_ptr(expr).addr()),
+        }
+    }
+
+    /// The value of the argument, computed now for a lazy one (in the dynamic context of
+    /// the call, which must be `dc`).
+    ///
+    /// # Errors
+    ///
+    /// Whatever evaluating the argument raises.
+    pub fn evaluate(&self, dc: &DynamicContext<'_>) -> Result<Vec<Item>> {
+        match &self.0 {
+            ArgumentValue::Value(items) => Ok(items.to_vec()),
+            ArgumentValue::Lazy { expr, ctx, current } => {
+                let run = Run {
+                    dc,
+                    current: current.clone(),
+                };
+                run.seq(expr, ctx)?.collect()
+            }
+        }
+    }
+}
+
 pub(crate) struct Run<'a> {
     pub(crate) dc: &'a DynamicContext<'a>,
     pub(crate) current: Option<Item>,
@@ -166,6 +232,22 @@ fn boolean<'s>(value: bool) -> Iter<'s> {
 }
 
 impl<'a> Run<'a> {
+    /// A call to a host function: the arguments Saxon evaluates lazily are given as
+    /// what computes them, the others evaluated now.
+    fn host_call(&self, id: FunctionId, args: &[HostArg], ctx: &Ctx) -> Result<Vec<Item>> {
+        let arguments = args
+            .iter()
+            .map(|a| {
+                Ok(if a.lazy {
+                    Argument::lazy(Arc::clone(&a.expr), ctx.clone(), self.current.clone())
+                } else {
+                    Argument::value(self.seq(&a.expr, ctx)?.collect::<Result<Vec<_>>>()?)
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.dc.host.call_function(id, arguments, self.dc)
+    }
+
     /// The sequence of `expr`, lazily.
     pub(crate) fn seq<'s>(&'s self, expr: &'s Expr, ctx: &Ctx) -> Result<Iter<'s>>
     where
@@ -175,8 +257,14 @@ impl<'a> Run<'a> {
             Expr::Literal(value) => once(Item::Atomic(value.clone())),
             Expr::ContextItem => once(context_item(ctx)?),
             Expr::Root => {
-                let node = context_node(ctx, "the root expression /")?;
-                once(Item::Node(node.root()))
+                let root = context_node(ctx, "the root expression /")?.root();
+                if root.kind() != NodeKind::Document {
+                    return err(
+                        ErrorCode::Xpdy0050,
+                        "The root of the tree containing the context item is not a document node",
+                    );
+                }
+                once(Item::Node(root))
             }
             Expr::Local(depth) => once(local(ctx, *depth)?),
             Expr::External(id) => {
@@ -242,13 +330,7 @@ impl<'a> Run<'a> {
                 args,
                 data,
             } => self.call(*function, args, data, ctx)?,
-            Expr::HostCall { id, args } => {
-                let values = args
-                    .iter()
-                    .map(|a| self.seq(a, ctx)?.collect::<Result<Vec<_>>>())
-                    .collect::<Result<Vec<_>>>()?;
-                from_vec(self.dc.host.call_function(*id, values)?)
-            }
+            Expr::HostCall { id, args } => from_vec(self.host_call(*id, args, ctx)?),
             Expr::Cast { .. } => match self.cast(expr, ctx)? {
                 Some(value) => once(Item::Atomic(value)),
                 None => Box::new(std::iter::empty()),

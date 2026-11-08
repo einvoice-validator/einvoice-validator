@@ -125,8 +125,19 @@ pub(crate) enum Expr {
     },
     HostCall {
         id: FunctionId,
-        args: Vec<Expr>,
+        args: Vec<HostArg>,
     },
+}
+
+/// An argument of a call to a host function: shared, so that the host can be given it to
+/// evaluate later ([`crate::Argument`]), and whether Saxon evaluates it lazily.
+#[derive(Debug, Clone)]
+pub(crate) struct HostArg {
+    pub(crate) expr: Arc<Expr>,
+    /// Saxon evaluates the argument of a user function call lazily unless it depends on
+    /// the current item, the position or size of the focus, or calls a user function
+    /// (`UserFunctionCall.allocateArgumentEvaluators`, dependencies 877).
+    pub(crate) lazy: bool,
 }
 
 /// What a call to a built-in function needs beyond its arguments.
@@ -807,6 +818,18 @@ impl CompiledExpr {
         self.max_one
     }
 
+    /// Whether its value is statically known never to be a number: its static type, as
+    /// Saxon infers it once the expression is type-checked, is not numeric (nodes,
+    /// untyped, string, boolean, URI or date values, or no item). A predicate with such a
+    /// value is never positional: its effective boolean value decides.
+    #[must_use]
+    pub const fn is_never_numeric(&self) -> bool {
+        !matches!(
+            self.ty.checked,
+            StaticType::Integer | StaticType::Decimal | StaticType::Double | StaticType::Unknown
+        )
+    }
+
     /// Whether it is `()`, which Saxon reads as no value for the type of a variable.
     fn is_empty_sequence(&self) -> bool {
         matches!(&self.expr, Expr::Sequence(items) if items.is_empty())
@@ -1025,6 +1048,7 @@ pub fn compile(expr: &ast::Expr, context: &dyn StaticContext) -> Result<Compiled
         context,
         locals: Vec::new(),
         focus: Typing::of(StaticType::Unknown),
+        repeated: 0,
     };
     let (expr, props) = compiler.expr(expr)?;
     let constant = if props.folds() {
@@ -1051,6 +1075,12 @@ struct Compiler<'a> {
     locals: Vec<(QName, Typing)>,
     /// The static type of the context item.
     focus: Typing,
+    /// How many operands evaluated repeatedly enclose the expression being compiled
+    /// (Saxon's looping operands: a predicate, a path step after the first, the return
+    /// clause of `for`, the `satisfies` clause, a binding sequence after the first): a
+    /// reference to a host variable inside one is in a loop
+    /// ([`StaticContext::variable_reference`]).
+    repeated: u32,
 }
 
 /// The type of the value of an expression Saxon folds into a literal, evaluated as Saxon
@@ -1254,7 +1284,8 @@ fn calls_focus(expr: &Expr, position: bool) -> bool {
         Expr::Call { function, args, .. } => {
             *function == Builtin::Last || (position && *function == Builtin::Position) || any(args)
         }
-        Expr::HostCall { args, .. } | Expr::Sequence(args) => any(args),
+        Expr::HostCall { args, .. } => args.iter().any(|a| calls_focus(&a.expr, position)),
+        Expr::Sequence(args) => any(args),
         Expr::Filter { base, predicates } => calls_focus(base, position) || preds(predicates),
         Expr::Step(step) => preds(&step.predicates),
         Expr::Path { lhs, rhs, .. }
@@ -1371,7 +1402,8 @@ impl Compiler<'_> {
                 predicates: ast_predicates,
             } => {
                 let (base, props) = self.expr(base)?;
-                let predicates = self.with_focus(props.ty, |c| c.predicates(ast_predicates))?;
+                let predicates =
+                    self.with_focus(props.ty, |c| c.repeatedly(|c| c.predicates(ast_predicates)))?;
                 let positional = predicates
                     .iter()
                     .any(|p| matches!(p.kind, PredicateKind::Position(_)));
@@ -1590,7 +1622,7 @@ impl Compiler<'_> {
             }
             ast::Expr::For { bindings, body } => self
                 .bindings(bindings, &mut |c| {
-                    let (body, props) = c.expr(body)?;
+                    let (body, props) = c.repeatedly(|c| c.expr(body))?;
                     Ok((body, (props.kinds, props.ty)))
                 })
                 .map(|(e, (kinds, ty))| {
@@ -1624,7 +1656,7 @@ impl Compiler<'_> {
                 Props::unknown(true).typing(*ty).exactly_one(true),
             ));
         }
-        match self.context.variable(name) {
+        match self.context.variable_reference(name, self.repeated > 0) {
             Some(info) => Ok(reference(&info)),
             None => err(
                 ErrorCode::Xpst0008,
@@ -1714,7 +1746,12 @@ impl Compiler<'_> {
         };
         let (sequence, p) = self.expr(&first.sequence)?;
         self.locals.push((first.variable.clone(), p.ty.unparsed()));
-        let body = self.bindings(rest, inner);
+        // The bindings after the first and the body are evaluated once per item.
+        let body = if rest.is_empty() {
+            self.bindings(rest, inner)
+        } else {
+            self.repeatedly(|c| c.bindings(rest, inner))
+        };
         self.locals.pop();
         let (body, extra) = body?;
         Ok((
@@ -1737,11 +1774,13 @@ impl Compiler<'_> {
         };
         let (sequence, p) = self.expr(&first.sequence)?;
         self.locals.push((first.variable.clone(), p.ty.unparsed()));
-        let body = if rest.is_empty() {
-            self.expr(satisfies).map(|(e, _)| e)
-        } else {
-            self.quantified(every, rest, satisfies).map(|(e, _)| e)
-        };
+        let body = self.repeatedly(|c| {
+            if rest.is_empty() {
+                c.expr(satisfies).map(|(e, _)| e)
+            } else {
+                c.quantified(every, rest, satisfies).map(|(e, _)| e)
+            }
+        });
         self.locals.pop();
         Ok((
             Expr::Quantified {
@@ -1777,6 +1816,69 @@ impl Compiler<'_> {
             .collect()
     }
 
+    /// Whether Saxon evaluates an argument of a user function call before the call: it
+    /// calls `current()`, `position()` or `last()` (the latter two at the focus of the
+    /// call), or a host function.
+    fn argument_is_eager(&self, arg: &ast::Expr) -> bool {
+        self.depends_on_call_focus(arg, true)
+    }
+
+    fn depends_on_call_focus(&self, expr: &ast::Expr, outer: bool) -> bool {
+        let at = |e: &ast::Expr, outer: bool| self.depends_on_call_focus(e, outer);
+        let bindings = |bindings: &[ast::Binding]| bindings.iter().any(|b| at(&b.sequence, outer));
+        match expr {
+            ast::Expr::FunctionCall { name, args } => {
+                let builtin = functions::resolve(name, args.len(), self.context.xslt_functions())
+                    .ok()
+                    .flatten();
+                let focus = matches!(builtin, Some(Builtin::Current))
+                    || (outer && matches!(builtin, Some(Builtin::Position | Builtin::Last)));
+                let host = builtin.is_none() && self.context.function(name, args.len()).is_some();
+                focus || host || args.iter().any(|a| at(a, outer))
+            }
+            ast::Expr::Literal(_) | ast::Expr::VarRef(_) | ast::Expr::ContextItem => false,
+            ast::Expr::Sequence(items) => items.iter().any(|e| at(e, outer)),
+            ast::Expr::Filter { base, predicates } => {
+                at(base, outer) || predicates.iter().any(|p| at(p, false))
+            }
+            ast::Expr::Path(path) => path.steps.iter().enumerate().any(|(i, step)| match step {
+                ast::Step::Axis(axis_step) => axis_step.predicates.iter().any(|p| at(p, false)),
+                ast::Step::Expr(e) => {
+                    at(e, outer && i == 0 && path.start == ast::PathStart::Relative)
+                }
+            }),
+            ast::Expr::Negate(e)
+            | ast::Expr::Castable { operand: e, .. }
+            | ast::Expr::Cast { operand: e, .. }
+            | ast::Expr::InstanceOf { operand: e, .. } => at(e, outer),
+            ast::Expr::Union(lhs, rhs)
+            | ast::Expr::Range(lhs, rhs)
+            | ast::Expr::And(lhs, rhs)
+            | ast::Expr::Or(lhs, rhs)
+            | ast::Expr::Arithmetic { lhs, rhs, .. }
+            | ast::Expr::Comparison { lhs, rhs, .. } => at(lhs, outer) || at(rhs, outer),
+            ast::Expr::If {
+                condition,
+                then,
+                otherwise,
+            } => at(condition, outer) || at(then, outer) || at(otherwise, outer),
+            ast::Expr::For { bindings: b, body } => bindings(b) || at(body, outer),
+            ast::Expr::Quantified {
+                bindings: b,
+                satisfies,
+                ..
+            } => bindings(b) || at(satisfies, outer),
+        }
+    }
+
+    /// Runs `compile` in an operand evaluated repeatedly.
+    fn repeatedly<T>(&mut self, compile: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        self.repeated += 1;
+        let result = compile(self);
+        self.repeated -= 1;
+        result
+    }
+
     /// Runs `compile` with the context item of that static type.
     fn with_focus<T>(
         &mut self,
@@ -1799,9 +1901,14 @@ impl Compiler<'_> {
 
     fn path(&mut self, path: &ast::PathExpr) -> Result<(Expr, Props)> {
         // `descendant-or-self::node()/child::name` without positional predicate is
-        // `descendant::name`, which keeps document order from a single node.
+        // `descendant::name`, which keeps document order from a single node. The
+        // predicates are compiled once, whichever step they end up in (a reference to a
+        // host variable is reported once).
         let mut steps = Vec::with_capacity(path.steps.len());
         let mut i = 0;
+        // A step is evaluated once per item of the steps before it: a loop, but for the
+        // first step of a relative path.
+        let repeated = |index: usize| path.start == ast::PathStart::Root || index > 0;
         while i < path.steps.len() {
             let step = &path.steps[i];
             if let (ast::Step::Axis(dos), Some(ast::Step::Axis(child))) =
@@ -1813,14 +1920,19 @@ impl Compiler<'_> {
             {
                 let test = node_test(&child.test, NodeAxis::Child);
                 let focus = Typing::of(StaticType::of_test(&test));
-                let predicates = self.with_focus(focus, |c| c.predicates(&child.predicates))?;
+                let predicates =
+                    self.with_focus(focus, |c| c.repeatedly(|c| c.predicates(&child.predicates)))?;
                 if !Self::positional(&predicates) {
-                    steps.push(PathStep::Descendant(child));
+                    steps.push((PathStep::Descendant(child), Some(predicates)));
                     i += 2;
                     continue;
                 }
+                steps.push((PathStep::Ast(step), None));
+                steps.push((PathStep::Ast(&path.steps[i + 1]), Some(predicates)));
+                i += 2;
+                continue;
             }
-            steps.push(PathStep::Ast(step));
+            steps.push((PathStep::Ast(step), None));
             i += 1;
         }
         let mut acc = match path.start {
@@ -1832,17 +1944,22 @@ impl Compiler<'_> {
             )),
             ast::PathStart::Relative => None,
         };
-        for step in steps {
+        for (index, (step, compiled)) in steps.into_iter().enumerate() {
+            let in_loop = repeated(index);
             let (rhs, rhs_props) = match step {
                 PathStep::Ast(ast::Step::Axis(axis_step)) => {
-                    self.axis_step(node_axis(axis_step.axis), axis_step)?
+                    self.axis_step(node_axis(axis_step.axis), axis_step, compiled)?
                 }
                 PathStep::Descendant(axis_step) => {
-                    self.axis_step(NodeAxis::Descendant, axis_step)?
+                    self.axis_step(NodeAxis::Descendant, axis_step, compiled)?
                 }
                 PathStep::Ast(ast::Step::Expr(e)) => {
                     let focus = acc.as_ref().map_or(self.focus, |(_, p)| p.ty);
-                    self.with_focus(focus, |c| c.expr(e))?
+                    if in_loop {
+                        self.with_focus(focus, |c| c.repeatedly(|c| c.expr(e)))?
+                    } else {
+                        self.with_focus(focus, |c| c.expr(e))?
+                    }
                 }
             };
             acc = Some(match acc {
@@ -1853,10 +1970,22 @@ impl Compiler<'_> {
         acc.ok_or_else(|| Error::new(ErrorCode::Internal, "empty path"))
     }
 
-    fn axis_step(&mut self, axis: NodeAxis, step: &ast::AxisStep) -> Result<(Expr, Props)> {
+    /// An axis step; its predicates compiled here unless `compiled` already holds them
+    /// (compiled with the same focus).
+    fn axis_step(
+        &mut self,
+        axis: NodeAxis,
+        step: &ast::AxisStep,
+        compiled: Option<Vec<Predicate>>,
+    ) -> Result<(Expr, Props)> {
         let test = node_test(&step.test, axis);
         let ty = StaticType::of_test(&test);
-        let predicates = self.with_focus(Typing::of(ty), |c| c.predicates(&step.predicates))?;
+        let predicates = match compiled {
+            Some(predicates) => predicates,
+            None => self.with_focus(Typing::of(ty), |c| {
+                c.repeatedly(|c| c.predicates(&step.predicates))
+            })?,
+        };
         let props = step_props(axis, &test, &predicates).typed(ty);
         Ok((
             Expr::Step(Box::new(Step {
@@ -1925,7 +2054,12 @@ impl Compiler<'_> {
                 Some(id) => {
                     let args = args
                         .iter()
-                        .map(|a| self.expr(a).map(|(e, _)| e))
+                        .map(|a| {
+                            self.expr(a).map(|(e, _)| HostArg {
+                                lazy: !self.argument_is_eager(a),
+                                expr: Arc::new(e),
+                            })
+                        })
                         .collect::<Result<_>>()?;
                     // Of its declared type once type-checked (`UserFunctionCall`), of
                     // unknown type before.
@@ -2056,6 +2190,19 @@ impl Compiler<'_> {
                 format!("Invalid QName {text:?} in system-property()"),
             )
         };
+        // `Q{uri}local`, an EQName (the parser writes a lexical QName so).
+        if let Some(rest) = text.strip_prefix("Q{") {
+            return match rest.split_once('}') {
+                Some((uri, local)) if !uri.contains('{') && einvoice_xpath::is_ncname(local) => {
+                    Ok(QName {
+                        prefix: None,
+                        namespace: (!uri.is_empty()).then(|| uri.to_owned()),
+                        local: local.to_owned(),
+                    })
+                }
+                _ => Err(invalid()),
+            };
+        }
         match text.split_once(':') {
             None if einvoice_xpath::is_ncname(text) => Ok(QName::local(text)),
             Some((prefix, local))
@@ -2167,7 +2314,8 @@ fn depends_on_more_than_focus(expr: &Expr) -> bool {
         Expr::Literal(_) | Expr::ContextItem | Expr::Root | Expr::Local(_) | Expr::External(_) => {
             false
         }
-        Expr::HostCall { args, .. } | Expr::Sequence(args) => any(args),
+        Expr::HostCall { args, .. } => args.iter().any(|a| depends_on_more_than_focus(&a.expr)),
+        Expr::Sequence(args) => any(args),
         Expr::Filter { base, predicates } => depends_on_more_than_focus(base) || preds(predicates),
         Expr::Step(step) => preds(&step.predicates),
         Expr::Path { lhs, rhs, .. }
@@ -2217,6 +2365,7 @@ mod tests {
             context: &context,
             locals: Vec::new(),
             focus: Typing::of(StaticType::Unknown),
+            repeated: 0,
         };
         let (expr, props) = compiler.expr(&parse_expr(text, &ns).unwrap()).unwrap();
         let upcast = matches!(
@@ -2307,6 +2456,7 @@ mod tests {
                 context: &context,
                 locals: Vec::new(),
                 focus: Typing::of(StaticType::Unknown),
+                repeated: 0,
             };
             compiler.expr(&parse_expr(text, &ns).unwrap()).unwrap()
         };

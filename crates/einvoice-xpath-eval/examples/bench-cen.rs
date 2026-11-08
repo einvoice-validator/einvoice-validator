@@ -23,8 +23,8 @@ use einvoice_xpath::{
     NamespaceMap, PatternAlternative, PatternAnchor, PatternLink, QName, parse_expr, parse_pattern,
 };
 use einvoice_xpath_eval::{
-    Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext, Error, FunctionId, Host,
-    Item, Node, SimpleStaticContext, VariableId, compile,
+    Argument, Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext, Error,
+    FunctionId, Host, Item, Node, SimpleStaticContext, VariableId, compile,
 };
 
 const LARGEST: &str = "artefacts/cen-en16931-ubl-1.3.17/ubl/examples/FT G2G_TD01 con Allegato, Bonifico e Split Payment.xml";
@@ -49,7 +49,12 @@ impl Host for BenchHost {
         Ok(Rc::clone(&self.values.borrow()[id.0 as usize]))
     }
 
-    fn call_function(&self, _: FunctionId, _: Vec<Vec<Item>>) -> Result<Vec<Item>, Error> {
+    fn call_function(
+        &self,
+        _: FunctionId,
+        _: Vec<Argument>,
+        _: &DynamicContext<'_>,
+    ) -> Result<Vec<Item>, Error> {
         Ok(Vec::new())
     }
 
@@ -96,7 +101,9 @@ fn pattern_selector(pattern: &str, namespaces: &NamespaceMap) -> Result<String, 
                 }
                 text
             }
-            other => return Err(format!("pattern form not in CEN: {other}")),
+            other @ PatternAlternative::RootFunction => {
+                return Err(format!("pattern form not in CEN: {other}"));
+            }
         });
     }
     Ok(alternatives.join(" | "))

@@ -18,8 +18,8 @@ use std::rc::Rc;
 
 use einvoice_xpath::{NamespaceMap, QName, parse_expr};
 use einvoice_xpath_eval::{
-    Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext, Error, FunctionId, Host,
-    Item, Node, SimpleStaticContext, VariableId, compile, file_uri,
+    Argument, Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext, Error,
+    FunctionId, Host, Item, Node, SimpleStaticContext, VariableId, compile, file_uri,
 };
 
 /// Edge-case lines whose disagreement with Saxon is understood and accepted, with the
@@ -53,9 +53,14 @@ impl Host for TestHost {
         Ok(Rc::clone(&self.values.borrow()[id.0 as usize]))
     }
 
-    fn call_function(&self, id: FunctionId, mut args: Vec<Vec<Item>>) -> Result<Vec<Item>, Error> {
+    fn call_function(
+        &self,
+        id: FunctionId,
+        args: Vec<Argument>,
+        dc: &DynamicContext<'_>,
+    ) -> Result<Vec<Item>, Error> {
         assert_eq!(id, self.any);
-        Ok(args.remove(0))
+        args[0].evaluate(dc)
     }
 
     fn document(&self, uri: &str, base: Option<&str>) -> Result<Node, Error> {

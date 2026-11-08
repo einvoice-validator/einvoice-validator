@@ -11,6 +11,7 @@ use einvoice_xpath::{NamespaceMap, Namespaces, QName};
 
 use crate::compile::ValueType;
 use crate::error::{ErrorCode, Result, err};
+use crate::eval::Argument;
 use crate::item::Item;
 use crate::tree::Node;
 
@@ -49,6 +50,16 @@ pub struct VariableInfo {
 pub trait StaticContext {
     /// The variable of that expanded name in scope, if any.
     fn variable(&self, name: &QName) -> Option<VariableInfo>;
+
+    /// The variable a reference in the expression refers to, as [`Self::variable`]: the
+    /// compiler calls it once per reference, telling whether the reference is in an
+    /// operand evaluated repeatedly (a predicate, a path step after the first, the body
+    /// of `for`, `some` or `every`), as Saxon's `isLoopingReference` tells it. By
+    /// default, [`Self::variable`].
+    fn variable_reference(&self, name: &QName, in_loop: bool) -> Option<VariableInfo> {
+        let _ = in_loop;
+        self.variable(name)
+    }
 
     /// The host function of that expanded name and arity, if any.
     fn function(&self, name: &QName, arity: usize) -> Option<FunctionId>;
@@ -188,12 +199,20 @@ pub trait Host {
     /// Whatever evaluating the variable raises.
     fn variable(&self, id: VariableId) -> Result<Rc<[Item]>>;
 
-    /// Calls a host function.
+    /// Calls a host function, from an evaluation in the dynamic context `dc`. Its
+    /// arguments are evaluated or not yet: the host computes each one when it needs it
+    /// ([`Argument::evaluate`], with `dc`), as Saxon evaluates the arguments of a
+    /// stylesheet function lazily.
     ///
     /// # Errors
     ///
     /// Whatever the function raises.
-    fn call_function(&self, id: FunctionId, args: Vec<Vec<Item>>) -> Result<Vec<Item>>;
+    fn call_function(
+        &self,
+        id: FunctionId,
+        args: Vec<Argument>,
+        dc: &DynamicContext<'_>,
+    ) -> Result<Vec<Item>>;
 
     /// `document()`: the document node of the resource at `uri`, resolved against `base`
     /// (the base URI of the node the URI came from, `None` for the static base URI). The
@@ -220,7 +239,12 @@ impl Host for NoHost {
         err(ErrorCode::Host, format!("no variable {}", id.0))
     }
 
-    fn call_function(&self, id: FunctionId, _args: Vec<Vec<Item>>) -> Result<Vec<Item>> {
+    fn call_function(
+        &self,
+        id: FunctionId,
+        _args: Vec<Argument>,
+        _dc: &DynamicContext<'_>,
+    ) -> Result<Vec<Item>> {
         err(ErrorCode::Host, format!("no function {}", id.0))
     }
 

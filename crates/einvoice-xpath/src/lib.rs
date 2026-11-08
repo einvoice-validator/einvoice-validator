@@ -17,7 +17,7 @@
 //!   unary `-`, `|`, sequences, literals (numeric literals keep their kind and text),
 //!   variable references, `.`, function calls;
 //! - patterns of XSLT 2.0 without `id()`/`key()`, plus the XSLT 3.0 forms `root()` and
-//!   `(A | B)[p]`.
+//!   parenthesized patterns as Saxon-HE 12.10 reads them (see [`parse_pattern`]).
 //!
 //! Refused: `intersect`, `except`, the `union` keyword, `treat as`, node
 //! comparisons, unary `+`, XPath comments, the `descendant`, `following` and `namespace`
@@ -47,13 +47,14 @@ mod print;
 pub use ast::{
     ArithmeticOp, AtomicKind, AtomicType, Avt, AvtPart, Axis, AxisStep, Binding, CompareKind,
     ComparisonOp, Expr, ItemType, KindTest, Literal, NameOrWildcard, NameTest, NodeTest,
-    Occurrence, PathExpr, PathPattern, PathStart, Pattern, PatternAlternative, PatternAnchor,
-    PatternAxis, PatternLink, PatternStep, Quantifier, SequenceType, SingleType, Step,
+    Occurrence, PathExpr, PathPattern, PathStart, PathStep, Pattern, PatternAlternative,
+    PatternAnchor, PatternAxis, PatternLink, PatternStep, Quantifier, SequenceType, SingleType,
+    Step,
 };
 pub use error::{Error, ErrorKind, Result};
 pub use names::{
-    FN_NAMESPACE, NamespaceMap, Namespaces, QName, XML_NAMESPACE, XS_NAMESPACE, is_name_char,
-    is_name_start_char, is_ncname, is_xml_whitespace,
+    FN_NAMESPACE, NamespaceBinding, NamespaceMap, Namespaces, QName, XML_NAMESPACE, XS_NAMESPACE,
+    is_name_char, is_name_start_char, is_ncname, is_xml_whitespace,
 };
 
 use parser::Parser;
@@ -71,6 +72,23 @@ pub fn parse_expr(src: &str, namespaces: &dyn Namespaces) -> Result<Expr> {
 }
 
 /// Parses an XSLT match pattern.
+///
+/// XSLT 3.0 parenthesized patterns are read as Saxon-HE 12.10 reads them, normalised:
+///
+/// - `(P)` without predicate, as the whole of an alternative, is `P`: its alternatives
+///   become alternatives of the pattern (`(a | b)` is `a | b`, two template rules with
+///   their own default priorities when the template has no `priority`);
+/// - a path ending with a parenthesized step without predicate is distributed over the
+///   alternatives of that step: `r/(a | b/c)` is `r/a | r/b/c` (Saxon makes it a union
+///   pattern, split like one);
+/// - kept as a [`PathStep::Parenthesized`]: the first step of a path, with or without
+///   predicates (`(a | b)[p]`, `(a/b | c)[p]/d`), and a step between two others
+///   without predicate whose alternatives are single steps (`(a | b)/(c | d)/e`).
+///
+/// Refused as unsupported: a predicate on a parenthesized step after the first (Saxon
+/// refuses most of them, XTSE0340), a parenthesized step nested inside another one that
+/// is kept, and, inside a parenthesized step that is not the first, or after `/` or
+/// `//`, alternatives other than single relative steps.
 ///
 /// # Errors
 ///

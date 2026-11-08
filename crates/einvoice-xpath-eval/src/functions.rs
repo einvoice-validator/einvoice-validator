@@ -35,6 +35,7 @@ pub(crate) enum Builtin {
     Position,
     // New in XPath 2.0.
     Exists,
+    Empty,
     UpperCase,
     EndsWith,
     Abs,
@@ -103,6 +104,7 @@ const FN_TABLE: &[(&str, Builtin, usize, usize, bool)] = &[
     ("last", Builtin::Last, 0, 0, false),
     ("position", Builtin::Position, 0, 0, false),
     ("exists", Builtin::Exists, 1, 1, false),
+    ("empty", Builtin::Empty, 1, 1, false),
     ("upper-case", Builtin::UpperCase, 1, 1, false),
     ("ends-with", Builtin::EndsWith, 2, 2, false),
     ("abs", Builtin::Abs, 1, 1, false),
@@ -167,7 +169,6 @@ const KNOWN_UNSUPPORTED: &[&str] = &[
     "doc-available",
     "element-available",
     "element-with-id",
-    "empty",
     "encode-for-uri",
     "error",
     "escape-html-uri",
@@ -298,6 +299,7 @@ impl Builtin {
             | Self::False
             | Self::Boolean
             | Self::Exists
+            | Self::Empty
             | Self::Contains
             | Self::StartsWith
             | Self::EndsWith
@@ -370,6 +372,7 @@ impl Builtin {
                 | Self::Last
                 | Self::Position
                 | Self::Exists
+                | Self::Empty
                 | Self::Matches
                 | Self::Replace
                 | Self::StringJoin

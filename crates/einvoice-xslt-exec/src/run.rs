@@ -7,31 +7,41 @@
 //! function or global variable invocation; the XPath evaluator reads them through the
 //! [`Host`] interface, and calls stylesheet functions through it too.
 //!
-//! Evaluation order follows Saxon where it is observable (which dynamic errors are
-//! raised): global variables are evaluated when first referenced; a local variable or
-//! parameter that nothing refers to is never evaluated; one whose `select` may return
-//! several items is evaluated when first referenced; any other is evaluated where it is
-//! declared.
+//! Evaluation order follows Saxon-HE 12.10 where it is observable (which dynamic errors
+//! are raised): global variables are evaluated when first referenced; a local variable
+//! that nothing refers to is never evaluated; one referred to once, not in a loop, is
+//! evaluated when the reference is (Saxon inlines it); a value that depends on the
+//! position, size or current item of its focus is evaluated where it is bound, and so are
+//! the parameters `xsl:apply-templates` and `xsl:next-match` pass; any other local
+//! variable, template parameter default or parameter `xsl:call-template` passes is
+//! evaluated as Saxon's `LearningEvaluator` evaluates it: when first referenced, until
+//! it has been evaluated 20 times with its value computed each time (in a function body,
+//! 20 times at all), then where it is bound (see [`Eval`]). Saxon keeps these counts in
+//! the compiled stylesheet, over every document it transforms with it; they are kept
+//! here for one transformation, as Saxon on a stylesheet compiled for one document.
+//! Arguments of stylesheet functions are evaluated before the call (Saxon evaluates them
+//! lazily too).
 
 use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
 
 use einvoice_xdm::{AtomicType, AtomicValue, DateTime};
 use einvoice_xpath::{AtomicKind, ItemType, Occurrence, QName, SequenceType};
 use einvoice_xpath_eval::{
-    Clock, CompiledExpr, Context, DEFAULT_MAX_DEPTH, Document, DocumentError, DynamicContext,
-    ErrorCode, FunctionId, Host, Item, LimitExceeded, Node, NodeAxis, NodeKind, VariableId,
+    Argument, Clock, CompiledExpr, Context, DEFAULT_MAX_DEPTH, Document, DocumentError,
+    DynamicContext, ErrorCode, FunctionId, Host, Item, LimitExceeded, Node, NodeAxis, NodeKind,
+    VariableId,
 };
 use einvoice_xslt::{NamespaceBinding, NumberLevel};
 
 use crate::error::{LIMIT, Result, TransformError, err};
 use crate::pattern::{self, Matcher};
 use crate::prepare::{
-    AvtItem, Binding, CompiledAvt, CompiledTemplate, CountPattern, Executable, Inst, ModeRef,
-    Value, When, WithParam,
+    AvtItem, Binding, CompiledAvt, CompiledFunction, CompiledTemplate, CountPattern, Eval,
+    Executable, Inst, ModeRef, Value, When, WithParam,
 };
 use crate::sink::{SequenceSink, Sink, TextSink, TreeSink, XmlWriter, attribute_name};
 
@@ -220,6 +230,8 @@ impl Executable {
             stashed: RefCell::new(None),
             nesting: Cell::new(0),
             stack_base: stack_position(),
+            learners: (0..self.learners).map(|_| Rc::default()).collect(),
+            argument_learners: RefCell::new(HashMap::new()),
         };
         let timezone = options.implicit_timezone.unwrap_or(0);
         let clock = match options.current_date_time {
@@ -261,13 +273,76 @@ enum GlobalState {
 
 /// A value computed when first read.
 struct Thunk<'e> {
-    expr: &'e CompiledExpr,
+    value: &'e Value,
     as_type: Option<&'e SequenceType>,
     code: &'static str,
     context: Context,
+    /// The mode and the current template rule, for a sequence constructor.
+    mode: usize,
+    rule: Option<u32>,
     /// The frame the expression's variables are read from.
     frame: Option<Weak<Frame<'e>>>,
     memo: OnceCell<Rc<[Item]>>,
+    /// The learner to tell when the value is computed ([`Eval::Learning`]).
+    report: Option<Rc<Learner>>,
+}
+
+/// The argument of a stylesheet function call, computed when first read, in the frame
+/// of the caller.
+struct ArgumentThunk<'e> {
+    argument: Argument,
+    param: &'e Binding,
+    function: &'e CompiledFunction,
+    frame: Option<Weak<Frame<'e>>>,
+    memo: OnceCell<Rc<[Item]>>,
+    report: Option<Rc<Learner>>,
+}
+
+/// The counters of Saxon's `LearningEvaluator` for one binding ([`Eval::Learning`]).
+#[derive(Debug, Default)]
+struct Learner {
+    /// Evaluations so far.
+    count: Cell<u32>,
+    /// Evaluations whose value was computed.
+    completed: Cell<u32>,
+    /// Whether the binding is now evaluated where it is bound.
+    eager: Cell<bool>,
+}
+
+/// Saxon's `LearningEvaluator`: the evaluations whose completion counts, and how many
+/// completed ones make the binding eager.
+const LEARNING_LIMIT: u32 = 40;
+const EAGER_AFTER: u32 = 20;
+
+impl Learner {
+    /// One more evaluation: `None` when the binding is now evaluated where it is bound,
+    /// else whether the completion of this evaluation is to be reported
+    /// ([`Learner::completed`]). With `every_counts` (a function body), each evaluation
+    /// counts as completed.
+    fn evaluation(&self, every_counts: bool) -> Option<bool> {
+        if self.eager.get() {
+            return None;
+        }
+        let count = self.count.get().saturating_add(1);
+        self.count.set(count);
+        if every_counts {
+            if count >= EAGER_AFTER {
+                self.eager.set(true);
+            }
+            return Some(false);
+        }
+        Some(count <= LEARNING_LIMIT)
+    }
+
+    /// The value of an evaluation was computed (`LearningEvaluator.reportCompletion`):
+    /// eager from now on once 20 evaluations have, and all so far.
+    fn completed(&self) {
+        let completed = self.completed.get().saturating_add(1);
+        self.completed.set(completed);
+        if completed >= EAGER_AFTER && completed == self.count.get() {
+            self.eager.set(true);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -275,6 +350,7 @@ enum Slot<'e> {
     Unset,
     Value(Rc<[Item]>),
     Lazy(Rc<Thunk<'e>>),
+    Argument(Rc<ArgumentThunk<'e>>),
 }
 
 /// The variables of one invocation.
@@ -324,6 +400,11 @@ struct Runtime<'e, 'a> {
     /// The position of the stack when the transformation started (see
     /// [`stack_position`]).
     stack_base: usize,
+    /// The counters of the bindings evaluated as Saxon learns ([`Eval::Learning`]).
+    learners: Vec<Rc<Learner>>,
+    /// The same for the arguments of stylesheet function calls, by call site
+    /// ([`Argument::site`]).
+    argument_learners: RefCell<HashMap<usize, Rc<Learner>>>,
 }
 
 /// The position of the call stack: the address of a local of this function. Two of them
@@ -551,14 +632,23 @@ impl<'e, 'a> Runtime<'e, 'a> {
                 max: self.options.max_nesting,
             }));
         }
+        self.check_stack()?;
+        self.nesting.set(depth + 1);
+        Ok(Nested(&self.nesting))
+    }
+
+    /// A `LIMIT` error when the invocations in progress use more than `options.max_stack`
+    /// bytes of stack. Computing a lazy value checks it: a value may refer to another lazy
+    /// one, and so on (a parameter passed down a recursion and read at its end), each
+    /// computed inside the one that refers to it.
+    fn check_stack(&self) -> Result<()> {
         let used = self.stack_base.abs_diff(stack_position());
         if u32::try_from(used).map_or(true, |used| used > self.options.max_stack) {
             return Err(TransformError::limit_exceeded(LimitExceeded::Stack {
                 max: self.options.max_stack,
             }));
         }
-        self.nesting.set(depth + 1);
-        Ok(Nested(&self.nesting))
+        Ok(())
     }
 
     /// Keeps an error for [`Runtime::xerr`] and gives the evaluator a placeholder.
@@ -609,10 +699,12 @@ impl<'e, 'a> Runtime<'e, 'a> {
         Ok(())
     }
 
+    #[inline(never)]
     fn force(&self, thunk: &Thunk<'e>) -> Result<Rc<[Item]>> {
         if let Some(value) = thunk.memo.get() {
             return Ok(Rc::clone(value));
         }
+        self.check_stack()?;
         let frame = match &thunk.frame {
             None => None,
             Some(weak) => Some(
@@ -620,20 +712,75 @@ impl<'e, 'a> Runtime<'e, 'a> {
                     .ok_or_else(|| TransformError::new("INTERNAL", "variable frame is gone"))?,
             ),
         };
-        let items = self.in_frame(frame, || self.evaluate(thunk.expr, &thunk.context))?;
-        let items = match thunk.as_type {
-            Some(t) => convert(items, t, thunk.code)?,
-            None => items,
+        let state = State {
+            context: &thunk.context,
+            mode: thunk.mode,
+            rule: thunk.rule,
         };
-        let value: Rc<[Item]> = items.into();
+        let value = self.in_frame(frame, || {
+            self.value(thunk.value, thunk.as_type, &state, thunk.code)
+        })?;
         let _ = thunk.memo.set(Rc::clone(&value));
+        if let Some(learner) = &thunk.report {
+            learner.completed();
+        }
         Ok(value)
+    }
+
+    #[inline(never)]
+    fn force_argument(&self, thunk: &ArgumentThunk<'e>) -> Result<Rc<[Item]>> {
+        if let Some(value) = thunk.memo.get() {
+            return Ok(Rc::clone(value));
+        }
+        self.check_stack()?;
+        let frame = match &thunk.frame {
+            None => None,
+            Some(weak) => Some(
+                weak.upgrade()
+                    .ok_or_else(|| TransformError::new("INTERNAL", "caller frame is gone"))?,
+            ),
+        };
+        let items = self.in_frame(frame, || {
+            thunk
+                .argument
+                .evaluate(self.dc()?)
+                .map_err(|e| self.xerr(e))
+        })?;
+        let value: Rc<[Item]> = Self::argument_value(thunk.function, thunk.param, items)?.into();
+        let _ = thunk.memo.set(Rc::clone(&value));
+        if let Some(learner) = &thunk.report {
+            learner.completed();
+        }
+        Ok(value)
+    }
+
+    /// An argument converted to the type of its parameter.
+    fn argument_value(
+        function: &CompiledFunction,
+        param: &Binding,
+        items: Vec<Item>,
+    ) -> Result<Vec<Item>> {
+        match &param.as_type {
+            Some(t) => convert(items, t, "XPTY0004").map_err(|e| {
+                TransformError::new(
+                    e.code(),
+                    format!(
+                        "{} (argument ${} of {}())",
+                        e.message(),
+                        param.name,
+                        function.name
+                    ),
+                )
+            }),
+            None => Ok(items),
+        }
     }
 
     fn slot_value(&self, slot: &Slot<'e>) -> Result<Rc<[Item]>> {
         match slot {
             Slot::Value(v) => Ok(Rc::clone(v)),
             Slot::Lazy(thunk) => self.force(thunk),
+            Slot::Argument(thunk) => self.force_argument(thunk),
             Slot::Unset => err("INTERNAL", "variable read before it is bound"),
         }
     }
@@ -748,26 +895,40 @@ impl<'e, 'a> Runtime<'e, 'a> {
         Ok(items.into())
     }
 
-    /// A binding's slot: computed now, or later when it may be a sequence.
+    /// A binding's slot: computed now, or later (see [`Eval`]).
     fn bind(
         &self,
         value: &'e Value,
         as_type: Option<&'e SequenceType>,
-        lazy: bool,
+        eval: Eval,
         state: &State<'_>,
         code: &'static str,
     ) -> Result<Slot<'e>> {
-        if lazy && let Value::Select(expr) = value {
-            return Ok(Slot::Lazy(Rc::new(Thunk {
-                expr,
-                as_type,
-                code,
-                context: state.context.clone(),
-                frame: self.top_frame().map(|f| Rc::downgrade(&f)),
-                memo: OnceCell::new(),
-            })));
-        }
-        Ok(Slot::Value(self.value(value, as_type, state, code)?))
+        let report = match eval {
+            Eval::Eager => None,
+            Eval::Lazy => Some(None),
+            Eval::Learning {
+                learner,
+                every_counts,
+            } => self
+                .learners
+                .get(learner)
+                .and_then(|l| l.evaluation(every_counts).map(|r| r.then(|| Rc::clone(l)))),
+        };
+        let Some(report) = report else {
+            return Ok(Slot::Value(self.value(value, as_type, state, code)?));
+        };
+        Ok(Slot::Lazy(Rc::new(Thunk {
+            value,
+            as_type,
+            code,
+            context: state.context.clone(),
+            mode: state.mode,
+            rule: state.rule,
+            frame: self.top_frame().map(|f| Rc::downgrade(&f)),
+            memo: OnceCell::new(),
+            report,
+        })))
     }
 
     fn with_params(&self, params: &'e [WithParam], state: &State<'_>) -> Result<Params<'e>> {
@@ -776,7 +937,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
             .map(|p| {
                 Ok((
                     &p.name,
-                    self.bind(&p.value, p.as_type.as_ref(), p.lazy, state, "XTTE0590")?,
+                    self.bind(&p.value, p.as_type.as_ref(), p.eval, state, "XTTE0590")?,
                 ))
             })
             .collect()
@@ -1085,7 +1246,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
         &self,
         line: u32,
         name: &QName,
-        namespaces: &[NamespaceBinding],
+        namespaces: &Arc<[NamespaceBinding]>,
         attributes: &'e [(Arc<QName>, CompiledAvt)],
         body: &'e [Inst],
         state: &State<'_>,
@@ -1121,7 +1282,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
             .bind(
                 &binding.value,
                 binding.as_type.as_ref(),
-                binding.lazy,
+                binding.eval,
                 state,
                 "XTTE0570",
             )
@@ -1422,7 +1583,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
                     .bind(
                         &param.value,
                         as_type.as_ref(),
-                        param.lazy,
+                        param.eval,
                         state,
                         "XTTE0590",
                     )
@@ -1433,28 +1594,61 @@ impl<'e, 'a> Runtime<'e, 'a> {
         Ok(())
     }
 
-    /// Calls a stylesheet function. Counted as an invocation ([`Runtime::nested`]).
-    fn call(&self, id: FunctionId, args: Vec<Vec<Item>>) -> Result<Vec<Item>> {
+    /// Calls a stylesheet function. Counted as an invocation ([`Runtime::nested`]). Its
+    /// arguments are bound as Saxon binds them: those evaluated before the call as they
+    /// are, the others lazily, with Saxon's learning per call site.
+    fn call(&self, id: FunctionId, args: Vec<Argument>) -> Result<Vec<Item>> {
         let function = &self.exe.functions[id.0 as usize];
         let _nested = self.nested().at(function.line)?;
+        let frame = self.bind_arguments(function, args)?;
+        self.function_body(function, frame)
+    }
+
+    /// The frame of a function call, its parameters bound to the arguments. Out of
+    /// [`Runtime::call`], whose stack use is part of every level of a recursion through
+    /// functions.
+    #[inline(never)]
+    fn bind_arguments(
+        &self,
+        function: &'e CompiledFunction,
+        args: Vec<Argument>,
+    ) -> Result<Rc<Frame<'e>>> {
+        let caller = self.top_frame().map(|f| Rc::downgrade(&f));
         let frame = Frame::new(function.slots);
-        for (param, arg) in function.params.iter().zip(args) {
-            let value = match &param.as_type {
-                Some(t) => convert(arg, t, "XPTY0004").map_err(|e| {
-                    TransformError::new(
-                        e.code(),
-                        format!(
-                            "{} (argument ${} of {}())",
-                            e.message(),
-                            param.name,
-                            function.name
-                        ),
-                    )
-                })?,
-                None => arg,
+        for (param, argument) in function.params.iter().zip(args) {
+            let learner = argument.site().map(|site| {
+                Rc::clone(self.argument_learners.borrow_mut().entry(site).or_default())
+            });
+            let report = match &learner {
+                None => None,
+                Some(l) => l.evaluation(false),
             };
-            frame.slots.borrow_mut()[param.slot] = Slot::Value(value.into());
+            let slot = match report {
+                None => {
+                    let items = argument.evaluate(self.dc()?).map_err(|e| self.xerr(e))?;
+                    Slot::Value(Self::argument_value(function, param, items)?.into())
+                }
+                Some(report) => Slot::Argument(Rc::new(ArgumentThunk {
+                    argument,
+                    param,
+                    function,
+                    frame: caller.clone(),
+                    memo: OnceCell::new(),
+                    report: if report { learner } else { None },
+                })),
+            };
+            frame.slots.borrow_mut()[param.slot] = slot;
         }
+        Ok(frame)
+    }
+
+    /// Runs the body of a function in its frame.
+    #[inline(never)]
+    fn function_body(
+        &self,
+        function: &'e CompiledFunction,
+        frame: Rc<Frame<'e>>,
+    ) -> Result<Vec<Item>> {
         // A stylesheet function has no focus and no current template rule.
         let context = Context::new();
         let state = State {
@@ -1637,7 +1831,8 @@ impl Host for Runtime<'_, '_> {
     fn call_function(
         &self,
         id: FunctionId,
-        args: Vec<Vec<Item>>,
+        args: Vec<Argument>,
+        _dc: &DynamicContext<'_>,
     ) -> einvoice_xpath_eval::Result<Vec<Item>> {
         self.call(id, args).map_err(|e| self.stash(e))
     }

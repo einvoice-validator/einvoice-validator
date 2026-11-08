@@ -5,7 +5,7 @@
 // test exemptions (unwrap, expect, panic) to the helpers outside `#[test]` functions too.
 #![cfg(test)]
 
-use einvoice_xpath::{Expr, PatternAlternative, QName};
+use einvoice_xpath::{Expr, PathPattern, PathStep, PatternAlternative, QName};
 use einvoice_xslt::{
     ApplyMode, GlobalKind, Instruction, LoadErrorKind, Mode, NumberLevel, OutputMethod, Standalone,
     TemplateModes, TextOrigin, VariableValue, load,
@@ -253,7 +253,10 @@ fn parenthesized_pattern_and_next_match() {
     let filtered = &s.templates[4];
     assert!(matches!(
         filtered.pattern.as_ref().unwrap().alternatives.as_slice(),
-        [PatternAlternative::Parenthesized { .. }]
+        [PatternAlternative::Path(PathPattern {
+            first: PathStep::Parenthesized { .. },
+            ..
+        })]
     ));
     let [
         Instruction::LiteralElement(rule),

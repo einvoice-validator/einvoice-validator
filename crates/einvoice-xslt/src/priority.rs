@@ -3,7 +3,7 @@
 use std::fmt;
 
 use einvoice_xpath::{
-    KindTest, NameOrWildcard, NameTest, NodeTest, PatternAlternative, PatternAnchor,
+    KindTest, NameOrWildcard, NameTest, NodeTest, PathStep, PatternAlternative, PatternAnchor,
 };
 
 /// Fractional digits kept exactly.
@@ -71,7 +71,7 @@ impl fmt::Display for Priority {
 }
 
 /// The default priority of one alternative of a pattern (XSLT 2.0 section 6.4; the XSLT
-/// 3.0 forms `root()` and `(...)[...]` fall under its last rule):
+/// 3.0 forms `root()` and paths with a parenthesized step fall under its last rule):
 ///
 /// - `/`: −0.5;
 /// - a single step without predicate, on the child or attribute axis, whose test is a
@@ -87,13 +87,16 @@ pub fn default_priority(alternative: &PatternAlternative) -> Priority {
             _ => Priority::HALF,
         };
     };
+    let PathStep::Axis(first) = &path.first else {
+        return Priority::HALF;
+    };
     if path.anchor != PatternAnchor::Relative
         || !path.rest.is_empty()
-        || !path.first.predicates.is_empty()
+        || !first.predicates.is_empty()
     {
         return Priority::HALF;
     }
-    match &path.first.test {
+    match &first.test {
         NodeTest::Name(NameTest::Name(_))
         | NodeTest::Kind(
             KindTest::Element(Some(NameOrWildcard::Name(_)))
@@ -174,6 +177,10 @@ mod tests {
             ("//p:a", "0.5"),
             ("root()", "0.5"),
             ("(/p:a | /p:b)[1]", "0.5"),
+            ("(p:a | p:b)/p:c", "0.5"),
+            ("(p:a)/(p:b | p:c)/text()", "0.5"),
+            ("(p:a)", "0"),
+            ("(*)", "-0.5"),
         ] {
             let parsed = parse_pattern(pattern, &ns).unwrap();
             let [alternative] = parsed.alternatives.as_slice() else {

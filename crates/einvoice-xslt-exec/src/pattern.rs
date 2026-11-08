@@ -3,7 +3,8 @@
 //! A node matches a path pattern when it matches the last step (node test and
 //! predicates), its parent the step before (after `/`) or one of its ancestors (after
 //! `//`), and so on to the anchor. A predicate whose value can depend on the position of
-//! the node among its siblings (it may be numeric, or calls `position()` or `last()`) is
+//! the node among its siblings (it may be numeric, by its form and its static type, or
+//! calls `position()` or `last()`) is
 //! evaluated as XSLT defines it: the step is evaluated as an axis step from the parent
 //! and the node must be in the result. Any other predicate is the effective boolean value
 //! of the expression with the node as context item, which is the same thing, evaluated
@@ -155,6 +156,20 @@ pub(crate) struct CompiledStep {
     predicates: Predicates,
 }
 
+/// A step of a path pattern.
+#[derive(Debug, Clone)]
+pub(crate) enum PathStep {
+    Axis(CompiledStep),
+    /// `(alternatives)[predicates]` (XSLT 3.0), the predicates being effective boolean
+    /// values: a node matches it when it matches one of the alternatives, whole, and the
+    /// predicates hold. After the first step, the alternatives are single relative steps
+    /// and there are no predicates (`einvoice_xpath::parse_pattern`).
+    Group {
+        inner: Vec<Alternative>,
+        predicates: Vec<CompiledExpr>,
+    },
+}
+
 /// One alternative of a pattern.
 #[derive(Debug, Clone)]
 pub(crate) enum Alternative {
@@ -165,14 +180,9 @@ pub(crate) enum Alternative {
     Path {
         anchor: PatternAnchor,
         /// The steps, the matched node's last.
-        steps: Vec<CompiledStep>,
+        steps: Vec<PathStep>,
         /// `links[i]` joins `steps[i]` and `steps[i + 1]`.
         links: Vec<PatternLink>,
-    },
-    /// `(alternatives)[predicates]`, the predicates being effective boolean values.
-    Parenthesized {
-        inner: Vec<Alternative>,
-        predicates: Vec<CompiledExpr>,
     },
 }
 
@@ -199,7 +209,7 @@ impl Alternative {
     pub(crate) fn chain_keys(&self) -> Vec<Key> {
         match self {
             Self::RootFunction => vec![Key::Generic],
-            Self::Parenthesized { .. } => {
+            Self::Path { steps, .. } if matches!(steps.last(), Some(PathStep::Group { .. })) => {
                 let mut keys = Vec::new();
                 self.keys(&mut keys);
                 let element = |k: &Key| matches!(k, Key::Element(..) | Key::AnyElement);
@@ -227,50 +237,48 @@ impl Alternative {
     pub(crate) fn keys(&self, out: &mut Vec<Key>) {
         match self {
             Self::DocumentRoot | Self::RootFunction => out.push(Key::Document),
-            Self::Path { anchor, steps, .. } => {
-                if let Some(last) = steps.last() {
-                    match &last.test {
-                        // Saxon splits a lone `node()` by node kind; any other pattern
-                        // ending with `node()` can match nodes of several kinds.
-                        StepTest::AnyChild => out.push(
-                            if steps.len() == 1
-                                && *anchor == PatternAnchor::Relative
-                                && matches!(last.predicates, Predicates::None)
-                            {
-                                Key::AnyChild
-                            } else {
-                                Key::Generic
-                            },
-                        ),
-                        StepTest::Kind(NodeKind::Text) => out.push(Key::Text),
-                        StepTest::Kind(NodeKind::Comment) => out.push(Key::Comment),
-                        StepTest::Kind(NodeKind::ProcessingInstruction) => {
-                            out.push(Key::ProcessingInstruction);
-                        }
-                        StepTest::Kind(NodeKind::Attribute) => out.push(Key::AnyAttribute),
-                        StepTest::Named { kind, name } => {
-                            let attribute = *kind == NodeKind::Attribute;
-                            out.push(match (name, attribute) {
-                                (NameMatch::Exact { namespace, local }, false) => {
-                                    Key::Element(namespace.clone(), local.clone())
-                                }
-                                (NameMatch::Exact { namespace, local }, true) => {
-                                    Key::Attribute(namespace.clone(), local.clone())
-                                }
-                                (_, false) => Key::AnyElement,
-                                (_, true) => Key::AnyAttribute,
-                            });
-                        }
-                        StepTest::Kind(NodeKind::Document | NodeKind::Element)
-                        | StepTest::Never => {}
+            Self::Path { anchor, steps, .. } => match steps.last() {
+                None => {}
+                Some(PathStep::Group { inner, .. }) => {
+                    for alternative in inner {
+                        alternative.keys(out);
                     }
                 }
-            }
-            Self::Parenthesized { inner, .. } => {
-                for alternative in inner {
-                    alternative.keys(out);
-                }
-            }
+                Some(PathStep::Axis(last)) => match &last.test {
+                    // Saxon splits a lone `node()` by node kind; any other pattern
+                    // ending with `node()` can match nodes of several kinds.
+                    StepTest::AnyChild => out.push(
+                        if steps.len() == 1
+                            && *anchor == PatternAnchor::Relative
+                            && matches!(last.predicates, Predicates::None)
+                        {
+                            Key::AnyChild
+                        } else {
+                            Key::Generic
+                        },
+                    ),
+                    StepTest::Kind(NodeKind::Text) => out.push(Key::Text),
+                    StepTest::Kind(NodeKind::Comment) => out.push(Key::Comment),
+                    StepTest::Kind(NodeKind::ProcessingInstruction) => {
+                        out.push(Key::ProcessingInstruction);
+                    }
+                    StepTest::Kind(NodeKind::Attribute) => out.push(Key::AnyAttribute),
+                    StepTest::Named { kind, name } => {
+                        let attribute = *kind == NodeKind::Attribute;
+                        out.push(match (name, attribute) {
+                            (NameMatch::Exact { namespace, local }, false) => {
+                                Key::Element(namespace.clone(), local.clone())
+                            }
+                            (NameMatch::Exact { namespace, local }, true) => {
+                                Key::Attribute(namespace.clone(), local.clone())
+                            }
+                            (_, false) => Key::AnyElement,
+                            (_, true) => Key::AnyAttribute,
+                        });
+                    }
+                    StepTest::Kind(NodeKind::Document | NodeKind::Element) | StepTest::Never => {}
+                },
+            },
         }
     }
 }
@@ -318,13 +326,6 @@ pub(crate) fn union_chain_key(alternatives: &[Alternative]) -> Option<Key> {
         PROCESSING_INSTRUCTION => Some(Key::ProcessingInstruction),
         _ => Some(Key::Generic),
     }
-}
-
-/// Whether the value of a predicate can depend on the position of the node: it calls
-/// `position()` or `last()`, or its value may be a number. Conservative: `true` unless
-/// the expression's form proves otherwise.
-pub(crate) fn is_positional(expr: &ast::Expr) -> bool {
-    calls_focus(expr) || !never_numeric(expr)
 }
 
 fn is_fn(name: &ast::QName, local: &str) -> bool {
@@ -439,7 +440,7 @@ fn never_numeric(expr: &ast::Expr) -> bool {
     }
 }
 
-/// Compiles one alternative. `refuse` receives constructs that are refused.
+/// Compiles one alternative. Constructs that are refused are returned as errors.
 pub(crate) fn compile_alternative(
     alternative: &PatternAlternative,
     context: &dyn StaticContext,
@@ -450,10 +451,10 @@ pub(crate) fn compile_alternative(
         PatternAlternative::Path(path) => {
             let mut steps = Vec::with_capacity(path.rest.len() + 1);
             let mut links = Vec::with_capacity(path.rest.len());
-            steps.push(compile_step(&path.first, context)?);
+            steps.push(compile_path_step(&path.first, context)?);
             for (link, step) in &path.rest {
                 links.push(*link);
-                steps.push(compile_step(step, context)?);
+                steps.push(compile_path_step(step, context)?);
             }
             Alternative::Path {
                 anchor: path.anchor,
@@ -461,8 +462,22 @@ pub(crate) fn compile_alternative(
                 links,
             }
         }
-        PatternAlternative::Parenthesized { inner, predicates } => {
-            if let Some(p) = predicates.iter().find(|p| is_positional(p)) {
+    })
+}
+
+fn compile_path_step(
+    step: &ast::PathStep,
+    context: &dyn StaticContext,
+) -> std::result::Result<PathStep, String> {
+    match step {
+        ast::PathStep::Axis(step) => compile_step(step, context).map(PathStep::Axis),
+        ast::PathStep::Parenthesized { inner, predicates } => {
+            let compiled = compile_predicates(predicates, context)?;
+            if let Some((p, _)) = predicates
+                .iter()
+                .zip(&compiled)
+                .find(|(p, c)| is_positional_compiled(p, c))
+            {
                 return Err(format!(
                     "the predicate [{p}] of a parenthesized pattern may depend on the position, which is not supported"
                 ));
@@ -472,13 +487,12 @@ pub(crate) fn compile_alternative(
                 .iter()
                 .map(|a| compile_alternative(a, context))
                 .collect::<std::result::Result<Vec<_>, _>>()?;
-            let predicates = predicates
-                .iter()
-                .map(|p| compile(p, context).map_err(|e| e.to_string()))
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            Alternative::Parenthesized { inner, predicates }
+            Ok(PathStep::Group {
+                inner,
+                predicates: compiled,
+            })
         }
-    })
+    }
 }
 
 fn compile_step(
@@ -486,9 +500,19 @@ fn compile_step(
     context: &dyn StaticContext,
 ) -> std::result::Result<CompiledStep, String> {
     let test = step_test(step.axis, &step.test);
-    let predicates = if step.predicates.is_empty() {
-        Predicates::None
-    } else if step.predicates.iter().any(is_positional) {
+    if step.predicates.is_empty() {
+        return Ok(CompiledStep {
+            test,
+            predicates: Predicates::None,
+        });
+    }
+    let compiled = compile_predicates(&step.predicates, context)?;
+    let positional = step
+        .predicates
+        .iter()
+        .zip(&compiled)
+        .any(|(p, c)| is_positional_compiled(p, c));
+    let predicates = if positional {
         let axis_step = ast::Expr::Path(PathExpr {
             start: PathStart::Relative,
             steps: vec![Step::Axis(AxisStep {
@@ -502,14 +526,27 @@ fn compile_step(
         });
         Predicates::FromParent(compile(&axis_step, context).map_err(|e| e.to_string())?)
     } else {
-        Predicates::Boolean(
-            step.predicates
-                .iter()
-                .map(|p| compile(p, context).map_err(|e| e.to_string()))
-                .collect::<std::result::Result<Vec<_>, _>>()?,
-        )
+        Predicates::Boolean(compiled)
     };
     Ok(CompiledStep { test, predicates })
+}
+
+fn compile_predicates(
+    predicates: &[ast::Expr],
+    context: &dyn StaticContext,
+) -> std::result::Result<Vec<CompiledExpr>, String> {
+    predicates
+        .iter()
+        .map(|p| compile(p, context).map_err(|e| e.to_string()))
+        .collect()
+}
+
+/// Whether the value of a predicate can depend on the position of the node: it calls
+/// `position()` or `last()`, or its value may be a number, as far as its form and its
+/// static type tell (a reference to a boolean variable is not positional). Conservative:
+/// `true` unless proved otherwise.
+fn is_positional_compiled(predicate: &ast::Expr, compiled: &CompiledExpr) -> bool {
+    calls_focus(predicate) || (!never_numeric(predicate) && !compiled.is_never_numeric())
 }
 
 /// Matching, given the dynamic context. Errors are the evaluator's, as raised: the
@@ -523,6 +560,12 @@ pub(crate) struct Matcher<'d, 'h> {
 impl Matcher<'_, '_> {
     /// Whether `node` matches `alternative`.
     pub(crate) fn matches(&self, alternative: &Alternative, node: &Node) -> Result<bool> {
+        self.matches_for(alternative, node, node)
+    }
+
+    /// Whether `node` matches `alternative`, `matched` being the node matched against the
+    /// whole pattern (`current()`).
+    fn matches_for(&self, alternative: &Alternative, node: &Node, matched: &Node) -> Result<bool> {
         match alternative {
             Alternative::DocumentRoot | Alternative::RootFunction => {
                 Ok(node.kind() == NodeKind::Document)
@@ -535,26 +578,7 @@ impl Matcher<'_, '_> {
                 let Some(last) = steps.len().checked_sub(1) else {
                     return Ok(false);
                 };
-                self.match_step(steps, links, *anchor, last, node, node)
-            }
-            Alternative::Parenthesized { inner, predicates } => {
-                let mut any = false;
-                for alternative in inner {
-                    if self.matches(alternative, node)? {
-                        any = true;
-                        break;
-                    }
-                }
-                if !any {
-                    return Ok(false);
-                }
-                let context = Context::for_item(Item::Node(node.clone()));
-                for predicate in predicates {
-                    if !predicate.effective_boolean_value(self.dc, &context)? {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
+                self.match_step(steps, links, *anchor, last, node, matched)
             }
         }
     }
@@ -563,15 +587,22 @@ impl Matcher<'_, '_> {
     /// being matched against the whole pattern (`current()`).
     fn match_step(
         &self,
-        steps: &[CompiledStep],
+        steps: &[PathStep],
         links: &[PatternLink],
         anchor: PatternAnchor,
         index: usize,
         node: &Node,
         matched: &Node,
     ) -> Result<bool> {
-        let step = &steps[index];
-        if !step.test.matches(node) || !self.predicates_hold(step, node, matched)? {
+        let holds = match &steps[index] {
+            PathStep::Axis(step) => {
+                step.test.matches(node) && self.predicates_hold(step, node, matched)?
+            }
+            PathStep::Group { inner, predicates } => {
+                self.group_matches(inner, predicates, node, matched)?
+            }
+        };
+        if !holds {
             return Ok(false);
         }
         let Some(previous) = index.checked_sub(1) else {
@@ -599,6 +630,41 @@ impl Matcher<'_, '_> {
                 Ok(false)
             }
         }
+    }
+
+    /// Whether `node` matches a parenthesized step: one of its alternatives, then its
+    /// predicates, with `node` as context item.
+    fn group_matches(
+        &self,
+        inner: &[Alternative],
+        predicates: &[CompiledExpr],
+        node: &Node,
+        matched: &Node,
+    ) -> Result<bool> {
+        let mut any = false;
+        for alternative in inner {
+            if self.matches_for(alternative, node, matched)? {
+                any = true;
+                break;
+            }
+        }
+        if !any {
+            return Ok(false);
+        }
+        let context = Context {
+            focus: Some(Focus {
+                item: Item::Node(node.clone()),
+                position: 1,
+                size: 1,
+            }),
+            current: Some(Item::Node(matched.clone())),
+        };
+        for predicate in predicates {
+            if !predicate.effective_boolean_value(self.dc, &context)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     fn predicates_hold(&self, step: &CompiledStep, node: &Node, matched: &Node) -> Result<bool> {

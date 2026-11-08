@@ -6,9 +6,9 @@
 
 use einvoice_xpath::{
     ArithmeticOp, AxisStep, CompareKind, ComparisonOp, Expr, FN_NAMESPACE, KindTest, Literal,
-    NameOrWildcard, NameTest, NamespaceMap, NodeTest, Occurrence, PathStart, Pattern,
-    PatternAlternative, PatternAnchor, PatternAxis, PatternLink, Quantifier, Step, XS_NAMESPACE,
-    parse_avt, parse_expr, parse_pattern, parse_sequence_type,
+    NameOrWildcard, NameTest, NamespaceMap, NodeTest, Occurrence, PathPattern, PathStart, PathStep,
+    Pattern, PatternAlternative, PatternAnchor, PatternAxis, PatternLink, Quantifier, Step,
+    XS_NAMESPACE, parse_avt, parse_expr, parse_pattern, parse_sequence_type,
 };
 
 fn ns() -> NamespaceMap {
@@ -532,9 +532,18 @@ fn patterns() {
         panic!("{p:?}")
     };
     assert_eq!(path.anchor, PatternAnchor::RootDescendant);
-    assert_eq!(path.first.predicates.len(), 1);
-    let links: Vec<(PatternLink, PatternAxis)> =
-        path.rest.iter().map(|(l, s)| (*l, s.axis)).collect();
+    let PathStep::Axis(first) = &path.first else {
+        panic!("{path:?}")
+    };
+    assert_eq!(first.predicates.len(), 1);
+    let links: Vec<(PatternLink, PatternAxis)> = path
+        .rest
+        .iter()
+        .map(|(l, s)| match s {
+            PathStep::Axis(s) => (*l, s.axis),
+            PathStep::Parenthesized { .. } => panic!("{s:?}"),
+        })
+        .collect();
     assert_eq!(
         links,
         [
@@ -543,17 +552,24 @@ fn patterns() {
         ]
     );
     let p = alternatives("(/p:a | /p:b)[$x and $y]");
-    let [PatternAlternative::Parenthesized { inner, predicates }] = p.alternatives.as_slice()
+    let [
+        PatternAlternative::Path(PathPattern {
+            anchor: PatternAnchor::Relative,
+            first: PathStep::Parenthesized { inner, predicates },
+            rest,
+        }),
+    ] = p.alternatives.as_slice()
     else {
         panic!("{p:?}")
     };
     assert_eq!(inner.alternatives.len(), 2);
     assert_eq!(predicates.len(), 1);
+    assert_eq!(rest.as_slice(), []);
     let p = alternatives("attribute()");
     let [PatternAlternative::Path(path)] = p.alternatives.as_slice() else {
         panic!("{p:?}")
     };
-    assert_eq!(path.first.axis, PatternAxis::Attribute);
+    assert!(matches!(&path.first, PathStep::Axis(s) if s.axis == PatternAxis::Attribute));
     for src in [
         "p:a/p:b[x = 1]",
         "/*/p:a[1]",
@@ -562,6 +578,11 @@ fn patterns() {
         "child::attribute()",
         "(/p:a | /p:b)[$x][2]",
         "/ | root() | *:x | p:*",
+        "(p:a | p:b)[@x]/c",
+        "(p:a/b | /c)/d//e",
+        "(p:a | p:b)/(c | @d)/e",
+        "//(a | b)[1]",
+        "(a | b)//text()",
     ] {
         let p = alternatives(src);
         assert_eq!(
@@ -569,6 +590,28 @@ fn patterns() {
             p,
             "{src} -> {p}"
         );
+    }
+}
+
+/// Saxon-HE 12.10 reads `(P)` alone as `P`, and distributes a path ending with `(A | B)`
+/// into a union (`tests/probes/patterns-parenthesized.xsl` of `einvoice-xslt-exec`).
+#[test]
+fn parenthesized_patterns_are_normalised() {
+    for (src, normalised) in [
+        ("(a | b)", "a | b"),
+        ("(a)", "a"),
+        ("((a | b) | (c))", "a | b | c"),
+        ("x | (y | z)", "x | y | z"),
+        ("r/(a | b/c)", "r/a | r/b/c"),
+        ("/(a | p:b)", "/a | /p:b"),
+        ("//(a | @b)", "//a | //@b"),
+        ("(r)[@a]/(a | b)", "(r)[@a]/a | (r)[@a]/b"),
+        ("(a | b)/(c | d)/e", "(a | b)/(c | d)/e"),
+        ("(a | b)[@x]", "(a | b)[@x]"),
+        ("r/(x/text())", "r/x/text()"),
+        ("((a | b)[@x])", "(a | b)[@x]"),
+    ] {
+        assert_eq!(alternatives(src).to_string(), normalised, "{src}");
     }
 }
 

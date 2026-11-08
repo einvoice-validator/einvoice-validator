@@ -12,9 +12,9 @@ use std::rc::Rc;
 use einvoice_xdm::{AtomicValue, Integer};
 use einvoice_xpath::{NamespaceMap, QName, XS_NAMESPACE, parse_expr, parse_sequence_type};
 use einvoice_xpath_eval::{
-    BindingValue, Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext, Error,
-    ErrorCode, FunctionId, Host, Item, NoHost, Node, SimpleStaticContext, TreeBuilder, ValueType,
-    VariableId, compile,
+    Argument, BindingValue, Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext,
+    Error, ErrorCode, FunctionId, Host, Item, NoHost, Node, SimpleStaticContext, TreeBuilder,
+    ValueType, VariableId, compile,
 };
 
 fn namespaces() -> NamespaceMap {
@@ -146,12 +146,17 @@ impl Host for TestHost {
         })
     }
 
-    fn call_function(&self, id: FunctionId, args: Vec<Vec<Item>>) -> Result<Vec<Item>, Error> {
+    fn call_function(
+        &self,
+        id: FunctionId,
+        args: Vec<Argument>,
+        dc: &DynamicContext<'_>,
+    ) -> Result<Vec<Item>, Error> {
         assert_eq!(id, FunctionId(0));
         self.calls.set(self.calls.get() + 1);
         Ok(vec![Item::Atomic(AtomicValue::String(format!(
             "{} item(s)",
-            args[0].len()
+            args[0].evaluate(dc)?.len()
         )))])
     }
 
@@ -392,7 +397,12 @@ impl Host for ThreeHundred {
         ))]))
     }
 
-    fn call_function(&self, _id: FunctionId, _args: Vec<Vec<Item>>) -> Result<Vec<Item>, Error> {
+    fn call_function(
+        &self,
+        _id: FunctionId,
+        _args: Vec<Argument>,
+        _dc: &DynamicContext<'_>,
+    ) -> Result<Vec<Item>, Error> {
         Ok(vec![Item::Atomic(AtomicValue::from(Integer::from(300)))])
     }
 

@@ -261,9 +261,10 @@ fn unbounded_recursion_is_a_limit() {
 /// configurable.
 #[test]
 fn bounded_recursion_and_the_configurable_limits() {
+    // `$total` is read at each level: computed there (xsl:call-template passes it lazily).
     let template = prepare(
         r#"<xsl:template match="/"><r><xsl:call-template name="sum"><xsl:with-param name="n" select="xs:integer(/n)"/></xsl:call-template></r></xsl:template>
-<xsl:template name="sum"><xsl:param name="n"/><xsl:param name="total" select="0"/><xsl:choose><xsl:when test="$n eq 0"><xsl:value-of select="$total"/></xsl:when><xsl:otherwise><xsl:call-template name="sum"><xsl:with-param name="n" select="$n - 1"/><xsl:with-param name="total" select="$total + $n"/></xsl:call-template></xsl:otherwise></xsl:choose></xsl:template>"#,
+<xsl:template name="sum"><xsl:param name="n"/><xsl:param name="total" select="0"/><xsl:choose><xsl:when test="$n eq 0 or $total lt 0"><xsl:value-of select="$total"/></xsl:when><xsl:otherwise><xsl:call-template name="sum"><xsl:with-param name="n" select="$n - 1"/><xsl:with-param name="total" select="$total + $n"/></xsl:call-template></xsl:otherwise></xsl:choose></xsl:template>"#,
     );
     let function = prepare(
         r#"<xsl:function name="f:sum" as="xs:integer"><xsl:param name="n" as="xs:integer"/><xsl:sequence select="if ($n eq 0) then 0 else $n + f:sum($n - 1)"/></xsl:function>
@@ -291,17 +292,45 @@ fn bounded_recursion_and_the_configurable_limits() {
                 LimitExceeded::Nesting { max: 10 }
             );
         }
+        // The function's argument is computed lazily, inside its body, as Saxon computes
+        // it: one evaluation inside another.
         let stack = TransformOptions {
-            max_stack: 32 << 10,
+            max_stack: 64 << 10,
             ..TransformOptions::default()
         };
         assert_eq!(run(&function, 0, &stack).unwrap(), r("0"));
         for e in [&template, &function] {
             assert_eq!(
                 limit(run(e, 200, &stack)),
-                LimitExceeded::Stack { max: 32 << 10 }
+                LimitExceeded::Stack { max: 64 << 10 }
             );
         }
+    });
+}
+
+/// A lazy value that refers to another, and so on, is computed inside the one that refers
+/// to it: a parameter passed down a recursion and read only at its end (Saxon passes the
+/// parameters of `xsl:call-template` lazily) is a chain of computations as deep as the
+/// recursion, bounded by the stack limit too.
+#[test]
+fn chains_of_lazy_values_are_bounded() {
+    let template = prepare(
+        r#"<xsl:template match="/"><r><xsl:call-template name="sum"><xsl:with-param name="n" select="xs:integer(/n)"/></xsl:call-template></r></xsl:template>
+<xsl:template name="sum"><xsl:param name="n"/><xsl:param name="total" select="0"/><xsl:choose><xsl:when test="$n eq 0"><xsl:value-of select="$total"/></xsl:when><xsl:otherwise><xsl:call-template name="sum"><xsl:with-param name="n" select="$n - 1"/><xsl:with-param name="total" select="$total + $n"/></xsl:call-template></xsl:otherwise></xsl:choose></xsl:template>"#,
+    );
+    on_a_default_stack(move || {
+        let run = |n: u32| {
+            template
+                .transform(format!("<n>{n}</n>").as_str(), None)
+                .map(|t| t.output)
+        };
+        assert_eq!(run(40).unwrap(), r("820"));
+        assert_eq!(
+            limit(run(550)),
+            LimitExceeded::Stack {
+                max: DEFAULT_MAX_STACK
+            }
+        );
     });
 }
 

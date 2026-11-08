@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:f="urn:f" xmlns:xs="http://www.w3.org/2001/XMLSchema"><once/><twice/><in-loop>|0 0</in-loop><in-quantified>false 0</in-quantified><not-reached>a</not-reached><chained/><tree/><filtered/><function>false false false false</function><function-learning>true true true true true true true true true true true true true true true true true true true false</function-learning><param>.</param><call>.</call><learning-19>x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x..</learning-19><learning-unread>x.x..x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x..</learning-unread><learning-never-read>.........................</learning-never-read><param-learning>.....................</param-learning></out>

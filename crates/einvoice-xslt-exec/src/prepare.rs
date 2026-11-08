@@ -5,7 +5,7 @@
 //! named templates and modes are resolved, and the template rules of each mode are
 //! ranked and indexed by the kind and name of the nodes they can match.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
@@ -42,6 +42,8 @@ pub struct Executable {
     /// again from its text: a transformation given its source as an owned `String` then
     /// keeps the text (see [`Executable::transform`](crate::Executable::transform)).
     pub(crate) calls_document: bool,
+    /// How many bindings are evaluated as [`Eval::Learning`].
+    pub(crate) learners: usize,
 }
 
 /// A global variable or parameter.
@@ -72,12 +74,30 @@ pub(crate) struct Binding {
     pub(crate) slot: usize,
     pub(crate) as_type: Option<SequenceType>,
     pub(crate) value: Value,
-    /// Evaluated when first referenced rather than where it is declared: a `select`
-    /// that may return more than one item (Saxon evaluates the others eagerly).
-    pub(crate) lazy: bool,
+    /// When its value is computed.
+    pub(crate) eval: Eval,
     /// Whether some expression in its scope refers to it (an unused variable is never
     /// evaluated, as Saxon removes it).
     pub(crate) used: bool,
+}
+
+/// When the value of a binding is computed, as Saxon-HE 12.10 computes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Eval {
+    /// Where it is bound.
+    Eager,
+    /// When first referenced: a local variable referred to once, not in a loop, which
+    /// Saxon inlines into the reference.
+    Lazy,
+    /// Saxon's `LearningEvaluator`: when first referenced, until the binding has been
+    /// evaluated 20 times, its value each time computed (or, in a function body, 20
+    /// times at all); from then on where it is bound. Only the first 40 evaluations
+    /// count. `learner` indexes its counters, kept per transformation.
+    Learning {
+        learner: usize,
+        /// In an `xsl:function` body, where every evaluation counts, read or not.
+        every_counts: bool,
+    },
 }
 
 /// `xsl:with-param`.
@@ -86,7 +106,7 @@ pub(crate) struct WithParam {
     pub(crate) name: QName,
     pub(crate) as_type: Option<SequenceType>,
     pub(crate) value: Value,
-    pub(crate) lazy: bool,
+    pub(crate) eval: Eval,
 }
 
 #[derive(Debug)]
@@ -325,9 +345,53 @@ struct Frame {
     locals: Vec<(QName, VariableInfo)>,
     /// References seen, per slot.
     uses: RefCell<Vec<u32>>,
+    /// Per slot, whether a reference is in a loop: an operand of an XPath expression
+    /// evaluated repeatedly, or an `xsl:for-each` body the variable is declared outside.
+    looping: RefCell<Vec<bool>>,
+    /// Per slot, the number of `xsl:for-each` bodies around its declaration.
+    depths: Vec<u32>,
+    /// The number of `xsl:for-each` bodies around the instruction being compiled.
+    depth: u32,
+    /// The local variables whose value is being compiled, innermost last.
+    enclosing: Vec<usize>,
+    /// Every reference to a local variable: its slot, and the variables whose value holds
+    /// it (`enclosing` then).
+    references: RefCell<Vec<(usize, Vec<usize>)>>,
+    /// Per slot, whether Saxon removes the variable: unused, or inlined into its one
+    /// reference (the references in its value are then gone too).
+    gone: Vec<bool>,
+    /// Per slot, the variables whose value holds its declaration (`enclosing` then).
+    declared_in: Vec<Vec<usize>>,
 }
 
 impl Frame {
+    /// A new slot, not in scope yet ([`Frame::bind`]).
+    fn reserve(&mut self) -> usize {
+        let slot = self.slots;
+        self.slots += 1;
+        self.uses.borrow_mut().push(0);
+        self.looping.borrow_mut().push(false);
+        self.depths.push(self.depth);
+        self.gone.push(false);
+        self.declared_in.push(self.enclosing.clone());
+        slot
+    }
+
+    /// Whether a reference to `target` held in the values of the variables `enclosing` is
+    /// in the value of one for which `removed` holds, among those declared after `target`
+    /// (a variable whose value holds the declaration of `target` holds it whole).
+    fn removed_with(
+        &self,
+        target: usize,
+        enclosing: &[usize],
+        removed: &dyn Fn(usize) -> bool,
+    ) -> bool {
+        let declared_in = self.declared_in.get(target);
+        enclosing
+            .iter()
+            .any(|e| !declared_in.is_some_and(|d| d.contains(e)) && removed(*e))
+    }
+
     fn declare(
         &mut self,
         name: QName,
@@ -335,9 +399,20 @@ impl Frame {
         value_type: ValueType,
         globals: usize,
     ) -> usize {
-        let slot = self.slots;
-        self.slots += 1;
-        self.uses.borrow_mut().push(0);
+        let slot = self.reserve();
+        self.bind(slot, name, cardinality, value_type, globals);
+        slot
+    }
+
+    /// Puts a reserved slot in scope under `name`.
+    fn bind(
+        &mut self,
+        slot: usize,
+        name: QName,
+        cardinality: Cardinality,
+        value_type: ValueType,
+        globals: usize,
+    ) {
         let id = VariableId(u32::try_from(globals + slot).unwrap_or(u32::MAX));
         self.locals.push((
             name,
@@ -347,7 +422,6 @@ impl Frame {
                 value_type,
             },
         ));
-        slot
     }
 }
 
@@ -362,26 +436,26 @@ struct Scope<'a> {
     /// The declared result types of the functions.
     function_types: &'a [ValueType],
     frame: Option<&'a Frame>,
-    /// Set when the compiler asked for a namespace prefix (only `system-property()`
-    /// does), which this crate cannot resolve.
-    asked_prefix: Cell<bool>,
+}
+
+impl Scope<'_> {
+    /// The local variable of that name in scope, innermost first, and its slot.
+    fn local(&self, name: &QName) -> Option<(usize, VariableInfo)> {
+        let frame = self.frame?;
+        let (_, info) = frame
+            .locals
+            .iter()
+            .rev()
+            .find(|(n, _)| n.same_expanded_name(name))?;
+        let slot = (info.id.0 as usize).saturating_sub(self.globals.len());
+        Some((slot, info.clone()))
+    }
 }
 
 impl StaticContext for Scope<'_> {
     fn variable(&self, name: &QName) -> Option<VariableInfo> {
-        if let Some(frame) = self.frame
-            && let Some((_, info)) = frame
-                .locals
-                .iter()
-                .rev()
-                .find(|(n, _)| n.same_expanded_name(name))
-        {
-            let globals = self.globals.len();
-            let slot = (info.id.0 as usize).saturating_sub(globals);
-            if let Some(count) = frame.uses.borrow_mut().get_mut(slot) {
-                *count += 1;
-            }
-            return Some(info.clone());
+        if let Some((_, info)) = self.local(name) {
+            return Some(info);
         }
         let (index, (_, info)) = self
             .globals
@@ -396,6 +470,23 @@ impl StaticContext for Scope<'_> {
                 ..info.clone()
             }
         })
+    }
+
+    fn variable_reference(&self, name: &QName, in_loop: bool) -> Option<VariableInfo> {
+        if let (Some(frame), Some((slot, _))) = (self.frame, self.local(name)) {
+            if let Some(count) = frame.uses.borrow_mut().get_mut(slot) {
+                *count += 1;
+            }
+            let outside = frame.depths.get(slot).is_some_and(|&d| frame.depth > d);
+            if let Some(looping) = frame.looping.borrow_mut().get_mut(slot) {
+                *looping |= in_loop || outside;
+            }
+            frame
+                .references
+                .borrow_mut()
+                .push((slot, frame.enclosing.clone()));
+        }
+        self.variable(name)
     }
 
     fn function(&self, name: &QName, arity: usize) -> Option<FunctionId> {
@@ -416,9 +507,183 @@ impl StaticContext for Scope<'_> {
         true
     }
 
+    /// The parser has resolved the prefixed names of `system-property()` already (as
+    /// `Q{uri}local`): a prefix the compiler asks for is not bound.
     fn namespace_uri(&self, _prefix: &str) -> Option<String> {
-        self.asked_prefix.set(true);
         None
+    }
+}
+
+/// Calls `f` on each sequence constructor an instruction holds (its bodies, the value of
+/// a variable or of a parameter it passes).
+fn for_each_body(inst: &Inst, f: &mut dyn FnMut(&[Inst])) {
+    let params = |params: &[WithParam], f: &mut dyn FnMut(&[Inst])| {
+        for p in params {
+            if let Value::Content(body) = &p.value {
+                f(body);
+            }
+        }
+    };
+    match inst {
+        Inst::ApplyTemplates { params: p, .. }
+        | Inst::NextMatch { params: p, .. }
+        | Inst::CallTemplate { params: p, .. } => params(p, f),
+        Inst::Choose { whens, otherwise } => {
+            for w in whens {
+                f(&w.body);
+            }
+            f(otherwise);
+        }
+        Inst::Variable(b) => {
+            if let Value::Content(body) = &b.value {
+                f(body);
+            }
+        }
+        Inst::ForEach { body, .. }
+        | Inst::ValueOf { body, .. }
+        | Inst::Attribute { body, .. }
+        | Inst::Comment { body, .. }
+        | Inst::Element { body, .. } => f(body),
+        Inst::Sequence { .. } | Inst::Text(_) | Inst::Number { .. } => {}
+    }
+}
+
+/// [`for_each_body`], mutably.
+fn for_each_body_mut<'i>(inst: &'i mut Inst, f: &mut dyn FnMut(&'i mut Vec<Inst>)) {
+    let params = |params: &'i mut Vec<WithParam>, f: &mut dyn FnMut(&'i mut Vec<Inst>)| {
+        for p in params {
+            if let Value::Content(body) = &mut p.value {
+                f(body);
+            }
+        }
+    };
+    match inst {
+        Inst::ApplyTemplates { params: p, .. }
+        | Inst::NextMatch { params: p, .. }
+        | Inst::CallTemplate { params: p, .. } => params(p, f),
+        Inst::Choose { whens, otherwise } => {
+            for w in whens {
+                f(&mut w.body);
+            }
+            f(otherwise);
+        }
+        Inst::Variable(b) => {
+            if let Value::Content(body) = &mut b.value {
+                f(body);
+            }
+        }
+        Inst::ForEach { body, .. }
+        | Inst::ValueOf { body, .. }
+        | Inst::Attribute { body, .. }
+        | Inst::Comment { body, .. }
+        | Inst::Element { body, .. } => f(body),
+        Inst::Sequence { .. } | Inst::Text(_) | Inst::Number { .. } => {}
+    }
+}
+
+/// Whether the value of a binding depends on the position, the size or the current item
+/// of the focus it is bound in (`fn:position()`, `fn:last()`, `fn:current()`, and the
+/// instructions that pass the focus on, `xsl:call-template` and `xsl:next-match`), as
+/// Saxon's dependencies tell it: such a value is never evaluated lazily.
+fn depends_on_focus_position(value: &VariableValue) -> bool {
+    match value {
+        VariableValue::Select(expr) => expr_depends_on_focus_position(expr, true),
+        VariableValue::Content(body) => instructions_depend_on_focus_position(body),
+        VariableValue::Absent => false,
+    }
+}
+
+fn instructions_depend_on_focus_position(instructions: &[Instruction]) -> bool {
+    let expr = |e: &Expr| expr_depends_on_focus_position(e, true);
+    let avt = |a: &Avt| {
+        a.parts
+            .iter()
+            .any(|p| matches!(p, AvtPart::Expr(e) if expr(e)))
+    };
+    let params = |params: &[Variable]| params.iter().any(|p| depends_on_focus_position(&p.value));
+    instructions.iter().any(|instruction| match instruction {
+        Instruction::CallTemplate(_) | Instruction::NextMatch(_) => true,
+        Instruction::ApplyTemplates(a) => a.select.as_ref().is_some_and(expr) || params(&a.params),
+        Instruction::Choose(c) => {
+            c.whens
+                .iter()
+                .any(|w| expr(&w.test) || instructions_depend_on_focus_position(&w.body))
+                || c.otherwise
+                    .as_ref()
+                    .is_some_and(|o| instructions_depend_on_focus_position(o))
+        }
+        Instruction::If(i) => expr(&i.test) || instructions_depend_on_focus_position(&i.body),
+        // The body has the focus of the items selected.
+        Instruction::ForEach(f) => expr(&f.select),
+        Instruction::Variable(v) => depends_on_focus_position(&v.value),
+        Instruction::Sequence(q) => expr(&q.select),
+        Instruction::ValueOf(v) => {
+            v.select.as_ref().is_some_and(expr)
+                || v.separator.as_ref().is_some_and(avt)
+                || instructions_depend_on_focus_position(&v.body)
+        }
+        Instruction::Attribute(a) => {
+            avt(&a.name)
+                || a.select.as_ref().is_some_and(expr)
+                || instructions_depend_on_focus_position(&a.body)
+        }
+        Instruction::Comment(c) => instructions_depend_on_focus_position(&c.body),
+        Instruction::LiteralElement(e) => {
+            e.attributes.iter().any(|a| avt(&a.value))
+                || instructions_depend_on_focus_position(&e.body)
+        }
+        Instruction::Text(_) | Instruction::Number(_) => false,
+    })
+}
+
+/// Whether `expr` calls `current()` anywhere, or `position()` or `last()` where the
+/// focus is still the outer one (`outer`): not in a predicate, nor in a path step after
+/// the first.
+fn expr_depends_on_focus_position(expr: &Expr, outer: bool) -> bool {
+    let at = |e: &Expr, outer: bool| expr_depends_on_focus_position(e, outer);
+    let bindings = |bindings: &[ast::Binding]| bindings.iter().any(|b| at(&b.sequence, outer));
+    match expr {
+        Expr::FunctionCall { name, args } => {
+            let fn_name = |local: &str| {
+                name.namespace.as_deref() == Some(ast::FN_NAMESPACE) && name.local == local
+            };
+            fn_name("current")
+                || (outer && (fn_name("position") || fn_name("last")))
+                || args.iter().any(|a| at(a, outer))
+        }
+        Expr::Literal(_) | Expr::VarRef(_) | Expr::ContextItem => false,
+        Expr::Sequence(items) => items.iter().any(|e| at(e, outer)),
+        Expr::Filter { base, predicates } => {
+            at(base, outer) || predicates.iter().any(|p| at(p, false))
+        }
+        Expr::Path(path) => path.steps.iter().enumerate().any(|(i, step)| {
+            let step_outer = outer && i == 0 && path.start == ast::PathStart::Relative;
+            match step {
+                ast::Step::Axis(axis_step) => axis_step.predicates.iter().any(|p| at(p, false)),
+                ast::Step::Expr(e) => at(e, step_outer),
+            }
+        }),
+        Expr::Negate(e)
+        | Expr::Castable { operand: e, .. }
+        | Expr::Cast { operand: e, .. }
+        | Expr::InstanceOf { operand: e, .. } => at(e, outer),
+        Expr::Union(lhs, rhs)
+        | Expr::Range(lhs, rhs)
+        | Expr::And(lhs, rhs)
+        | Expr::Or(lhs, rhs)
+        | Expr::Arithmetic { lhs, rhs, .. }
+        | Expr::Comparison { lhs, rhs, .. } => at(lhs, outer) || at(rhs, outer),
+        Expr::If {
+            condition,
+            then,
+            otherwise,
+        } => at(condition, outer) || at(then, outer) || at(otherwise, outer),
+        Expr::For { bindings: b, body } => bindings(b) || at(body, outer),
+        Expr::Quantified {
+            bindings: b,
+            satisfies,
+            ..
+        } => bindings(b) || at(satisfies, outer),
     }
 }
 
@@ -467,12 +732,14 @@ fn pattern_calls_document(alternative: &ast::PatternAlternative) -> bool {
     let any = |exprs: &[Expr]| exprs.iter().any(calls_document);
     match alternative {
         ast::PatternAlternative::DocumentRoot | ast::PatternAlternative::RootFunction => false,
-        ast::PatternAlternative::Path(path) => {
-            any(&path.first.predicates) || path.rest.iter().any(|(_, step)| any(&step.predicates))
-        }
-        ast::PatternAlternative::Parenthesized { inner, predicates } => {
-            inner.alternatives.iter().any(pattern_calls_document) || any(predicates)
-        }
+        ast::PatternAlternative::Path(path) => std::iter::once(&path.first)
+            .chain(path.rest.iter().map(|(_, step)| step))
+            .any(|step| match step {
+                ast::PathStep::Axis(step) => any(&step.predicates),
+                ast::PathStep::Parenthesized { inner, predicates } => {
+                    inner.alternatives.iter().any(pattern_calls_document) || any(predicates)
+                }
+            }),
     }
 }
 
@@ -517,6 +784,10 @@ struct Compiler<'s> {
     modes: Vec<Mode>,
     /// Whether some expression compiled so far calls `document()`.
     calls_document: bool,
+    /// How many [`Eval::Learning`] bindings so far.
+    learners: usize,
+    /// Whether the bindings being compiled are in an `xsl:function` body.
+    in_function: bool,
 }
 
 /// Collects the modes named by templates and by `xsl:apply-templates`.
@@ -563,16 +834,6 @@ fn collect_value(value: &VariableValue, modes: &mut BTreeSet<Mode>) {
     }
 }
 
-/// Where a sequence constructor's result goes, for the refusals.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Content {
-    /// Nodes may be constructed.
-    Nodes,
-    /// A sequence: only `xsl:sequence`, variables and control flow (the body of an
-    /// `xsl:function`, a variable with `as`).
-    Sequence,
-}
-
 impl Compiler<'_> {
     fn error(&mut self, line: u32, message: impl Into<String>) {
         self.errors.push(PrepareError {
@@ -588,7 +849,6 @@ impl Compiler<'_> {
             functions: &self.functions,
             function_types: &self.function_types,
             frame,
-            asked_prefix: Cell::new(false),
         }
     }
 
@@ -598,14 +858,7 @@ impl Compiler<'_> {
         match compile(expr, &scope) {
             Ok(compiled) => Some(Box::new(compiled)),
             Err(e) => {
-                let message = if scope.asked_prefix.get() {
-                    format!(
-                        "{expr}: system-property() with a prefixed name is not supported (the in-scope namespaces of instructions are not kept)"
-                    )
-                } else {
-                    format!("{expr}: {e}")
-                };
-                self.error(line, message);
+                self.error(line, format!("{expr}: {e}"));
                 None
             }
         }
@@ -640,44 +893,59 @@ impl Compiler<'_> {
         self.modes.iter().position(|m| m == mode).unwrap_or(0)
     }
 
-    /// The value of a binding. Its content is a sequence when it has `as`.
-    fn value(
-        &mut self,
-        line: u32,
-        value: &VariableValue,
-        as_type: Option<&SequenceType>,
-        frame: &mut Frame,
-    ) -> Value {
+    /// The value of a binding (its content is a temporary tree without `as`, a sequence
+    /// with it, which the executor tells apart).
+    fn value(&mut self, line: u32, value: &VariableValue, frame: &mut Frame) -> Value {
         match value {
             VariableValue::Select(expr) => self
                 .expr(line, expr, Some(frame))
                 .map_or(Value::Absent, Value::Select),
-            VariableValue::Content(body) => {
-                let content = if as_type.is_some() {
-                    Content::Sequence
-                } else {
-                    Content::Nodes
-                };
-                Value::Content(self.sequence_constructor(body, frame, content))
-            }
+            VariableValue::Content(body) => Value::Content(self.sequence_constructor(body, frame)),
             VariableValue::Absent => Value::Absent,
         }
     }
 
-    fn with_params(&mut self, params: &[Variable], frame: &mut Frame) -> Vec<WithParam> {
+    /// The `xsl:with-param` of an instruction: evaluated eagerly by `xsl:apply-templates`
+    /// and `xsl:next-match` (`lazy` false), as Saxon evaluates them, lazily with Saxon's
+    /// learning by `xsl:call-template`.
+    fn with_params(
+        &mut self,
+        params: &[Variable],
+        frame: &mut Frame,
+        lazy: bool,
+    ) -> Vec<WithParam> {
         params
             .iter()
             .map(|p| {
-                let value = self.value(p.line, &p.value, p.as_type.as_ref(), frame);
-                let lazy = matches!(&value, Value::Select(e) if !e.is_at_most_one());
+                let value = self.value(p.line, &p.value, frame);
+                let eval = if lazy {
+                    self.learning(&p.value)
+                } else {
+                    Eval::Eager
+                };
                 WithParam {
                     name: p.name.clone(),
                     as_type: p.as_type.clone(),
                     value,
-                    lazy,
+                    eval,
                 }
             })
             .collect()
+    }
+
+    /// [`Eval::Learning`] with new counters, or [`Eval::Eager`] for a value that depends
+    /// on the position, the size or the current item of its focus, which Saxon never
+    /// evaluates lazily (`Expression.supportsLazyEvaluation`).
+    fn learning(&mut self, value: &VariableValue) -> Eval {
+        if depends_on_focus_position(value) {
+            return Eval::Eager;
+        }
+        let learner = self.learners;
+        self.learners += 1;
+        Eval::Learning {
+            learner,
+            every_counts: self.in_function,
+        }
     }
 
     /// Compiles a sequence constructor. Local variables are in scope for their
@@ -686,53 +954,153 @@ impl Compiler<'_> {
         &mut self,
         instructions: &[Instruction],
         frame: &mut Frame,
-        content: Content,
     ) -> Vec<Inst> {
         let scope_depth = frame.locals.len();
         let mut out = Vec::with_capacity(instructions.len());
         for instruction in instructions {
-            if let Some(inst) = self.instruction(instruction, frame, content) {
+            if let Some(inst) = self.instruction(instruction, frame) {
                 out.push(inst);
             }
         }
         frame.locals.truncate(scope_depth);
-        let uses = frame.uses.borrow();
-        for inst in &mut out {
-            if let Inst::Variable(binding) = inst {
-                binding.used = uses.get(binding.slot).is_some_and(|&n| n > 0);
-            }
-        }
         out
     }
 
-    fn refuse_in_sequence(&mut self, line: u32, what: &str, content: Content) -> bool {
-        if content == Content::Sequence {
-            self.error(
-                line,
-                format!(
-                    "{what} in a sequence (an xsl:function body or a variable with `as`) is not supported"
-                ),
-            );
-            return true;
+    /// When the local variables of a template, function or global variable are
+    /// evaluated, once its whole body is compiled (`body`, and the default values of its
+    /// parameters, `params`), as Saxon-HE 12.10 decides it (`LetExpression.optimize` and
+    /// `setEvaluator`):
+    ///
+    /// - unused (no reference left once the unused variables are removed): never;
+    /// - referred to once, not in a loop: inlined into the reference, evaluated when it
+    ///   is ([`Eval::Lazy`]);
+    /// - otherwise as Saxon counts its references, which it does not always count again
+    ///   after inlining others: a variable keeps the references it had, less those in
+    ///   the values of the variables removed since, unless it is optimized again: when the
+    ///   variable right after it is removed (its action changes), or a variable before
+    ///   it in scope has the variable right after it removed (which optimizes all that
+    ///   follows again, `verifyReferences`). With two references or more (or one in a
+    ///   loop), Saxon's learning ([`Eval::Learning`]); with one or none, a value of at
+    ///   most one item is computed where it is bound (`LazyPullEvaluator` on an item), any
+    ///   other when first read.
+    fn decide_frame(&mut self, frame: &mut Frame, body: &mut [Inst], params: &mut [Binding]) {
+        // The references left, per slot: none in the value of an unused variable. A
+        // reference is always from a variable declared later, with a higher slot.
+        let mut live = vec![0_u32; frame.slots];
+        let is_variable = Self::variable_slots(body, params, frame.slots);
+        for slot in (0..frame.slots).rev() {
+            let count = frame
+                .references
+                .borrow()
+                .iter()
+                .filter(|(target, enclosing)| {
+                    *target == slot
+                        && !frame.removed_with(slot, enclosing, &|e| {
+                            is_variable.get(e).copied().unwrap_or(false)
+                                && live.get(e).copied().unwrap_or(0) == 0
+                        })
+                })
+                .count();
+            live[slot] = u32::try_from(count).unwrap_or(u32::MAX);
+            let looping = frame.looping.borrow().get(slot).copied().unwrap_or(true);
+            if let Some(gone) = frame.gone.get_mut(slot) {
+                *gone = is_variable.get(slot).copied().unwrap_or(false)
+                    && (live[slot] == 0 || (live[slot] == 1 && !looping));
+            }
         }
-        false
+        for param in params.iter_mut() {
+            if let Value::Content(content) = &mut param.value {
+                self.decide_sequence(frame, &live, content, false);
+            }
+        }
+        self.decide_sequence(frame, &live, body, false);
+    }
+
+    /// Which slots are local variables (not parameters).
+    fn variable_slots(body: &[Inst], params: &[Binding], slots: usize) -> Vec<bool> {
+        fn walk(insts: &[Inst], out: &mut Vec<bool>) {
+            for inst in insts {
+                if let Inst::Variable(b) = inst
+                    && let Some(v) = out.get_mut(b.slot)
+                {
+                    *v = true;
+                }
+                for_each_body(inst, &mut |body| walk(body, out));
+            }
+        }
+        let mut out = vec![false; slots];
+        for param in params {
+            if let Value::Content(content) = &param.value {
+                walk(content, &mut out);
+            }
+        }
+        walk(body, &mut out);
+        out
+    }
+
+    /// [`Compiler::decide_frame`] on one sequence constructor; `again`: a variable before
+    /// it in scope is optimized again.
+    fn decide_sequence(&mut self, frame: &Frame, live: &[u32], insts: &mut [Inst], again: bool) {
+        let is_gone = |slot: usize| frame.gone.get(slot).copied().unwrap_or(false);
+        let next_is_gone: Vec<bool> = (0..insts.len())
+            .map(|i| matches!(insts.get(i + 1), Some(Inst::Variable(next)) if is_gone(next.slot)))
+            .collect();
+        let mut again = again;
+        for (inst, next_is_gone) in insts.iter_mut().zip(next_is_gone) {
+            if let Inst::Variable(binding) = inst {
+                let slot = binding.slot;
+                binding.used = live.get(slot).copied().unwrap_or(0) > 0;
+                if !is_gone(slot) && binding.eval != Eval::Eager {
+                    let looping = frame.looping.borrow().get(slot).copied().unwrap_or(true);
+                    let registered = if again || next_is_gone {
+                        live.get(slot).copied().unwrap_or(0)
+                    } else {
+                        let kept = frame
+                            .references
+                            .borrow()
+                            .iter()
+                            .filter(|(target, enclosing)| {
+                                *target == slot && !frame.removed_with(slot, enclosing, &is_gone)
+                            })
+                            .count();
+                        u32::try_from(kept).unwrap_or(u32::MAX)
+                    };
+                    binding.eval = if looping || registered >= 2 {
+                        let learner = self.learners;
+                        self.learners += 1;
+                        Eval::Learning {
+                            learner,
+                            every_counts: self.in_function,
+                        }
+                    } else if matches!(&binding.value, Value::Select(e) if e.is_at_most_one()) {
+                        Eval::Eager
+                    } else {
+                        Eval::Lazy
+                    };
+                }
+            }
+            let mut bodies: Vec<&mut Vec<Inst>> = Vec::new();
+            for_each_body_mut(inst, &mut |body| bodies.push(body));
+            for body in bodies {
+                self.decide_sequence(frame, live, body, again);
+            }
+            if let Inst::Variable(binding) = inst
+                && !is_gone(binding.slot)
+                && next_is_gone
+            {
+                // Its action changes: what follows is optimized again.
+                again = true;
+            }
+        }
     }
 
     #[expect(
         clippy::too_many_lines,
         reason = "one arm per instruction of the supported subset"
     )]
-    fn instruction(
-        &mut self,
-        instruction: &Instruction,
-        frame: &mut Frame,
-        content: Content,
-    ) -> Option<Inst> {
+    fn instruction(&mut self, instruction: &Instruction, frame: &mut Frame) -> Option<Inst> {
         Some(match instruction {
             Instruction::ApplyTemplates(apply) => {
-                if self.refuse_in_sequence(apply.line, "xsl:apply-templates", content) {
-                    return None;
-                }
                 let select = if let Some(e) = &apply.select {
                     self.expr(apply.line, e, Some(frame))
                 } else {
@@ -743,7 +1111,7 @@ impl Compiler<'_> {
                     ApplyMode::Current => ModeRef::Current,
                     ApplyMode::Mode(m) => ModeRef::Mode(self.mode_index(m)),
                 };
-                let params = self.with_params(&apply.params, frame);
+                let params = self.with_params(&apply.params, frame, false);
                 Inst::ApplyTemplates {
                     line: apply.line,
                     select: select?,
@@ -751,19 +1119,11 @@ impl Compiler<'_> {
                     params,
                 }
             }
-            Instruction::NextMatch(next) => {
-                if self.refuse_in_sequence(next.line, "xsl:next-match", content) {
-                    return None;
-                }
-                Inst::NextMatch {
-                    line: next.line,
-                    params: self.with_params(&next.params, frame),
-                }
-            }
+            Instruction::NextMatch(next) => Inst::NextMatch {
+                line: next.line,
+                params: self.with_params(&next.params, frame, false),
+            },
             Instruction::CallTemplate(call) => {
-                if self.refuse_in_sequence(call.line, "xsl:call-template", content) {
-                    return None;
-                }
                 let Some(template) = self.sheet.templates.iter().position(|t| {
                     t.name
                         .as_ref()
@@ -791,14 +1151,14 @@ impl Compiler<'_> {
                 Inst::CallTemplate {
                     line: call.line,
                     template,
-                    params: self.with_params(&call.params, frame),
+                    params: self.with_params(&call.params, frame, true),
                 }
             }
             Instruction::Choose(choose) => {
                 let mut whens = Vec::with_capacity(choose.whens.len());
                 for when in &choose.whens {
                     let test = self.expr(when.line, &when.test, Some(frame));
-                    let body = self.sequence_constructor(&when.body, frame, content);
+                    let body = self.sequence_constructor(&when.body, frame);
                     whens.push(When {
                         line: when.line,
                         test: test?,
@@ -808,13 +1168,13 @@ impl Compiler<'_> {
                 let otherwise = choose
                     .otherwise
                     .as_ref()
-                    .map(|body| self.sequence_constructor(body, frame, content))
+                    .map(|body| self.sequence_constructor(body, frame))
                     .unwrap_or_default();
                 Inst::Choose { whens, otherwise }
             }
             Instruction::If(i) => {
                 let test = self.expr(i.line, &i.test, Some(frame));
-                let body = self.sequence_constructor(&i.body, frame, content);
+                let body = self.sequence_constructor(&i.body, frame);
                 Inst::Choose {
                     whens: vec![When {
                         line: i.line,
@@ -826,7 +1186,9 @@ impl Compiler<'_> {
             }
             Instruction::ForEach(f) => {
                 let select = self.expr(f.line, &f.select, Some(frame));
-                let body = self.sequence_constructor(&f.body, frame, content);
+                frame.depth += 1;
+                let body = self.sequence_constructor(&f.body, frame);
+                frame.depth -= 1;
                 Inst::ForEach {
                     line: f.line,
                     select: select?,
@@ -834,20 +1196,34 @@ impl Compiler<'_> {
                 }
             }
             Instruction::Variable(v) => {
-                let value = self.value(v.line, &v.value, v.as_type.as_ref(), frame);
+                let slot = frame.reserve();
+                frame.enclosing.push(slot);
+                let value = self.value(v.line, &v.value, frame);
+                frame.enclosing.pop();
                 let cardinality = binding_cardinality(v.as_type.as_ref(), &value);
                 let value_type =
                     ValueType::local_variable(binding_value(&value), v.as_type.as_ref());
-                let lazy = matches!(&value, Value::Select(e) if !e.is_at_most_one());
-                let slot =
-                    frame.declare(v.name.clone(), cardinality, value_type, self.globals.len());
+                frame.bind(
+                    slot,
+                    v.name.clone(),
+                    cardinality,
+                    value_type,
+                    self.globals.len(),
+                );
+                // Decided once the references in its scope are known
+                // (`sequence_constructor`).
+                let eval = if depends_on_focus_position(&v.value) {
+                    Eval::Eager
+                } else {
+                    Eval::Lazy
+                };
                 Inst::Variable(Box::new(Binding {
                     line: v.line,
                     name: v.name.clone(),
                     slot,
                     as_type: v.as_type.clone(),
                     value,
-                    lazy,
+                    eval,
                     used: false,
                 }))
             }
@@ -856,15 +1232,12 @@ impl Compiler<'_> {
                 select: self.expr(s.line, &s.select, Some(frame))?,
             },
             Instruction::ValueOf(v) => {
-                if self.refuse_in_sequence(v.line, "xsl:value-of", content) {
-                    return None;
-                }
                 let select = v.select.as_ref().map(|e| self.expr(v.line, e, Some(frame)));
                 let separator = v
                     .separator
                     .as_ref()
                     .map(|s| self.avt(v.line, s, Some(frame)));
-                let body = self.sequence_constructor(&v.body, frame, Content::Nodes);
+                let body = self.sequence_constructor(&v.body, frame);
                 Inst::ValueOf {
                     line: v.line,
                     select: select.map_or(Some(None), |s| s.map(Some))?,
@@ -873,12 +1246,9 @@ impl Compiler<'_> {
                 }
             }
             Instruction::Attribute(a) => {
-                if self.refuse_in_sequence(a.line, "xsl:attribute", content) {
-                    return None;
-                }
                 let name = self.avt(a.line, &a.name, Some(frame));
                 let select = a.select.as_ref().map(|e| self.expr(a.line, e, Some(frame)));
-                let body = self.sequence_constructor(&a.body, frame, Content::Nodes);
+                let body = self.sequence_constructor(&a.body, frame);
                 Inst::Attribute {
                     line: a.line,
                     name: name?,
@@ -887,25 +1257,12 @@ impl Compiler<'_> {
                     body,
                 }
             }
-            Instruction::Comment(c) => {
-                if self.refuse_in_sequence(c.line, "xsl:comment", content) {
-                    return None;
-                }
-                Inst::Comment {
-                    line: c.line,
-                    body: self.sequence_constructor(&c.body, frame, Content::Nodes),
-                }
-            }
-            Instruction::Text(t) => {
-                if self.refuse_in_sequence(t.line, "text", content) {
-                    return None;
-                }
-                Inst::Text(t.value.as_str().into())
-            }
+            Instruction::Comment(c) => Inst::Comment {
+                line: c.line,
+                body: self.sequence_constructor(&c.body, frame),
+            },
+            Instruction::Text(t) => Inst::Text(t.value.as_str().into()),
             Instruction::Number(n) => {
-                if self.refuse_in_sequence(n.line, "xsl:number", content) {
-                    return None;
-                }
                 let count = match &n.count {
                     None => None,
                     Some(p) => Some(CountPattern {
@@ -920,9 +1277,6 @@ impl Compiler<'_> {
                 }
             }
             Instruction::LiteralElement(e) => {
-                if self.refuse_in_sequence(e.line, "a literal result element", content) {
-                    return None;
-                }
                 let mut attributes = Vec::with_capacity(e.attributes.len());
                 let mut ok = true;
                 for attribute in &e.attributes {
@@ -931,7 +1285,7 @@ impl Compiler<'_> {
                         None => ok = false,
                     }
                 }
-                let body = self.sequence_constructor(&e.body, frame, Content::Nodes);
+                let body = self.sequence_constructor(&e.body, frame);
                 if !ok {
                     return None;
                 }
@@ -967,12 +1321,12 @@ impl Compiler<'_> {
     fn params(&mut self, params: &[Variable], frame: &mut Frame) -> Vec<Binding> {
         let mut out = Vec::with_capacity(params.len());
         for p in params {
-            let value = self.value(p.line, &p.value, p.as_type.as_ref(), frame);
+            let value = self.value(p.line, &p.value, frame);
             let cardinality = p
                 .as_type
                 .as_ref()
                 .map_or(Cardinality::Any, |t| cardinality_of(t.occurrence));
-            let lazy = matches!(&value, Value::Select(e) if !e.is_at_most_one());
+            let eval = self.learning(&p.value);
             let slot = frame.declare(
                 p.name.clone(),
                 cardinality,
@@ -985,7 +1339,7 @@ impl Compiler<'_> {
                 slot,
                 as_type: p.as_type.clone(),
                 value,
-                lazy,
+                eval,
                 used: true,
             });
         }
@@ -995,8 +1349,9 @@ impl Compiler<'_> {
     fn template(&mut self, template: &Template) -> CompiledTemplate {
         self.typed_globals = self.globals_before(template.line);
         let mut frame = Frame::default();
-        let params = self.params(&template.params, &mut frame);
-        let body = self.sequence_constructor(&template.body, &mut frame, Content::Nodes);
+        let mut params = self.params(&template.params, &mut frame);
+        let mut body = self.sequence_constructor(&template.body, &mut frame);
+        self.decide_frame(&mut frame, &mut body, &mut params);
         let (pattern, pattern_text, alternative_texts) = match &template.pattern {
             Some(p) => (
                 self.pattern(template.line, p).unwrap_or_default(),
@@ -1064,6 +1419,8 @@ impl Executable {
                 .collect(),
             modes: modes.into_iter().collect(),
             calls_document: false,
+            learners: 0,
+            in_function: false,
         };
         let globals = compiler.globals(sheet);
         let templates: Vec<CompiledTemplate> = sheet
@@ -1077,8 +1434,11 @@ impl Executable {
             .map(|f| {
                 compiler.typed_globals = compiler.globals_before(f.line);
                 let mut frame = Frame::default();
-                let params = compiler.params(&f.params, &mut frame);
-                let body = compiler.sequence_constructor(&f.body, &mut frame, Content::Sequence);
+                let mut params = compiler.params(&f.params, &mut frame);
+                compiler.in_function = true;
+                let mut body = compiler.sequence_constructor(&f.body, &mut frame);
+                compiler.decide_frame(&mut frame, &mut body, &mut params);
+                compiler.in_function = false;
                 CompiledFunction {
                     line: f.line,
                     name: f.name.clone(),
@@ -1119,6 +1479,7 @@ impl Executable {
             serialization,
             base_uri: None,
             calls_document: compiler.calls_document,
+            learners: compiler.learners,
         })
     }
 
@@ -1175,7 +1536,10 @@ impl Compiler<'_> {
                 let v = &g.variable;
                 self.typed_globals = index;
                 let mut frame = Frame::default();
-                let value = self.value(v.line, &v.value, v.as_type.as_ref(), &mut frame);
+                let mut value = self.value(v.line, &v.value, &mut frame);
+                if let Value::Content(body) = &mut value {
+                    self.decide_frame(&mut frame, body, &mut []);
+                }
                 let value_type = if g.kind == GlobalKind::Param {
                     ValueType::declared(v.as_type.as_ref())
                 } else {

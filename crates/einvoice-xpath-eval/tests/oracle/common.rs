@@ -230,6 +230,9 @@ impl Walker<'_> {
             };
             let steps = std::iter::once(&path.first).chain(path.rest.iter().map(|(_, s)| s));
             for (s, step) in steps.enumerate() {
+                let einvoice_xpath::PathStep::Axis(step) = step else {
+                    continue;
+                };
                 if step.predicates.is_empty() {
                     continue;
                 }

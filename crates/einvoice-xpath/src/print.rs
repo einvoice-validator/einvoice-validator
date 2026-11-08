@@ -12,8 +12,8 @@ use std::fmt::{self, Display, Formatter, Write};
 use crate::ast::{
     ArithmeticOp, Avt, AvtPart, Axis, AxisStep, Binding, CompareKind, ComparisonOp, Expr, ItemType,
     KindTest, Literal, NameOrWildcard, NameTest, NodeTest, Occurrence, PathExpr, PathStart,
-    Pattern, PatternAlternative, PatternAnchor, PatternAxis, PatternLink, PatternStep, Quantifier,
-    SequenceType, SingleType, Step,
+    PathStep, Pattern, PatternAlternative, PatternAnchor, PatternAxis, PatternLink, PatternStep,
+    Quantifier, SequenceType, SingleType, Step,
 };
 
 /// Binding strength of each expression form, loosest first.
@@ -366,6 +366,14 @@ impl Display for PatternAlternative {
                 }
                 Ok(())
             }
+        }
+    }
+}
+
+impl Display for PathStep {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Axis(step) => write!(f, "{step}"),
             Self::Parenthesized { inner, predicates } => {
                 write!(f, "({inner})")?;
                 Printer { f }.predicates(predicates)

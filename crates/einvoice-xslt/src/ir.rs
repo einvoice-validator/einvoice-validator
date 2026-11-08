@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+pub use einvoice_xpath::NamespaceBinding;
 use einvoice_xpath::{Avt, Expr, Pattern, PatternAlternative, QName, SequenceType};
 
 use crate::priority::Priority;
@@ -485,13 +486,4 @@ pub struct LiteralAttribute {
     pub name: QName,
     /// The value.
     pub value: Avt,
-}
-
-/// A namespace binding.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NamespaceBinding {
-    /// The prefix; `None` for the default namespace.
-    pub prefix: Option<String>,
-    /// The namespace URI.
-    pub uri: String,
 }
