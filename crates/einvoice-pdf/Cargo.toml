@@ -1,0 +1,28 @@
+[package]
+name = "einvoice-pdf"
+description = "Extract the embedded e-invoice XML and its XMP metadata from Factur-X, ZUGFeRD and Order-X PDF/A-3 files, in pure Rust"
+keywords = ["pdf", "factur-x", "zugferd", "einvoice", "xmp"]
+categories = ["parser-implementations", "finance", "wasm"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/einvoice-pdf"
+readme = "README.md"
+license.workspace = true
+
+[dependencies]
+miniz_oxide = "0.9.1"
+roxmltree = "0.21.2"
+
+[dev-dependencies]
+peak_alloc = "0.3.0"
+
+# Its random source (getrandom) does not build for wasm32-unknown-unknown, where the
+# examples must build (examples/wasm-extract.rs).
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true
