@@ -30,6 +30,10 @@
 #                    reported as "pinned, newer exists" and opens no issue
 #   unused           no file records this pin yet; says so, and no
 #                    [[upstream.pin]] may follow
+#   release-name     "high" only: the name of the rule set in the release notes
+#                    (scripts/release.sh), followed there by `pinned`; defaults
+#                    to `name`. For a name that ends with a version itself
+#                    ("Peppol BIS Billing 3.0", release 3.0.22).
 #
 # [[upstream.pin]] keys: every match of `pattern` (group `v`) in `file` must
 # equal `pinned`; there must be at least one. With compare = "prefix", `v` may
@@ -81,6 +85,7 @@ pattern = 'cen-en16931-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 name = "Peppol BIS Billing 3.0"
 severity = "high"
 pinned = "3.0.22"
+release-name = "Peppol BIS Billing"
 source = "github-release"
 repository = "OpenPeppol/peppol-bis-invoice-3"
 version-pattern = '^v?(?<v>[0-9]+(?:\.[0-9]+)*)$'

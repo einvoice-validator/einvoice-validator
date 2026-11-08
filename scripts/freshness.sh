@@ -152,7 +152,8 @@ def default_pattern($source):
 | map(
     .line as $n | .keys as $k
     | ($k | keys | map(select(known(["name", "severity", "pinned", "source", "repository",
-        "group", "artifact", "url", "version-pattern", "series", "hold", "unused"]) | not)))
+        "group", "artifact", "url", "version-pattern", "series", "hold", "unused", "release-name"])
+        | not)))
         as $unknown
     | if ($unknown | length) > 0 then fail($n; "unknown key \($unknown | join(", "))")
       elif ([$k.name, $k.severity, $k.pinned, $k.source] | any(. == null or . == "")) then
@@ -176,6 +177,10 @@ def default_pattern($source):
         fail($n; "version-pattern needs a group named v: (?<v>...)")
       elif $k.hold != null and $k.severity != "info" then
         fail($n; "hold is for severity info only")
+      elif $k["release-name"] != null and $k.severity != "high" then
+        fail($n; "release-name is for severity high only")
+      elif $k["release-name"] == "" then
+        fail($n; "release-name must not be empty")
       elif $k.unused != null and (.pins | length) > 0 then
         fail($n; "unused, yet [[upstream.pin]] tables follow")
       elif $k.unused == null and (.pins | length) == 0 then

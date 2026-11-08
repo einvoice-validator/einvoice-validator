@@ -11,7 +11,8 @@
 # version order, existing tag, empty Unreleased, upstream pins, check.sh), a
 # dry run (nothing changes), two real releases (versions, Cargo.lock,
 # changelog sections and links, signed commit and tag, nothing pushed),
-# --verify, and the pull-request check of changelog.sh. The repository's
+# --verify, the rule sets noted in the release (release-name for a name that
+# ends with a version), and the pull-request check of changelog.sh. The repository's
 # scripts/check.sh is replaced by a stub there; scripts/freshness.sh is the
 # real one. Needs git (2.34 or later), ssh-keygen, cargo, jq and curl (the
 # last two for scripts/freshness.sh, which stays offline here).
@@ -141,6 +142,9 @@ echo 'pub fn a() {}' >crates/alpha/src/lib.rs
 echo 'pub fn b() { alpha::a() }' >crates/beta/src/lib.rs
 echo '#[test] fn t() { beta::b() }' >crates/beta/tests/t.rs
 echo 'Rule set 1.2.3' >rules/README.md
+echo 'Billing rules 2.0.7' >rules/billing.md
+# "Billing rules 2.0" ends with a version of its own: its release-name keeps
+# the note from reading "Billing rules 2.0 2.0.7".
 cat >upstream.toml <<'EOF'
 # Test pins.
 [[upstream]]
@@ -153,6 +157,18 @@ repository = "example/rules"
 [[upstream.pin]]
 file = "rules/README.md"
 pattern = 'Rule set (?<v>[0-9.]+)'
+
+[[upstream]]
+name = "Billing rules 2.0"
+severity = "high"
+pinned = "2.0.7"
+release-name = "Billing rules"
+source = "github-release"
+repository = "example/billing"
+
+[[upstream.pin]]
+file = "rules/billing.md"
+pattern = 'Billing rules (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
 
 [[upstream]]
 name = "Future rule set"
@@ -205,6 +221,9 @@ lacks() { ! grep -qF -- "$1" "$2"; }
 # note_is TEXT FILE: every "Tested against" line of FILE (diff lines too) is TEXT.
 note_is() { [ "$(grep -F 'Tested against' "$2" | sed 's/^+//' | sort -u)" = "$1" ]; }
 unreleased_empty() { [ -z "$(scripts/changelog.sh section Unreleased)" ]; }
+# The rule sets every release notes: those in use, in the order of
+# upstream.toml, each as its release-name or its name, then its version.
+note_text="Rule set 1.2.3, Billing rules 2.0.7."
 
 start=$(git rev-parse HEAD)
 
@@ -289,8 +308,9 @@ check "after a refusal: no tag" no_tags
 
 today=$(date -u +%F)
 expect "dry run" 0 "## [0.1.0] - $today" release --dry-run 0.1.0
-check "dry run: rule sets noted" grep -qF "Tested against the official rule sets: Rule set 1.2.3." "$tmp/last"
-check "dry run: unused rule sets left out" note_is "Tested against the official rule sets: Rule set 1.2.3." "$tmp/last"
+check "dry run: rule sets noted" grep -qF "Tested against the official rule sets: $note_text" "$tmp/last"
+check "dry run: unused rule sets left out" note_is "Tested against the official rule sets: $note_text" "$tmp/last"
+check "dry run: release-name for a name ending with a version" lacks "Billing rules 2.0 2.0.7" "$tmp/last"
 check "dry run: Cargo.lock in the diff" grep -qF "Cargo.lock" "$tmp/last"
 check "dry run: push command printed" grep -qF "git push --atomic origin main v0.1.0" "$tmp/last"
 check "dry run: check.sh ran" check_runs 2
@@ -328,7 +348,7 @@ check "0.1.0: nothing pushed (main)" test "$(git ls-remote "$origin" refs/heads/
 check "0.1.0: nothing pushed (tag)" test -z "$(git ls-remote --tags "$origin")"
 
 expect "verify v0.1.0" 0 "agree" release --verify v0.1.0 "$tmp/notes.md"
-check "notes: rule sets" grep -qF "Tested against the official rule sets: Rule set 1.2.3." "$tmp/notes.md"
+check "notes: rule sets" note_is "Tested against the official rule sets: $note_text" "$tmp/notes.md"
 check "notes: entries" grep -qF -- "- The first feature." "$tmp/notes.md"
 check "notes: full changelog link" grep -qF "**Full changelog**: https://github.com/example/project/releases/tag/v0.1.0" "$tmp/notes.md"
 expect "verify to stdout" 0 "### Added" release --verify v0.1.0

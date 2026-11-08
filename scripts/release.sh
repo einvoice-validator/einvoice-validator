@@ -25,7 +25,8 @@
 # (version.workspace = true) and their path dependencies on each other carry
 # it too (inline tables: `name = { path = "...", version = "X" }`). The new
 # section starts with the official rule sets the release was tested against:
-# the upstreams of upstream.toml with severity "high" that are in use.
+# the upstreams of upstream.toml with severity "high" that are in use, each
+# as its `release-name` (or else its `name`) and its pinned version.
 #
 # The changes are prepared and checked in a temporary worktree first, so a
 # failure leaves the working tree untouched.
@@ -184,7 +185,9 @@ check_versions() {
 }
 
 # The official rule sets the release is tested against: "NAME VERSION, ..."
-# for the upstreams of upstream.toml with severity "high" and no `unused`.
+# for the upstreams of upstream.toml with severity "high" and no `unused`,
+# NAME being `release-name` when set (for a name that ends with a version of
+# its own: "Peppol BIS Billing 3.0", release 3.0.22), `name` otherwise.
 # Reads the subset of TOML that scripts/freshness.sh accepts (it checks the
 # file first): value() is the string of a key = "value" or 'value' line.
 tested_rule_sets() {
@@ -197,14 +200,15 @@ tested_rule_sets() {
         }
         function flush() {
             if (upstream && severity == "high" && unused == "" && name != "")
-                out = out (out == "" ? "" : ", ") name " " pinned
+                out = out (out == "" ? "" : ", ") (label != "" ? label : name) " " pinned
         }
-        /^[ \t]*\[\[upstream\]\]/ { flush(); upstream = 1; pin = 0; name = severity = pinned = unused = ""; next }
+        /^[ \t]*\[\[upstream\]\]/ { flush(); upstream = 1; pin = 0; name = label = severity = pinned = unused = ""; next }
         /^[ \t]*\[\[upstream\.pin\]\]/ { pin = 1; next }
         upstream && !pin && /^[ \t]*name[ \t]*=/ { name = value($0) }
         upstream && !pin && /^[ \t]*severity[ \t]*=/ { severity = value($0) }
         upstream && !pin && /^[ \t]*pinned[ \t]*=/ { pinned = value($0) }
         upstream && !pin && /^[ \t]*unused[ \t]*=/ { unused = value($0) }
+        upstream && !pin && /^[ \t]*release-name[ \t]*=/ { label = value($0) }
         END { flush(); print out }
     ' "$1/upstream.toml"
 }

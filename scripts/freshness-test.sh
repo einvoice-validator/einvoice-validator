@@ -137,6 +137,15 @@ expect "version-pattern without group v" 2 "needs a group named v" pins
 valid_entry | sed 's/^severity = "info"$/severity = "high"\nhold = "on purpose"/' | case_toml
 expect "hold on severity high" 2 "hold is for severity info only" pins
 
+valid_entry | sed 's/^severity = "info"$/severity = "high"\nrelease-name = "Rust"/' | case_toml
+expect "release-name on severity high" 0 "pins: 1 pins of 1 upstreams" pins
+
+valid_entry | sed 's/^severity = "info"$/severity = "info"\nrelease-name = "Rust"/' | case_toml
+expect "release-name on severity info" 2 "release-name is for severity high only" pins
+
+valid_entry | sed 's/^severity = "info"$/severity = "high"\nrelease-name = ""/' | case_toml
+expect "empty release-name" 2 "release-name must not be empty" pins
+
 valid_entry | sed 's|^repository = .*|&\nunused = "not used"|' | case_toml
 expect "unused with pins" 2 "unused, yet" pins
 
