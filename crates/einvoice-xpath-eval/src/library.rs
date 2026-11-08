@@ -3,7 +3,7 @@
 //! numeric promotion, cardinality checks) and the error codes Saxon raises.
 
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use einvoice_xdm::{AtomicType, AtomicValue, Integer, XPathRegex, ops, parse_double};
 
@@ -571,7 +571,7 @@ impl<'a> Run<'a> {
             Some(arg) => self.string_arg(arg, ctx, f, flags_at)?,
             None => String::new(),
         };
-        let compiled: Rc<XPathRegex>;
+        let compiled: Arc<XPathRegex>;
         let regex: &XPathRegex = if let CallData::Regex(precompiled) = data {
             precompiled.as_ref().as_ref().map_err(Clone::clone)?
         } else {

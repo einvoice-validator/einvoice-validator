@@ -62,7 +62,7 @@ pub mod tree;
 
 pub use compile::{BindingValue, CompiledExpr, ValueType, compile};
 pub use context::{
-    Cardinality, Clock, Context, DynamicContext, Focus, FunctionId, Host, NoHost,
+    Cardinality, Clock, Context, DynamicContext, Focus, FunctionId, Host, NoHost, RegexCache,
     SimpleStaticContext, StaticContext, VariableId, VariableInfo,
 };
 pub use error::{Error, ErrorCode, Result};

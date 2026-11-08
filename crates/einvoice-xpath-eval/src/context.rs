@@ -5,6 +5,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use einvoice_xdm::{Date, DateTime, XPathRegex};
 use einvoice_xpath::{NamespaceMap, Namespaces, QName};
@@ -348,14 +349,52 @@ fn check_timezone(minutes: i16) -> Result<()> {
     }
 }
 
+/// The regular expressions compiled at evaluation (a pattern or flags that are not
+/// literals), kept for the evaluations of any number of dynamic contexts, on any thread
+/// ([`DynamicContext::with_regex_cache`]): the transformations of a stylesheet compile each
+/// one once. At most [`RegexCache::MAX_ENTRIES`] are kept; the others are compiled each
+/// time a dynamic context first needs them.
+#[derive(Debug, Default)]
+pub struct RegexCache {
+    entries: Mutex<HashMap<(String, String), Arc<XPathRegex>>>,
+}
+
+impl RegexCache {
+    /// The most regular expressions a cache keeps.
+    pub const MAX_ENTRIES: usize = 1024;
+
+    /// An empty cache.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn get(&self, key: &(String, String)) -> Option<Arc<XPathRegex>> {
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned()
+    }
+
+    fn insert(&self, key: (String, String), regex: &Arc<XPathRegex>) {
+        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+        if entries.len() < Self::MAX_ENTRIES {
+            entries.entry(key).or_insert_with(|| Arc::clone(regex));
+        }
+    }
+}
+
 /// The dynamic context shared by evaluations: the host, the [`Clock`] (implicit timezone
-/// and current date and time), a cache of compiled regular expressions and, if the host
-/// sets one, the bound of the call stack ([`DynamicContext::with_stack_limit`]).
+/// and current date and time), a cache of compiled regular expressions (shared with
+/// other contexts when the host gives one, [`DynamicContext::with_regex_cache`]) and, if
+/// the host sets one, the bound of the call stack ([`DynamicContext::with_stack_limit`]).
 pub struct DynamicContext<'h> {
     pub(crate) host: &'h dyn Host,
     pub(crate) implicit_timezone: i16,
     pub(crate) current_date_time: DateTime,
-    pub(crate) regex_cache: RefCell<HashMap<(String, String), Rc<XPathRegex>>>,
+    pub(crate) regex_cache: RefCell<HashMap<(String, String), Arc<XPathRegex>>>,
+    pub(crate) shared_regexes: Option<&'h RegexCache>,
     pub(crate) stack_limit: Option<StackLimit>,
 }
 
@@ -378,6 +417,7 @@ impl<'h> DynamicContext<'h> {
             implicit_timezone: clock.implicit_timezone,
             current_date_time: clock.current_date_time,
             regex_cache: RefCell::new(HashMap::new()),
+            shared_regexes: None,
             stack_limit: None,
         }
     }
@@ -392,6 +432,14 @@ impl<'h> DynamicContext<'h> {
     #[must_use]
     pub const fn with_stack_limit(mut self, limit: StackLimit) -> Self {
         self.stack_limit = Some(limit);
+        self
+    }
+
+    /// Keeps the regular expressions compiled at evaluation in `cache`, and takes from it
+    /// those compiled before, by this context or another.
+    #[must_use]
+    pub const fn with_regex_cache(mut self, cache: &'h RegexCache) -> Self {
+        self.shared_regexes = Some(cache);
         self
     }
 
@@ -425,13 +473,24 @@ impl<'h> DynamicContext<'h> {
         self.current_date_time
     }
 
-    pub(crate) fn regex(&self, pattern: &str, flags: &str) -> Result<Rc<XPathRegex>> {
+    pub(crate) fn regex(&self, pattern: &str, flags: &str) -> Result<Arc<XPathRegex>> {
         let key = (pattern.to_owned(), flags.to_owned());
         if let Some(regex) = self.regex_cache.borrow().get(&key) {
-            return Ok(Rc::clone(regex));
+            return Ok(Arc::clone(regex));
         }
-        let regex = Rc::new(XPathRegex::new(pattern, flags)?);
-        self.regex_cache.borrow_mut().insert(key, Rc::clone(&regex));
+        let shared = self.shared_regexes.and_then(|cache| cache.get(&key));
+        let regex = if let Some(regex) = shared {
+            regex
+        } else {
+            let regex = Arc::new(XPathRegex::new(pattern, flags)?);
+            if let Some(cache) = self.shared_regexes {
+                cache.insert(key.clone(), &regex);
+            }
+            regex
+        };
+        self.regex_cache
+            .borrow_mut()
+            .insert(key, Arc::clone(&regex));
         Ok(regex)
     }
 }
@@ -527,6 +586,38 @@ impl Context {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_regex_cache_is_shared_by_contexts() {
+        let cache = RegexCache::new();
+        let ns = einvoice_xpath::NamespaceMap::new();
+        let expr = einvoice_xpath::parse_expr(
+            "matches('abc', concat('^a', 'b')) and not(matches('x', concat('[', ']')))",
+            &ns,
+        );
+        // The second pattern is invalid, and is never cached.
+        let expr = crate::compile(&expr.unwrap(), &SimpleStaticContext::new()).unwrap();
+        for _ in 0..2 {
+            let dc = DynamicContext::new(&NoHost, Clock::from_unix_millis(0, 0).unwrap())
+                .with_regex_cache(&cache);
+            let error = expr
+                .effective_boolean_value(&dc, &Context::new())
+                .unwrap_err();
+            assert_eq!(error.code(), ErrorCode::Forx0002);
+            assert_eq!(dc.regex_cache.borrow().len(), 1);
+            assert_eq!(cache.entries.lock().unwrap().len(), 1);
+        }
+        let dc = DynamicContext::new(&NoHost, Clock::from_unix_millis(0, 0).unwrap())
+            .with_regex_cache(&cache);
+        let regex = dc.regex("^ab", "").unwrap();
+        assert!(Arc::ptr_eq(
+            &regex,
+            cache
+                .get(&("^ab".to_owned(), String::new()))
+                .as_ref()
+                .unwrap()
+        ));
+    }
 
     #[test]
     fn clock_conversions() {

@@ -288,7 +288,9 @@ impl Executable {
             Some(now) => Clock::new(timezone, now)?,
             None => system_clock(timezone)?,
         };
-        let dc = DynamicContext::new(&runtime, clock).with_stack_limit(runtime.stack);
+        let dc = DynamicContext::new(&runtime, clock)
+            .with_stack_limit(runtime.stack)
+            .with_regex_cache(&self.regexes);
         runtime.dc.set(Some(&dc));
         let mut writer = XmlWriter::new(self.serialization, target);
         runtime.apply_rule(&root, 1, 1, self.default_mode, None, &[], &mut writer)?;
