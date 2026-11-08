@@ -112,10 +112,42 @@ against.
 - `einvoice-xml`, a new crate (#18): a streaming (pull) XML 1.0 parser with namespaces, which
   builds no tree; it accepts what `roxmltree` 0.21 accepts and reports its errors, except for the
   constructs `roxmltree` accepts against XML 1.0 or Namespaces in XML, which it refuses; linear
-  time on hostile input. Not used by the validator yet.
+  time on hostile input. The validator, `einvoice-xsd` and `einvoice-xpath-eval` read documents
+  with it (see Changed).
+- `einvoice-xsd`: `Schema::validation`, a `Validation` given the events of an
+  `einvoice_xml::Reader`, for a caller that reads the document itself (#18).
+- A memory budget (#18): the test `footprint` of `einvoice-validator` fails when the peak heap
+  of a validation of the largest CEN corpus document, or of a synthetic invoice of 1000 lines,
+  exceeds the recorded budget (128 KiB and 5500 KiB above the document); the `footprint`
+  example measures the peak heap and time of a validation and of its stages on that document
+  and on an invoice of 5000 lines.
 
 ### Changed
 
+- Documents are read with the streaming parser `einvoice-xml` instead of `roxmltree` (#18). The
+  validator checks a document and validates it against the schema in one pass, without a tree
+  (a well-formedness error still comes first, wherever it is, then an element nested too deep);
+  `einvoice-xsd` validates without a tree (a document with a document type declaration, which
+  the reader refuses, is still read with `roxmltree`); `einvoice-xpath-eval` builds the
+  stylesheets' input tree, and that of a document read with `document()`, from two passes of
+  the reader, and no longer depends on `roxmltree`. On a synthetic invoice of 5000 lines
+  (4.1 MB), the peak heap of a validation (document given as a buffer) drops from 37989 KiB to
+  21719 KiB, now the stylesheet's input tree (7514 KiB), the SVRL report it writes and the
+  reading of that report; the schema stage peaks at 3 KiB instead of 37989 KiB. Time on the
+  CEN UBL corpus: 2.6 % less for the whole job. Every report of the xmllint oracle of
+  `einvoice-xsd` and every result of the corpora is unchanged. What changes:
+  - documents with a construct that XML 1.0 or Namespaces in XML 1.0 forbids, which `roxmltree`
+    accepted, are not well-formed (`Error::NotXml`, `DocumentError::Malformed`, `SXXP0003`
+    from `document()`): a character reference to a surrogate or above `10FFFF`, a processing
+    instruction target `xml` in any case or with a colon, or without whitespace before its
+    data, an XML declaration with another pseudo-attribute, version, encoding name or
+    `standalone` value, a name starting with a colon, `xmlns:p=""`, a declaration of the
+    `xmlns` prefix, the default namespace or the `xml` prefix declared twice on an element, a
+    `p:xmlns` attribute (the crate documentation of `einvoice-xml` gives each rule); on a
+    document both refuse, the error reported can be such a construct before `roxmltree`'s;
+  - in the stylesheets' input tree, line ends are normalised in comments and processing
+    instructions, and a carriage return next to a reference in text is a line end, as XML 1.0
+    (section 2.11) and Saxon-HE have it.
 - The release workflow publishes the crates on crates.io with trusted publishing (OIDC, no
   stored token), in the environment `release`; `scripts/release.sh --publish` skips versions
   already published and retries rate limits, and `--trusted-publishing` configures crates.io
