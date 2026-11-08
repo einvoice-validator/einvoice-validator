@@ -747,3 +747,32 @@ repository = "zizmorcore/zizmor"
 [[upstream.pin]]
 file = ".github/workflows/ci.yml"
 pattern = 'zizmor-action@[0-9a-f]{40}[^\n]*\n\s+with:\n\s+version: (?<v>[^\s]+)'
+
+# wasm-opt, which optimises the module of the npm package (crates/einvoice-wasm/npm.sh,
+# which also records the SHA-256 and the GitHub asset id of the release archive: update
+# the three together). wasm-bindgen-cli follows the wasm-bindgen crate of Cargo.lock,
+# which Dependabot updates.
+[[upstream]]
+name = "binaryen"
+severity = "info"
+pinned = "133"
+source = "github-release"
+repository = "WebAssembly/binaryen"
+version-pattern = '^version_(?<v>[0-9]+)$'
+
+[[upstream.pin]]
+file = "crates/einvoice-wasm/npm.sh"
+pattern = 'BINARYEN_VERSION=(?<v>[0-9]+)'
+
+# Type-checks the declarations of the npm package (crates/einvoice-wasm/npm.sh test).
+[[upstream]]
+name = "TypeScript"
+severity = "info"
+pinned = "7.0.2"
+source = "listing"
+url = "https://registry.npmjs.org/typescript/latest"
+version-pattern = '"version":"(?<v>[0-9]+\.[0-9]+\.[0-9]+)"'
+
+[[upstream.pin]]
+file = "crates/einvoice-wasm/npm.sh"
+pattern = 'TYPESCRIPT_VERSION=(?<v>[^\s]+)'

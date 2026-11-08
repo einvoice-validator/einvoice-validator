@@ -44,6 +44,38 @@ against.
 - `upstream.toml`: the pins of Factur-X, the Mustang validator, XRechnung, its Schematron,
   validator configuration and test suite, XML Mutate, the FNFE-MPE package and the examples of
   XP Z12-012 and XP Z12-014.
+- `einvoice-pdf`, a new crate (#12): extracts the embedded invoice XML (`factur-x.xml`,
+  `zugferd-invoice.xml`, `ZUGFeRD-invoice.xml`, `xrechnung.xml`, `order-x.xml`) of a Factur-X,
+  ZUGFeRD or Order-X PDF/A-3 file, byte for byte, with its `/AFRelationship` and the XMP
+  metadata of the document (PDF/A identification, `DocumentType`, `DocumentFileName`,
+  `Version`, `ConformanceLevel`), in pure Rust (`miniz_oxide`, `roxmltree`), for
+  `wasm32-unknown-unknown` too. Reads the part of PDF on the path to embedded files (classic and
+  stream cross-references, incremental updates, hybrid files, object streams, `FlateDecode`
+  with PNG predictors, name trees), verifies `/Params /Size` and `/CheckSum`, refuses anything
+  else as unsupported, broken syntax as malformed and encrypted files; bounds every resource
+  against hostile input.
+- PDF files in `einvoice-validator` (feature `pdf`, on by default) and `einvoice-validate`
+  (#12): `pdf::extract` and `Error::Pdf` in the library; the tool validates a file or standard
+  input that starts with `%PDF-` through the invoice XML it embeds, with the rule set of its root
+  element unless `--rules` or `--bundle` is given, and reports the embedded file, its
+  `/AFRelationship`, the PDF/A identification and the Factur-X / ZUGFeRD properties (a `pdf`
+  line in the text output, `documents[].pdf` in the JSON report, an addition to format version
+  1). A PDF no invoice can be read from is an error of kind `io` (exit status 2), an encrypted or
+  unsupported one of kind `unsupported` (exit status 3).
+- The npm package `einvoice-validator` (#9), built from the new crate `einvoice-wasm`
+  (`wasm-bindgen`, not published on crates.io): `new Validator("cen-ubl" | "cen-cii")`,
+  `validate(bytes, { documentUri, now, timezoneMinutes, maxDepth })` returning the members of a
+  document of the JSON format of `einvoice-validate`, `validateSvrl`, `builtinRuleSets()`,
+  `licences()`, `version()`, errors thrown with a `kind` (and `limit` for a document beyond a
+  limit), TypeScript declarations; one package for Node.js 22, browsers and bundlers. Its tests
+  run the CEN UBL and CII corpora (2515 cases) against the Saxon-HE goldens under Node.js and in
+  headless Chrome and Firefox. `maxDepth` is at most 400: the stylesheets recurse on the
+  JavaScript engine's native stack, which a Web Worker in Chrome exhausts beyond 600 levels.
+  Built with `opt-level` 3 (6.2 MB, 0.67 MB with brotli).
+- `einvoice-xml`, a new crate (#18): a streaming (pull) XML 1.0 parser with namespaces, which
+  builds no tree; it accepts what `roxmltree` 0.21 accepts and reports its errors, except for the
+  constructs `roxmltree` accepts against XML 1.0 or Namespaces in XML, which it refuses; linear
+  time on hostile input. Not used by the validator yet.
 
 ### Changed
 
@@ -53,6 +85,12 @@ against.
   `<case id>.metadata.txt`. The goldens of the vendored corpora are unchanged.
 - The oracle accepts the stack frames Saxon-HE prints after an error raised in a stylesheet
   function or a named template (`In function ...`, `In template ...`).
+- The licence expressions of `einvoice-validator` and `einvoice-cli` name the terms of the OASIS
+  UBL 2.1 schemas, which every build embeds through `einvoice-xsd`: `MIT AND EUPL-1.2 AND
+  LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND
+  W3C-19980720`, with the three texts in their `LICENSES/`.
+- `scripts/release.sh` sets the version of the npm package
+  (`crates/einvoice-wasm/npm/package.json`) with the workspace's, and `--verify` checks it.
 
 ## [0.2.0] - 2026-11-08
 

@@ -6,7 +6,8 @@ name: oracle
 # committed goldens differ, then cross-checks the goldens with the VEFA
 # expectations; then xmllint (libxml2) on the oracle cases of einvoice-xsd,
 # whose results must not change; then the Saxon goldens of einvoice-xdm,
-# einvoice-xpath-eval and einvoice-xslt-exec.
+# einvoice-xpath-eval and einvoice-xslt-exec, and Saxon-HE on the hand-written
+# cases of einvoice-xml (its saxon-check example).
 # Only runs when one of those inputs or the tooling changes.
 
 on:
@@ -26,6 +27,9 @@ on:
       - "crates/einvoice-xsd/schemas/**"
       - "crates/einvoice-xsd/tests/oracle/**"
       - "crates/einvoice-xsd/examples/xmllint-oracle.rs"
+      - "crates/einvoice-xml/src/**"
+      - "crates/einvoice-xml/tests/common/**"
+      - "crates/einvoice-xml/examples/saxon-check.rs"
       - "crates/einvoice-svrl/**"
       - "scripts/check.sh"
       - "scripts/fetch-saxon.sh"
@@ -51,6 +55,9 @@ on:
       - "crates/einvoice-xsd/schemas/**"
       - "crates/einvoice-xsd/tests/oracle/**"
       - "crates/einvoice-xsd/examples/xmllint-oracle.rs"
+      - "crates/einvoice-xml/src/**"
+      - "crates/einvoice-xml/tests/common/**"
+      - "crates/einvoice-xml/examples/saxon-check.rs"
       - "crates/einvoice-svrl/**"
       - "scripts/check.sh"
       - "scripts/fetch-saxon.sh"

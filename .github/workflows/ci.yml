@@ -4,10 +4,13 @@ name: ci
 # same commands. Jobs:
 #   rust       fmt, cargo-deny, clippy, doc, test on Linux (one build), then
 #              einvoice-validator without its default features and built for
-#              wasm32-unknown-unknown, the wasm examples of
-#              einvoice-xpath-eval and einvoice-validator run under wasmtime,
-#              and the publishable crates packaged and built from their
-#              packages
+#              wasm32-unknown-unknown with einvoice-pdf and einvoice-xml, the
+#              wasm examples of einvoice-xpath-eval, einvoice-validator,
+#              einvoice-pdf and einvoice-xml run under wasmtime, and the
+#              publishable crates packaged and built from their packages
+#   npm        the npm package einvoice-validator (crates/einvoice-wasm/npm.sh
+#              build test pack): Node.js 22, its tests, the TypeScript check,
+#              the browser test in the Chrome and Firefox of the runner image
 #   test       tests on macOS and Windows, pull requests and manual runs only,
 #              after the Linux job has passed
 #   workflows  actionlint, and zizmor on .github/workflows and
@@ -212,9 +215,58 @@ jobs:
         if: ${{ !cancelled() }}
         run: scripts/check.sh guards
 
+  npm:
+    name: npm (the package einvoice-validator, Node.js, Chrome, Firefox)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Node.js 22 (the package's engines); npm comes with it.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: scripts/check.sh toolchain
+      - name: Install the wasm32-unknown-unknown target
+        run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The pins of the tools of crates/einvoice-wasm/npm.sh, for the cache key:
+      # wasm-bindgen-cli at the version of the wasm-bindgen crate in Cargo.lock,
+      # and the binaryen release archive with its SHA-256.
+      - name: The pins of the npm tools
+        id: pins
+        run: |
+          bindgen=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)
+          binaryen=$(sed -n 's/^BINARYEN_VERSION=//p' crates/einvoice-wasm/npm.sh)
+          sha=$(sed -n 's/^BINARYEN_SHA256=//p' crates/einvoice-wasm/npm.sh)
+          [ -n "$bindgen" ] && [ -n "$binaryen" ] && [ -n "$sha" ]
+          echo "key=wasm-bindgen-$bindgen-binaryen-$binaryen-$sha" >>"$GITHUB_OUTPUT"
+      # wasm-bindgen-cli (built from crates.io) and the binaryen archive, in the
+      # tools directory of npm.sh. A cached archive is never trusted: npm.sh tools
+      # checks it against its pinned SHA-256 and downloads it again when it does
+      # not match; cargo install keeps wasm-bindgen-cli only at the pinned version.
+      - name: Cache the npm tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/einvoice-validator/wasm-tools
+          key: npm-tools-${{ runner.os }}-${{ steps.pins.outputs.key }}
+      - name: Install the npm tools (wasm-bindgen-cli, wasm-opt)
+        run: crates/einvoice-wasm/npm.sh tools
+      # Chrome and Firefox come with the runner image.
+      - name: The browsers of the runner image
+        run: |
+          google-chrome --version
+          firefox --version
+      - name: npm
+        run: scripts/check.sh npm
+
   ci-ok:
     name: ci-ok
-    needs: [rust, test, workflows]
+    needs: [rust, test, workflows, npm]
     # Runs even when a needed job failed or was cancelled, so that this check
     # fails instead of being skipped (a skipped required check counts as passed).
     if: always()
@@ -226,9 +278,11 @@ jobs:
           RUST: ${{ needs.rust.result }}
           TEST: ${{ needs.test.result }}
           WORKFLOWS: ${{ needs.workflows.result }}
+          NPM: ${{ needs.npm.result }}
         run: |
-          echo "rust=$RUST test=$TEST workflows=$WORKFLOWS"
+          echo "rust=$RUST test=$TEST workflows=$WORKFLOWS npm=$NPM"
           [ "$RUST" = success ] || exit 1
           [ "$WORKFLOWS" = success ] || exit 1
+          [ "$NPM" = success ] || exit 1
           # The macOS/Windows tests are skipped on pushes to main.
           case "$TEST" in success | skipped) ;; *) exit 1 ;; esac

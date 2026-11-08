@@ -42,7 +42,9 @@ Saxon-HE results; the engine does not run them yet (see the table below).
 | Public API (`einvoice-validator`: rule-set bundles, `Validator`, `Report`) and command-line tool (`einvoice-validate`); verdicts and findings agree with Saxon-HE on all 1179 CEN cases and 504 mutation cases and, with the Peppol bundle, on all 707 Peppol cases and 505 mutation cases | done ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
 | Test corpus of CEN EN 16931 CII 1.3.17 (24 cases: the 15 examples and the 9 VEFA tests of the release, and 808 mutation cases of our own, [`corpus/mutations-cii.toml`](corpus/mutations-cii.toml)) with the Saxon-HE results; 785 of the 810 assert ids of the stylesheet fail in some case, the 25 others cannot ([`corpus/cen-en16931-cii-1.3.17/README.md`](corpus/cen-en16931-cii-1.3.17/README.md)) | done ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
 | Same results as Saxon-HE on the whole CII corpus; built-in rule set `cen-cii` and detection of the syntax from the root element in `einvoice-validate` | done: 24 / 24 cases and 808 / 808 mutation cases identical, from the engine, the library and the tool ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)); XML Schema validation of CII is not done: the UN/CEFACT D16B schemas are not embedded |
-| WebAssembly build | in progress: the library runs on `wasm32-unknown-unknown`, with the current date and time given by the caller (CI validates two corpus documents with the built-in rule set under wasmtime); bindings and an npm package are pending ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
+| WebAssembly build | done on `main`, not yet published: the library runs on `wasm32-unknown-unknown`, with the current date and time given by the caller (CI validates two corpus documents with the built-in rule set under wasmtime); the npm package `einvoice-validator` (crate `einvoice-wasm`, JavaScript and TypeScript bindings, for Node.js 22, browsers and bundlers, with `cen-ubl` and `cen-cii`) gives the Saxon-HE findings on all 2515 CEN UBL and CII cases under Node.js and in headless Chrome and Firefox ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
+| Factur-X / ZUGFeRD / Order-X PDF files | done on `main`: `einvoice-pdf` extracts the embedded invoice XML and the XMP metadata in pure Rust; `einvoice-validate` and the library (feature `pdf`) validate a PDF through the XML it embeds ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
+| Streaming XML parser (`einvoice-xml`) | in progress: the parser is done, checked against `roxmltree` on every XML file of the repository and on 133231 damaged documents, and against Saxon-HE; not used by the validator yet ([#18](https://github.com/einvoice-validator/einvoice-validator/issues/18)) |
 | Factur-X 1.09.2 (ZUGFeRD 2.5.2): the stylesheets of the five profiles, 42 cases and 808 mutation cases with the Saxon-HE results; the 27 published examples are accepted by their profile | corpus built locally; engine support in progress ([#24](https://github.com/einvoice-validator/einvoice-validator/issues/24), [#26](https://github.com/einvoice-validator/einvoice-validator/issues/26)) |
 | XRechnung 3.0.2 (KoSIT validator configuration 2026-08-31, XRechnung Schematron 2.6.0), UBL and CII: 1882 cases (the test suite, 1733 mutants of the Schematron's own unit tests, each with its expectation) and 1312 mutation cases with the Saxon-HE results; the expectations and the test suite agree with Saxon-HE | corpus built locally; engine support in progress ([#24](https://github.com/einvoice-validator/einvoice-validator/issues/24), [#27](https://github.com/einvoice-validator/einvoice-validator/issues/27)) |
 | French e-invoicing rules (FNFE-MPE package 1.4.0.04): CII, UBL, EXTENDED-CTC-FR, Factur-X, life-cycle statuses (CDAR); 198 cases and 1312 mutation cases with the Saxon-HE results; the 135 published examples are accepted | corpus built locally; engine support in progress ([#24](https://github.com/einvoice-validator/einvoice-validator/issues/24), [#28](https://github.com/einvoice-validator/einvoice-validator/issues/28)) |
@@ -67,6 +69,7 @@ cargo install --locked --path crates/einvoice-cli    # installs einvoice-validat
 
 ```sh
 einvoice-validate invoice.xml                        # cen-ubl or cen-cii, from the root element of the document
+einvoice-validate factur-x.pdf                       # a Factur-X / ZUGFeRD / Order-X PDF: the invoice XML it embeds
 einvoice-validate --rules cen-cii invoice.xml        # a built-in rule set by name: cen-ubl or cen-cii
 einvoice-validate --format json --jobs 4 invoices/*.xml > report.json
 einvoice-validate --format svrl - < invoice.xml      # the SVRL report, as the stylesheet wrote it
@@ -89,9 +92,12 @@ broken.xml: invalid: 1 schema error, 11 fatal
 
 Exit status, the highest that applies: `0` every document is valid (no schema error, no finding
 with flag `fatal`); `1` a document is invalid (schema errors, fatal findings, or not well-formed
-XML); `2` usage error, or a file or bundle that cannot be read or is not valid; `3` a construct
-the engine does not support, a document beyond a limit, a stylesheet error on a document, or an
-internal error. Without
+XML); `2` usage error, or a file or bundle that cannot be read or is not valid (a PDF file without
+one embedded invoice included); `3` a construct the engine does not support (an encrypted PDF
+file included), a document beyond a limit, a stylesheet error on a document, or an internal
+error. A file that starts with `%PDF-` is validated through the invoice XML it embeds, and the
+output adds what the PDF states about it (the embedded file, its `/AFRelationship`, the PDF/A
+identification and the Factur-X / ZUGFeRD properties of its XMP metadata). Without
 `--rules` or `--bundle`, each document is validated with the built-in rule set of its syntax:
 `cen-ubl` for a UBL `Invoice` or `CreditNote`, `cen-cii` for a CII `CrossIndustryInvoice`
 (namespace `urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100`), `cen-ubl` for
@@ -215,7 +221,11 @@ flowchart LR
 | [`einvoice-xslt-exec`](crates/einvoice-xslt-exec) | Executor of the XSLT 2.0 subset: runs the official compiled Schematron with the behaviour of Saxon-HE 12.10 and writes SVRL; constructs whose result would differ are refused when a stylesheet is prepared. |
 | [`einvoice-svrl`](crates/einvoice-svrl) | The canonical, line-oriented form of SVRL reports ([`corpus/SVRL-CANONICAL.md`](corpus/SVRL-CANONICAL.md)) used to compare reports with the reference engine. |
 | [`einvoice-validator`](crates/einvoice-validator) | The public crate: rule-set bundles (a `bundle.toml` manifest with the SHA-256 of each stylesheet, from memory or a directory; CEN EN 16931 UBL and CII 1.3.17 built in), the `Validator` (XML check, the schema of the rule set if any, then each stylesheet; `Send + Sync`), the `Report` (schema errors, findings, SVRL, verdict) and `Syntax` (UBL or CII, from the root element). |
-| [`einvoice-cli`](crates/einvoice-cli) | The `einvoice-validate` command-line tool: files and standard input, built-in rule sets (chosen from each document's root element by default) or bundle directories, several threads, text, JSON or SVRL output, documented exit codes. |
+| [`einvoice-cli`](crates/einvoice-cli) | The `einvoice-validate` command-line tool: XML and PDF files and standard input, built-in rule sets (chosen from each document's root element by default) or bundle directories, several threads, text, JSON or SVRL output, documented exit codes. |
+| [`einvoice-pdf`](crates/einvoice-pdf) | Extracts the embedded invoice XML and the XMP metadata of a Factur-X, ZUGFeRD or Order-X PDF/A-3 file, reading only the part of PDF on the path to embedded files and refusing anything else; bounded against hostile input. |
+| [`einvoice-xml`](crates/einvoice-xml) | A streaming (pull) XML 1.0 parser with namespaces that builds no tree, with the verdicts and errors of `roxmltree`; not used by the validator yet. |
+| [`einvoice-wasm`](crates/einvoice-wasm) | The JavaScript and TypeScript bindings (`wasm-bindgen`) and the build of the npm package `einvoice-validator`; not published on crates.io. |
+| [`einvoice-testkit`](crates/einvoice-testkit) | Helpers of the tests, not published: the workspace crates a package is built from (`cargo tree`), and a writer of synthetic PDF files. |
 | [`xtask`](xtask) | Repository tooling, not published: artefact checksums, corpus extraction, the mutation catalogue, the Saxon-HE oracle, the VEFA cross-check. |
 
 **Testing against the reference engine.** The corpus of each rule set holds the official example
@@ -246,7 +256,9 @@ are missing. Java with network access for the Saxon-HE oracle and the Peppol cor
 Java 21, which regenerating the `einvoice-xdm` results needs), and `xmllint` for the xmllint
 oracle of `einvoice-xsd` (its results were produced with libxml2 2.9.14), with `curl` and network
 access the first time, to fetch the two XAdES schemas from OASIS; the tests themselves
-need neither.
+need neither. For the npm package: Node.js 22 and npm, the pinned `wasm-bindgen-cli` and
+`wasm-opt` (`crates/einvoice-wasm/npm.sh tools` installs them outside the repository), and
+Chrome or Firefox for its browser test.
 
 ```sh
 scripts/check.sh                          # every job below, as CI runs them
@@ -264,14 +276,15 @@ cargo test -p einvoice-xsd --test oracle         # einvoice-xsd against the xmll
 | `doc` | `cargo doc --workspace --no-deps --all-features --locked` |
 | `test` | `cargo test --workspace --all-targets --all-features --locked`, then the doctests |
 | `features` | clippy and the tests of `einvoice-validator` with `--no-default-features` (no built-in rule set) |
-| `wasm` | `cargo build --locked --target wasm32-unknown-unknown -p einvoice-validator`, then the examples `wasm-smoke` (`einvoice-xpath-eval`) and `wasm-validate` (`einvoice-validator`, the built-in rule set on two corpus documents) built for that target: they must import nothing and return 0 under wasmtime (skipped locally without the target or wasmtime) |
+| `wasm` | `cargo build --locked --target wasm32-unknown-unknown -p einvoice-validator -p einvoice-pdf -p einvoice-xml`, then the examples `wasm-smoke` (`einvoice-xpath-eval`), `wasm-validate` (`einvoice-validator`, the built-in rule set on two corpus documents), `wasm-extract` (`einvoice-pdf`, two PDF files built in memory) and `wasm-smoke` (`einvoice-xml`) built for that target: they must import nothing and return 0 under wasmtime (skipped locally without the target or wasmtime) |
+| `npm` | `crates/einvoice-wasm/npm.sh build test pack`: the npm package built (opt-level 3, LTO, `wasm-bindgen`, `wasm-opt`), its Node.js tests (the API, the CEN UBL and CII corpora against the Saxon-HE goldens), a strict TypeScript check of its declarations, the browser test in headless Chrome and Firefox, then `npm pack --dry-run` (needs Node.js 22, npm, jq and the tools of `npm.sh tools`; skipped locally without them, and without a browser or TypeScript) |
 | `package` | the publishable crates packaged as crates.io would receive them and built from their packages; each term of a crate's licence expression has its text in the package's `LICENSES/`, and each has a description, its README in the package, and one to five keywords and categories (needs `jq`) |
 | `deny` | `cargo deny --all-features check`: licences, duplicates, sources, advisories |
 | `actionlint` | `actionlint` on the GitHub workflows |
 | `zizmor` | `zizmor --persona=pedantic` on the GitHub workflows and `.github/dependabot.yml` |
 | `pins` | `scripts/freshness.sh pins` (every pin of `upstream.toml` matches the files that record it, offline) and the tests of `scripts/freshness.sh` (needs `jq`) |
-| `guards` | ShellCheck on `scripts/*.sh` and `.githooks/*`, then the tests of the privacy guard and of the release scripts (need `jq`) |
-| `oracle` | artefact checksums, corpus extraction and VEFA cross-check, then xmllint on the oracle cases of `einvoice-xsd` (needs `xmllint`, and `curl` and network access the first time), then Saxon-HE on every corpus case and on the probes of `einvoice-xdm`, `einvoice-xpath-eval` and `einvoice-xslt-exec`: the goldens must not change (needs Java; each part skipped locally without its tool) |
+| `guards` | ShellCheck on `scripts/*.sh`, `crates/*/*.sh` and `.githooks/*`, then the tests of the privacy guard and of the release scripts (need `jq`) |
+| `oracle` | artefact checksums, corpus extraction and VEFA cross-check, then xmllint on the oracle cases of `einvoice-xsd` (needs `xmllint`, and `curl` and network access the first time), then Saxon-HE on every corpus case and on the probes of `einvoice-xdm`, `einvoice-xpath-eval` and `einvoice-xslt-exec`: the goldens must not change, and on the hand-written cases of `einvoice-xml` (its `saxon-check` example) (needs Java; each part skipped locally without its tool) |
 | `peppol` | the Peppol corpus in `target/peppol/`: fetch and compile the pinned release, extract the cases, Saxon-HE with both stylesheets, VEFA cross-check, then the engine, and `einvoice-validate` with the Peppol bundle, must match every golden, mutation cases included (needs Java and network access the first time; skipped locally without them) |
 | `privacy` | the repository's pre-commit checks on staged changes (maintainers; skipped when nothing is staged) |
 
@@ -315,9 +328,11 @@ upstream.toml        every pinned upstream version and the files that record it
 - Property tests (proptest) and golden tests against the reference engine.
 - `cargo-deny`: dependencies under permissive licences only (today only MIT); the terms of
   the official files the crates embed are allowed only for the crates that embed them (the
-  EUPL-1.2 of the CEN stylesheets for `einvoice-validator` and `einvoice-cli`, the schema
-  terms for `einvoice-xsd`); no duplicate versions, crates.io as the only source, advisories
-  and yanked releases are errors.
+  schema terms for `einvoice-xsd`; the EUPL-1.2 of the CEN stylesheets and the schema terms for
+  `einvoice-validator`, `einvoice-cli` and `einvoice-wasm`), and the Unicode-3.0 of
+  `unicode-ident`, used only by the macros of `wasm-bindgen` when `einvoice-wasm` is built, for
+  that crate only; no duplicate versions, crates.io as the only source, advisories and yanked
+  releases are errors.
 - The toolchain is pinned, `Cargo.lock` is committed and every cargo command uses `--locked`.
 - CI on GitHub-hosted runners: Linux for every check, macOS and Windows tests on pull requests.
   Actions are pinned by full commit SHA, run with minimal permissions and without persisted
@@ -337,8 +352,11 @@ upstream.toml        every pinned upstream version and the files that record it
 - `einvoice-validator` embeds the CEN stylesheets of those two directories (EUPL-1.2), vendored
   unmodified in the crate (`crates/einvoice-validator/bundles/cen-ubl/` and `bundles/cen-cii/`),
   through its default features `cen-ubl` and `cen-cii`, which provide the built-in rule sets of
-  the same names; so does the `einvoice-validate` binary. `einvoice-validator` and `einvoice-cli` are therefore licensed
-  `MIT AND EUPL-1.2`. Built with `default-features = false`, the library embeds no rule set and
+  the same names; so does the `einvoice-validate` binary, and through `einvoice-xsd` both embed
+  the OASIS UBL 2.1 schemas. `einvoice-validator` and `einvoice-cli` are therefore licensed
+  `MIT AND EUPL-1.2 AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720`,
+  and so is the npm package `einvoice-validator` (crate `einvoice-wasm`), which embeds the same.
+  Built with `default-features = false`, the library embeds no rule set and
   uses only the bundles it is given. Every crate ships the texts of its licences in its
   `LICENSES/` directory. `einvoice-validate --licences` prints the licences of everything the
   binary embeds (MIT, EUPL-1.2, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1
