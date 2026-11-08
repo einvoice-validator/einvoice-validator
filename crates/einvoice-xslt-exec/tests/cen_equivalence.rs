@@ -19,7 +19,7 @@ fn every_case_matches_the_saxon_golden() {
     for case in &cases {
         let text = common::read(std::path::Path::new(&case.input)).unwrap();
         let golden = common::read(&case.golden).unwrap();
-        let ours = common::svrl(&executable, &text, &case.input)
+        let ours = common::case_svrl(&executable, &text, &case.input)
             .and_then(|svrl| common::canonical(&svrl, &case.input));
         match ours {
             Ok(canonical) if canonical == golden => {}

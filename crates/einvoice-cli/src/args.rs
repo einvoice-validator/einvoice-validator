@@ -4,6 +4,8 @@ use std::ffi::{OsStr, OsString};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
+use einvoice_validator::DEFAULT_MAX_DEPTH;
+
 /// The built-in rule set used without `--rules` or `--bundle` for a document whose root
 /// element names no known syntax (see [`Rules::Detect`]).
 pub(crate) const DEFAULT_RULES: &str = "cen-ubl";
@@ -43,12 +45,17 @@ pub(crate) enum Input {
     File(PathBuf),
 }
 
+/// The largest `--max-depth`: the worker threads' stacks grow with it (4 KiB a level).
+pub(crate) const MAX_DEPTH: u32 = 100_000;
+
 /// The options of a validation run.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Options {
     pub(crate) rules: Rules,
     pub(crate) format: Format,
     pub(crate) jobs: NonZeroUsize,
+    /// The maximum element depth of a document (`--max-depth`).
+    pub(crate) max_depth: u32,
     pub(crate) inputs: Vec<Input>,
 }
 
@@ -63,6 +70,7 @@ struct Seen {
     bundle: Option<PathBuf>,
     format: Option<Format>,
     jobs: Option<NonZeroUsize>,
+    max_depth: Option<u32>,
 }
 
 impl Seen {
@@ -88,6 +96,18 @@ impl Seen {
                     }
                 };
                 set(&mut self.format, format, "--format")
+            }
+            "--max-depth" => {
+                let n = utf8()?
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|&n| (1..=MAX_DEPTH).contains(&n))
+                    .ok_or_else(|| {
+                        usage(format!(
+                            "{name}: expected a positive integer of at most {MAX_DEPTH}"
+                        ))
+                    })?;
+                set(&mut self.max_depth, n, "--max-depth")
             }
             _ => {
                 let n = utf8()?
@@ -121,6 +141,7 @@ impl Seen {
             rules,
             format: self.format.unwrap_or(Format::Text),
             jobs: self.jobs.unwrap_or(NonZeroUsize::MIN),
+            max_depth: self.max_depth.unwrap_or(DEFAULT_MAX_DEPTH),
             inputs,
         }))
     }
@@ -167,7 +188,8 @@ pub(crate) fn parse(args: &[OsString]) -> Result<Command, UsageError> {
                     _ => Command::Licences,
                 });
             }
-            "-r" | "--rules" | "-b" | "--bundle" | "-f" | "--format" | "-j" | "--jobs" => {}
+            "-r" | "--rules" | "-b" | "--bundle" | "-f" | "--format" | "-j" | "--jobs"
+            | "--max-depth" => {}
             _ => return Err(usage(format!("unknown option {name}"))),
         }
         let value: OsString = match inline {
@@ -231,7 +253,30 @@ mod tests {
         assert_eq!(o.rules, Rules::Detect);
         assert_eq!(o.format, Format::Text);
         assert_eq!(o.jobs.get(), 1);
+        assert_eq!(o.max_depth, DEFAULT_MAX_DEPTH);
         assert_eq!(o.inputs, [Input::File("a.xml".into())]);
+    }
+
+    #[test]
+    fn maximum_depth() {
+        assert_eq!(options(&["--max-depth", "1000", "a"]).max_depth, 1000);
+        assert_eq!(options(&["--max-depth=1", "a"]).max_depth, 1);
+        assert_eq!(
+            options(&["--max-depth", "100000", "a"]).max_depth,
+            MAX_DEPTH
+        );
+        for bad in ["0", "-1", "x", "100001", "4294967296", ""] {
+            assert!(
+                error(&["--max-depth", bad, "a"])
+                    .starts_with("--max-depth: expected a positive integer"),
+                "{bad}"
+            );
+        }
+        assert_eq!(
+            error(&["--max-depth", "5", "--max-depth", "6", "a"]),
+            "--max-depth given twice"
+        );
+        assert_eq!(error(&["a", "--max-depth"]), "--max-depth needs a value");
     }
 
     #[test]

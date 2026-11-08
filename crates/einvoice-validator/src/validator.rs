@@ -3,9 +3,11 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use einvoice_xpath_eval::Clock;
+use einvoice_xpath_eval::{Clock, DEFAULT_MAX_DEPTH, LimitExceeded};
 use einvoice_xslt::LoadErrorKind;
-use einvoice_xslt_exec::{Executable, TransformError, TransformOptions};
+use einvoice_xslt_exec::{
+    DEFAULT_MAX_STACK, Executable, TransformError, TransformOptions, max_nesting_for_depth,
+};
 use roxmltree::ParsingOptions;
 use sha2::{Digest, Sha256};
 
@@ -14,21 +16,64 @@ use crate::report::{Report, RuleSetVersion, StylesheetFailure, StylesheetReport}
 use crate::{Error, builtin};
 
 /// Options of one validation.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct ValidateOptions<'a> {
     document_uri: Option<&'a str>,
     clock: Option<Clock>,
+    max_depth: u32,
+    max_stack: u32,
+}
+
+impl Default for ValidateOptions<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<'a> ValidateOptions<'a> {
-    /// The default options: the document has no URI, and the clock is the system clock
-    /// in UTC.
+    /// The default options: the document has no URI, the clock is the system clock in
+    /// UTC, the maximum element depth is [`DEFAULT_MAX_DEPTH`] and the stack the
+    /// stylesheets may use is [`DEFAULT_MAX_STACK`].
     #[must_use]
     pub const fn new() -> Self {
         Self {
             document_uri: None,
             clock: None,
+            max_depth: DEFAULT_MAX_DEPTH,
+            max_stack: DEFAULT_MAX_STACK,
         }
+    }
+
+    /// The maximum element depth of the document, and of any document a stylesheet
+    /// loads with `document()`: the document element is at depth 1, its children at
+    /// depth 2, and so on. A document with an element nested deeper is refused with
+    /// [`Error::Limit`] before its schema is checked. Default: [`DEFAULT_MAX_DEPTH`]
+    /// (256, libxml2's default).
+    ///
+    /// The stylesheets apply their template rules one element level inside another, so
+    /// their stack use grows with the depth: with the default, a validation runs on a
+    /// thread with the default 2 MiB stack, debug builds included. The nesting of
+    /// template and function invocations the stylesheets are allowed grows with the
+    /// maximum ([`max_nesting_for_depth`](crate::max_nesting_for_depth)), and so does the
+    /// stack they need: a larger maximum depth needs a larger
+    /// [`ValidateOptions::max_stack`], and a thread with that much stack.
+    #[must_use]
+    pub const fn max_depth(mut self, max_depth: u32) -> Self {
+        self.max_depth = max_depth;
+        self
+    }
+
+    /// The most stack, in bytes, the stylesheets' template and function invocations may
+    /// use, measured from the start of each stylesheet: beyond it, the validation fails
+    /// with [`Error::Limit`] ([`LimitExceeded::Stack`]) instead of overflowing the
+    /// stack, which would abort the process. Default: [`DEFAULT_MAX_STACK`] (1.5 MiB), for
+    /// the default 2 MiB stack of a spawned thread. The thread that validates must have
+    /// this much stack and at least 512 KiB more, for its caller and the deepest
+    /// invocation.
+    #[must_use]
+    pub const fn max_stack(mut self, bytes: u32) -> Self {
+        self.max_stack = bytes;
+        self
     }
 
     /// The clock of the stylesheets: the implicit timezone and the value of
@@ -250,7 +295,7 @@ impl Validator {
         text: Cow<'_, str>,
         options: &ValidateOptions<'_>,
     ) -> Result<Report, Error> {
-        check_well_formed(&text)?;
+        check_well_formed(&text, options.max_depth)?;
         let schema_errors = match &self.schema {
             None => Vec::new(),
             Some(schema) => {
@@ -280,6 +325,9 @@ impl Validator {
         let transform_options = TransformOptions {
             implicit_timezone: options.clock.map(|c| c.implicit_timezone()),
             current_date_time: options.clock.map(|c| c.current_date_time()),
+            max_depth: options.max_depth,
+            max_nesting: max_nesting_for_depth(options.max_depth),
+            max_stack: options.max_stack,
             ..TransformOptions::default()
         };
         let mut stylesheets = Vec::with_capacity(self.stylesheets.len());
@@ -421,6 +469,12 @@ fn first_lines(text: &str) -> String {
 
 fn transform_error(entry: &StylesheetEntry, e: &TransformError) -> Error {
     let at = e.line().map_or_else(String::new, |l| format!(", line {l}"));
+    if let Some(limit) = e.limit() {
+        return Error::Limit {
+            limit,
+            message: format!("stylesheet {}{at}: {}", entry.name(), e.message()),
+        };
+    }
     match e.code() {
         "UNSUPPORTED" => {
             Error::unsupported(format!("stylesheet {}{at}: {}", entry.name(), e.message()))
@@ -539,15 +593,16 @@ fn declared_encoding(bytes: &[u8]) -> Option<&str> {
 }
 
 /// Checks that the text is namespace-well-formed XML without a document type
-/// declaration, as the stylesheets' parser requires.
-fn check_well_formed(text: &str) -> Result<(), Error> {
+/// declaration, as the stylesheets' parser requires, and without an element nested
+/// deeper than `max_depth`.
+fn check_well_formed(text: &str, max_depth: u32) -> Result<(), Error> {
     let options = ParsingOptions {
         allow_dtd: false,
         nodes_limit: u32::MAX,
         ..ParsingOptions::default()
     };
     match roxmltree::Document::parse_with_options(text, options) {
-        Ok(_) => Ok(()),
+        Ok(document) => check_depth(&document, max_depth),
         Err(roxmltree::Error::DtdDetected) => Err(Error::unsupported(
             "a document type declaration (DTD): its entities and default attributes could change the document, so it is refused",
         )),
@@ -557,6 +612,38 @@ fn check_well_formed(text: &str) -> Result<(), Error> {
             message: e.to_string(),
         }),
     }
+}
+
+/// [`Error::Limit`] for the first element, in document order, nested deeper than
+/// `max_depth` (the document element is at depth 1).
+fn check_depth(document: &roxmltree::Document<'_>, max_depth: u32) -> Result<(), Error> {
+    // The elements still open, innermost last: their number is the depth of the parent
+    // of the next element.
+    let mut open: Vec<roxmltree::NodeId> = Vec::new();
+    for node in document
+        .root()
+        .descendants()
+        .filter(roxmltree::Node::is_element)
+    {
+        let parent = node.parent().map(|p| p.id());
+        while open.last().is_some_and(|&id| Some(id) != parent) {
+            open.pop();
+        }
+        if u32::try_from(open.len()).map_or(true, |depth| depth >= max_depth) {
+            let at = document.text_pos_at(node.range().start);
+            let limit = LimitExceeded::Depth {
+                max: max_depth,
+                line: at.row,
+                column: at.col,
+            };
+            return Err(Error::Limit {
+                limit,
+                message: format!("document, {limit}"),
+            });
+        }
+        open.push(node.id());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -615,17 +702,20 @@ mod tests {
 
     #[test]
     fn well_formedness() {
-        assert!(check_well_formed("<a/>").is_ok());
-        match check_well_formed("<a>\n<b></a>") {
+        assert!(check_well_formed("<a/>", 1).is_ok());
+        match check_well_formed("<a>\n<b></a>", DEFAULT_MAX_DEPTH) {
             Err(Error::NotXml { line, .. }) => assert_eq!(line, 2),
             other => panic!("{other:?}"),
         }
         assert!(matches!(
-            check_well_formed("<!DOCTYPE a [<!ENTITY e 'x'>]><a>&e;</a>"),
+            check_well_formed(
+                "<!DOCTYPE a [<!ENTITY e 'x'>]><a>&e;</a>",
+                DEFAULT_MAX_DEPTH
+            ),
             Err(Error::Unsupported { .. })
         ));
         assert!(matches!(
-            check_well_formed("<p:a/>"),
+            check_well_formed("<p:a/>", DEFAULT_MAX_DEPTH),
             Err(Error::NotXml { .. })
         ));
     }

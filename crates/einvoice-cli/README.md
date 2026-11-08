@@ -43,6 +43,7 @@ einvoice-validate --bundle target/peppol/peppol-bis-billing-ubl-3.0.22 invoice.x
 | `-b`, `--bundle DIR` | A rule-set bundle: `DIR/bundle.toml` and the stylesheets it names (see the documentation of the `einvoice-validator` crate for the manifest format). Excludes `--rules`. |
 | `-f`, `--format FORMAT` | `text` (default), `json` or `svrl`. |
 | `-j`, `--jobs N` | Validate N documents at a time, on N threads sharing one loaded rule set (default 1). The output keeps the order of the command line. |
+| `--max-depth N` | Refuse a document with an element nested deeper than N levels, the document element being at depth 1 (default 256, libxml2's default; at most 100000). Such a document gets no verdict: an error of kind `unsupported` naming the line and column of the first element too deep, exit status 3. The stylesheets recurse once or twice per element level; each worker thread gets 1 MiB and 4 KiB per allowed level of nesting of templates and functions (twice N, plus 64), at least 8 MiB, and the stylesheets may use all of it but 1 MiB: a larger N, or a stylesheet that recurses, ends with that error rather than a stack overflow. |
 | `-h`, `--help` | The help, then exit 0. |
 | `-V`, `--version` | The version and the built-in rule sets, then exit 0. |
 | `--licences`, `--licenses` | The licences of everything embedded in the binary, each with what it covers and its full text, then exit 0: MIT for the code, EUPL-1.2 for the CEN stylesheets of the built-in rule sets, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1 schemas. |
@@ -59,7 +60,7 @@ The highest code that applies to the run:
 | 0 | Every document is valid: no schema error and no finding with flag `fatal`. |
 | 1 | At least one document is invalid: schema errors, fatal findings, or not well-formed XML. |
 | 2 | Usage error; a document that cannot be read; a bundle that cannot be read or is not valid (manifest, missing file, SHA-256 mismatch, stylesheet that is not SVRL-producing XSLT). |
-| 3 | A construct the engine does not support (in a document: an encoding other than UTF-8, a document type declaration; in a rule set: XSLT or XPath outside the supported subset), a dynamic error raised by a stylesheet on a document, or an internal error. |
+| 3 | A construct the engine does not support (in a document: an encoding other than UTF-8, a document type declaration; in a rule set: XSLT or XPath outside the supported subset), a document beyond a limit (an element nested deeper than `--max-depth`; a stylesheet whose templates or functions recurse beyond the nesting or the stack allowed), a dynamic error raised by a stylesheet on a document, or an internal error. |
 
 When the rule set cannot be loaded, nothing is written to standard output; the reason goes
 to standard error and the exit status is 2 or 3. Otherwise every document is reported, even

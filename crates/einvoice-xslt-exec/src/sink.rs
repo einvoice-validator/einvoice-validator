@@ -16,6 +16,7 @@
 use std::rc::Rc;
 
 use einvoice_xpath::{QName, XML_NAMESPACE};
+use einvoice_xpath_eval::tree::Axis;
 use einvoice_xpath_eval::{Document, Item, Node, NodeKind, TreeBuilder};
 use einvoice_xslt::NamespaceBinding;
 
@@ -38,41 +39,57 @@ pub(crate) trait Sink {
 }
 
 /// Copies an existing node into complex content (deep copy, as XSLT 2.0 section 5.7.1
-/// prescribes for nodes in a sequence constructor).
+/// prescribes for nodes in a sequence constructor). The subtree is walked with an
+/// explicit stack, not a recursion: its depth is only bounded by the document's.
 fn copy_node(sink: &mut dyn Sink, node: &Node) -> Result<()> {
-    match node.kind() {
-        NodeKind::Document => {
-            for child in node.children() {
-                copy_node(sink, &child)?;
+    // The document node or elements being copied, innermost last, each with its children
+    // not copied yet, and whether it is an element (to close).
+    let mut open: Vec<(Axis, bool)> = Vec::new();
+    let mut next = Some(node.clone());
+    loop {
+        if let Some(node) = next.take() {
+            match node.kind() {
+                NodeKind::Document => open.push((node.children(), false)),
+                NodeKind::Element => {
+                    let Some(name) = node.name() else {
+                        return err("INTERNAL", "element without name");
+                    };
+                    sink.start_element(name, &[])?;
+                    for attribute in node.attributes() {
+                        copy_attribute(sink, &attribute)?;
+                    }
+                    open.push((node.children(), true));
+                }
+                NodeKind::Attribute => copy_attribute(sink, &node)?,
+                NodeKind::Text => sink.text(&node.string_value())?,
+                NodeKind::Comment => sink.comment(&node.string_value())?,
+                NodeKind::ProcessingInstruction => {
+                    return err(
+                        "UNSUPPORTED",
+                        "copying a processing instruction to the result is not supported",
+                    );
+                }
             }
-            Ok(())
         }
-        NodeKind::Element => {
-            let Some(name) = node.name() else {
-                return err("INTERNAL", "element without name");
-            };
-            sink.start_element(name, &[])?;
-            for attribute in node.attributes() {
-                copy_node(sink, &attribute)?;
+        let Some((children, _)) = open.last_mut() else {
+            return Ok(());
+        };
+        match children.next() {
+            Some(child) => next = Some(child),
+            None => {
+                if let Some((_, true)) = open.pop() {
+                    sink.end_element()?;
+                }
             }
-            for child in node.children() {
-                copy_node(sink, &child)?;
-            }
-            sink.end_element()
         }
-        NodeKind::Attribute => {
-            let Some(name) = node.name() else {
-                return err("INTERNAL", "attribute without name");
-            };
-            sink.attribute(name, &node.string_value())
-        }
-        NodeKind::Text => sink.text(&node.string_value()),
-        NodeKind::Comment => sink.comment(&node.string_value()),
-        NodeKind::ProcessingInstruction => err(
-            "UNSUPPORTED",
-            "copying a processing instruction to the result is not supported",
-        ),
     }
+}
+
+fn copy_attribute(sink: &mut dyn Sink, attribute: &Node) -> Result<()> {
+    let Some(name) = attribute.name() else {
+        return err("INTERNAL", "attribute without name");
+    };
+    sink.attribute(name, &attribute.string_value())
 }
 
 /// Serialization parameters (`xsl:output`).

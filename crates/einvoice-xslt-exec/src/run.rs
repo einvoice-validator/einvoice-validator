@@ -17,19 +17,21 @@ use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashSet;
 use std::rc::{Rc, Weak};
+use std::sync::Arc;
 
 use einvoice_xdm::{AtomicType, AtomicValue, DateTime};
 use einvoice_xpath::{AtomicKind, ItemType, Occurrence, QName, SequenceType};
 use einvoice_xpath_eval::{
-    Clock, CompiledExpr, Context, Document, DynamicContext, ErrorCode, FunctionId, Host, Item,
-    Node, NodeAxis, NodeKind, VariableId,
+    Clock, CompiledExpr, Context, DEFAULT_MAX_DEPTH, Document, DocumentError, DynamicContext,
+    ErrorCode, FunctionId, Host, Item, LimitExceeded, Node, NodeAxis, NodeKind, VariableId,
 };
-use einvoice_xslt::NumberLevel;
+use einvoice_xslt::{NamespaceBinding, NumberLevel};
 
-use crate::error::{Result, TransformError, err};
+use crate::error::{LIMIT, Result, TransformError, err};
 use crate::pattern::{self, Matcher};
 use crate::prepare::{
-    AvtItem, Binding, CompiledAvt, CountPattern, Executable, Inst, ModeRef, Value, WithParam,
+    AvtItem, Binding, CompiledAvt, CompiledTemplate, CountPattern, Executable, Inst, ModeRef,
+    Value, When, WithParam,
 };
 use crate::sink::{SequenceSink, Sink, TextSink, TreeSink, XmlWriter, attribute_name};
 
@@ -40,8 +42,29 @@ pub trait DocumentResolver {
     fn resolve(&self, uri: &str) -> Option<String>;
 }
 
+/// The maximum nesting of invocations in a transformation, unless the caller sets another
+/// one ([`TransformOptions::max_nesting`]): template rules, built-in template rules, named
+/// templates and stylesheet functions invoked one inside another. It is
+/// [`max_nesting_for_depth`] of [`DEFAULT_MAX_DEPTH`]: 576.
+pub const DEFAULT_MAX_NESTING: u32 = max_nesting_for_depth(DEFAULT_MAX_DEPTH);
+
+/// The nesting of invocations that the official stylesheets need on a document
+/// `max_depth` deep, with room to spare: twice the depth, plus 64.
+///
+/// A compiled Schematron applies the template rules of each pattern to every element, one
+/// element level inside another, so the nesting reaches the depth of the document; where
+/// a rule fires, the ISO Schematron skeleton writes the location of the node with a
+/// template that recurses over its ancestors (mode `schematron-get-full-path`), which
+/// nests as deep again. The 64 levels above are for the few invocations around them
+/// (the root template, the next rule in a chain) and for stylesheets that recurse
+/// otherwise. On a document [`DEFAULT_MAX_DEPTH`] deep, this nesting fits in the 2 MiB
+/// stack a thread is given by default, in a debug build too.
+#[must_use]
+pub const fn max_nesting_for_depth(max_depth: u32) -> u32 {
+    max_depth.saturating_mul(2).saturating_add(64)
+}
+
 /// Options of a transformation.
-#[derive(Default)]
 pub struct TransformOptions<'r> {
     /// The implicit timezone in minutes east of UTC (Saxon takes the JVM's). Default: UTC.
     pub implicit_timezone: Option<i16>,
@@ -53,6 +76,51 @@ pub struct TransformOptions<'r> {
     pub parameters: Vec<(QName, Vec<Item>)>,
     /// Where `document()` gets documents other than the source document.
     pub resolver: Option<&'r dyn DocumentResolver>,
+    /// The maximum element depth of the source document and of the documents `document()`
+    /// loads (the document element is at depth 1): a document with an element nested
+    /// deeper is refused with a `LIMIT` error ([`TransformError::limit`]). Default:
+    /// [`DEFAULT_MAX_DEPTH`].
+    pub max_depth: u32,
+    /// The maximum nesting of template rules, built-in template rules, named templates
+    /// and stylesheet functions invoked one inside another: beyond it, the transformation
+    /// ends with a `LIMIT` error ([`TransformError::limit`]) instead of overflowing the
+    /// stack. Default: [`DEFAULT_MAX_NESTING`]. A larger value needs a larger stack.
+    pub max_nesting: u32,
+    /// The most stack, in bytes, the invocations in progress may use, measured from the
+    /// start of the transformation: beyond it, the transformation ends with a `LIMIT`
+    /// error ([`LimitExceeded::Stack`]) instead of overflowing the stack. It bounds what
+    /// the nesting alone cannot, the stack of each level, which depends on the
+    /// stylesheet: a function calling itself from a nested expression needs much more
+    /// than a template rule applied to a child. The thread must have this much stack and
+    /// some more, for its caller and for the deepest level. Default:
+    /// [`DEFAULT_MAX_STACK`].
+    pub max_stack: u32,
+}
+
+/// The default of [`TransformOptions::max_stack`]: 1.5 MiB, for a thread with the
+/// default 2 MiB stack of a spawned thread; 640 KiB on WebAssembly, whose stack is 1 MiB.
+/// With it, the official stylesheets run on a document [`DEFAULT_MAX_DEPTH`] deep, in a
+/// debug build too, and the 512 KiB left (384 KiB on WebAssembly) are more than the
+/// caller and one level of invocation need.
+#[cfg(not(target_family = "wasm"))]
+pub const DEFAULT_MAX_STACK: u32 = 3 << 19;
+
+/// The default of [`TransformOptions::max_stack`] (see the other targets).
+#[cfg(target_family = "wasm")]
+pub const DEFAULT_MAX_STACK: u32 = 640 << 10;
+
+impl Default for TransformOptions<'_> {
+    fn default() -> Self {
+        Self {
+            implicit_timezone: None,
+            current_date_time: None,
+            parameters: Vec::new(),
+            resolver: None,
+            max_depth: DEFAULT_MAX_DEPTH,
+            max_nesting: DEFAULT_MAX_NESTING,
+            max_stack: DEFAULT_MAX_STACK,
+        }
+    }
 }
 
 impl std::fmt::Debug for TransformOptions<'_> {
@@ -62,6 +130,9 @@ impl std::fmt::Debug for TransformOptions<'_> {
             .field("current_date_time", &self.current_date_time)
             .field("parameters", &self.parameters)
             .field("resolver", &self.resolver.map(|_| "..."))
+            .field("max_depth", &self.max_depth)
+            .field("max_nesting", &self.max_nesting)
+            .field("max_stack", &self.max_stack)
             .finish()
     }
 }
@@ -126,8 +197,11 @@ impl Executable {
             }
             Cow::Owned(_) => None,
         };
-        let document = Document::parse(source, base_uri)
-            .map_err(|e| TransformError::new("SXXP0003", e.message()))?;
+        let document = Document::parse_with_max_depth(source, base_uri, options.max_depth)
+            .map_err(|e| match e.limit() {
+                Some(limit) => TransformError::limit_exceeded(limit),
+                None => TransformError::new("SXXP0003", e.message()),
+            })?;
         let root = document.root();
         let runtime = Runtime {
             exe: self,
@@ -144,6 +218,8 @@ impl Executable {
             warnings: RefCell::new(Vec::new()),
             warned: RefCell::new(HashSet::new()),
             stashed: RefCell::new(None),
+            nesting: Cell::new(0),
+            stack_base: stack_position(),
         };
         let timezone = options.implicit_timezone.unwrap_or(0);
         let clock = match options.current_date_time {
@@ -242,6 +318,30 @@ struct Runtime<'e, 'a> {
     warned: RefCell<HashSet<String>>,
     /// The error a host callback raised, given back when the evaluator returns it.
     stashed: RefCell<Option<TransformError>>,
+    /// The invocations in progress: template rules, built-in template rules, named
+    /// templates and stylesheet functions (at most `options.max_nesting`).
+    nesting: Cell<u32>,
+    /// The position of the stack when the transformation started (see
+    /// [`stack_position`]).
+    stack_base: usize,
+}
+
+/// The position of the call stack: the address of a local of this function. Two of them
+/// measure the stack used between two calls (stacks grow downwards on every supported
+/// target, the WebAssembly shadow stack included; the distance is taken either way).
+#[inline(never)]
+fn stack_position() -> usize {
+    let marker = 0_u8;
+    std::hint::black_box(std::ptr::addr_of!(marker)).addr()
+}
+
+/// An invocation counted in [`Runtime::nesting`], until it is dropped.
+struct Nested<'n>(&'n Cell<u32>);
+
+impl Drop for Nested<'_> {
+    fn drop(&mut self) {
+        self.0.set(self.0.get().saturating_sub(1));
+    }
 }
 
 /// Sets the line of an error.
@@ -436,6 +536,29 @@ impl<'e, 'a> Runtime<'e, 'a> {
             return stashed;
         }
         e.into()
+    }
+
+    /// Counts one more invocation in progress, until the guard returned is dropped: a
+    /// `LIMIT` error beyond `options.max_nesting`, or when the invocations in progress
+    /// use more than `options.max_stack` bytes of stack. Every recursion of a
+    /// transformation goes through an invocation (a template rule applied to a child, a
+    /// named template or a function calling itself), so this bounds the depth of the
+    /// call stack.
+    fn nested(&self) -> Result<Nested<'_>> {
+        let depth = self.nesting.get();
+        if depth >= self.options.max_nesting {
+            return Err(TransformError::limit_exceeded(LimitExceeded::Nesting {
+                max: self.options.max_nesting,
+            }));
+        }
+        let used = self.stack_base.abs_diff(stack_position());
+        if u32::try_from(used).map_or(true, |used| used > self.options.max_stack) {
+            return Err(TransformError::limit_exceeded(LimitExceeded::Stack {
+                max: self.options.max_stack,
+            }));
+        }
+        self.nesting.set(depth + 1);
+        Ok(Nested(&self.nesting))
     }
 
     /// Keeps an error for [`Runtime::xerr`] and gives the evaluator a placeholder.
@@ -666,10 +789,11 @@ impl<'e, 'a> Runtime<'e, 'a> {
         Ok(())
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one arm per instruction of the supported subset"
-    )]
+    /// Runs one instruction. Each instruction has a function of its own: this one is on
+    /// the path of every recursion through the templates (`xsl:apply-templates` in a
+    /// template rule, ...), whose stack use per level of the document must stay small,
+    /// so that it holds none of their locals, and dispatches only the instructions that
+    /// hold others or invoke templates; [`Runtime::other_instruction`] the rest.
     fn instruction(&self, inst: &'e Inst, state: &State<'_>, sink: &mut dyn Sink) -> Result<()> {
         match inst {
             Inst::ApplyTemplates {
@@ -677,158 +801,316 @@ impl<'e, 'a> Runtime<'e, 'a> {
                 select,
                 mode,
                 params,
-            } => {
-                let items = self.evaluate(select, state.context).at(*line)?;
-                let mode = match mode {
-                    ModeRef::Mode(m) => *m,
-                    ModeRef::Current => state.mode,
-                };
-                let params = self.with_params(params, state).at(*line)?;
-                let size = items.len();
-                for (i, item) in items.iter().enumerate() {
-                    match item {
-                        Item::Node(node) => self
-                            .apply_rule(node, i + 1, size, mode, None, &params, sink)
-                            .at(*line)?,
-                        // As Saxon, an XSLT 3.0 processor: no pattern of the subset
-                        // matches an atomic value, whose built-in rule writes it as text.
-                        Item::Atomic(_) => sink.text(&item.string_value()).at(*line)?,
-                    }
-                }
-                Ok(())
-            }
-            Inst::NextMatch { line, params } => {
-                let Some(rank) = state.rule else {
-                    return err("XTDE0560", "xsl:next-match without a current template rule")
-                        .at(*line);
-                };
-                let Some(focus) = &state.context.focus else {
-                    return err("XTDE0560", "xsl:next-match without a context item").at(*line);
-                };
-                let Item::Node(node) = &focus.item else {
-                    return err("XTDE0560", "xsl:next-match on an atomic value").at(*line);
-                };
-                let params = self.with_params(params, state).at(*line)?;
-                self.apply_rule(
-                    node,
-                    focus.position,
-                    focus.size,
-                    state.mode,
-                    Some(rank),
-                    &params,
-                    sink,
-                )
-                .at(*line)
-            }
+            } => self.apply_templates(*line, select, mode, params, state, sink),
+            Inst::NextMatch { line, params } => self.next_match(*line, params, state, sink),
             Inst::CallTemplate {
                 line,
                 template,
                 params,
-            } => {
-                let params = self.with_params(params, state).at(*line)?;
-                self.invoke(
-                    *template,
-                    state.context,
-                    state.mode,
-                    state.rule,
-                    &params,
-                    sink,
-                )
-                .at(*line)
-            }
-            Inst::Choose { whens, otherwise } => {
-                for when in whens {
-                    if self.test(&when.test, state.context).at(when.line)? {
-                        return self.exec(&when.body, state, sink);
-                    }
-                }
-                self.exec(otherwise, state, sink)
-            }
-            Inst::ForEach { line, select, body } => {
-                let items = self.evaluate(select, state.context).at(*line)?;
-                let size = items.len();
-                for (i, item) in items.into_iter().enumerate() {
-                    let context = Context::at(item, i + 1, size);
-                    let inner = State {
-                        context: &context,
-                        mode: state.mode,
-                        rule: None,
-                    };
-                    self.exec(body, &inner, sink)?;
-                }
-                Ok(())
-            }
-            Inst::Variable(binding) => self.variable_instruction(binding, state),
-            Inst::Sequence { line, select } => {
-                for item in self.evaluate(select, state.context).at(*line)? {
-                    sink.item(&item).at(*line)?;
-                }
-                Ok(())
-            }
-            Inst::ValueOf {
-                line,
-                select,
-                separator,
-                body,
-            } => {
-                let separator = match separator {
-                    Some(avt) => Some(self.avt(avt, state).at(*line)?),
-                    None => None,
-                };
-                let mut parts = TextSink::new();
-                let text = if let Some(expr) = select {
-                    for item in self.evaluate(expr, state.context).at(*line)? {
-                        parts.item(&item)?;
-                    }
-                    parts.finish(separator.as_deref().unwrap_or(" "))
-                } else {
-                    self.exec(body, state, &mut parts)?;
-                    parts.finish(separator.as_deref().unwrap_or(""))
-                };
-                sink.text(&text).at(*line)
-            }
-            Inst::Attribute {
-                line,
-                name,
-                namespaces,
-                select,
-                body,
-            } => {
-                let name = self.avt(name, state).at(*line)?;
-                let name = attribute_name(&name, namespaces).at(*line)?;
-                let value = self
-                    .simple_content(select.as_deref(), body, state)
-                    .at(*line)?;
-                sink.attribute(&name, &value).at(*line)
-            }
-            Inst::Comment { line, body } => {
-                let mut parts = TextSink::new();
-                self.exec(body, state, &mut parts)?;
-                sink.comment(&comment_text(&parts.finish(""))).at(*line)
-            }
-            Inst::Text(text) => sink.text(text),
-            Inst::Number { line, level, count } => {
-                let text = self
-                    .number(*line, *level, count.as_ref(), state)
-                    .at(*line)?;
-                sink.text(&text).at(*line)
-            }
+            } => self.call_template(*line, *template, params, state, sink),
+            Inst::Choose { whens, otherwise } => self.choose(whens, otherwise, state, sink),
+            Inst::ForEach { line, select, body } => self.for_each(*line, select, body, state, sink),
             Inst::Element {
                 line,
                 name,
                 namespaces,
                 attributes,
                 body,
-            } => {
-                sink.start_element(name, namespaces).at(*line)?;
-                for (attribute, value) in attributes {
-                    let value = self.avt(value, state).at(*line)?;
-                    sink.attribute(attribute, &value).at(*line)?;
-                }
-                self.exec(body, state, sink)?;
-                sink.end_element().at(*line)
+            } => self.element(*line, name, namespaces, attributes, body, state, sink),
+            _ => self.other_instruction(inst, state, sink),
+        }
+    }
+
+    /// The instructions [`Runtime::instruction`] does not dispatch itself.
+    #[inline(never)]
+    fn other_instruction(
+        &self,
+        inst: &'e Inst,
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        match inst {
+            Inst::Variable(binding) => self.variable_instruction(binding, state),
+            Inst::Sequence { line, select } => self.sequence(*line, select, state, sink),
+            Inst::ValueOf {
+                line,
+                select,
+                separator,
+                body,
+            } => self.value_of(
+                *line,
+                select.as_deref(),
+                separator.as_ref(),
+                body,
+                state,
+                sink,
+            ),
+            Inst::Attribute {
+                line,
+                name,
+                namespaces,
+                select,
+                body,
+            } => self.attribute(
+                *line,
+                name,
+                namespaces,
+                select.as_deref(),
+                body,
+                state,
+                sink,
+            ),
+            Inst::Comment { line, body } => self.comment(*line, body, state, sink),
+            Inst::Text(text) => sink.text(text),
+            Inst::Number { line, level, count } => {
+                self.number_instruction(*line, *level, count.as_ref(), state, sink)
+            }
+            Inst::ApplyTemplates { .. }
+            | Inst::NextMatch { .. }
+            | Inst::CallTemplate { .. }
+            | Inst::Choose { .. }
+            | Inst::ForEach { .. }
+            | Inst::Element { .. } => self.instruction(inst, state, sink),
+        }
+    }
+
+    fn apply_templates(
+        &self,
+        line: u32,
+        select: &'e CompiledExpr,
+        mode: &ModeRef,
+        params: &'e [WithParam],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let items = self.evaluate(select, state.context).at(line)?;
+        let mode = match mode {
+            ModeRef::Mode(m) => *m,
+            ModeRef::Current => state.mode,
+        };
+        let params = self.with_params(params, state).at(line)?;
+        let size = items.len();
+        for (i, item) in items.iter().enumerate() {
+            match item {
+                Item::Node(node) => self
+                    .apply_rule(node, i + 1, size, mode, None, &params, sink)
+                    .at(line)?,
+                // As Saxon, an XSLT 3.0 processor: no pattern of the subset matches an
+                // atomic value, whose built-in rule writes it as text.
+                Item::Atomic(_) => sink.text(&item.string_value()).at(line)?,
             }
         }
+        Ok(())
+    }
+
+    fn next_match(
+        &self,
+        line: u32,
+        params: &'e [WithParam],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let Some(rank) = state.rule else {
+            return err("XTDE0560", "xsl:next-match without a current template rule").at(line);
+        };
+        let Some(focus) = &state.context.focus else {
+            return err("XTDE0560", "xsl:next-match without a context item").at(line);
+        };
+        let Item::Node(node) = &focus.item else {
+            return err("XTDE0560", "xsl:next-match on an atomic value").at(line);
+        };
+        let params = self.with_params(params, state).at(line)?;
+        self.apply_rule(
+            node,
+            focus.position,
+            focus.size,
+            state.mode,
+            Some(rank),
+            &params,
+            sink,
+        )
+        .at(line)
+    }
+
+    fn call_template(
+        &self,
+        line: u32,
+        template: usize,
+        params: &'e [WithParam],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let params = self.with_params(params, state).at(line)?;
+        self.invoke(
+            template,
+            state.context,
+            state.mode,
+            state.rule,
+            &params,
+            sink,
+        )
+        .at(line)
+    }
+
+    fn choose(
+        &self,
+        whens: &'e [When],
+        otherwise: &'e [Inst],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        for when in whens {
+            if self.test(&when.test, state.context).at(when.line)? {
+                return self.exec(&when.body, state, sink);
+            }
+        }
+        self.exec(otherwise, state, sink)
+    }
+
+    fn for_each(
+        &self,
+        line: u32,
+        select: &'e CompiledExpr,
+        body: &'e [Inst],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let items = self.evaluate(select, state.context).at(line)?;
+        let size = items.len();
+        for (i, item) in items.into_iter().enumerate() {
+            let context = Context::at(item, i + 1, size);
+            let inner = State {
+                context: &context,
+                mode: state.mode,
+                rule: None,
+            };
+            self.exec(body, &inner, sink)?;
+        }
+        Ok(())
+    }
+
+    #[inline(never)]
+    fn sequence(
+        &self,
+        line: u32,
+        select: &'e CompiledExpr,
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        for item in self.evaluate(select, state.context).at(line)? {
+            sink.item(&item).at(line)?;
+        }
+        Ok(())
+    }
+
+    #[inline(never)]
+    fn value_of(
+        &self,
+        line: u32,
+        select: Option<&'e CompiledExpr>,
+        separator: Option<&'e CompiledAvt>,
+        body: &'e [Inst],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let separator = match separator {
+            Some(avt) => Some(self.avt(avt, state).at(line)?),
+            None => None,
+        };
+        let mut parts = TextSink::new();
+        let text = if let Some(expr) = select {
+            for item in self.evaluate(expr, state.context).at(line)? {
+                parts.item(&item)?;
+            }
+            parts.finish(separator.as_deref().unwrap_or(" "))
+        } else {
+            self.exec(body, state, &mut parts)?;
+            parts.finish(separator.as_deref().unwrap_or(""))
+        };
+        sink.text(&text).at(line)
+    }
+
+    #[inline(never)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parts of the instruction, its dynamic context and its sink"
+    )]
+    fn attribute(
+        &self,
+        line: u32,
+        name: &'e CompiledAvt,
+        namespaces: &[NamespaceBinding],
+        select: Option<&'e CompiledExpr>,
+        body: &'e [Inst],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let name = self.avt(name, state).at(line)?;
+        let name = attribute_name(&name, namespaces).at(line)?;
+        let value = self.simple_content(select, body, state).at(line)?;
+        sink.attribute(&name, &value).at(line)
+    }
+
+    #[inline(never)]
+    fn comment(
+        &self,
+        line: u32,
+        body: &'e [Inst],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let mut parts = TextSink::new();
+        self.exec(body, state, &mut parts)?;
+        sink.comment(&comment_text(&parts.finish(""))).at(line)
+    }
+
+    #[inline(never)]
+    fn number_instruction(
+        &self,
+        line: u32,
+        level: NumberLevel,
+        count: Option<&'e CountPattern>,
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let text = self.number(line, level, count, state).at(line)?;
+        sink.text(&text).at(line)
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parts of the instruction, its dynamic context and its sink"
+    )]
+    fn element(
+        &self,
+        line: u32,
+        name: &QName,
+        namespaces: &[NamespaceBinding],
+        attributes: &'e [(Arc<QName>, CompiledAvt)],
+        body: &'e [Inst],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        sink.start_element(name, namespaces).at(line)?;
+        for (attribute, value) in attributes {
+            self.attribute_value(line, attribute, value, state, sink)?;
+        }
+        self.exec(body, state, sink)?;
+        sink.end_element().at(line)
+    }
+
+    /// An attribute of a literal result element.
+    #[inline(never)]
+    fn attribute_value(
+        &self,
+        line: u32,
+        name: &QName,
+        value: &'e CompiledAvt,
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let value = self.avt(value, state).at(line)?;
+        sink.attribute(name, &value).at(line)
     }
 
     fn variable_instruction(&self, binding: &'e Binding, state: &State<'_>) -> Result<()> {
@@ -943,8 +1225,8 @@ impl<'e, 'a> Runtime<'e, 'a> {
     /// a warning, whatever its code, except a circularity (`XTDE0640`), which ends the
     /// transformation. A global variable whose evaluation failed is not kept in error:
     /// the next reference evaluates it again (`GlobalVariable.actuallyEvaluate`), in a
-    /// pattern or elsewhere. The refusals and bugs of this crate (`UNSUPPORTED`,
-    /// `INTERNAL`) are never recovered: Saxon would not have raised them.
+    /// pattern or elsewhere. The refusals, limits and bugs of this crate (`UNSUPPORTED`,
+    /// `LIMIT`, `INTERNAL`) are never recovered: Saxon would not have raised them.
     fn pattern_error(
         &self,
         e: einvoice_xpath_eval::Error,
@@ -952,7 +1234,10 @@ impl<'e, 'a> Runtime<'e, 'a> {
         pattern: &str,
     ) -> Result<bool> {
         let e = self.xerr(e);
-        if matches!(e.code(), "XTDE0640" | "UNSUPPORTED" | "INTERNAL" | "HOST") {
+        if matches!(
+            e.code(),
+            "XTDE0640" | "UNSUPPORTED" | LIMIT | "INTERNAL" | "HOST"
+        ) {
             return Err(e.at(line));
         }
         self.warn(format!(
@@ -1062,6 +1347,9 @@ impl<'e, 'a> Runtime<'e, 'a> {
         ));
     }
 
+    /// The built-in template rule for `node`. For a document node or an element, it
+    /// applies the template rules to the children, one level of recursion counted as an
+    /// invocation ([`Runtime::nested`]).
     fn builtin(
         &self,
         node: &Node,
@@ -1071,6 +1359,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
     ) -> Result<()> {
         match node.kind() {
             NodeKind::Document | NodeKind::Element => {
+                let _nested = self.nested()?;
                 let children: Vec<Node> = node.children().collect();
                 let size = children.len();
                 for (i, child) in children.iter().enumerate() {
@@ -1084,7 +1373,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
     }
 
     /// Runs a template: its parameters bound from `params` or their default values,
-    /// then its body.
+    /// then its body. Counted as an invocation ([`Runtime::nested`]).
     fn invoke(
         &self,
         index: usize,
@@ -1095,6 +1384,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
         sink: &mut dyn Sink,
     ) -> Result<()> {
         let template = &self.exe.templates[index];
+        let _nested = self.nested().at(template.line)?;
         let frame = (template.slots > 0).then(|| Frame::new(template.slots));
         let state = State {
             context,
@@ -1102,35 +1392,51 @@ impl<'e, 'a> Runtime<'e, 'a> {
             rule,
         };
         self.in_frame(frame, || {
-            for param in &template.params {
-                let passed = params
-                    .iter()
-                    .find(|(name, _)| name.same_expanded_name(&param.name));
-                let slot = match (passed, &param.as_type) {
-                    (Some((_, slot)), None) => slot.clone(),
-                    (Some((_, slot)), Some(t)) => {
-                        let items = self.slot_value(slot)?.to_vec();
-                        Slot::Value(convert(items, t, "XTTE0590").at(param.line)?.into())
-                    }
-                    (None, as_type) => self
-                        .bind(
-                            &param.value,
-                            as_type.as_ref(),
-                            param.lazy,
-                            &state,
-                            "XTTE0590",
-                        )
-                        .at(param.line)?,
-                };
-                self.set_slot(param.slot, slot)?;
-            }
+            self.bind_params(template, params, &state)?;
             self.exec(&template.body, &state, sink)
         })
         .at(template.line)
     }
 
+    /// Binds the parameters of a template being invoked, in its frame: from `params`, or
+    /// their default values. Out of [`Runtime::invoke`], whose stack use is part of every
+    /// level of recursion through the templates.
+    #[inline(never)]
+    fn bind_params(
+        &self,
+        template: &'e CompiledTemplate,
+        params: &[(&'e QName, Slot<'e>)],
+        state: &State<'_>,
+    ) -> Result<()> {
+        for param in &template.params {
+            let passed = params
+                .iter()
+                .find(|(name, _)| name.same_expanded_name(&param.name));
+            let slot = match (passed, &param.as_type) {
+                (Some((_, slot)), None) => slot.clone(),
+                (Some((_, slot)), Some(t)) => {
+                    let items = self.slot_value(slot)?.to_vec();
+                    Slot::Value(convert(items, t, "XTTE0590").at(param.line)?.into())
+                }
+                (None, as_type) => self
+                    .bind(
+                        &param.value,
+                        as_type.as_ref(),
+                        param.lazy,
+                        state,
+                        "XTTE0590",
+                    )
+                    .at(param.line)?,
+            };
+            self.set_slot(param.slot, slot)?;
+        }
+        Ok(())
+    }
+
+    /// Calls a stylesheet function. Counted as an invocation ([`Runtime::nested`]).
     fn call(&self, id: FunctionId, args: Vec<Vec<Item>>) -> Result<Vec<Item>> {
         let function = &self.exe.functions[id.0 as usize];
+        let _nested = self.nested().at(function.line)?;
         let frame = Frame::new(function.slots);
         for (param, arg) in function.params.iter().zip(args) {
             let value = match &param.as_type {
@@ -1248,8 +1554,8 @@ impl<'e, 'a> Runtime<'e, 'a> {
             )
         };
         // A loaded document has a document URI, as one in Saxon's document pool.
-        let node = Document::parse_loaded(text, &absolute)
-            .map_err(|e| TransformError::new("FODC0002", format!("{absolute}: {}", e.message())))?
+        let node = Document::parse_loaded_with_max_depth(text, &absolute, self.options.max_depth)
+            .map_err(|e| loaded_document_error(&absolute, &e))?
             .root();
         self.documents.borrow_mut().push((absolute, node.clone()));
         Ok(node)
@@ -1277,26 +1583,49 @@ fn describe(node: &Node) -> String {
             })
             .count()
     };
-    let parent = node.parent();
-    let parent_path = || parent.as_ref().map(describe).unwrap_or_default();
-    // A step under the parent, which is "/" for the document node.
-    let under_parent = |step: String| {
-        let path = parent_path();
-        format!("{}/{step}", if path == "/" { "" } else { path.as_str() })
-    };
-    match node.kind() {
-        NodeKind::Document => "/".to_owned(),
-        NodeKind::Element => match &parent {
-            None => name(node),
-            Some(p) if p.kind() == NodeKind::Document => format!("/{}", name(node)),
-            Some(_) => format!("{}/{}[{}]", parent_path(), name(node), number(node)),
-        },
-        NodeKind::Attribute => format!("{}/@{}", parent_path(), name(node)),
-        NodeKind::Text => under_parent(format!("text()[{}]", number(node))),
-        NodeKind::Comment => under_parent(format!("comment()[{}]", number(node))),
-        NodeKind::ProcessingInstruction => {
-            under_parent(format!("processing-instruction()[{}]", number(node)))
-        }
+    // The path of each node from the root down, from its parent's: a loop rather than a
+    // recursion over the ancestors, whose number only the document bounds.
+    let lineage: Vec<Node> = node.axis(NodeAxis::AncestorOrSelf).collect();
+    let mut path = String::new();
+    let mut parent_kind: Option<NodeKind> = None;
+    for n in lineage.iter().rev() {
+        let parent_path = std::mem::take(&mut path);
+        // A step under the parent, which is "/" for the document node.
+        let under_parent = |step: String| {
+            format!(
+                "{}/{step}",
+                if parent_path == "/" {
+                    ""
+                } else {
+                    parent_path.as_str()
+                }
+            )
+        };
+        path = match n.kind() {
+            NodeKind::Document => "/".to_owned(),
+            NodeKind::Element => match parent_kind {
+                None => name(n),
+                Some(NodeKind::Document) => format!("/{}", name(n)),
+                Some(_) => format!("{parent_path}/{}[{}]", name(n), number(n)),
+            },
+            NodeKind::Attribute => format!("{parent_path}/@{}", name(n)),
+            NodeKind::Text => under_parent(format!("text()[{}]", number(n))),
+            NodeKind::Comment => under_parent(format!("comment()[{}]", number(n))),
+            NodeKind::ProcessingInstruction => {
+                under_parent(format!("processing-instruction()[{}]", number(n)))
+            }
+        };
+        parent_kind = Some(n.kind());
+    }
+    path
+}
+
+/// The error for a document that `document()` could not parse: `LIMIT` for one beyond
+/// the maximum depth, else `FODC0002`, as Saxon reports a document it cannot parse.
+fn loaded_document_error(uri: &str, e: &DocumentError) -> TransformError {
+    match e.limit() {
+        Some(limit) => TransformError::limit_exceeded(limit).in_document(uri),
+        None => TransformError::new("FODC0002", format!("{uri}: {}", e.message())),
     }
 }
 

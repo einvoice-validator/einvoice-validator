@@ -109,3 +109,55 @@ pub(crate) fn temp_dir(name: &str) -> PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
+
+/// The element depth of a document (the document element is at depth 1).
+pub(crate) fn depth(bytes: &[u8]) -> u32 {
+    let text = std::str::from_utf8(bytes).unwrap();
+    let doc = roxmltree::Document::parse(text).unwrap();
+    doc.descendants()
+        .filter(roxmltree::Node::is_element)
+        .map(|n| u32::try_from(n.ancestors().filter(roxmltree::Node::is_element).count()).unwrap())
+        .max()
+        .unwrap_or(0)
+}
+
+/// The maximum depth the corpus tests raise the limit to for the cases deeper than
+/// [`DEFAULT_MAX_DEPTH`](einvoice_validator::DEFAULT_MAX_DEPTH), to compare them with
+/// Saxon-HE, which has no such limit.
+pub(crate) const RAISED_MAX_DEPTH: u32 = 1024;
+
+/// Validates a case as a caller with the default maximum depth does. A document deeper
+/// than [`DEFAULT_MAX_DEPTH`](einvoice_validator::DEFAULT_MAX_DEPTH) must be refused with
+/// [`Error::Limit`](einvoice_validator::Error::Limit) for the depth, at its line; it is
+/// then validated again with the maximum raised to [`RAISED_MAX_DEPTH`], on the same
+/// thread, for the comparison with Saxon-HE. Every other document must be validated
+/// under the default maximum.
+pub(crate) fn validate_case(
+    validator: &einvoice_validator::Validator,
+    bytes: Vec<u8>,
+    options: &einvoice_validator::ValidateOptions<'_>,
+) -> Result<einvoice_validator::Report, einvoice_validator::Error> {
+    use einvoice_validator::{DEFAULT_MAX_DEPTH, Error, LimitExceeded};
+    let deeper = depth(&bytes) > DEFAULT_MAX_DEPTH;
+    if !deeper {
+        let result = validator.validate_owned_with(bytes, options);
+        assert!(
+            !matches!(result, Err(Error::Limit { .. })),
+            "{:?}",
+            result.err()
+        );
+        return result;
+    }
+    match validator.validate_with(&bytes, options) {
+        Err(Error::Limit {
+            limit:
+                LimitExceeded::Depth {
+                    max: DEFAULT_MAX_DEPTH,
+                    ..
+                },
+            ..
+        }) => {}
+        other => panic!("a document deeper than the default maximum depth: {other:?}"),
+    }
+    validator.validate_owned_with(bytes, &options.max_depth(RAISED_MAX_DEPTH))
+}

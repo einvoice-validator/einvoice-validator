@@ -57,6 +57,7 @@ mod eval;
 mod functions;
 mod item;
 mod library;
+mod limit;
 pub mod tree;
 
 pub use compile::{BindingValue, CompiledExpr, ValueType, compile};
@@ -66,4 +67,5 @@ pub use context::{
 };
 pub use error::{Error, ErrorCode, Result};
 pub use item::Item;
+pub use limit::{DEFAULT_MAX_DEPTH, LimitExceeded};
 pub use tree::{Document, DocumentError, Node, NodeAxis, NodeKind, TreeBuilder, file_uri};

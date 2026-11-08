@@ -6,7 +6,9 @@ chosen, the same result. A stylesheet loaded by
 [`einvoice-xslt`](https://crates.io/crates/einvoice-xslt) is prepared once, then runs on any
 number of documents and writes its result, for a compiled Schematron the SVRL report.
 Constructs whose result would differ from Saxon-HE's are refused when a stylesheet is
-prepared.
+prepared. A document nested deeper than 256 elements (`TransformOptions::max_depth`), and
+template or function invocations nested beyond a maximum nesting or stack, end the
+transformation with a `LIMIT` error rather than overflowing the stack.
 
 This crate is part of [einvoice-validator](https://github.com/einvoice-validator/einvoice-validator), which validates EN 16931 and Peppol BIS
 Billing 3.0 e-invoices against the official validation artefacts in pure Rust. On every case

@@ -129,7 +129,7 @@ pub fn canonicalize(svrl: &str, document_uri: &dyn Fn(&str) -> bool) -> Result<S
     let mut out = String::new();
     out.push_str(HEADER);
     out.push('\n');
-    element(root, 0, document_uri, &mut out)?;
+    element(root, 0, 1, document_uri, &mut out)?;
     Ok(out)
 }
 
@@ -144,12 +144,26 @@ fn check_outside_root(node: Node<'_, '_>) -> Result<()> {
     }
 }
 
+/// The deepest nesting of SVRL elements read: an SVRL report nests three deep
+/// (`svrl:schematron-output`, `svrl:failed-assert`, `svrl:text`), and anything deeper is
+/// refused before the recursion over it could exhaust the stack.
+const MAX_LEVEL: usize = 16;
+
+/// The canonical lines of `node`, an element `level` deep (the root is at level 1),
+/// indented `depth` steps.
 fn element(
     node: Node<'_, '_>,
     depth: usize,
+    level: usize,
     document_uri: &dyn Fn(&str) -> bool,
     out: &mut String,
 ) -> Result<()> {
+    if level > MAX_LEVEL {
+        return Err(Error::new(format!(
+            "SVRL: elements nested more than {MAX_LEVEL} deep at byte {}",
+            node.range().start
+        )));
+    }
     let name = svrl_name(node)?;
     let is_container = CONTAINERS.contains(&name);
     if !is_container && !TEXT_HOLDERS.contains(&name) {
@@ -197,7 +211,7 @@ fn element(
         match child.node_type() {
             NodeType::Element => {
                 has_elements = true;
-                element(child, child_depth, document_uri, &mut lines)?;
+                element(child, child_depth, level + 1, document_uri, &mut lines)?;
             }
             NodeType::Comment => {
                 push_indent(&mut lines, child_depth);
@@ -563,6 +577,40 @@ mod tests {
             "<x:y xmlns:x=\"urn:x\"/>",
         );
         assert!(canonicalize(&foreign, &uri).is_err());
+    }
+
+    /// SVRL elements nested deeply (a stylesheet copying a deep document into its
+    /// report) are refused, not recursed over: on a 2 MiB thread, at 100 000 levels.
+    #[test]
+    fn deep_nesting_is_refused() {
+        let nested = |n: usize| {
+            SVRL.replace(
+                "<svrl:fired-rule context=\"/a | /b\"/>",
+                &format!(
+                    "{}{}",
+                    "<svrl:fired-rule>".repeat(n),
+                    "</svrl:fired-rule>".repeat(n)
+                ),
+            )
+        };
+        // The root and 15 levels below it: within the bound.
+        assert!(canonicalize(&nested(15), &uri).is_ok());
+        let error = canonicalize(&nested(16), &uri).unwrap_err();
+        assert!(
+            error
+                .message()
+                .starts_with("SVRL: elements nested more than 16 deep"),
+            "{error}"
+        );
+        let deep = nested(100_000);
+        let error = std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(move || canonicalize(&deep, &uri).map(drop))
+            .unwrap()
+            .join()
+            .unwrap()
+            .unwrap_err();
+        assert!(error.message().contains("nested more than 16"), "{error}");
     }
 
     #[test]

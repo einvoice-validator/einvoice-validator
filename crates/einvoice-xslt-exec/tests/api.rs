@@ -119,6 +119,7 @@ fn options_set_parameters_timezone_and_clock() {
             ),
         ],
         resolver: None,
+        ..TransformOptions::default()
     };
     let result = executable.transform_with("<a/>", None, &options).unwrap();
     assert_eq!(

@@ -50,6 +50,17 @@
 //! where this crate's do not: the warnings for errors in patterns are then fewer
 //! distinct messages, for the same patterns and codes.
 //!
+//! Limits ([`TransformOptions`]): the source document and the documents `document()`
+//! loads are refused when an element is nested deeper than `max_depth`
+//! ([`einvoice_xpath_eval::DEFAULT_MAX_DEPTH`], 256), and a transformation ends when its
+//! template rules, built-in rules, named templates and functions are invoked one inside
+//! another more than `max_nesting` deep ([`DEFAULT_MAX_NESTING`]) or use more than
+//! `max_stack` bytes of stack ([`DEFAULT_MAX_STACK`]): a `LIMIT` error
+//! ([`TransformError::limit`]) instead of a stack overflow, which would abort the process.
+//! Walking a tree without template rules (copying a node, the path of a node in a
+//! warning) uses no recursion. With the defaults, the official stylesheets run on a
+//! document 256 deep on a thread with the default 2 MiB stack, debug builds included.
+//!
 //! Refused when the stylesheet is prepared, rather than run differently from the
 //! reference engine: instructions that construct nodes (or call templates) inside an
 //! `xsl:function` or a variable with `as`, a parenthesized pattern whose predicate
@@ -75,4 +86,7 @@ mod sink;
 
 pub use error::{PrepareError, PrepareErrors, TransformError};
 pub use prepare::Executable;
-pub use run::{DocumentResolver, TransformOptions, Transformation};
+pub use run::{
+    DEFAULT_MAX_NESTING, DEFAULT_MAX_STACK, DocumentResolver, TransformOptions, Transformation,
+    max_nesting_for_depth,
+};

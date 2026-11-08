@@ -11,7 +11,10 @@ pub(crate) mod peppol;
 
 use std::path::{Path, PathBuf};
 
-use einvoice_xslt_exec::Executable;
+use einvoice_xpath_eval::{DEFAULT_MAX_DEPTH, Document, LimitExceeded, NodeAxis, NodeKind};
+use einvoice_xslt_exec::{
+    Executable, TransformError, TransformOptions, Transformation, max_nesting_for_depth,
+};
 
 pub(crate) const RULE_SET: &str = "cen-en16931-ubl-1.3.17";
 pub(crate) const XSLT: &str =
@@ -103,6 +106,82 @@ pub(crate) fn svrl<'s>(
     let uri = einvoice_xpath_eval::file_uri(Path::new(path));
     executable
         .transform(text, uri.as_deref())
+        .map(|t| t.output)
+        .map_err(|e| format!("{path}: {e}"))
+}
+
+/// The maximum depth the equivalence tests raise the limit to for the cases deeper than
+/// [`DEFAULT_MAX_DEPTH`], to compare them with Saxon-HE, which has no such limit.
+pub(crate) const RAISED_MAX_DEPTH: u32 = 1024;
+
+/// The element depth of a document (the document element is at depth 1); 0 for text
+/// that is not XML.
+pub(crate) fn depth(text: &str) -> u32 {
+    let Ok(doc) = Document::parse_with_max_depth(text, None, u32::MAX) else {
+        return 0;
+    };
+    doc.root()
+        .axis(NodeAxis::Descendant)
+        .filter(|n| n.kind() == NodeKind::Element)
+        .map(|n| {
+            n.axis(NodeAxis::Ancestor)
+                .filter(|a| a.kind() == NodeKind::Element)
+                .count()
+                + 1
+        })
+        .max()
+        .map_or(0, |d| u32::try_from(d).unwrap_or(u32::MAX))
+}
+
+/// Runs the stylesheet on a case as a caller with the default options does. A document
+/// deeper than [`DEFAULT_MAX_DEPTH`] must be refused, with a `LIMIT` error that names
+/// the depth; it is then run again with the maximum raised to [`RAISED_MAX_DEPTH`], on
+/// the same thread (the default 2 MiB stack of a test thread), for the comparison with
+/// Saxon-HE. Every other document must give its result under the default options.
+pub(crate) fn transform_case(
+    executable: &Executable,
+    text: &str,
+    uri: Option<&str>,
+) -> Result<Transformation, TransformError> {
+    let result = executable.transform(text, uri);
+    let deeper = depth(text) > DEFAULT_MAX_DEPTH;
+    match &result {
+        Err(e) if deeper => {
+            assert!(
+                matches!(
+                    e.limit(),
+                    Some(LimitExceeded::Depth {
+                        max: DEFAULT_MAX_DEPTH,
+                        ..
+                    })
+                ),
+                "{e}"
+            );
+            assert_eq!(e.code(), "LIMIT");
+            let options = TransformOptions {
+                max_depth: RAISED_MAX_DEPTH,
+                max_nesting: max_nesting_for_depth(RAISED_MAX_DEPTH),
+                ..TransformOptions::default()
+            };
+            executable.transform_with(text, uri, &options)
+        }
+        _ => {
+            assert!(
+                !deeper,
+                "a document deeper than the default maximum depth was accepted"
+            );
+            if let Err(e) = &result {
+                assert_eq!(e.limit(), None, "{e}");
+            }
+            result
+        }
+    }
+}
+
+/// The SVRL of a case read from `path` ([`transform_case`]).
+pub(crate) fn case_svrl(executable: &Executable, text: &str, path: &str) -> Result<String, String> {
+    let uri = einvoice_xpath_eval::file_uri(Path::new(path));
+    transform_case(executable, text, uri.as_deref())
         .map(|t| t.output)
         .map_err(|e| format!("{path}: {e}"))
 }
@@ -206,7 +285,7 @@ pub(crate) fn check_mutations(
         let outcome = (|| -> Result<(), String> {
             let text = read(Path::new(&case.input))?;
             let uri = einvoice_xpath_eval::file_uri(Path::new(&case.input));
-            let ours = executable.transform(text.as_str(), uri.as_deref());
+            let ours = transform_case(executable, &text, uri.as_deref());
             match (expected(golden_dir, &case.id)?, ours) {
                 (Expected::Svrl(golden), Ok(t)) => {
                     let canonical = canonical(&t.output, &case.input)?;

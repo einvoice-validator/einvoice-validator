@@ -37,7 +37,8 @@ fn check(validator: &Validator, id: &str, input: &str) -> Result<(), String> {
     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
     let golden_dir = common::join(&root, &format!("{CORPUS}/golden"));
     let error_golden = common::join(&golden_dir, &format!("{id}.error.txt"));
-    let result = validator.validate_owned_with(bytes, &ValidateOptions::new().document_uri(&uri));
+    let result =
+        common::validate_case(validator, bytes, &ValidateOptions::new().document_uri(&uri));
     if error_golden.exists() {
         let text = std::fs::read_to_string(&error_golden).map_err(|e| e.to_string())?;
         let code = text
@@ -91,23 +92,11 @@ fn check(validator: &Validator, id: &str, input: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The stack of the thread that validates: as `einvoice-validate`'s workers. The engine
-/// recurses once per level of the document tree; the mutation case
-/// `long/deep-nesting.xml` (300 levels) needs more than the 2 MiB of a test thread in a
-/// debug build.
-const STACK_SIZE: usize = 8 << 20;
-
+/// On the default stack of a test thread (2 MiB): the mutation case
+/// `long/deep-nesting.xml`, 304 levels deep, is refused under the default maximum depth,
+/// then compared with Saxon-HE with the maximum raised (`common::validate_case`).
 #[test]
 fn every_cii_case_agrees_with_the_saxon_golden() {
-    std::thread::Builder::new()
-        .stack_size(STACK_SIZE)
-        .spawn(check_all)
-        .unwrap()
-        .join()
-        .unwrap();
-}
-
-fn check_all() {
     let validator = Validator::cen_cii().unwrap();
     let cases = index("cases.tsv");
     let mutations = index("mutations.tsv");

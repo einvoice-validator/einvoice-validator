@@ -13,6 +13,12 @@
 //!
 //! The model has no namespace nodes and no type annotations: every element and attribute is
 //! untyped, so its typed value is `xs:untypedAtomic`.
+//!
+//! A parsed document may be nested at most [`DEFAULT_MAX_DEPTH`] elements deep, or the
+//! maximum given to [`Document::parse_with_max_depth`]: beyond it the parse fails with
+//! [`LimitExceeded::Depth`], so that what walks the tree recursively (the template rules of
+//! a stylesheet) has a bounded depth. Parsing, building and walking a tree use no
+//! recursion.
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -24,6 +30,8 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use einvoice_xdm::AtomicValue;
 use einvoice_xpath::{QName, XML_NAMESPACE};
+
+use crate::limit::{DEFAULT_MAX_DEPTH, LimitExceeded};
 
 /// "No node" in the parent, previous sibling and name fields.
 const NONE: u32 = u32::MAX;
@@ -143,12 +151,21 @@ impl Record {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentError {
     message: String,
+    limit: Option<LimitExceeded>,
 }
 
 impl DocumentError {
     fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            limit: None,
+        }
+    }
+
+    fn limit_exceeded(limit: LimitExceeded) -> Self {
+        Self {
+            message: limit.to_string(),
+            limit: Some(limit),
         }
     }
 
@@ -156,6 +173,13 @@ impl DocumentError {
     #[must_use]
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// The limit the document exceeded, when that is the problem: an element nested
+    /// deeper than the maximum depth ([`LimitExceeded::Depth`]).
+    #[must_use]
+    pub const fn limit(&self) -> Option<LimitExceeded> {
+        self.limit
     }
 }
 
@@ -213,15 +237,35 @@ impl Document {
     /// validated. (Saxon 9.9 fell back to the system id.) A document loaded by
     /// `fn:document` is parsed with [`Document::parse_loaded`].
     ///
+    /// An element may be nested at most [`DEFAULT_MAX_DEPTH`] deep (the document element
+    /// is at depth 1); [`Document::parse_with_max_depth`] sets another maximum.
+    ///
     /// # Errors
     ///
     /// XML that is not well-formed or not namespace-well-formed, or that has a document
-    /// type declaration.
+    /// type declaration; an element nested deeper than the maximum depth
+    /// ([`DocumentError::limit`] is then [`LimitExceeded::Depth`]).
     pub fn parse<'t>(
         text: impl Into<Cow<'t, str>>,
         base_uri: Option<&str>,
     ) -> Result<Rc<Self>, DocumentError> {
-        Self::parse_with_uris(text.into(), None, base_uri)
+        Self::parse_with_uris(text.into(), None, base_uri, DEFAULT_MAX_DEPTH)
+    }
+
+    /// [`Document::parse`] with another maximum element depth than
+    /// [`DEFAULT_MAX_DEPTH`]. What walks a tree recursively (the template rules of a
+    /// stylesheet) needs stack in proportion to its depth: a larger maximum needs a
+    /// larger stack.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Document::parse`].
+    pub fn parse_with_max_depth<'t>(
+        text: impl Into<Cow<'t, str>>,
+        base_uri: Option<&str>,
+        max_depth: u32,
+    ) -> Result<Rc<Self>, DocumentError> {
+        Self::parse_with_uris(text.into(), None, base_uri, max_depth)
     }
 
     /// Parses XML text as [`Document::parse`] does, for a document that `fn:document`
@@ -235,16 +279,31 @@ impl Document {
         text: impl Into<Cow<'t, str>>,
         uri: &str,
     ) -> Result<Rc<Self>, DocumentError> {
-        Self::parse_with_uris(text.into(), Some(uri), Some(uri))
+        Self::parse_with_uris(text.into(), Some(uri), Some(uri), DEFAULT_MAX_DEPTH)
+    }
+
+    /// [`Document::parse_loaded`] with another maximum element depth than
+    /// [`DEFAULT_MAX_DEPTH`].
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Document::parse`].
+    pub fn parse_loaded_with_max_depth<'t>(
+        text: impl Into<Cow<'t, str>>,
+        uri: &str,
+        max_depth: u32,
+    ) -> Result<Rc<Self>, DocumentError> {
+        Self::parse_with_uris(text.into(), Some(uri), Some(uri), max_depth)
     }
 
     fn parse_with_uris(
         text: Cow<'_, str>,
         document_uri: Option<&str>,
         base_uri: Option<&str>,
+        max_depth: u32,
     ) -> Result<Rc<Self>, DocumentError> {
         let keep_source = matches!(text, Cow::Owned(_));
-        let builder = build_parsed(&text, keep_source)?;
+        let builder = build_parsed(&text, keep_source, max_depth)?;
         let source = match text {
             Cow::Owned(source) => source,
             Cow::Borrowed(_) => String::new(),
@@ -996,8 +1055,13 @@ type NameKey<'a> = (&'a str, Option<&'a str>, &'a str);
 /// counts the nodes and the bytes of text to copy, so that the arena is allocated once at
 /// its exact size; the second fills it. With `keep_source`, every text that is a slice of
 /// `input` is stored as a range of it instead of being copied (the document then keeps
-/// `input`).
-fn build_parsed(input: &str, keep_source: bool) -> Result<TreeBuilder, DocumentError> {
+/// `input`). An element nested deeper than `max_depth` is refused by the first pass,
+/// before the arena is allocated.
+fn build_parsed(
+    input: &str,
+    keep_source: bool,
+    max_depth: u32,
+) -> Result<TreeBuilder, DocumentError> {
     let options = roxmltree::ParsingOptions {
         allow_dtd: false,
         nodes_limit: u32::MAX,
@@ -1005,7 +1069,7 @@ fn build_parsed(input: &str, keep_source: bool) -> Result<TreeBuilder, DocumentE
     };
     let parsed = roxmltree::Document::parse_with_options(input, options)
         .map_err(|e| DocumentError::new(format!("XML: {e}")))?;
-    let (nodes, text_bytes) = sizes(&parsed, input, keep_source);
+    let (nodes, text_bytes) = sizes(&parsed, input, keep_source, max_depth)?;
     let mut builder =
         TreeBuilder::with_capacity(nodes, text_bytes, if keep_source { input.len() } else { 0 });
     let mut names: HashMap<NameKey<'_>, u32> = HashMap::new();
@@ -1079,7 +1143,16 @@ fn build_parsed(input: &str, keep_source: bool) -> Result<TreeBuilder, DocumentE
 /// The number of nodes of the tree of a parsed document (the document node included) and
 /// the bytes of text to copy into it: all of them, or with `keep_source` those that are
 /// not slices of `input`.
-fn sizes(parsed: &roxmltree::Document<'_>, input: &str, keep_source: bool) -> (usize, usize) {
+///
+/// # Errors
+///
+/// An element nested deeper than `max_depth` ([`LimitExceeded::Depth`]).
+fn sizes(
+    parsed: &roxmltree::Document<'_>,
+    input: &str,
+    keep_source: bool,
+    max_depth: u32,
+) -> Result<(usize, usize), DocumentError> {
     let copied = |text: &str| {
         if keep_source && offset_in(input, text).is_some() {
             0
@@ -1088,10 +1161,26 @@ fn sizes(parsed: &roxmltree::Document<'_>, input: &str, keep_source: bool) -> (u
         }
     };
     let (mut nodes, mut text_bytes) = (1usize, 0usize);
+    // The elements still open, innermost last, as in `build_parsed`: their number is
+    // the depth of the parent of the next element.
+    let mut open: Vec<roxmltree::NodeId> = Vec::new();
     for node in parsed.root().descendants().skip(1) {
         match node.node_type() {
             roxmltree::NodeType::Root => {}
             roxmltree::NodeType::Element => {
+                let parent = node.parent().map(|p| p.id());
+                while open.last().is_some_and(|&id| Some(id) != parent) {
+                    open.pop();
+                }
+                if u32::try_from(open.len()).map_or(true, |depth| depth >= max_depth) {
+                    let at = parsed.text_pos_at(node.range().start);
+                    return Err(DocumentError::limit_exceeded(LimitExceeded::Depth {
+                        max: max_depth,
+                        line: at.row,
+                        column: at.col,
+                    }));
+                }
+                open.push(node.id());
                 nodes += 1;
                 for attribute in node.attributes() {
                     nodes += 1;
@@ -1114,7 +1203,7 @@ fn sizes(parsed: &roxmltree::Document<'_>, input: &str, keep_source: bool) -> (u
             }
         }
     }
-    (nodes, text_bytes)
+    Ok((nodes, text_bytes))
 }
 
 /// The identity of a name in the builder's table, added on first sight.

@@ -190,10 +190,44 @@ fn the_cii_rule_set_agrees_with_the_saxon_goldens_on_the_mutation_cases() {
     assert_eq!(documents.len(), cases.len());
     let golden = format!("{CORPUS}/golden");
     let mut problems = Vec::new();
+    // The cases deeper than the default maximum depth (256): refused, then compared with
+    // Saxon-HE with `--max-depth` raised.
+    let mut deep = Vec::new();
     for (case, document) in cases.iter().zip(documents) {
         if document.get("rule_set").str() != Some("cen-cii") {
             problems.push(format!("{}: not validated with cen-cii", case.id));
         }
+        let too_deep =
+            document.get("status").str() == Some("error")
+                && document.get("error").get("message").str().is_some_and(|m| {
+                    m.contains("element nested deeper than the maximum depth of 256")
+                });
+        if too_deep {
+            assert_eq!(document.get("error").get("kind").str(), Some("unsupported"));
+            deep.push(case);
+            continue;
+        }
+        problems.extend(common::check_mutation_document(
+            &case.id,
+            document,
+            &[("EN16931-CII", golden.as_str())],
+        ));
+    }
+    let ids: Vec<&str> = deep.iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(ids, ["mutations/long/deep-nesting.xml"]);
+    let inputs: Vec<&str> = deep.iter().map(|c| c.input.as_str()).collect();
+    let raised = common::run_json_batches(
+        &[
+            "--rules",
+            "cen-cii",
+            "--format",
+            "json",
+            "--max-depth",
+            "1024",
+        ],
+        &inputs,
+    );
+    for (case, document) in deep.iter().zip(raised.documents()) {
         problems.extend(common::check_mutation_document(
             &case.id,
             document,

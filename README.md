@@ -67,6 +67,7 @@ einvoice-validate --rules cen-cii invoice.xml        # a built-in rule set by na
 einvoice-validate --format json --jobs 4 invoices/*.xml > report.json
 einvoice-validate --format svrl - < invoice.xml      # the SVRL report, as the stylesheet wrote it
 einvoice-validate --bundle DIR invoice.xml           # a rule-set bundle: DIR/bundle.toml and its stylesheets
+einvoice-validate --max-depth 1000 deep.xml          # accept elements nested up to 1000 deep (default 256)
 einvoice-validate --licences                         # the licences of everything the binary embeds, in full
 ```
 
@@ -85,13 +86,24 @@ broken.xml: invalid: 1 schema error, 11 fatal
 Exit status, the highest that applies: `0` every document is valid (no schema error, no finding
 with flag `fatal`); `1` a document is invalid (schema errors, fatal findings, or not well-formed
 XML); `2` usage error, or a file or bundle that cannot be read or is not valid; `3` a construct
-the engine does not support, a stylesheet error on a document, or an internal error. Without
+the engine does not support, a document beyond a limit, a stylesheet error on a document, or an
+internal error. Without
 `--rules` or `--bundle`, each document is validated with the built-in rule set of its syntax:
 `cen-ubl` for a UBL `Invoice` or `CreditNote`, `cen-cii` for a CII `CrossIndustryInvoice`
 (namespace `urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100`), `cen-ubl` for
 anything else; the JSON report names the rule set of each document. The options,
 the output formats and the JSON format (versioned) are documented in
 [`crates/einvoice-cli/README.md`](crates/einvoice-cli/README.md).
+
+**Deeply nested documents.** A document with an element nested deeper than 256 levels (the
+document element is at depth 1; libxml2's default limit) is refused before it is validated, with
+the line and column of that element: `Error::Limit` in the library, exit status `3` in
+`einvoice-validate`. `ValidateOptions::max_depth` and `--max-depth N` set another maximum. The
+stylesheets recurse once or twice per element level, so the limit keeps a validation within a
+bounded call stack: at the default maximum, it runs on a thread with the default 2 MiB stack, in
+a debug build too. The stylesheets' template and function invocations are bounded as well, in
+nesting and in the stack they use (`ValidateOptions::max_stack`, 1.5 MiB by default): a rule set
+that recurses without end fails with `Error::Limit` instead of overflowing the stack.
 
 **Peppol BIS Billing 3.0.** Its files carry no licence, so they are not part of this repository:
 `scripts/fetch-peppol.sh` (needs Java and network access the first time) downloads the pinned

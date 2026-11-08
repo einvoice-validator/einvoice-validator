@@ -69,6 +69,45 @@ against.
 - The release notes no longer repeat the version of a rule set whose name ends with one (Peppol
   BIS Billing 3.0.22): optional `release-name` in `upstream.toml` (#23).
 
+### Security
+
+- A deeply nested document no longer aborts the process with a stack overflow (#29). The
+  stylesheets apply their template rules one element level inside another, and the location
+  paths of the ISO Schematron skeleton recurse over the ancestors of a node, so a document of
+  about 20 KB nested 500 deep (on a 2 MiB thread, 1500 on an 8 MiB main thread) overflowed the
+  stack in the stylesheet stage, which aborts the whole process rather than returning an error.
+  Now:
+  - Every parsed document, the one validated and those `document()` loads, may be nested at
+    most 256 elements deep (the document element is at depth 1; libxml2's default
+    `xmlParserMaxDepth`). Beyond it the document is refused before its schema is checked:
+    `Error::Limit` with `LimitExceeded::Depth` and the line and column of the first element
+    too deep (`ErrorKind::Unsupported`), a `LIMIT` error in `einvoice-xslt-exec`
+    (`TransformError::limit`), `DocumentError::limit` in `einvoice-xpath-eval`. The maximum is
+    set with `ValidateOptions::max_depth`, `TransformOptions::max_depth`,
+    `Document::parse_with_max_depth`, `Document::parse_loaded_with_max_depth`, and
+    `einvoice-validate --max-depth N` (default 256, at most 100000; such a document is an error
+    of kind `unsupported`, exit status 3), whose worker threads get a stack that grows with N.
+  - Template rules, built-in rules, named templates and stylesheet functions invoked one inside
+    another are bounded in nesting (`TransformOptions::max_nesting`, `DEFAULT_MAX_NESTING`:
+    `max_nesting_for_depth` of the maximum depth, twice it plus 64, 576 by default) and in the
+    stack they use (`TransformOptions::max_stack` and `ValidateOptions::max_stack`,
+    `DEFAULT_MAX_STACK`: 1.5 MiB, 640 KiB on WebAssembly): a stylesheet that recurses without
+    end fails with `LimitExceeded::Nesting` or `LimitExceeded::Stack`. These errors are never
+    recovered as pattern warnings.
+  - The stack each level of recursion needs is reduced, from 13.7 KiB to 2.8 KiB in a debug
+    build and from 2.9 KiB to 1.3 KiB in a release build: at the default maximum depth, the CEN
+    rule sets and both Peppol stylesheets run on a thread with the default 2 MiB stack, debug
+    builds included (about 0.8 MiB for CEN UBL, 1.5 MiB for Peppol in a debug build). Copying a
+    node to the result or into a temporary tree, the path of a node in a warning, and the
+    canonical form of an SVRL report (which refuses elements nested more than 16 deep) no
+    longer recurse over the depth of a tree.
+  - Breaking: `TransformOptions` has the public fields `max_depth`, `max_nesting` and
+    `max_stack` (construct it with `..TransformOptions::default()`); `LimitExceeded` is a new
+    `non_exhaustive` enum, `Error::Limit` a new variant.
+  - The CII equivalence tests run on the default 2 MiB stack of a test thread: the mutation
+    case `long/deep-nesting` (304 deep) is refused under the default maximum, then compared with
+    Saxon-HE with the maximum raised.
+
 ## [0.1.0] - 2026-11-08
 
 Tested against the official rule sets: CEN EN 16931 validation artefacts 1.3.17, Peppol BIS Billing 3.0 3.0.22.

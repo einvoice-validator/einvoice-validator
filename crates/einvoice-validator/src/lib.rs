@@ -7,7 +7,8 @@
 //! validation runs, in order:
 //!
 //! 1. the XML check: UTF-8, well-formed, namespace-well-formed, no document type
-//!    declaration ([`Error::NotXml`], [`Error::Unsupported`]);
+//!    declaration ([`Error::NotXml`], [`Error::Unsupported`]), no element nested deeper
+//!    than [`ValidateOptions::max_depth`] ([`Error::Limit`]);
 //! 2. the XML schema of the rule set, if any (UBL 2.1 for the UBL rule sets), with
 //!    [`einvoice_xsd`]: every validity error, with its line and column;
 //! 3. every stylesheet of the rule set, with [`einvoice_xslt_exec`], which executes the
@@ -99,8 +100,23 @@
 //! A schema error or a failed assert is not an error: it is in the [`Report`]. An
 //! [`Error`] means no complete verdict could be given: a bundle that cannot be loaded,
 //! a document that is not XML, a construct the engine refuses rather than evaluating it
-//! differently from the reference engine, a dynamic error raised by a stylesheet, or a
-//! bug.
+//! differently from the reference engine, a document beyond a limit, a dynamic error
+//! raised by a stylesheet, or a bug.
+//!
+//! # Limits
+//!
+//! The stylesheets walk the document with template rules applied one element level
+//! inside another, so the stack a validation needs grows with the depth of the document.
+//! A document with an element nested deeper than [`ValidateOptions::max_depth`]
+//! ([`DEFAULT_MAX_DEPTH`], 256, libxml2's default) is therefore refused before its schema
+//! is checked, with [`Error::Limit`] and the line and column of that element, rather
+//! than overflowing the stack of the thread, which would abort the process. At the
+//! default maximum, a validation with the built-in rule sets or the Peppol bundle runs on
+//! a thread with the default 2 MiB stack of a spawned thread, debug builds included. The
+//! template and function invocations of the stylesheets are bounded too: in nesting
+//! ([`max_nesting_for_depth`] of the maximum depth) and in the stack they use
+//! ([`ValidateOptions::max_stack`], [`DEFAULT_MAX_STACK`]), so that a stylesheet that
+//! recurses without end fails with [`Error::Limit`] as well.
 
 mod builtin;
 mod detect;
@@ -124,6 +140,19 @@ pub use validator::{ValidateOptions, Validator, file_uri};
 /// The clock of a validation ([`ValidateOptions::clock`]): the implicit timezone and the
 /// value of `fn:current-dateTime()`.
 pub use einvoice_xpath_eval::Clock;
+
+/// The default maximum element depth of a document ([`ValidateOptions::max_depth`]), and
+/// the limits [`Error::Limit`] reports.
+pub use einvoice_xpath_eval::{DEFAULT_MAX_DEPTH, LimitExceeded};
+
+/// The nesting of template and function invocations the stylesheets are allowed on a
+/// document at most `max_depth` deep ([`ValidateOptions::max_depth`]): twice the depth,
+/// plus 64. Each level needs less than 3 KiB of stack (debug builds included), which is
+/// what a caller raising the maximum depth must give the validating thread.
+pub use einvoice_xslt_exec::max_nesting_for_depth;
+
+/// The default stack the stylesheets may use ([`ValidateOptions::max_stack`]).
+pub use einvoice_xslt_exec::DEFAULT_MAX_STACK;
 
 /// The version of this crate, as published.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

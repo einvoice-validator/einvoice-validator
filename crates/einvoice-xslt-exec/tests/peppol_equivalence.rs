@@ -42,7 +42,7 @@ fn every_case_matches_the_saxon_goldens_of_both_stylesheets() {
         for case in &corpus.cases {
             let text = common::read(std::path::Path::new(&case.input)).unwrap();
             let golden = common::read(&stylesheet.golden(case)).unwrap();
-            let ours = common::svrl(&executable, &text, &case.input)
+            let ours = common::case_svrl(&executable, &text, &case.input)
                 .and_then(|svrl| common::canonical(&svrl, &case.input));
             match ours {
                 Ok(canonical) if canonical == golden => {}

@@ -10,27 +10,8 @@
 
 mod common;
 
-/// The stack of the thread that runs the cases: as `einvoice-validate`'s workers. The
-/// engine recurses once per level of the document tree; the mutation case
-/// `long/deep-nesting.xml` (300 levels) needs more than the 2 MiB of a test thread in a
-/// debug build.
-const STACK_SIZE: usize = 8 << 20;
-
-fn on_a_large_stack(f: fn()) {
-    std::thread::Builder::new()
-        .stack_size(STACK_SIZE)
-        .spawn(f)
-        .unwrap()
-        .join()
-        .unwrap();
-}
-
 #[test]
 fn every_cii_case_matches_the_saxon_golden() {
-    on_a_large_stack(cases);
-}
-
-fn cases() {
     let root = common::workspace_root();
     let executable = common::prepare(&common::join(&root, common::CII_XSLT)).unwrap();
     let cases = common::cases_of(&root, common::CII_RULE_SET).unwrap();
@@ -39,7 +20,7 @@ fn cases() {
     for case in &cases {
         let text = common::read(std::path::Path::new(&case.input)).unwrap();
         let golden = common::read(&case.golden).unwrap();
-        let ours = common::svrl(&executable, &text, &case.input)
+        let ours = common::case_svrl(&executable, &text, &case.input)
             .and_then(|svrl| common::canonical(&svrl, &case.input));
         match ours {
             Ok(canonical) if canonical == golden => {}
@@ -63,12 +44,11 @@ fn cases() {
     assert!(problems.is_empty(), "{} not equal", problems.len());
 }
 
+/// On the default stack of a test thread (2 MiB): the mutation case
+/// `long/deep-nesting.xml`, 304 levels deep, is refused under the default maximum depth,
+/// then compared with Saxon-HE with the maximum raised (`common::transform_case`).
 #[test]
 fn every_cii_mutation_case_matches_saxon() {
-    on_a_large_stack(mutations);
-}
-
-fn mutations() {
     let root = common::workspace_root();
     let executable = common::prepare(&common::join(&root, common::CII_XSLT)).unwrap();
     let corpus = common::join(&root, &format!("corpus/{}", common::CII_RULE_SET));

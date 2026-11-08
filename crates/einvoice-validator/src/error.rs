@@ -3,6 +3,8 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use einvoice_xpath_eval::LimitExceeded;
+
 /// Why a rule set could not be loaded, or a document could not be validated.
 ///
 /// Validity problems of a document (schema errors, failed asserts) are not errors: they
@@ -51,6 +53,22 @@ pub enum Error {
         /// What is not supported, and where.
         message: String,
     },
+    /// The document exceeds a limit that keeps its validation within a bounded call
+    /// stack: an element nested deeper than [`ValidateOptions::max_depth`]
+    /// ([`LimitExceeded::Depth`]), in the document or in a document a stylesheet loads
+    /// with `document()`; or a stylesheet invoking templates and functions one inside
+    /// another beyond the nesting that maximum allows ([`LimitExceeded::Nesting`]).
+    /// Refused rather than risking a stack overflow, which would abort the process.
+    ///
+    /// [`ValidateOptions::max_depth`]: crate::ValidateOptions::max_depth
+    Limit {
+        /// The limit exceeded, with its value and, for a depth, the line and column of
+        /// the element.
+        limit: LimitExceeded,
+        /// Where: the document, or the stylesheet (by its name in the bundle) and the
+        /// line of its instruction.
+        message: String,
+    },
     /// A stylesheet of the rule set raised a dynamic error on the document (the
     /// reference engine fails on it as well).
     Transform {
@@ -81,7 +99,8 @@ pub enum ErrorKind {
     Bundle,
     /// [`Error::NotXml`].
     NotXml,
-    /// [`Error::Unsupported`].
+    /// [`Error::Unsupported`] and [`Error::Limit`]: input refused rather than
+    /// processed differently from the reference engine, or with an unbounded stack.
     Unsupported,
     /// [`Error::Transform`].
     Transform,
@@ -119,7 +138,7 @@ impl Error {
             Self::Io { .. } => ErrorKind::Io,
             Self::Bundle { .. } | Self::Checksum { .. } => ErrorKind::Bundle,
             Self::NotXml { .. } => ErrorKind::NotXml,
-            Self::Unsupported { .. } => ErrorKind::Unsupported,
+            Self::Unsupported { .. } | Self::Limit { .. } => ErrorKind::Unsupported,
             Self::Transform { .. } => ErrorKind::Transform,
             Self::Internal { .. } => ErrorKind::Internal,
         }
@@ -163,6 +182,7 @@ impl fmt::Display for Error {
                 message,
             } => write!(f, "{line}:{column}: not well-formed XML: {message}"),
             Self::Unsupported { message } => write!(f, "unsupported: {message}"),
+            Self::Limit { message, .. } => write!(f, "limit exceeded: {message}"),
             Self::Transform {
                 stylesheet,
                 code,

@@ -25,9 +25,28 @@ use crate::render::{Outcome, Status, Style};
 const NAME: &str = "einvoice-validate";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The stack of each worker thread: as large as a main thread's on Linux, for deeply
-/// nested documents.
-const STACK_SIZE: usize = 8 << 20;
+/// The stack of each worker thread, for documents at most `max_depth` deep: at least as
+/// large as a main thread's on Linux (8 MiB), and else 1 MiB plus 4 KiB per level of the
+/// nesting of templates and functions the library allows the stylesheets for that depth
+/// ([`einvoice_validator::max_nesting_for_depth`]). The official stylesheets need less
+/// than 3 KiB per level, debug builds included; a stylesheet that needs more per level
+/// is stopped by the stack it may use ([`max_stack`]) rather than overflowing it.
+fn stack_size(max_depth: u32) -> usize {
+    const MIB: usize = 1 << 20;
+    let nesting =
+        usize::try_from(einvoice_validator::max_nesting_for_depth(max_depth)).unwrap_or(usize::MAX);
+    nesting
+        .saturating_mul(4 << 10)
+        .saturating_add(MIB)
+        .max(8 * MIB)
+}
+
+/// The stack the stylesheets may use on a worker thread with `stack` bytes of stack
+/// ([`ValidateOptions::max_stack`]): all of it but 1 MiB, for the caller and the deepest
+/// invocation.
+fn max_stack(stack: usize) -> u32 {
+    u32::try_from(stack.saturating_sub(1 << 20)).unwrap_or(u32::MAX)
+}
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -146,6 +165,9 @@ Options:
   -b, --bundle DIR     Rule-set bundle in DIR (DIR/bundle.toml), instead of --rules.
   -f, --format FORMAT  Output format: text (default), json or svrl.
   -j, --jobs N         Validate N documents at a time (default: 1).
+      --max-depth N    Refuse a document with an element nested deeper than N
+                       (default: {max_depth}, as libxml2; the document element is at
+                       depth 1).
   -h, --help           Print this help.
   -V, --version        Print the version and the built-in rule sets.
       --licences       Print the licences of everything embedded in this program
@@ -167,12 +189,13 @@ Exit status (the highest that applies):
   0  every document is valid
   1  a document is invalid: schema errors, fatal findings, or not well-formed XML
   2  usage error, or a file or bundle that cannot be read or is not valid
-  3  an unsupported construct (document or rule set), a stylesheet error on a
-     document, or an internal error
+  3  an unsupported construct (document or rule set), a document beyond a
+     limit (--max-depth), a stylesheet error on a document, or an internal error
 ",
         default = args::DEFAULT_RULES,
         builtins = builtin_list(),
         json = render::JSON_FORMAT_VERSION,
+        max_depth = einvoice_validator::DEFAULT_MAX_DEPTH,
     )
 }
 
@@ -302,28 +325,34 @@ fn validate_all(
     let stop = AtomicBool::new(false);
     let (sender, receiver) = mpsc::channel::<(usize, Outcome)>();
     let workers = options.jobs.get().min(options.inputs.len());
+    let stack = stack_size(options.max_depth);
+    let limits = ValidateOptions::new()
+        .max_depth(options.max_depth)
+        .max_stack(max_stack(stack));
     std::thread::scope(|scope| {
         for _ in 0..workers {
             let sender = sender.clone();
             let (next, stop) = (&next, &stop);
-            let spawned = std::thread::Builder::new()
-                .stack_size(STACK_SIZE)
-                .spawn_scoped(scope, move || {
-                    while !stop.load(Ordering::Relaxed) {
-                        let index = next.fetch_add(1, Ordering::Relaxed);
-                        let Some(input) = options.inputs.get(index) else {
-                            break;
-                        };
-                        let Some(validator) = assigned.get(index).and_then(|&v| validators.get(v))
-                        else {
-                            break;
-                        };
-                        let outcome = validate(validator, input, stdin);
-                        if sender.send((index, outcome)).is_err() {
-                            break;
+            let spawned =
+                std::thread::Builder::new()
+                    .stack_size(stack)
+                    .spawn_scoped(scope, move || {
+                        while !stop.load(Ordering::Relaxed) {
+                            let index = next.fetch_add(1, Ordering::Relaxed);
+                            let Some(input) = options.inputs.get(index) else {
+                                break;
+                            };
+                            let Some(validator) =
+                                assigned.get(index).and_then(|&v| validators.get(v))
+                            else {
+                                break;
+                            };
+                            let outcome = validate(validator, input, stdin, &limits);
+                            if sender.send((index, outcome)).is_err() {
+                                break;
+                            }
                         }
-                    }
-                });
+                    });
             if let Err(e) = spawned {
                 stop.store(true, Ordering::Relaxed);
                 return Err(e);
@@ -357,12 +386,13 @@ fn validate(
     validator: &Validator,
     input: &Input,
     stdin: Option<&std::io::Result<Vec<u8>>>,
+    limits: &ValidateOptions<'_>,
 ) -> Outcome {
     let rule_set = validator.rule_set().name().to_owned();
     match input {
         Input::Stdin => {
             let result = match stdin {
-                Some(Ok(bytes)) => validator.validate(bytes),
+                Some(Ok(bytes)) => validator.validate_with(bytes, limits),
                 Some(Err(e)) => Err(Error::Io {
                     path: "-".into(),
                     source: std::io::Error::new(e.kind(), e.to_string()),
@@ -387,9 +417,7 @@ fn validate(
                 })
                 .and_then(|bytes| {
                     let uri = std::path::absolute(path).ok().and_then(|p| file_uri(&p));
-                    let options = uri.as_deref().map_or_else(ValidateOptions::new, |u| {
-                        ValidateOptions::new().document_uri(u)
-                    });
+                    let options = uri.as_deref().map_or(*limits, |u| limits.document_uri(u));
                     // The validation keeps the buffer rather than copying its text.
                     validator.validate_owned_with(bytes, &options)
                 });
@@ -500,5 +528,21 @@ impl Output {
                 self.out(&tail)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{max_stack, stack_size};
+
+    #[test]
+    fn worker_stacks_grow_with_the_maximum_depth() {
+        const MIB: usize = 1 << 20;
+        assert_eq!(stack_size(einvoice_validator::DEFAULT_MAX_DEPTH), 8 * MIB);
+        assert_eq!(stack_size(1), 8 * MIB);
+        // 1 MiB and 4 KiB for each of the 2 * 100000 + 64 levels of nesting.
+        assert_eq!(stack_size(100_000), MIB + 200_064 * 4096);
+        assert_eq!(max_stack(8 * MIB), 7 << 20);
+        assert_eq!(max_stack(stack_size(100_000)), 200_064 * 4096);
     }
 }
