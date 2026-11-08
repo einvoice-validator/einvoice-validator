@@ -13,15 +13,15 @@ use std::sync::Arc;
 use einvoice_xdm::{AtomicValue, Integer, ops};
 
 use crate::compile::{
-    Calculator, CompareStrategy, CompiledExpr, Expr, HostArg, ItemTest, PathMode, Predicate,
-    PredicateKind, Step,
+    Calculator, CompareStrategy, CompiledExpr, Expr, HostArg, ItemTest, NameMatch, NodeTest,
+    PathMode, Predicate, PredicateKind, Step,
 };
 use crate::context::{Context, DynamicContext, FunctionId};
 use crate::error::{Error, ErrorCode, Result, err};
 use crate::functions::Builtin;
 use crate::item::Item;
 use crate::library::ordinal;
-use crate::tree::{Document, Node, NodeAxis, NodeKind};
+use crate::tree::{Cursor, Document, Node, NodeAxis, NodeKind};
 
 /// A lazily produced sequence.
 pub(crate) type Iter<'s> = Box<dyn Iterator<Item = Result<Item>> + 's>;
@@ -1209,16 +1209,25 @@ impl<'a> Run<'a> {
     {
         let node = context_node(ctx, Some(step.axis))?;
         let doc = Rc::clone(node.document());
-        let mut cursor = doc.cursor(node.index(), step.axis);
-        let test = &step.test;
-        let nodes: Iter<'s> = Box::new(std::iter::from_fn(move || {
-            loop {
-                let index = cursor.next(&doc)?;
-                if test.matches(&doc, index) {
-                    return Some(Ok(Item::Node(Node::new(Rc::clone(&doc), index))));
+        let nodes: Iter<'s> = if let Some(listed) = indexed(&doc, node.index(), step) {
+            let listed = listed.to_vec();
+            Box::new(
+                listed
+                    .into_iter()
+                    .map(move |index| Ok(Item::Node(Node::new(Rc::clone(&doc), index)))),
+            )
+        } else {
+            let mut cursor = doc.cursor(node.index(), step.axis);
+            let test = &step.test;
+            Box::new(std::iter::from_fn(move || {
+                loop {
+                    let index = cursor.next(&doc)?;
+                    if test.matches(&doc, index) {
+                        return Some(Ok(Item::Node(Node::new(Rc::clone(&doc), index))));
+                    }
                 }
-            }
-        }));
+            }))
+        };
         let filtered = self.filter(nodes, &step.predicates, ctx)?;
         if step.axis.is_reverse() && step.axis != NodeAxis::Parent {
             // Predicates count in axis order; the step delivers document order.
@@ -1429,10 +1438,65 @@ fn context_item(ctx: &Ctx) -> Result<Item> {
 }
 
 /// The indices of the nodes a step selects from the node at `from` by its axis and node
-/// test, in axis order (its predicates aside).
-fn step_nodes<'d>(doc: &'d Document, from: u32, step: &'d Step) -> impl Iterator<Item = u32> + 'd {
-    let mut cursor = doc.cursor(from, step.axis);
-    std::iter::from_fn(move || cursor.next(doc)).filter(move |&i| step.test.matches(doc, i))
+/// test, in axis order (its predicates aside): the elements of a name among the
+/// descendants are read from the document's index of its elements when it has one.
+fn step_nodes<'d>(doc: &'d Document, from: u32, step: &'d Step) -> StepNodes<'d> {
+    if let Some(listed) = indexed(doc, from, step) {
+        return StepNodes::Listed(listed.iter());
+    }
+    StepNodes::Walked {
+        cursor: doc.cursor(from, step.axis),
+        doc,
+        test: &step.test,
+    }
+}
+
+/// The elements of the name a `descendant` or `descendant-or-self` step tests for, from
+/// the index of the document's elements ([`Document::elements_named`]).
+fn indexed<'d>(doc: &'d Document, from: u32, step: &Step) -> Option<&'d [u32]> {
+    let NodeTest::Named {
+        kind: NodeKind::Element,
+        name: NameMatch::Exact { namespace, local },
+    } = &step.test
+    else {
+        return None;
+    };
+    let (first_child, end) = doc.descendant_range(from);
+    let start = match step.axis {
+        NodeAxis::Descendant => first_child,
+        NodeAxis::DescendantOrSelf => from,
+        _ => return None,
+    };
+    doc.elements_named(namespace.as_deref(), local, start, end)
+}
+
+/// The nodes of [`step_nodes`].
+enum StepNodes<'d> {
+    /// Read from a list of the document's elements.
+    Listed(std::slice::Iter<'d, u32>),
+    /// Walked on the axis, those that pass the test.
+    Walked {
+        cursor: Cursor,
+        doc: &'d Document,
+        test: &'d NodeTest,
+    },
+}
+
+impl Iterator for StepNodes<'_> {
+    type Item = u32;
+
+    #[inline]
+    fn next(&mut self) -> Option<u32> {
+        match self {
+            Self::Listed(listed) => listed.next().copied(),
+            Self::Walked { cursor, doc, test } => loop {
+                let index = cursor.next(doc)?;
+                if test.matches(doc, index) {
+                    return Some(index);
+                }
+            },
+        }
+    }
 }
 
 /// The most predicates of a step [`Run::walk`] walks.

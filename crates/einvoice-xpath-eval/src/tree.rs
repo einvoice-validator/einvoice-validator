@@ -28,6 +28,7 @@
 //! recursion.
 
 use std::borrow::Cow;
+use std::cell::{Cell, OnceCell};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{self, Write as _};
@@ -220,7 +221,25 @@ pub struct Document {
     source: String,
     /// The texts that are not in `source`.
     text: String,
+    /// The elements by expanded name, built by the second search for elements of a
+    /// name among many nodes ([`Document::elements_named`]).
+    elements: OnceCell<ElementIndex>,
+    /// The searches [`Document::elements_named`] answered without the index.
+    searches: Cell<u32>,
 }
+
+/// The fewest nodes a search for elements of a name must span to use an index.
+const INDEXED_SEARCH: u32 = 64;
+
+/// The elements of a document by local name, then namespace, each list in document
+/// order.
+#[derive(Debug, Default)]
+struct ElementIndex {
+    by_local: HashMap<String, ByNamespace>,
+}
+
+/// The elements of one local name, by namespace.
+type ByNamespace = Vec<(Option<String>, Vec<u32>)>;
 
 impl fmt::Debug for Document {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -342,6 +361,8 @@ impl Document {
             namespaces: self.namespaces.clone(),
             source,
             text: self.text.clone(),
+            elements: OnceCell::new(),
+            searches: Cell::new(0),
         }
     }
 
@@ -442,6 +463,85 @@ impl Document {
                 Cow::Owned(value)
             }
         }
+    }
+
+    /// The elements named `{namespace}local` among the nodes from `start` (included) to
+    /// `end` (excluded), in document order, read from an index of the document's
+    /// elements by name, which the second search of [`INDEXED_SEARCH`] nodes or more
+    /// builds. `None` when there is no index (yet): the caller searches the nodes.
+    pub(crate) fn elements_named(
+        &self,
+        namespace: Option<&str>,
+        local: &str,
+        start: u32,
+        end: u32,
+    ) -> Option<&[u32]> {
+        if end.saturating_sub(start) < INDEXED_SEARCH {
+            return None;
+        }
+        let index = if let Some(index) = self.elements.get() {
+            index
+        } else {
+            let searches = self.searches.get().saturating_add(1);
+            self.searches.set(searches);
+            if searches < 2 {
+                return None;
+            }
+            self.elements.get_or_init(|| self.index_elements())
+        };
+        let all = index
+            .by_local
+            .get(local)
+            .and_then(|by_ns| by_ns.iter().find(|(ns, _)| ns.as_deref() == namespace))
+            .map_or(&[][..], |(_, elements)| elements.as_slice());
+        let from = all.partition_point(|&i| i < start);
+        let to = all.partition_point(|&i| i < end);
+        all.get(from..to)
+    }
+
+    /// The index of the elements by expanded name.
+    fn index_elements(&self) -> ElementIndex {
+        // The list of each name: names that differ only by prefix share one.
+        let mut lists: Vec<Vec<u32>> = Vec::new();
+        let mut keys: Vec<(Option<&str>, &str)> = Vec::new();
+        let mut list_of_key: HashMap<(Option<&str>, &str), usize> = HashMap::new();
+        let list_of_name: Vec<usize> = self
+            .names
+            .iter()
+            .map(|name| {
+                let key = (name.namespace.as_deref(), name.local.as_str());
+                *list_of_key.entry(key).or_insert_with(|| {
+                    keys.push(key);
+                    lists.push(Vec::new());
+                    lists.len() - 1
+                })
+            })
+            .collect();
+        for (index, record) in (0_u32..).zip(&self.records) {
+            if record.kind == NodeKind::Element
+                && let Some(&list) = list_of_name.get(record.name as usize)
+                && let Some(elements) = lists.get_mut(list)
+            {
+                elements.push(index);
+            }
+        }
+        let mut by_local: HashMap<String, ByNamespace> = HashMap::new();
+        for ((namespace, local), elements) in keys.into_iter().zip(lists) {
+            if !elements.is_empty() {
+                by_local
+                    .entry(local.to_owned())
+                    .or_default()
+                    .push((namespace.map(str::to_owned), elements));
+            }
+        }
+        ElementIndex { by_local }
+    }
+
+    /// The first index after the attributes of the node at `index` and the first after
+    /// its subtree: the range of its descendants.
+    pub(crate) fn descendant_range(&self, index: u32) -> (u32, u32) {
+        let r = self.record(index);
+        (r.first_child, r.end)
     }
 
     /// The start of an axis walk from the node at `index`.
@@ -1269,6 +1369,8 @@ impl TreeBuilder {
             namespaces: self.namespaces,
             source,
             text: self.text,
+            elements: OnceCell::new(),
+            searches: Cell::new(0),
         }))
     }
 }
@@ -2027,6 +2129,43 @@ mod tests {
         // A text that does not parse is not kept.
         assert!(cache.parse_loaded("<cl>".to_owned(), uri, 8).is_err());
         assert_eq!(cache.entries.lock().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn the_element_index_lists_the_elements_of_a_name_in_document_order() {
+        let mut xml = String::from(r#"<r xmlns:a="urn:x" xmlns:b="urn:x" xmlns="urn:x">"#);
+        for i in 0..40 {
+            let prefix = ["a:", "b:", ""][i % 3];
+            write!(xml, r#"<{prefix}e n="{i}"><f/><e/></{prefix}e><g>t</g>"#).unwrap();
+        }
+        xml.push_str("</r>");
+        let doc = parse(&xml);
+        let scan = |start: u32, end: u32| -> Vec<u32> {
+            (start..end)
+                .filter(|&i| {
+                    doc.kind(i) == NodeKind::Element
+                        && doc.name(i).is_some_and(|n| {
+                            n.local == "e" && n.namespace.as_deref() == Some("urn:x")
+                        })
+                })
+                .collect()
+        };
+        let (first, end) = doc.descendant_range(0);
+        // The first search is answered without an index, the second builds it.
+        assert_eq!(doc.elements_named(Some("urn:x"), "e", first, end), None);
+        let all = doc.elements_named(Some("urn:x"), "e", first, end).unwrap();
+        assert_eq!(all, scan(first, end).as_slice());
+        assert_eq!(all.len(), 80);
+        // A range inside the document, and names it does not have.
+        let inner = doc.elements_named(Some("urn:x"), "e", 10, 200).unwrap();
+        assert_eq!(inner, scan(10, 200).as_slice());
+        assert_eq!(doc.elements_named(None, "e", first, end), Some(&[][..]));
+        assert_eq!(
+            doc.elements_named(Some("urn:x"), "zz", first, end),
+            Some(&[][..])
+        );
+        // Small ranges are searched.
+        assert_eq!(doc.elements_named(Some("urn:x"), "e", 10, 20), None);
     }
 
     #[test]
