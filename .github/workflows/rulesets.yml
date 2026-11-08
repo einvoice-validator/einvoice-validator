@@ -1,0 +1,118 @@
+name: rulesets
+
+# The corpora of the Factur-X, XRechnung and French rule sets, through
+# `scripts/check.sh facturx`, `xrechnung` and `fr-ctc`, one job each. None of
+# their files is committed (see the README of each corpus/<rule set>/): each
+# job downloads the pinned inputs (scripts/fetch-facturx.sh,
+# fetch-xrechnung.sh, fetch-fr-ctc.sh, every input checked against its pinned
+# checksum; XRechnung also runs XML Mutate), extracts the cases, runs
+# Saxon-HE with every stylesheet and cross-checks the goldens with the
+# expectations (XML Mutate tests, documents the reference pipeline accepts)
+# against the committed records of disagreements (`cargo xtask <family>`).
+# Runs when the tooling, the pins, the records or the base documents of the
+# mutation catalogues change.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "xtask/**"
+      - "corpus/factur-x-*/**"
+      - "corpus/xrechnung-*/**"
+      - "corpus/fr-ctc-*/**"
+      - "corpus/mutations.toml"
+      - "corpus/mutations-cii.toml"
+      - "artefacts/cen-en16931-ubl-1.3.17/ubl/examples/**"
+      - "artefacts/cen-en16931-ubl-1.3.17/test/testfiles/**"
+      - "artefacts/cen-en16931-cii-1.3.17/cii/examples/**"
+      - "crates/einvoice-svrl/**"
+      - "scripts/check.sh"
+      - "scripts/fetch-facturx.sh"
+      - "scripts/fetch-xrechnung.sh"
+      - "scripts/fetch-fr-ctc.sh"
+      - "scripts/fetch-saxon.sh"
+      - ".github/workflows/rulesets.yml"
+      - ".cargo/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+  push:
+    branches: [main]
+    paths:
+      - "xtask/**"
+      - "corpus/factur-x-*/**"
+      - "corpus/xrechnung-*/**"
+      - "corpus/fr-ctc-*/**"
+      - "corpus/mutations.toml"
+      - "corpus/mutations-cii.toml"
+      - "artefacts/cen-en16931-ubl-1.3.17/ubl/examples/**"
+      - "artefacts/cen-en16931-ubl-1.3.17/test/testfiles/**"
+      - "artefacts/cen-en16931-cii-1.3.17/cii/examples/**"
+      - "crates/einvoice-svrl/**"
+      - "scripts/check.sh"
+      - "scripts/fetch-facturx.sh"
+      - "scripts/fetch-xrechnung.sh"
+      - "scripts/fetch-fr-ctc.sh"
+      - "scripts/fetch-saxon.sh"
+      - ".github/workflows/rulesets.yml"
+      - ".cargo/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer run on the same ref supersedes the running one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTFLAGS: -D warnings
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  # Transient download failures (HTTP 5xx, resets) are retried: cargo for the
+  # crates, rustup for the toolchain (both default to 3 attempts).
+  CARGO_NET_RETRY: "10"
+  RUSTUP_MAX_RETRIES: "10"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  corpus:
+    name: ${{ matrix.family }} (corpus, Saxon-HE goldens, cross-checks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [facturx, xrechnung, fr-ctc]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: scripts/check.sh toolchain
+      # The downloads and the Saxon-HE jars, keyed by the pins. A cached file
+      # is never trusted: the fetch scripts check every one against its
+      # pinned checksum.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/downloads
+            target/oracle/saxon
+          key: rulesets-${{ matrix.family }}-${{ hashFiles('scripts/fetch-facturx.sh', 'scripts/fetch-xrechnung.sh', 'scripts/fetch-fr-ctc.sh', 'scripts/fetch-saxon.sh') }}
+      # Fails, rather than skips, without Java or network access: CI=true on
+      # GitHub runners.
+      - name: ${{ matrix.family }}
+        env:
+          FAMILY: ${{ matrix.family }}
+        run: scripts/check.sh "$FAMILY"

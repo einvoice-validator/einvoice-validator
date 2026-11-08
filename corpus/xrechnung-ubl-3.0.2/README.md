@@ -1,0 +1,69 @@
+# Test corpus: XRechnung 3.0.2, UBL
+
+Not committed. KoSIT publishes the XRechnung artefacts under the Apache License 2.0, but the
+XRechnung Schematron includes rules derived from Peppol BIS Billing 3.0, which publishes no
+licence; so, as for Peppol, none of the files, and nothing derived from them (extracted
+documents, goldens, whose SVRL holds the rule messages), is in this repository. This directory
+holds only files of this project (MIT):
+
+- `disagreements.tsv`: the cases where the goldens and the expectations disagree, each with its
+  explanation (none for this release).
+
+## The corpus, built locally
+
+`scripts/check.sh xrechnung` builds the UBL and CII corpora in `target/xrechnung/`, outside the
+tracked tree, then checks them:
+
+1. `scripts/fetch-xrechnung.sh` downloads from KoSIT's GitLab (`projekte.kosit.org`), into
+   `target/downloads/`, the validator configuration 2026-08-31, the test suite 2026-08-31, the
+   source archive of the XRechnung Schematron 2.6.0 (tag `v2.6.0`, commit checked) and XML Mutate
+   0.6, and checks the SHA-256 of each. It checks the SHA-256 of the two stylesheets the
+   configuration's UBL scenarios run, `resources/ubl/2.1/xsl/EN16931-UBL-validation.xsl` or
+   `resources/cii/16b/xsl/EN16931-CII-validation.xsl` (the CEN EN 16931 rules 1.3.16, compiled
+   by KoSIT with SchXslt) and `resources/xrechnung/3.0.2/xsl/XRechnung-UBL-validation.xsl`
+   (XRechnung Schematron 2.6.0), sorts the test-suite instances by syntax, and runs XML Mutate on
+   the unit tests of the XRechnung Schematron (`test/instances/ubl-inv/` and `ubl-cn/`), as its build does: the
+   mutants are checked against the pinned SHA-256 of their listing. It copies the CEN examples
+   that are the base documents of the mutation catalogue, and writes the rule-set bundle
+   `target/xrechnung/xrechnung-3.0.2/ubl/bundle.toml`. Every pin is at the top of the
+   script.
+2. `cargo xtask xrechnung` extracts the cases into
+   `target/xrechnung/xrechnung-3.0.2/corpus-ubl/` (same layout and `cases.tsv` format as
+   the committed corpora, see `../README.md`), applies `../mutations.toml` to the CEN documents `Invoice-Max_content.xml`, `CreditNote-Max_content.xml` and `ubl-tc434-example2.xml` (504 mutation cases), runs
+   Saxon-HE with both stylesheets on every case (`golden-cen/`, `golden-xrechnung/`),
+   cross-checks the goldens with the expectations against `disagreements.tsv`, and writes
+   `complete.txt`.
+
+| Cases | Source | Count |
+|---|---|---|
+| `testsuite/<directory>/<file>` | the UBL instances of the test suite: 33 `standard`, 5 `extension`, 6 `technical-cases/cius`, 1 `technical-cases/cvd` | 45 |
+| `cen-examples/<file>` | the CEN EN 16931 UBL 1.3.17 examples (vendored in this repository) | 19 |
+| `cen-testfiles/<file>` | the CEN EN 16931 UBL 1.3.17 test files (vendored in this repository) | 29 |
+| `xmute/<file>` | the mutants XML Mutate generates from the unit tests of the XRechnung Schematron (1119, less the 16 listed below) | 1103 |
+| total | | 1196 |
+
+Not used: the 16 mutants of a `code` mutation of a negative value, whose name contains `--`:
+XML Mutate 0.6 writes that name in a comment, so the document is not well-formed XML (listed in
+`xtask/src/ruleset.rs`).
+
+## Reports with `svrl:metadata`
+
+Both stylesheets are compiled with SchXslt: each report starts with an `svrl:metadata` element
+(the processor, the compiler, the times of the compilation and of the run), which canonical
+form 1 (`../SVRL-CANONICAL.md`) does not represent. The oracle runs Saxon-HE with a fixed clock
+(`-now:2000-01-01T00:00:00Z`), checks that the report records that time, and keeps the element
+apart: the golden `<case id>.svrl.txt` is the canonical form of the rest of the report, and
+`<case id>.metadata.txt` holds the element, one line per element (`{namespace}local name`,
+then its attributes and its text). Two runs give the same goldens, byte for byte.
+
+## Cross-checks
+
+- XML Mutate cases: the active `<?xmute?>` instruction of each mutant names, for the
+  stylesheet `xrubl` (XRechnung-UBL), the rules that must fail (`schematron-invalid`) and those
+  that must not (`schematron-valid`); `cases.tsv` records them as kind `xmute` (`scope`: the
+  stylesheet, `error`: must fail, `success`: must not). The goldens agree with all of them.
+- Test-suite instances: documents the configuration accepts. The scenario of
+  `scenarios.xml` that matches the root element and the specification identifier (BT-24) of
+  each names the stylesheets, and its `customLevel` elements override the level of some rule
+  ids; no finding may have the level `error` (a failed assert flagged `fatal` or `error`, or
+  unflagged, unless overridden). All 45 are accepted.

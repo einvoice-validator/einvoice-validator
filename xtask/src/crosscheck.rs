@@ -12,22 +12,29 @@
 //! - no id of U is reported, whatever the flag;
 //! - every reported id of S is in E or W (nothing unexpected in scope).
 //!
-//! Every disagreement is recorded, with its explanation, in
-//! `corpus/<rule set>/vefa-disagreements.tsv` (committed, also for a fetched
-//! rule set); the check fails when the observed disagreements differ from the
+//! For an XML Mutate case (`crate::xmute`), the findings are those of the one
+//! stylesheet the expectation names: every `error` id must be reported (any
+//! flag), no `success` id may be; and for a document the reference pipeline
+//! accepts, nothing of its profile's stylesheets may reject it
+//! (`crate::acceptance`).
+//!
+//! Every disagreement is recorded, with its explanation, in the record of the
+//! rule set, `corpus/<rule set>/vefa-disagreements.tsv` or
+//! `corpus/<rule set>/disagreements.tsv` (committed, also for a fetched rule
+//! set); the check fails when the observed disagreements differ from the
 //! recorded ones, either way.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::Path;
 
+use crate::acceptance;
 use crate::corpus::{self, Case};
-use crate::ruleset::RuleSet;
+use crate::ruleset::{RuleSet, Stylesheet};
 use crate::svrl;
 use crate::util::{self, Error, Result};
+use crate::vefa::ExpectationKind;
 
-/// The record of known disagreements, in the corpus directory.
-pub(crate) const RECORD: &str = "vefa-disagreements.tsv";
 const RECORD_HEADER: &str = "case\tkind\trule\tsaxon\texplanation";
 
 /// One way a golden disagrees with its VEFA expectation.
@@ -35,7 +42,9 @@ const RECORD_HEADER: &str = "case\tkind\trule\tsaxon\texplanation";
 pub(crate) struct Disagreement {
     pub(crate) case: String,
     /// `missing-error`, `missing-warning`, `success-failed` or
-    /// `unexpected-in-scope`.
+    /// `unexpected-in-scope` (VEFA); `invalid-not-reported`, `valid-reported`
+    /// or `stopped` (XML Mutate: Saxon-HE stopped with a dynamic error);
+    /// `rejected` (an accepted document).
     pub(crate) kind: &'static str,
     pub(crate) rule: String,
     /// The flags Saxon reported for the rule (`none` when not reported).
@@ -47,6 +56,11 @@ pub(crate) struct Disagreement {
 pub(crate) struct Summary {
     pub(crate) vefa_cases: usize,
     pub(crate) agreeing_cases: usize,
+    pub(crate) xmute_cases: usize,
+    pub(crate) agreeing_xmute_cases: usize,
+    /// Accepted documents checked, and those no stylesheet rejects.
+    pub(crate) accepted_cases: usize,
+    pub(crate) agreeing_accepted_cases: usize,
     /// Individual expectations (one per expected id) checked and agreeing.
     pub(crate) expectations: usize,
     pub(crate) agreeing_expectations: usize,
@@ -61,8 +75,20 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet) -> Result<Summary> {
         let Some(expectation) = &case.expectation else {
             continue;
         };
+        if expectation.kind == ExpectationKind::Xmute {
+            let found = xmute_disagreements(root, rule_set, case)?;
+            summary.xmute_cases += 1;
+            let checks = expectation.error.len() + expectation.success.len();
+            summary.expectations += checks;
+            summary.agreeing_expectations += checks.saturating_sub(found.len());
+            if found.is_empty() {
+                summary.agreeing_xmute_cases += 1;
+            }
+            summary.disagreements.extend(found);
+            continue;
+        }
         summary.vefa_cases += 1;
-        let findings = findings(root, rule_set, case)?;
+        let findings = findings(root, rule_set, rule_set.stylesheets.iter(), case)?;
         let flags_of = |rule: &str| -> BTreeSet<&str> {
             findings
                 .iter()
@@ -123,16 +149,103 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet) -> Result<Summary> {
         }
         summary.disagreements.extend(found);
     }
+    if rule_set.acceptance.is_some() {
+        let accepted = acceptance::run(root, rule_set, &cases)?;
+        summary.accepted_cases = accepted.cases;
+        summary.agreeing_accepted_cases = accepted.agreeing;
+        summary.disagreements.extend(accepted.disagreements);
+    }
     summary.disagreements.sort();
     Ok(summary)
 }
 
+/// The disagreements of an XML Mutate case with its expectation.
+fn xmute_disagreements(root: &Path, rule_set: &RuleSet, case: &Case) -> Result<Vec<Disagreement>> {
+    let Some(expectation) = &case.expectation else {
+        return Ok(Vec::new());
+    };
+    let mut found = Vec::new();
+    let Some(name) = expectation.scope.first() else {
+        return Ok(found);
+    };
+    let stylesheet = rule_set
+        .stylesheet(name)
+        .ok_or_else(|| Error::new(format!("{}: unknown stylesheet {name}", case.id)))?;
+    let error_golden = util::join(
+        &rule_set.base(root),
+        &case.error_golden(rule_set, stylesheet),
+    );
+    if error_golden.is_file() {
+        // Saxon-HE stopped with a dynamic error: no expectation can hold.
+        let text = util::read_string(&error_golden)?;
+        let code = text
+            .lines()
+            .next()
+            .and_then(|l| l.strip_prefix("error "))
+            .unwrap_or("?");
+        found.push(Disagreement {
+            case: case.id.clone(),
+            kind: "stopped",
+            rule: "-".to_owned(),
+            saxon: format!("error {code}"),
+        });
+        return Ok(found);
+    }
+    let findings = findings(root, rule_set, std::iter::once(stylesheet), case)?;
+    let flags_of = |rule: &str| -> BTreeSet<&str> {
+        findings
+            .iter()
+            .filter(|(id, _)| id == rule)
+            .map(|(_, flag)| flag.as_str())
+            .collect()
+    };
+    // (rule ids, whether each must be reported, the kind of a disagreement)
+    for (rules, must_be_reported, kind) in [
+        (&expectation.error, true, "invalid-not-reported"),
+        (&expectation.success, false, "valid-reported"),
+    ] {
+        for rule in rules {
+            let flags = flags_of(rule);
+            if flags.is_empty() != must_be_reported {
+                continue;
+            }
+            found.push(Disagreement {
+                case: case.id.clone(),
+                kind,
+                rule: rule.clone(),
+                saxon: describe(&flags),
+            });
+        }
+    }
+    Ok(found)
+}
+
 /// (rule id, flag) of every failed assert and successful report of the
-/// goldens of a case, every stylesheet of the rule set together.
-fn findings(root: &Path, rule_set: &RuleSet, case: &Case) -> Result<Vec<(String, String)>> {
+/// goldens of a case, the given stylesheets together.
+pub(crate) fn findings<'a>(
+    root: &Path,
+    rule_set: &RuleSet,
+    stylesheets: impl Iterator<Item = &'a Stylesheet>,
+    case: &Case,
+) -> Result<Vec<(String, String)>> {
+    Ok(findings_with_kind(root, rule_set, stylesheets, case)?
+        .into_iter()
+        .map(|(_, id, flag)| (id, flag))
+        .collect())
+}
+
+/// (kind, rule id, flag) of every failed assert and successful report of the
+/// goldens of a case, the given stylesheets together; the flag is `none` when
+/// there is none.
+pub(crate) fn findings_with_kind<'a>(
+    root: &Path,
+    rule_set: &RuleSet,
+    stylesheets: impl Iterator<Item = &'a Stylesheet>,
+    case: &Case,
+) -> Result<Vec<(&'static str, String, String)>> {
     let base = rule_set.base(root);
     let mut found = Vec::new();
-    for stylesheet in rule_set.stylesheets {
+    for stylesheet in stylesheets {
         let path = case.golden(rule_set, stylesheet);
         let text = util::read_string(&util::join(&base, &path))?;
         let lines = svrl::parse(&text).map_err(|e| Error::new(format!("{path}: {e}")))?;
@@ -144,13 +257,18 @@ fn findings(root: &Path, rule_set: &RuleSet, case: &Case) -> Result<Vec<(String,
                 .attribute("id")
                 .ok_or_else(|| Error::new(format!("{path}: {} without id", l.kind)))?;
             let flag = l.attribute("flag").unwrap_or("none");
-            found.push((id.to_owned(), flag.to_owned()));
+            let kind = if l.kind == "failed-assert" {
+                "failed-assert"
+            } else {
+                "successful-report"
+            };
+            found.push((kind, id.to_owned(), flag.to_owned()));
         }
     }
     Ok(found)
 }
 
-fn describe(flags: &BTreeSet<&str>) -> String {
+pub(crate) fn describe(flags: &BTreeSet<&str>) -> String {
     if flags.is_empty() {
         "none".to_owned()
     } else {
@@ -167,7 +285,7 @@ pub(crate) struct Recorded {
 
 /// Reads the record of known disagreements.
 pub(crate) fn read_record(root: &Path, rule_set: &RuleSet) -> Result<Vec<Recorded>> {
-    let path = format!("{}/{RECORD}", rule_set.record_dir());
+    let path = format!("{}/{}", rule_set.record_dir(), rule_set.record);
     let text = util::read_string(&util::join(root, &path))?;
     let mut lines = text.lines();
     if lines.next() != Some(RECORD_HEADER) {
@@ -213,16 +331,44 @@ pub(crate) fn report(root: &Path, rule_set: &RuleSet) -> Result<(String, bool)> 
     let summary = run(root, rule_set)?;
     let recorded = read_record(root, rule_set)?;
     let mut out = String::new();
+    let mut parts = Vec::new();
+    if summary.vefa_cases > 0 || summary.xmute_cases + summary.accepted_cases == 0 {
+        parts.push(format!(
+            "{} VEFA cases, {} agree with Saxon, {} disagree",
+            summary.vefa_cases,
+            summary.agreeing_cases,
+            summary.vefa_cases - summary.agreeing_cases
+        ));
+    }
+    if summary.xmute_cases > 0 {
+        parts.push(format!(
+            "{} XML Mutate cases, {} agree with Saxon, {} disagree",
+            summary.xmute_cases,
+            summary.agreeing_xmute_cases,
+            summary.xmute_cases - summary.agreeing_xmute_cases
+        ));
+    }
+    if summary.vefa_cases + summary.xmute_cases > 0 || summary.accepted_cases == 0 {
+        parts.push(format!(
+            "{} expectations, {} agree, {} disagree",
+            summary.expectations,
+            summary.agreeing_expectations,
+            summary.expectations - summary.agreeing_expectations
+        ));
+    }
+    if rule_set.acceptance.is_some() {
+        parts.push(format!(
+            "{} accepted documents, {} accepted by Saxon, {} rejected",
+            summary.accepted_cases,
+            summary.agreeing_accepted_cases,
+            summary.accepted_cases - summary.agreeing_accepted_cases
+        ));
+    }
     let _ = writeln!(
         out,
-        "{}: {} VEFA cases, {} agree with Saxon, {} disagree; {} expectations, {} agree, {} disagree; {} disagreements in total",
+        "{}: {}; {} disagreements in total",
         rule_set.name,
-        summary.vefa_cases,
-        summary.agreeing_cases,
-        summary.vefa_cases - summary.agreeing_cases,
-        summary.expectations,
-        summary.agreeing_expectations,
-        summary.expectations - summary.agreeing_expectations,
+        parts.join("; "),
         summary.disagreements.len()
     );
     let mut consistent = true;
@@ -263,8 +409,10 @@ pub(crate) fn report(root: &Path, rule_set: &RuleSet) -> Result<(String, bool)> 
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
+
     use super::{Disagreement, report, run};
-    use crate::ruleset::{Origin, RuleSet, Stylesheet, VENDORED};
+    use crate::ruleset::{Generator, Origin, RuleSet, Stylesheet, VEFA_RECORD, VENDORED};
     use crate::util::{self, repo_root};
 
     /// The checker finds each kind of disagreement (a negative control for
@@ -280,12 +428,18 @@ mod tests {
                 xslt: "x.xslt",
                 golden_dir: "golden",
                 sha256_pin: None,
+                side_files: &[],
+                generator: Generator::IsoSkeleton,
             }],
             document_dirs: &[],
             vefa_dirs: &[],
+            xmute_dirs: &[],
+            xmute_schematrons: &[],
             ignored: &[],
-            mutation_catalogue: "",
+            mutation_catalogue: None,
             mutation_bases: &[],
+            acceptance: None,
+            record: VEFA_RECORD,
         };
         let root = std::env::temp_dir().join(format!("xtask-crosscheck-{}", std::process::id()));
         let index = "case\tinput\tkind\tscope\tsuccess\terror\twarning\tdescription\n\
@@ -341,6 +495,93 @@ mod tests {
         assert_eq!(summary.vefa_cases, 2);
         assert_eq!(summary.agreeing_cases, 1);
         assert_eq!(summary.expectations, 5);
+        assert_eq!(summary.agreeing_expectations, 1);
+    }
+
+    /// The XML Mutate expectations are checked on the stylesheet they name
+    /// only, and a dynamic error of Saxon-HE is a disagreement.
+    #[test]
+    fn detects_xmute_disagreements() {
+        const SET: RuleSet = RuleSet {
+            name: "synthetic-xmute",
+            origin: Origin::Vendored { licence: "LICENSE" },
+            source: "src",
+            stylesheets: &[
+                Stylesheet {
+                    name: "S",
+                    xslt: "s.xslt",
+                    golden_dir: "golden-s",
+                    sha256_pin: None,
+                    side_files: &[],
+                    generator: Generator::IsoSkeleton,
+                },
+                Stylesheet {
+                    name: "T",
+                    xslt: "t.xslt",
+                    golden_dir: "golden-t",
+                    sha256_pin: None,
+                    side_files: &[],
+                    generator: Generator::IsoSkeleton,
+                },
+            ],
+            document_dirs: &[],
+            vefa_dirs: &[],
+            xmute_dirs: &[],
+            xmute_schematrons: &[],
+            ignored: &[],
+            mutation_catalogue: None,
+            mutation_bases: &[],
+            acceptance: None,
+            record: VEFA_RECORD,
+        };
+        let root = std::env::temp_dir().join(format!("xtask-xmute-{}", std::process::id()));
+        // a: R1 must not fail but does, R2 must fail but only T reports it,
+        // R3 must fail and does; b: Saxon-HE stopped.
+        let index = "case\tinput\tkind\tscope\tsuccess\terror\twarning\tdescription\n\
+            xmute/a.xml\tx\txmute\tS\tR1\tR2 R3\t\td\n\
+            xmute/b.xml\tx\txmute\tS\t\tR1\t\td\n";
+        let dir = "corpus/synthetic-xmute";
+        util::write(&root.join(format!("{dir}/cases.tsv")), index.as_bytes()).unwrap();
+        let golden = |ids: &[&str]| {
+            let mut text = "svrl-canonical 1\nschematron-output\n".to_owned();
+            for id in ids {
+                let _ = write!(
+                    text,
+                    "failed-assert flag=\"fatal\" id=\"{id}\" location=\"/\" test=\"t\"\n  text \"m\"\n"
+                );
+            }
+            text
+        };
+        for (path, text) in [
+            ("golden-s/xmute/a.xml.svrl.txt", golden(&["R1", "R3"])),
+            ("golden-t/xmute/a.xml.svrl.txt", golden(&["R2"])),
+            (
+                "golden-s/xmute/b.xml.error.txt",
+                "error FORG0001\nmessage m\n".to_owned(),
+            ),
+            ("golden-t/xmute/b.xml.svrl.txt", golden(&[])),
+        ] {
+            util::write(&root.join(format!("{dir}/{path}")), text.as_bytes()).unwrap();
+        }
+        let summary = run(&root, &SET).unwrap();
+        util::remove_dir(&root).unwrap();
+        let d = |case: &str, kind, rule: &str, saxon: &str| Disagreement {
+            case: case.to_owned(),
+            kind,
+            rule: rule.to_owned(),
+            saxon: saxon.to_owned(),
+        };
+        assert_eq!(
+            summary.disagreements,
+            [
+                d("xmute/a.xml", "invalid-not-reported", "R2", "none"),
+                d("xmute/a.xml", "valid-reported", "R1", "fatal"),
+                d("xmute/b.xml", "stopped", "-", "error FORG0001"),
+            ]
+        );
+        assert_eq!(summary.xmute_cases, 2);
+        assert_eq!(summary.agreeing_xmute_cases, 0);
+        assert_eq!(summary.expectations, 4);
         assert_eq!(summary.agreeing_expectations, 1);
     }
 

@@ -33,7 +33,7 @@
 # Exit status: 0 done; 75 a download failed (no network); 1 anything else,
 # including a checksum mismatch: a file that does not match is never used.
 #
-# The pins below are read by xtask/src/peppol.rs and by the Peppol
+# The pins below are read by xtask/src/fetched.rs and by the Peppol
 # equivalence test of crates/einvoice-xslt-exec: keep one `name=value` per
 # line, as they are. Their versions are recorded in upstream.toml. For a new
 # release, set tag, commit and archive_sha256, rename the directory

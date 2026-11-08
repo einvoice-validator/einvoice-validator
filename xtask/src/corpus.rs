@@ -26,7 +26,8 @@ use std::path::Path;
 use crate::mutation;
 use crate::ruleset::{RuleSet, Stylesheet};
 use crate::util::{self, Error, Result};
-use crate::vefa::{self, Expectation};
+use crate::vefa::{self, Expectation, ExpectationKind};
+use crate::xmute;
 
 /// The index file of a corpus.
 pub(crate) const INDEX: &str = "cases.tsv";
@@ -36,6 +37,8 @@ pub(crate) const MUTATION_INDEX: &str = "mutations.tsv";
 pub(crate) const VEFA_DIR: &str = "vefa";
 /// Suffix of a golden file, appended to the case id.
 pub(crate) const GOLDEN_SUFFIX: &str = ".svrl.txt";
+/// Suffix of the golden of the `svrl:metadata` of a SchXslt report.
+pub(crate) const METADATA_SUFFIX: &str = ".metadata.txt";
 /// Suffix of the golden of a case on which Saxon-HE stops with an error.
 pub(crate) const ERROR_SUFFIX: &str = ".error.txt";
 
@@ -63,6 +66,23 @@ impl Case {
     /// directory of the rule set.
     pub(crate) fn golden(&self, rule_set: &RuleSet, stylesheet: &Stylesheet) -> String {
         self.golden_with(rule_set, stylesheet, GOLDEN_SUFFIX)
+    }
+
+    /// Whether Saxon-HE may stop on the case with a dynamic error, its golden
+    /// then being the error: the mutation cases and the XML Mutate cases,
+    /// which the oracle runs on one thread with `-t`.
+    pub(crate) fn may_stop(&self) -> bool {
+        self.mutation
+            || self
+                .expectation
+                .as_ref()
+                .is_some_and(|e| e.kind == ExpectationKind::Xmute)
+    }
+
+    /// The golden of the `svrl:metadata` of the report of a SchXslt
+    /// stylesheet (`crate::svrl::split`).
+    pub(crate) fn metadata_golden(&self, rule_set: &RuleSet, stylesheet: &Stylesheet) -> String {
+        self.golden_with(rule_set, stylesheet, METADATA_SUFFIX)
     }
 
     /// The error golden of this case for a stylesheet (mutation cases only).
@@ -185,6 +205,8 @@ pub(crate) fn derive(root: &Path, rule_set: &RuleSet) -> Result<Derived> {
         }
     }
 
+    xmute_cases(&base, rule_set, &mut list, &mut cases)?;
+
     for ignored in rule_set.ignored {
         if !ignored_seen.iter().any(|seen| seen == ignored) {
             return Err(Error::new(format!(
@@ -216,6 +238,37 @@ pub(crate) fn derive(root: &Path, rule_set: &RuleSet) -> Result<Derived> {
     })
 }
 
+/// The documents of the XML Mutate directories, each with the expectation of
+/// its active instruction.
+fn xmute_cases(
+    base: &Path,
+    rule_set: &RuleSet,
+    list: &mut impl FnMut(&str) -> Result<Vec<String>>,
+    cases: &mut Vec<Case>,
+) -> Result<()> {
+    let source_dir = rule_set.source;
+    for (prefix, dir) in rule_set.xmute_dirs {
+        let names = list(dir)?;
+        if names.is_empty() {
+            return Err(Error::new(format!("{source_dir}/{dir}: no documents")));
+        }
+        for name in names {
+            let input = format!("{source_dir}/{dir}/{name}");
+            let text = util::read_string(&util::join(base, &input))?;
+            let expectation = xmute::expectation(&text, rule_set.xmute_schematrons)
+                .map_err(|e| Error::new(format!("{input}: {e}")))?;
+            cases.push(Case {
+                id: format!("{prefix}/{name}"),
+                input,
+                expectation: Some(expectation),
+                mutation: false,
+            });
+        }
+    }
+
+    Ok(())
+}
+
 /// Applies the mutation catalogue to the base cases of the rule set; adds the
 /// documents to `files`.
 fn derive_mutations(
@@ -243,7 +296,9 @@ fn derive_mutations(
     let mut mutations = Vec::new();
     // Every mutation that cannot be applied is reported, not only the first.
     let mut failures = Vec::new();
-    let catalogue = rule_set.mutation_catalogue;
+    let Some(catalogue) = rule_set.mutation_catalogue else {
+        return Ok(mutations);
+    };
     for m in mutation::catalogue(root, catalogue)? {
         if let Some(only) = &m.only
             && let Some(unknown) = only
@@ -344,10 +399,11 @@ pub(crate) fn read_all(root: &Path, rule_set: &RuleSet) -> Result<Vec<Case>> {
 }
 
 /// `cases.tsv`: a header line, then one line per case with tab-separated
-/// columns `case`, `input`, `kind` (`document` or `vefa`), and for VEFA cases
-/// `scope`, `success`, `error`, `warning` (space-separated rule ids) and
-/// `description` (whitespace normalised). Those five are empty for whole
-/// documents.
+/// columns `case`, `input`, `kind` (`document`, `vefa` or `xmute`), and for
+/// VEFA and XML Mutate cases `scope`, `success`, `error`, `warning`
+/// (space-separated rule ids; for XML Mutate, `scope` is the stylesheet the
+/// ids are about) and `description` (whitespace normalised). Those five are
+/// empty for whole documents.
 fn render_index(cases: &[Case]) -> Result<String> {
     let mut out = String::new();
     out.push_str(INDEX_HEADER);
@@ -358,7 +414,7 @@ fn render_index(cases: &[Case]) -> Result<String> {
             Some(e) => vec![
                 case.id.clone(),
                 case.input.clone(),
-                "vefa".to_owned(),
+                e.kind.as_str().to_owned(),
                 e.scope.join(" "),
                 e.success.join(" "),
                 e.error.join(" "),
@@ -397,7 +453,21 @@ pub(crate) fn read_index(root: &Path, rule_set: &RuleSet) -> Result<Vec<Case>> {
             let fields: Vec<&str> = line.split('\t').collect();
             let expectation = match fields[..] {
                 [_, _, "document"] => None,
-                [_, _, "vefa", scope, success, error, warning, description] => Some(Expectation {
+                [
+                    _,
+                    _,
+                    kind @ ("vefa" | "xmute"),
+                    scope,
+                    success,
+                    error,
+                    warning,
+                    description,
+                ] => Some(Expectation {
+                    kind: if kind == "vefa" {
+                        ExpectationKind::Vefa
+                    } else {
+                        ExpectationKind::Xmute
+                    },
                     scope: ids(scope),
                     success: ids(success),
                     error: ids(error),

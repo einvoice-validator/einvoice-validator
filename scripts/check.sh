@@ -6,7 +6,7 @@
 # scripts and their tests, the reference oracles and, when something is
 # staged, the privacy guard.
 #
-#   scripts/check.sh                # every job: fmt clippy doc test features wasm package deny actionlint zizmor pins guards oracle peppol privacy
+#   scripts/check.sh                # every job: fmt clippy doc test features wasm package deny actionlint zizmor pins guards oracle peppol facturx xrechnung fr-ctc privacy
 #   scripts/check.sh clippy test    # selected jobs
 #   scripts/check.sh toolchain      # only install the pinned toolchain
 #
@@ -24,7 +24,9 @@
 # to fetch Saxon-HE; locally, without them, it checks what it can and skips
 # the rest. The peppol job needs Java and network access the first time too
 # (Saxon-HE, the Peppol release, Maven and the Schematron compiler); without
-# them it prints SKIPPED, except in CI, where it fails.
+# them it prints SKIPPED, except in CI, where it fails. So do the facturx,
+# xrechnung and fr-ctc jobs (the Factur-X, XRechnung and French corpora, built
+# in target/ by their fetch scripts and cross-checked).
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -368,6 +370,46 @@ job_peppol() {
     EINVOICE_PEPPOL_REQUIRED=1 cargo test --locked --all-features -p einvoice-cli \
         --test peppol_bundle -- --nocapture
 }
+# A family of fetched rule sets (corpus/README.md): Factur-X, XRechnung or the
+# French rules, whose files are not committed (see the README of each
+# corpus/<rule set>/). The fetch script downloads the pinned inputs into
+# target/ (checksums verified), then `cargo xtask <family>` extracts the
+# cases, runs Saxon-HE with every stylesheet and cross-checks the goldens with
+# the expectations (XML Mutate, accepted documents) against the committed
+# records. Without Java or without network access (and nothing cached yet),
+# SKIPPED, except in CI, where it fails.
+#   fetched_family NAME SCRIPT
+fetched_family() {
+    local name=$1 script=$2 status=0
+    need_toolchain || return 1
+    skipped() {
+        if [ -n "${CI:-}" ]; then
+            echo "$1: the $name corpus cannot be built" >&2
+            return 1
+        fi
+        echo "SKIPPED: $name corpus ($1)"
+    }
+    if ! command -v "${JAVA:-java}" >/dev/null 2>&1; then
+        skipped "java is not installed"
+        return
+    fi
+    "${JAVA:-java}" -version 2>&1 | head -n 1
+    if [ -n "${SAXON_JAR:-}" ]; then
+        echo "using SAXON_JAR=$SAXON_JAR (checksum verified by xtask)"
+    else
+        scripts/fetch-saxon.sh || status=$?
+    fi
+    [ "$status" -eq 0 ] && { "$script" || status=$?; }
+    if [ "$status" -eq 75 ]; then
+        skipped "a download failed: no network access?"
+        return
+    fi
+    [ "$status" -eq 0 ] || return 1
+    cargo xtask "$name"
+}
+job_facturx() { fetched_family facturx scripts/fetch-facturx.sh; }
+job_xrechnung() { fetched_family xrechnung scripts/fetch-xrechnung.sh; }
+job_fr-ctc() { fetched_family fr-ctc scripts/fetch-fr-ctc.sh; }
 # The pre-commit guard on the index; nothing staged, nothing to check.
 job_privacy() {
     if git diff --cached --quiet; then
@@ -377,7 +419,7 @@ job_privacy() {
     scripts/privacy-guard.sh staged && echo "privacy guard: staged content clean"
 }
 
-ALL=(fmt clippy doc test features wasm package deny actionlint zizmor pins guards oracle peppol privacy)
+ALL=(fmt clippy doc test features wasm package deny actionlint zizmor pins guards oracle peppol facturx xrechnung fr-ctc privacy)
 
 jobs=("$@")
 [ ${#jobs[@]} -eq 0 ] && jobs=("${ALL[@]}")

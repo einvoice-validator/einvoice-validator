@@ -15,9 +15,34 @@ use crate::util::{Error, Result, normalize_space};
 /// The VEFA test-set namespace.
 const VEFA_NS: &str = "http://difi.no/xsd/vefa/validator/1.0";
 
-/// What a VEFA test expects from validation, for the rule ids it names.
+/// Where an expectation comes from, which decides how it is checked
+/// (`crate::crosscheck`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExpectationKind {
+    /// A VEFA test: rule ids with the flag they must fire with, checked on the
+    /// findings of every stylesheet of the rule set together.
+    Vefa,
+    /// An XML Mutate instruction (`crate::xmute`): rule ids that must fail
+    /// (`error`, any flag) or must not (`success`), checked on the findings of
+    /// the one stylesheet named in `scope`.
+    Xmute,
+}
+
+impl ExpectationKind {
+    /// The `kind` column of `cases.tsv`.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Vefa => "vefa",
+            Self::Xmute => "xmute",
+        }
+    }
+}
+
+/// What a VEFA test expects from validation, for the rule ids it names (or,
+/// for [`ExpectationKind::Xmute`], what an XML Mutate instruction expects).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Expectation {
+    pub(crate) kind: ExpectationKind,
     /// Rule ids the test set is about (`<testSet><assert><scope>`).
     pub(crate) scope: Vec<String>,
     /// Rule ids that must not fire (`<success>`).
@@ -84,6 +109,7 @@ fn extract_test(
     scope: &[String],
 ) -> Result<TestCase> {
     let mut expectation = Expectation {
+        kind: ExpectationKind::Vefa,
         scope: scope.to_vec(),
         success: Vec::new(),
         error: Vec::new(),

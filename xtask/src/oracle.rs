@@ -89,7 +89,9 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet, options: &Options) -> Result<
     for (index, case) in cases.iter().enumerate() {
         let bytes = util::read(&util::join(&base, &case.input))?;
         util::write(
-            &work.join(input_dir(case.mutation)).join(staged_name(index)),
+            &work
+                .join(input_dir(case.may_stop()))
+                .join(staged_name(index)),
             &bytes,
         )?;
     }
@@ -133,10 +135,102 @@ fn run_stylesheet(
     work: &Path,
 ) -> Result<Outcome> {
     let base = rule_set.base(root);
-    let xslt = util::join(&base, stylesheet.xslt);
+    let diagnostics = run_saxon(
+        &base, rule_set, stylesheet, cases, options, class_path, work,
+    )?;
+
+    let mut outcome = Outcome {
+        stylesheet: stylesheet.name,
+        cases: cases.len(),
+        ..Outcome::default()
+    };
+    let work_text = work.to_string_lossy().replace('\\', "/");
+    let golden_dir = format!("{}/{}", rule_set.corpus_dir(), stylesheet.golden_dir);
+    if options.write {
+        // Rewritten from scratch, so that no stale golden survives.
+        util::remove_dir(&util::join(&base, &golden_dir))?;
+    }
+    let mut goldens = BTreeSet::new();
+    for (index, case) in cases.iter().enumerate() {
+        let staged = work
+            .join(input_dir(case.may_stop()))
+            .join(staged_name(index));
+        let staged = absolute(&staged)?;
+        let found = diagnostics.get(&index).cloned().unwrap_or_default();
+        outcome.warned += usize::from(!found.warnings.is_empty());
+        let (golden, text) = if let Some((code, message)) = &found.error {
+            outcome.errors += 1;
+            (
+                case.error_golden(rule_set, stylesheet),
+                format!("error {code}\nmessage {message}\n"),
+            )
+        } else {
+            let report = work
+                .join(format!(
+                    "{}-{}",
+                    input_dir(case.may_stop()),
+                    stylesheet.name
+                ))
+                .join(staged_name(index));
+            let raw = util::read_string(&report)?;
+            let (canonical, metadata) = svrl::split(
+                &raw,
+                stylesheet.generator,
+                &|uri| svrl::is_document_uri(uri, &staged),
+                true,
+            )
+            .map_err(|e| Error::new(format!("{}: {e}", case.id)))?;
+            count(&canonical, &mut outcome)?;
+            if let Some(metadata) = metadata {
+                let golden = case.metadata_golden(rule_set, stylesheet);
+                compare_or_write(
+                    &base,
+                    &golden,
+                    &metadata,
+                    options.write,
+                    &mut outcome.problems,
+                )?;
+                goldens.insert(golden);
+            }
+            (case.golden(rule_set, stylesheet), canonical)
+        };
+        if text.contains(&work_text) || text.contains(&staged_name(index)) {
+            return Err(Error::new(format!(
+                "{}: the golden would contain the local scratch path or file name",
+                case.id
+            )));
+        }
+        compare_or_write(&base, &golden, &text, options.write, &mut outcome.problems)?;
+        goldens.insert(golden);
+    }
+    if !options.write {
+        for file in util::list_files(&util::join(&base, &golden_dir))? {
+            let path = format!("{golden_dir}/{file}");
+            if !goldens.contains(&path) {
+                outcome.problems.push(format!("stale golden: {path}"));
+            }
+        }
+    }
+    Ok(outcome)
+}
+
+/// Runs Saxon with one stylesheet on the staged cases, writing the reports
+/// into the work directory: the cases of `cases.tsv` on several threads, the
+/// mutation cases on one with `-t`. Returns the diagnostics of the mutation
+/// cases, by case index.
+fn run_saxon(
+    base: &Path,
+    rule_set: &RuleSet,
+    stylesheet: &Stylesheet,
+    cases: &[Case],
+    options: &Options,
+    class_path: &OsString,
+    work: &Path,
+) -> Result<BTreeMap<usize, Diagnostics>> {
+    let xslt = util::join(base, stylesheet.xslt);
     let threads = std::thread::available_parallelism().map_or(1, |n| n.get().min(8));
     let (mutations, upstream): (Vec<usize>, Vec<usize>) =
-        (0..cases.len()).partition(|i| cases[*i].mutation);
+        (0..cases.len()).partition(|i| cases[*i].may_stop());
     eprintln!(
         "oracle: {} {}: Saxon-HE {SAXON_VERSION} on {} cases ({threads} threads) and {} mutation cases (1 thread)",
         rule_set.name,
@@ -171,58 +265,7 @@ fn run_stylesheet(
             return Err(run.failure("a clean run prints nothing"));
         }
     }
-
-    let mut outcome = Outcome {
-        stylesheet: stylesheet.name,
-        cases: cases.len(),
-        ..Outcome::default()
-    };
-    let work_text = work.to_string_lossy().replace('\\', "/");
-    let golden_dir = format!("{}/{}", rule_set.corpus_dir(), stylesheet.golden_dir);
-    if options.write {
-        // Rewritten from scratch, so that no stale golden survives.
-        util::remove_dir(&util::join(&base, &golden_dir))?;
-    }
-    let mut goldens = BTreeSet::new();
-    for (index, case) in cases.iter().enumerate() {
-        let staged = work.join(input_dir(case.mutation)).join(staged_name(index));
-        let staged = absolute(&staged)?;
-        let found = diagnostics.get(&index).cloned().unwrap_or_default();
-        outcome.warned += usize::from(!found.warnings.is_empty());
-        let (golden, text) = if let Some((code, message)) = &found.error {
-            outcome.errors += 1;
-            (
-                case.error_golden(rule_set, stylesheet),
-                format!("error {code}\nmessage {message}\n"),
-            )
-        } else {
-            let report = work
-                .join(format!("{}-{}", input_dir(case.mutation), stylesheet.name))
-                .join(staged_name(index));
-            let raw = util::read_string(&report)?;
-            let canonical = svrl::canonicalize(&raw, &|uri| svrl::is_document_uri(uri, &staged))
-                .map_err(|e| Error::new(format!("{}: {e}", case.id)))?;
-            count(&canonical, &mut outcome)?;
-            (case.golden(rule_set, stylesheet), canonical)
-        };
-        if text.contains(&work_text) || text.contains(&staged_name(index)) {
-            return Err(Error::new(format!(
-                "{}: the golden would contain the local scratch path or file name",
-                case.id
-            )));
-        }
-        compare_or_write(&base, &golden, &text, options.write, &mut outcome.problems)?;
-        goldens.insert(golden);
-    }
-    if !options.write {
-        for file in util::list_files(&util::join(&base, &golden_dir))? {
-            let path = format!("{golden_dir}/{file}");
-            if !goldens.contains(&path) {
-                outcome.problems.push(format!("stale golden: {path}"));
-            }
-        }
-    }
-    Ok(outcome)
+    Ok(diagnostics)
 }
 
 /// Runs Saxon-HE with `xslt` on the directory `source`, writing to `target`,
@@ -240,6 +283,8 @@ fn saxon(
         .arg("-cp")
         .arg(class_path)
         .arg("net.sf.saxon.Transform")
+        // The clock of current-dateTime(), which the SchXslt reports record.
+        .arg(format!("-now:{}", svrl::FIXED_NOW))
         .args(extra)
         .arg(arg("-xsl:", xslt))
         .arg(arg("-s:", source))
@@ -273,6 +318,11 @@ struct Diagnostics {
     /// The codes of the warnings (recoverable errors in template patterns).
     warnings: Vec<String>,
 }
+
+/// Lines that continue a diagnostic block, as prefixes: Saxon's note on where
+/// a lazily evaluated value came from, and the first frame of the stack trace
+/// of an error raised in a stylesheet function or a named template.
+const NOTE_LINES: [&str; 3] = ["During lazy evaluation of ", "In function ", "In template "];
 
 /// Lines `-t` prints about a document or the run, as prefixes.
 const TIMING_LINES: [&str; 8] = [
@@ -341,9 +391,8 @@ impl Output {
                 }
                 continue;
             }
-            if line.starts_with("During lazy evaluation of ") {
-                // Saxon's note on where a lazily evaluated value came from,
-                // part of the block it follows.
+            if NOTE_LINES.iter().any(|p| line.starts_with(p)) {
+                // Part of the block it follows.
                 if block.is_none() {
                     return Err(fail("a note outside a diagnostic"));
                 }
@@ -547,8 +596,22 @@ Type error at char 226 in expression in xsl:when/@test on line 1044 column 372 o
 During lazy evaluation of LegalMonetaryTotal/xs:decimal(TaxExclusiveAmount) on line 1044 of file:/w/X.xslt
   In template rule with match=\"/\" on line 155 of X.xslt
 While processing c00004.xml: A sequence of more than one item { (1, 1) } is not allowed as the first operand of '+'
+Processing file:/w/in-mutations/c00005.xml
+Building tree for file:/w/in-mutations/c00005.xml using class net.sf.saxon.tree.tiny.TinyBuilder
+Tree built in 0.298389ms
+Tree size: 391 nodes, 851 characters, 25 attributes
+Error at char 22 in expression in xsl:variable/@select on line 50 column 83 of X.xslt:
+  FORG0001  Cannot convert string \" 201\" to xs:decimal: invalid character ' '
+In function custom:is-valid-date-format on line 42 column 34 of X.xslt:
+     invoked by function call at file:/w/X.xslt#1004
+In template d17e40 on line 118 column 32 of X.xslt:
+     invoked by xsl:call-template at file:/w/X.xslt#76
+  In template rule with match=\"udt:DateTimeString\" on line 999 of X.xslt
+     invoked by xsl:apply-templates (tail calls omitted) at file:/w/X.xslt#1306
+  In template rule with match=\"/\" on line 304 of X.xslt
+While processing c00005.xml: Cannot convert string \" 201\" to xs:decimal: invalid character ' '
 
-1 transformation failed
+2 transformations failed
 ";
 
     fn output(stderr: &str, success: bool) -> Output {
@@ -562,7 +625,7 @@ While processing c00004.xml: A sequence of more than one item { (1, 1) } is not 
 
     #[test]
     fn diagnostics_are_attributed_to_their_documents() {
-        let found = output(STDERR, false).diagnostics(&[1, 2, 3]).unwrap();
+        let found = output(STDERR, false).diagnostics(&[1, 2, 3, 4]).unwrap();
         assert!(!found.contains_key(&1));
         assert_eq!(found[&2].warnings, ["XPTY0004", "XPTY0004"]);
         assert_eq!(found[&2].error, None);
@@ -574,6 +637,13 @@ While processing c00004.xml: A sequence of more than one item { (1, 1) } is not 
                     .to_owned()
             ))
         );
+        assert_eq!(
+            found[&4].error,
+            Some((
+                "FORG0001".to_owned(),
+                "Cannot convert string \" 201\" to xs:decimal: invalid character ' '".to_owned()
+            ))
+        );
     }
 
     #[test]
@@ -581,7 +651,7 @@ While processing c00004.xml: A sequence of more than one item { (1, 1) } is not 
         for (stderr, success, why) in [
             (STDERR, true, "exit status disagree"),
             (
-                &STDERR.replace("1 transformation failed", "2 transformations failed"),
+                &STDERR.replace("2 transformations failed", "3 transformations failed"),
                 false,
                 "disagree",
             ),
@@ -613,7 +683,7 @@ While processing c00004.xml: A sequence of more than one item { (1, 1) } is not 
             ),
         ] {
             let error = output(stderr, success)
-                .diagnostics(&[1, 2, 3])
+                .diagnostics(&[1, 2, 3, 4])
                 .unwrap_err()
                 .to_string();
             assert!(error.contains(why), "{why}: {error}");

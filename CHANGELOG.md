@@ -10,6 +10,50 @@ against.
 
 ## [Unreleased]
 
+### Added
+
+- Test corpus of Factur-X 1.09.2 (ZUGFeRD 2.5.2), CII (#26), built locally and not committed
+  (`corpus/factur-x-1.09.2/README.md`): `scripts/fetch-facturx.sh` takes the stylesheets of
+  the five profiles and the code lists they read with `document()` from the Mustang validator
+  2.26.0 on Maven Central, and the Factur-X examples of the French standards XP Z12-012 and
+  XP Z12-014 (version 1.4) from `fnfe-mpe.org`, every input checked against a pinned SHA-256,
+  and writes one rule-set bundle per profile; `cargo xtask facturx` builds 42 cases and 808
+  mutation cases with the Saxon-HE results of each profile. The 27 examples are accepted by the
+  stylesheet of the profile they declare.
+- Test corpora of XRechnung 3.0.2, UBL and CII (#27), built locally and not committed (the
+  XRechnung Schematron includes rules derived from Peppol BIS Billing 3.0):
+  `scripts/fetch-xrechnung.sh` fetches from KoSIT's GitLab the validator configuration
+  2026-08-31 (the CEN rules 1.3.16 and the XRechnung Schematron 2.6.0, compiled with SchXslt),
+  the test suite 2026-08-31 and the unit tests of the XRechnung Schematron, which XML Mutate 0.6
+  expands into mutants, each with its expectation; `cargo xtask xrechnung` builds 1196 UBL and
+  686 CII cases and 1312 mutation cases with the Saxon-HE results of both stylesheets. The
+  1733 XML Mutate expectations hold, and the 86 test-suite instances are accepted under the
+  scenarios of the configuration (`customLevel` included).
+- Test corpora of the French e-invoicing rules, FNFE-MPE package 1.4.0.04 (#28), built locally
+  and not committed: `scripts/fetch-fr-ctc.sh` fetches the package (CII, UBL, EXTENDED-CTC-FR,
+  the BR-FR rules and their WARNING version, the life-cycle statuses, e-reporting, and the
+  package's Factur-X build) and the examples of XP Z12-012 and XP Z12-014 from `fnfe-mpe.org`,
+  and writes 14 rule-set bundles; `cargo xtask fr-ctc` builds 53 CII, 75 UBL and 70 CDAR cases
+  and 1312 mutation cases with the Saxon-HE results of each stylesheet. The 135 examples are
+  accepted by the stylesheets of the profile they declare.
+- `cargo xtask engine-status <family>`: runs `einvoice-validate` on the corpus of a fetched
+  rule set, one stylesheet at a time, and reports which cases give the Saxon-HE result, which
+  differ, which fail and which stylesheets do not load.
+- `scripts/check.sh facturx`, `xrechnung` and `fr-ctc`, and the `rulesets` workflow, which
+  builds the three families of corpora and runs their cross-checks.
+- `upstream.toml`: the pins of Factur-X, the Mustang validator, XRechnung, its Schematron,
+  validator configuration and test suite, XML Mutate, the FNFE-MPE package and the examples of
+  XP Z12-012 and XP Z12-014.
+
+### Changed
+
+- The oracle runs Saxon-HE with a fixed clock (`-now:2000-01-01T00:00:00Z`), so that SchXslt
+  reports, which record the time of their run in `svrl:metadata`, are the same on every run;
+  that element, which the canonical form does not represent, is checked and kept apart in
+  `<case id>.metadata.txt`. The goldens of the vendored corpora are unchanged.
+- The oracle accepts the stack frames Saxon-HE prints after an error raised in a stylesheet
+  function or a named template (`In function ...`, `In template ...`).
+
 ## [0.2.0] - 2026-11-08
 
 Tested against the official rule sets: CEN EN 16931 validation artefacts 1.3.17, Peppol BIS Billing 3.0.22.

@@ -8,31 +8,44 @@
 //!                                   run Saxon-HE on every case and compare with (or write) the goldens
 //! cargo xtask crosscheck            compare the goldens with the VEFA expectations
 //! cargo xtask peppol [--java JAVA] [--saxon JAR]
-//!                                   build the Peppol corpus and its goldens in the cache
-//!                                   of scripts/fetch-peppol.sh, then cross-check them
+//! cargo xtask facturx [--java JAVA] [--saxon JAR]
+//! cargo xtask xrechnung [--java JAVA] [--saxon JAR]
+//! cargo xtask fr-ctc [--java JAVA] [--saxon JAR]
+//!                                   build the corpora of a family of fetched rule sets and their
+//!                                   goldens in the cache of its fetch script (scripts/fetch-peppol.sh,
+//!                                   fetch-facturx.sh, fetch-xrechnung.sh, fetch-fr-ctc.sh), then
+//!                                   cross-check them
+//! cargo xtask engine-status FAMILY [--cli PATH]
+//!                                   run einvoice-validate on those corpora, one stylesheet at a
+//!                                   time, and report what passes, differs, fails or is refused
 //! ```
 //!
 //! `manifest`, `corpus`, `oracle` and `crosscheck` work on the vendored rule
 //! sets, whose corpus is committed. Without `--write` they only check, and
-//! exit with status 1 on any difference. `peppol` always writes, into the
-//! cache under `target/peppol/` (the Peppol files may not be redistributed),
-//! and fails when the cross-check differs from the committed record.
-//! `oracle` and `peppol` take Java from `--java`, else `$JAVA`, else `java` on
+//! exit with status 1 on any difference. The fetched families always write,
+//! into the cache under `target/` (their files may not be redistributed), and
+//! fail when a cross-check differs from the committed record.
+//! `oracle` and the families take Java from `--java`, else `$JAVA`, else `java` on
 //! the PATH, and the Saxon-HE jar from `--saxon`, else `$SAXON_JAR`, else
 //! where `scripts/fetch-saxon.sh` puts it; the two XML Resolver jars that
 //! Saxon-HE 12.10 needs are taken from the directory of Saxon's jar.
+//! `engine-status` takes the tool from `--cli`, else
+//! `target/release/einvoice-validate`.
 
+mod acceptance;
 mod corpus;
 mod crosscheck;
+mod engine;
+mod fetched;
 mod manifest;
 mod mutation;
 mod oracle;
-mod peppol;
 mod ruleset;
 mod svrl;
 mod toml;
 mod util;
 mod vefa;
+mod xmute;
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -40,7 +53,7 @@ use std::process::ExitCode;
 
 use util::{Error, Result};
 
-const USAGE: &str = "usage: cargo xtask (manifest [--write] | corpus [--write] | oracle [--write] [--java JAVA] [--saxon JAR] | crosscheck | peppol [--java JAVA] [--saxon JAR])";
+const USAGE: &str = "usage: cargo xtask (manifest [--write] | corpus [--write] | oracle [--write] [--java JAVA] [--saxon JAR] | crosscheck | (peppol | facturx | xrechnung | fr-ctc) [--java JAVA] [--saxon JAR] | engine-status (peppol | facturx | xrechnung | fr-ctc) [--cli PATH])";
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -56,14 +69,18 @@ fn main() -> ExitCode {
 fn dispatch(args: &[OsString]) -> Result<()> {
     let (command, rest) = args.split_first().ok_or_else(|| Error::new(USAGE))?;
     let command = command.to_str().ok_or_else(|| Error::new(USAGE))?;
+    let family = |name: &str| ruleset::FAMILIES.iter().copied().find(|f| f.name == name);
     let mut write = false;
     let mut java = None;
     let mut saxon = None;
+    let mut cli = None;
+    let mut target = None;
+    let runs_saxon = command == "oracle" || family(command).is_some();
     let mut rest = rest.iter();
     while let Some(arg) = rest.next() {
         match arg.to_str() {
             Some("--write") => write = true,
-            Some(flag @ ("--java" | "--saxon")) if command == "oracle" || command == "peppol" => {
+            Some(flag @ ("--java" | "--saxon")) if runs_saxon => {
                 let value = rest
                     .next()
                     .ok_or_else(|| Error::new(format!("{flag} needs a value\n{USAGE}")))?;
@@ -72,6 +89,17 @@ fn dispatch(args: &[OsString]) -> Result<()> {
                 } else {
                     saxon = Some(PathBuf::from(value));
                 }
+            }
+            Some("--cli") if command == "engine-status" => {
+                let value = rest
+                    .next()
+                    .ok_or_else(|| Error::new(format!("--cli needs a value\n{USAGE}")))?;
+                cli = Some(PathBuf::from(value));
+            }
+            Some(name)
+                if command == "engine-status" && target.is_none() && family(name).is_some() =>
+            {
+                target = family(name);
             }
             _ => {
                 return Err(Error::new(format!(
@@ -96,7 +124,17 @@ fn dispatch(args: &[OsString]) -> Result<()> {
         "corpus" => run_corpus(&root, write),
         "oracle" => run_oracle(&root, &options),
         "crosscheck" if !write => run_crosscheck(&root),
-        "peppol" if !write => run_peppol(&root, &options),
+        "engine-status" if !write => {
+            let family = target
+                .ok_or_else(|| Error::new(format!("engine-status needs a family\n{USAGE}")))?;
+            let cli = cli.unwrap_or_else(|| util::join(&root, engine::CLI_DEFAULT));
+            print!("{}", engine::run(&root, family, &cli)?);
+            Ok(())
+        }
+        name if !write && family(name).is_some() => match family(name) {
+            Some(family) => run_family(&root, family, &options),
+            None => Err(Error::new(USAGE)),
+        },
         _ => Err(Error::new(USAGE)),
     }
 }
@@ -172,21 +210,20 @@ fn run_crosscheck(root: &Path) -> Result<()> {
     } else {
         Err(Error::new(format!(
             "observed disagreements differ from {}",
-            crosscheck::RECORD
+            ruleset::VEFA_RECORD
         )))
     }
 }
 
-fn run_peppol(root: &Path, options: &oracle::Options) -> Result<()> {
-    let (text, consistent) = peppol::run(root, options)?;
+fn run_family(root: &Path, family: &ruleset::Family, options: &oracle::Options) -> Result<()> {
+    let (text, consistent) = fetched::run(root, family, options)?;
     print!("{text}");
     if consistent {
         Ok(())
     } else {
         Err(Error::new(format!(
-            "observed disagreements differ from {}/{}",
-            ruleset::PEPPOL_UBL.record_dir(),
-            crosscheck::RECORD
+            "{}: observed disagreements differ from the committed records",
+            family.name
         )))
     }
 }

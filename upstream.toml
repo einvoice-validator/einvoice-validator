@@ -214,6 +214,240 @@ pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 file = "crates/einvoice-cli/README.md"
 pattern = 'peppol-bis-billing-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)'
 
+# The rule sets below are fetched at test time (scripts/fetch-facturx.sh,
+# fetch-xrechnung.sh, fetch-fr-ctc.sh): their corpora are built and
+# cross-checked against Saxon-HE, but the engine does not support them yet, so
+# they are "info" (a release's notes list the "high" ones as tested).
+
+[[upstream]]
+name = "Factur-X"
+severity = "info"
+pinned = "1.09.2"
+source = "listing"
+url = "https://fnfe-mpe.org/factur-x/factur-x_en/"
+version-pattern = 'Factur-X (?<v>[0-9]+\.[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "scripts/fetch-facturx.sh"
+pattern = 'facturx=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-facturx.sh"
+pattern = 'Factur-X (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "xtask/src/ruleset.rs"
+pattern = 'factur-x-(?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "corpus/factur-x-1.09.2/README.md"
+pattern = 'Factur-X (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "corpus/README.md"
+pattern = 'factur-x-(?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "README.md"
+pattern = 'Factur-X (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+# The source of the Factur-X stylesheets (scripts/fetch-facturx.sh).
+[[upstream]]
+name = "Mustang validator"
+severity = "info"
+pinned = "2.26.0"
+source = "maven"
+group = "org.mustangproject"
+artifact = "validator"
+
+[[upstream.pin]]
+file = "scripts/fetch-facturx.sh"
+pattern = 'mustang=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-facturx.sh"
+pattern = 'Mustang validator (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "corpus/factur-x-1.09.2/README.md"
+pattern = 'Mustang validator (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream]]
+name = "XRechnung"
+severity = "info"
+pinned = "3.0.2"
+source = "listing"
+url = "https://xeinkauf.de/xrechnung/versionen-und-bundles/"
+version-pattern = 'XRechnung Bundle (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-xrechnung.sh"
+pattern = 'xrechnung=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-xrechnung.sh"
+pattern = 'XRechnung (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "xtask/src/ruleset.rs"
+pattern = 'xrechnung-(?:ubl|cii)-(?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "corpus/xrechnung-ubl-3.0.2/README.md"
+pattern = 'XRechnung (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "corpus/xrechnung-cii-3.0.2/README.md"
+pattern = 'XRechnung (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "corpus/README.md"
+pattern = 'xrechnung-(?:ubl|cii)-(?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "README.md"
+pattern = 'XRechnung (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream]]
+name = "XRechnung Schematron"
+severity = "info"
+pinned = "2.6.0"
+source = "listing"
+url = "https://projekte.kosit.org/api/v4/projects/356/packages/maven/de/xeinkauf/xrechnung-3.0.2-schematron/maven-metadata.xml"
+version-pattern = '<version>(?<v>[0-9]+\.[0-9]+\.[0-9]+)</version>'
+
+[[upstream.pin]]
+file = "scripts/fetch-xrechnung.sh"
+pattern = 'schematron=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-xrechnung.sh"
+pattern = 'tag v(?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream.pin]]
+file = "corpus/xrechnung-ubl-3.0.2/README.md"
+pattern = 'XRechnung Schematron (?<v>[0-9]+\.[0-9]+\.[0-9]+)'
+
+[[upstream]]
+name = "XRechnung validator configuration"
+severity = "info"
+pinned = "2026-08-31"
+source = "listing"
+url = "https://projekte.kosit.org/api/v4/projects/356/packages/maven/de/xeinkauf/xrechnung-3.0.2-validator-configuration/maven-metadata.xml"
+version-pattern = '<version>(?<v>[0-9]{4}-[0-9]{2}-[0-9]{2})</version>'
+
+[[upstream.pin]]
+file = "scripts/fetch-xrechnung.sh"
+pattern = '\nconfiguration=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "corpus/xrechnung-ubl-3.0.2/README.md"
+pattern = 'validator configuration (?<v>[0-9]{4}-[0-9]{2}-[0-9]{2})'
+
+[[upstream]]
+name = "XRechnung test suite"
+severity = "info"
+pinned = "2026-08-31"
+source = "listing"
+url = "https://projekte.kosit.org/api/v4/projects/356/packages/maven/de/xeinkauf/xrechnung-3.0.2-testsuite/maven-metadata.xml"
+version-pattern = '<version>(?<v>[0-9]{4}-[0-9]{2}-[0-9]{2})</version>'
+
+[[upstream.pin]]
+file = "scripts/fetch-xrechnung.sh"
+pattern = '\ntestsuite=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "corpus/xrechnung-ubl-3.0.2/README.md"
+pattern = 'test suite (?<v>[0-9]{4}-[0-9]{2}-[0-9]{2})'
+
+# Expands the unit tests of the XRechnung Schematron (scripts/fetch-xrechnung.sh).
+[[upstream]]
+name = "XML Mutate"
+severity = "info"
+pinned = "0.6"
+source = "listing"
+url = "https://projekte.kosit.org/api/v4/projects/356/packages/maven/de/kosit/xml-mutate/maven-metadata.xml"
+version-pattern = '<version>(?<v>[0-9]+(?:\.[0-9]+)+)</version>'
+hold = "the SHA-256 of the mutants in scripts/fetch-xrechnung.sh are those of this version"
+
+[[upstream.pin]]
+file = "scripts/fetch-xrechnung.sh"
+pattern = 'xmute=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-xrechnung.sh"
+pattern = 'XML Mutate (?<v>[0-9]+(?:\.[0-9]+)+)'
+
+[[upstream]]
+name = "French e-invoicing rules (FNFE-MPE)"
+severity = "info"
+pinned = "1.4.0.04"
+source = "listing"
+url = "https://fnfe-mpe.org/ressources/"
+version-pattern = 'SCHEMATRONS_FR_CTC_V(?<v>[0-9]+(?:\.[0-9]+)*)\.zip'
+
+[[upstream.pin]]
+file = "scripts/fetch-fr-ctc.sh"
+pattern = 'pack=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "xtask/src/ruleset.rs"
+pattern = 'fr-ctc-(?:cii|ubl|cdar)-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "corpus/fr-ctc-cii-1.4.0.04/README.md"
+pattern = 'FNFE-MPE package (?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "corpus/fr-ctc-ubl-1.4.0.04/README.md"
+pattern = 'FNFE-MPE package (?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "corpus/fr-ctc-cdar-1.4.0.04/README.md"
+pattern = 'FNFE-MPE package (?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "corpus/README.md"
+pattern = 'fr-ctc-(?:cii|ubl|cdar)-(?<v>[0-9]+(?:\.[0-9]+)*)'
+
+[[upstream.pin]]
+file = "README.md"
+pattern = 'FNFE-MPE package (?<v>[0-9]+(?:\.[0-9]+)*)'
+
+# The example documents of the French standards (annex B of XP Z12-012 and XP
+# Z12-014), corpora of Factur-X and of the French rules.
+[[upstream]]
+name = "XP Z12-012 examples"
+severity = "info"
+pinned = "1.4"
+source = "listing"
+url = "https://fnfe-mpe.org/ressources/"
+version-pattern = 'XP_Z12-012_Annexes_A_et_B_EXEMPLES_V(?<v>[0-9]+(?:\.[0-9]+)*)\.zip'
+
+[[upstream.pin]]
+file = "scripts/fetch-facturx.sh"
+pattern = 'z12_012=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-fr-ctc.sh"
+pattern = 'z12_012=(?<v>[^\s]+)'
+
+[[upstream]]
+name = "XP Z12-014 examples"
+severity = "info"
+pinned = "1.4"
+source = "listing"
+url = "https://fnfe-mpe.org/ressources/"
+version-pattern = 'XP_Z12-014_CAS_USAGE_Annexes_A_et_B_EXEMPLES_V(?<v>[0-9]+(?:\.[0-9]+)*)\.zip'
+
+[[upstream.pin]]
+file = "scripts/fetch-facturx.sh"
+pattern = 'z12_014=(?<v>[^\s]+)'
+
+[[upstream.pin]]
+file = "scripts/fetch-fr-ctc.sh"
+pattern = 'z12_014=(?<v>[^\s]+)'
+
 [[upstream]]
 name = "OASIS UBL"
 severity = "info"
