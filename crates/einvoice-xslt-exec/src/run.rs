@@ -42,7 +42,7 @@ use crate::output::{CompactBuilder, CompactTransformation, ResultObserver};
 use crate::pattern::{self, Matcher};
 use crate::prepare::{
     AvtItem, Binding, CompiledAvt, CompiledFunction, CompiledTemplate, CountPattern, Eval,
-    Executable, Inst, ModeRef, Plan, Value, When, WithParam,
+    Executable, Inst, ModeRef, Plan, Value, When, WithParam, kind_index, rule_name_number,
 };
 use crate::sink::{
     Compact, SequenceSink, Sink, Target, TextSink, TreeSink, WholeText, XmlWriter, attribute_name,
@@ -282,7 +282,7 @@ impl Executable {
             stack: StackLimit::from_here(options.max_stack),
             learners: (0..self.learners).map(|_| Rc::default()).collect(),
             argument_learners: RefCell::new(HashMap::new()),
-            named_chains: RefCell::new(vec![Vec::new(); self.modes.len()]),
+            rule_name_numbers: RefCell::new(Vec::new()),
         };
         let timezone = options.implicit_timezone.unwrap_or(0);
         let clock = match options.current_date_time {
@@ -466,9 +466,9 @@ struct Runtime<'e, 'a> {
     /// The same for the arguments of stylesheet function calls, by call site
     /// ([`Argument::site`]).
     argument_learners: RefCell<HashMap<usize, Rc<Learner>>>,
-    /// Per mode, the chains of rules of the names of the source document, by
-    /// [`Node::name_id`] (twice: elements, then attributes), as looked up.
-    named_chains: RefCell<Vec<Vec<Option<&'e [u32]>>>>,
+    /// The number in [`Executable::rule_names`] of each name of the source document, by
+    /// [`Node::name_id`], as looked up.
+    rule_name_numbers: RefCell<Vec<NameNumber>>,
 }
 
 /// The size of the sequence of nodes a template rule is applied to, the context size of
@@ -494,6 +494,16 @@ impl Size<'_> {
             }
         }
     }
+}
+
+/// The number of a name of the source document in [`Executable::rule_names`].
+#[derive(Debug, Clone, Copy)]
+enum NameNumber {
+    /// Not looked up yet.
+    Unknown,
+    /// No mode has rules for the name.
+    NoRules,
+    Known(u32),
 }
 
 /// An invocation counted in [`Runtime::nesting`], until it is dropped.
@@ -1442,7 +1452,8 @@ impl<'e, 'a> Runtime<'e, 'a> {
     }
 
     /// The chain of rules of `mode` for the name of `node`, an element or (`attribute`)
-    /// an attribute: looked up once per name of the source document and mode.
+    /// an attribute. The names of the source document are looked up once per
+    /// transformation ([`Executable::rule_names`]), then by number in each mode.
     fn named_chain(&self, mode: usize, node: &Node, attribute: bool) -> &'e [u32] {
         let exe: &'e Executable = self.exe;
         let compiled = &exe.modes[mode];
@@ -1452,27 +1463,39 @@ impl<'e, 'a> Runtime<'e, 'a> {
         let Some(id) = id else {
             return compiled.named_chain(attribute, node.name());
         };
-        let slot = (id as usize) * 2 + usize::from(attribute);
-        let mut cache = self.named_chains.borrow_mut();
-        let Some(chains) = cache.get_mut(mode) else {
-            return compiled.named_chain(attribute, node.name());
+        let number = {
+            let mut numbers = self.rule_name_numbers.borrow_mut();
+            if numbers.is_empty() {
+                numbers.resize(
+                    self.source_root.document().name_count(),
+                    NameNumber::Unknown,
+                );
+            }
+            match numbers.get_mut(id as usize) {
+                Some(NameNumber::Known(number)) => *number,
+                Some(NameNumber::NoRules) => return &[],
+                Some(entry) => {
+                    let found = node
+                        .name()
+                        .and_then(|name| rule_name_number(&exe.rule_names, name));
+                    *entry = found.map_or(NameNumber::NoRules, NameNumber::Known);
+                    match found {
+                        Some(number) => number,
+                        None => return &[],
+                    }
+                }
+                None => return compiled.named_chain(attribute, node.name()),
+            }
         };
-        if chains.is_empty() {
-            chains.resize(self.source_root.document().name_count() * 2, None);
-        }
-        match chains.get_mut(slot) {
-            Some(Some(chain)) => chain,
-            Some(entry) => entry.insert(compiled.named_chain(attribute, node.name())),
-            None => compiled.named_chain(attribute, node.name()),
-        }
+        compiled.named_by_number(attribute, number)
     }
 
     /// Whether `node` matches the pattern of a rule. A dynamic error while matching is
     /// recovered as Saxon recovers it (see [`Runtime::pattern_error`]).
     fn rule_matches(&self, rank: u32, mode: usize, node: &Node) -> Result<bool> {
         let rule = &self.exe.modes[mode].rules[rank as usize];
-        if rule.certain {
-            // The node is in a chain of the rule, every node of which matches it.
+        if rule.certain & (1 << kind_index(node.kind())) != 0 {
+            // Every node of its kind the rule is tried on matches it.
             return Ok(true);
         }
         let template = &self.exe.templates[rule.template];

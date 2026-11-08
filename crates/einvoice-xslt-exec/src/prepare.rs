@@ -50,6 +50,74 @@ pub struct Executable {
     pub(crate) loaded: DocumentCache,
     /// The regular expressions compiled at evaluation, for every transformation.
     pub(crate) regexes: RegexCache,
+    /// The names of elements and attributes that have rules of their own in some mode,
+    /// numbered ([`CompiledMode::named_by_number`]).
+    pub(crate) rule_names: RuleNames,
+}
+
+/// Numbers of names, by local name and namespace.
+pub(crate) type RuleNames = HashMap<String, Vec<(Option<String>, u32)>>;
+
+/// The number of an expanded name in `names`, if it has one.
+pub(crate) fn rule_name_number(names: &RuleNames, name: &QName) -> Option<u32> {
+    names.get(name.local.as_str()).and_then(|by_ns| {
+        by_ns
+            .iter()
+            .find(|(ns, _)| ns.as_deref() == name.namespace.as_deref())
+            .map(|(_, number)| *number)
+    })
+}
+
+/// The template rules of each mode, and the numbers of the names they have rules for.
+fn compile_modes(
+    sheet: &Stylesheet,
+    templates: &[CompiledTemplate],
+    modes: &[Mode],
+) -> (Vec<CompiledMode>, RuleNames) {
+    let mut compiled: Vec<CompiledMode> = modes
+        .iter()
+        .map(|mode| rank_rules(sheet, templates, mode))
+        .collect();
+    let names = number_rule_names(&mut compiled);
+    (compiled, names)
+}
+
+/// Numbers the names of elements and attributes that have rules of their own in the
+/// modes, and gives each mode its chains of those names by number.
+fn number_rule_names(modes: &mut [CompiledMode]) -> RuleNames {
+    let mut names = RuleNames::new();
+    let mut count = 0_u32;
+    for mode in modes.iter_mut() {
+        for attribute in [false, true] {
+            let map = if attribute {
+                &mode.attributes
+            } else {
+                &mode.elements
+            };
+            let mut numbered: Vec<(u32, Vec<u32>)> = Vec::new();
+            for (local, by_ns) in map {
+                for (namespace, ranks) in by_ns {
+                    let entry = names.entry(local.clone()).or_default();
+                    let number =
+                        if let Some((_, number)) = entry.iter().find(|(ns, _)| ns == namespace) {
+                            *number
+                        } else {
+                            entry.push((namespace.clone(), count));
+                            count += 1;
+                            count - 1
+                        };
+                    numbered.push((number, ranks.clone()));
+                }
+            }
+            numbered.sort_by_key(|(number, _)| *number);
+            if attribute {
+                mode.attributes_by_number = numbered;
+            } else {
+                mode.elements_by_number = numbered;
+            }
+        }
+    }
+    names
 }
 
 /// A global variable or parameter.
@@ -253,10 +321,51 @@ pub(crate) struct Rule {
     /// without explicit priority; 0 for a pattern with an explicit priority (Saxon's
     /// `part`, which keeps `xsl:next-match` from running the same template twice).
     pub(crate) part: usize,
-    /// Whether every node of the chains holding the rule matches its pattern, which is
-    /// then matched without evaluating anything (`text()`, `node()`, `*`, `@*`, `cac:X`,
-    /// alone and without predicates, in the chain of their kind or name).
-    pub(crate) certain: bool,
+    /// The node kinds ([`kind_index`], one bit each) whose every node the rule is tried
+    /// on matches its pattern, which is then matched without evaluating anything: the
+    /// first alternative tried that can match the kind, as its test tells, is `text()`,
+    /// `node()`, `*` or `@*` alone without predicates, or `cac:X` in the chain of that
+    /// name ([`certain_kinds`]).
+    pub(crate) certain: u8,
+}
+
+/// The [`Rule::certain`] kinds of a rule whose pattern's alternatives are tried in the
+/// order of `alternatives` and that is held by the chains of `keys`.
+fn certain_kinds(alternatives: &[pattern::Alternative], keys: &[pattern::Key]) -> u8 {
+    use einvoice_xpath_eval::NodeKind as K;
+    let mut kinds = 0;
+    for kind in [
+        K::Document,
+        K::Element,
+        K::Attribute,
+        K::Text,
+        K::Comment,
+        K::ProcessingInstruction,
+    ] {
+        // A rule held only by the chains of one name (a lone name test) is tried on nodes
+        // of that name only.
+        let by_name = !keys.is_empty()
+            && keys.iter().all(|key| match key {
+                pattern::Key::Element(ns, local) => {
+                    kind == K::Element
+                        && alternatives
+                            .first()
+                            .is_some_and(|a| a.is_lone_name_test(K::Element, ns.as_deref(), local))
+                }
+                pattern::Key::Attribute(ns, local) => {
+                    kind == K::Attribute
+                        && alternatives.first().is_some_and(|a| {
+                            a.is_lone_name_test(K::Attribute, ns.as_deref(), local)
+                        })
+                }
+                _ => false,
+            });
+        let first = alternatives.iter().find(|a| !a.excludes(kind));
+        if by_name || first.is_some_and(|a| a.matches_every_node_of(kind)) {
+            kinds |= 1 << kind_index(kind);
+        }
+    }
+    kinds
 }
 
 /// Rule ranks of elements or attributes by local name, then namespace.
@@ -284,6 +393,10 @@ pub(crate) struct CompiledMode {
     /// What the rule search gives for a node of each kind ([`kind_index`]) whose name has
     /// no rule of its own, when it is known without matching any pattern.
     plans: [Plan; 6],
+    /// The chains of `elements` and `attributes` by the number of their name in
+    /// [`Executable::rule_names`], in number order.
+    elements_by_number: Vec<(u32, Vec<u32>)>,
+    attributes_by_number: Vec<(u32, Vec<u32>)>,
 }
 
 /// The outcome of the rule search ([`Runtime::find_rule`](crate::run)) for a node of a
@@ -329,6 +442,19 @@ impl CompiledMode {
         )
     }
 
+    /// The chain of rules for elements (or attributes, `attribute`) whose name has the
+    /// number `number` in [`Executable::rule_names`].
+    pub(crate) fn named_by_number(&self, attribute: bool, number: u32) -> &[u32] {
+        let numbered = if attribute {
+            &self.attributes_by_number
+        } else {
+            &self.elements_by_number
+        };
+        numbered
+            .binary_search_by_key(&number, |(n, _)| *n)
+            .map_or(EMPTY, |i| numbered[i].1.as_slice())
+    }
+
     /// The rule search's outcome for a node of `kind` without rules for its name.
     pub(crate) const fn plan(&self, kind: einvoice_xpath_eval::NodeKind) -> Plan {
         self.plans[kind_index(kind)]
@@ -360,7 +486,7 @@ impl CompiledMode {
     /// The plans of the node kinds ([`Plan`]), once the rules are indexed: the search
     /// [`Runtime::find_rule`](crate::run) does, over the chain of the kind and the
     /// generic chain, when its outcome needs no pattern to be matched.
-    fn plan_kinds(&mut self, templates: &[CompiledTemplate]) {
+    fn plan_kinds(&mut self) {
         use einvoice_xpath_eval::NodeKind as K;
         for kind in [
             K::Document,
@@ -375,12 +501,7 @@ impl CompiledMode {
                 None => Plan::Builtin,
                 Some(first) => {
                     let rule = &self.rules[first as usize];
-                    let alternatives = &templates[rule.template].pattern;
-                    let alternative = match rule.alternative {
-                        Some(index) => alternatives.get(index),
-                        None => alternatives.first(),
-                    };
-                    let unconditional = alternative.is_some_and(|a| a.matches_every_node_of(kind));
+                    let unconditional = rule.certain & (1 << kind_index(kind)) != 0;
                     if unconditional
                         && ranks.all(|r| self.rules[r as usize].priority < rule.priority)
                     {
@@ -1595,11 +1716,7 @@ impl Executable {
                 }
             })
             .collect();
-        let compiled_modes = compiler
-            .modes
-            .iter()
-            .map(|mode| rank_rules(sheet, &templates, mode))
-            .collect();
+        let (compiled_modes, rule_names) = compile_modes(sheet, &templates, &compiler.modes);
         if !compiler.errors.is_empty() {
             compiler.errors.sort_by_key(|e| e.line);
             return Err(PrepareErrors(compiler.errors));
@@ -1628,6 +1745,7 @@ impl Executable {
             learners: compiler.learners,
             loaded: DocumentCache::new(),
             regexes: RegexCache::new(),
+            rule_names,
         })
     }
 
@@ -1752,7 +1870,7 @@ fn rank_rules(sheet: &Stylesheet, templates: &[CompiledTemplate], mode: &Mode) -
                 priority: as_double(rule.priority),
                 sequence: index,
                 part: if rule.is_default { rule.alternative } else { 0 },
-                certain: false,
+                certain: 0,
             });
             if whole {
                 break;
@@ -1775,27 +1893,25 @@ fn rank_rules(sheet: &Stylesheet, templates: &[CompiledTemplate], mode: &Mode) -
     for (rank, rule) in rules.iter_mut().enumerate() {
         let rank = u32::try_from(rank).unwrap_or(u32::MAX);
         let pattern = &templates[rule.template].pattern;
-        let (keys, first) = match rule.alternative {
+        let (keys, tried) = match rule.alternative {
             Some(alternative) => (
                 pattern
                     .get(alternative)
                     .map(pattern::Alternative::chain_keys)
                     .unwrap_or_default(),
-                pattern.get(alternative),
+                pattern.get(alternative..=alternative).unwrap_or_default(),
             ),
             None => (
                 pattern::union_chain_key(pattern).into_iter().collect(),
-                pattern.first(),
+                pattern.as_slice(),
             ),
         };
-        // The alternative matched first decides when every node of the chains matches it.
-        rule.certain = !keys.is_empty()
-            && first.is_some_and(|a| keys.iter().all(|key| a.matches_every_node_under(key)));
+        rule.certain = certain_kinds(tried, &keys);
         for key in &keys {
             compiled.index(rank, key);
         }
     }
     compiled.rules = rules;
-    compiled.plan_kinds(templates);
+    compiled.plan_kinds();
     compiled
 }

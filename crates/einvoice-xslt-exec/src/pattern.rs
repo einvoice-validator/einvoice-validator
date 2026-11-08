@@ -64,6 +64,21 @@ pub(crate) enum StepTest {
 }
 
 impl StepTest {
+    /// Whether some node of `kind` can pass the test.
+    pub(crate) const fn can_match(&self, kind: NodeKind) -> bool {
+        match self {
+            Self::AnyChild => matches!(
+                kind,
+                NodeKind::Element
+                    | NodeKind::Text
+                    | NodeKind::Comment
+                    | NodeKind::ProcessingInstruction
+            ),
+            Self::Kind(k) | Self::Named { kind: k, .. } => *k as u8 == kind as u8,
+            Self::Never => false,
+        }
+    }
+
     pub(crate) fn matches(&self, node: &Node) -> bool {
         let kind = node.kind();
         match self {
@@ -242,43 +257,27 @@ impl Alternative {
         }
     }
 
-    /// Whether every node a rule chain of `key` can be searched for matches the
-    /// alternative, without evaluating anything ([`Alternative::matches_every_node_of`],
-    /// or for the chain of a name, a lone step without predicates testing that name).
-    pub(crate) fn matches_every_node_under(&self, key: &Key) -> bool {
-        match key {
-            Key::Document => self.matches_every_node_of(NodeKind::Document),
-            Key::Element(namespace, local) | Key::Attribute(namespace, local) => {
-                let kind = if matches!(key, Key::Element(..)) {
-                    NodeKind::Element
-                } else {
-                    NodeKind::Attribute
-                };
-                self.matches_every_node_of(kind)
-                    || self.is_lone_name_test(kind, namespace.as_deref(), local)
-            }
-            Key::AnyElement => self.matches_every_node_of(NodeKind::Element),
-            Key::AnyAttribute => self.matches_every_node_of(NodeKind::Attribute),
-            Key::AnyChild => [
-                NodeKind::Element,
-                NodeKind::Text,
-                NodeKind::Comment,
-                NodeKind::ProcessingInstruction,
-            ]
-            .into_iter()
-            .all(|kind| self.matches_every_node_of(kind)),
-            Key::Text => self.matches_every_node_of(NodeKind::Text),
-            Key::Comment => self.matches_every_node_of(NodeKind::Comment),
-            Key::ProcessingInstruction => {
-                self.matches_every_node_of(NodeKind::ProcessingInstruction)
-            }
-            Key::Generic => false,
+    /// Whether no node of `kind` matches the alternative, as its matching finds out
+    /// without evaluating anything: the test of its last step, or `/`.
+    pub(crate) fn excludes(&self, kind: NodeKind) -> bool {
+        match self {
+            Self::DocumentRoot | Self::RootFunction => kind != NodeKind::Document,
+            Self::Path { steps, .. } => match steps.last() {
+                None => true,
+                Some(PathStep::Axis(step)) => !step.test.can_match(kind),
+                Some(PathStep::Group { .. }) => false,
+            },
         }
     }
 
     /// Whether the alternative is a lone relative step without predicates testing for
     /// nodes of `kind` named `{namespace}local`.
-    fn is_lone_name_test(&self, kind: NodeKind, namespace: Option<&str>, local: &str) -> bool {
+    pub(crate) fn is_lone_name_test(
+        &self,
+        kind: NodeKind,
+        namespace: Option<&str>,
+        local: &str,
+    ) -> bool {
         let Self::Path {
             anchor: PatternAnchor::Relative,
             steps,
