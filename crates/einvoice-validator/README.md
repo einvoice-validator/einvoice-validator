@@ -15,7 +15,10 @@ schema errors, the findings of each stylesheet (failed asserts and successful re
 their id, flag, location and message), the raw SVRL and the verdict.
 The XML check and the schema are one pass of the streaming reader
 [`einvoice-xml`](https://crates.io/crates/einvoice-xml) over the document, which builds no
-tree; the only tree of the document is the one the stylesheets run on.
+tree; the only tree of the document is the one the stylesheets run on. The findings are read
+from the SVRL report as the stylesheet writes it, and the report is kept compactly, each
+distinct piece of its text once (`StylesheetReport::svrl`): the SVRL of a large invoice, a
+fired rule per node, takes a few bytes per fired rule.
 
 ```toml
 [dependencies]

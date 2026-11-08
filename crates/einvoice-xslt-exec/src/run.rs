@@ -38,12 +38,15 @@ use einvoice_xpath_eval::{
 use einvoice_xslt::{NamespaceBinding, NumberLevel};
 
 use crate::error::{LIMIT, Result, TransformError, err};
+use crate::output::{CompactBuilder, CompactTransformation, ResultObserver};
 use crate::pattern::{self, Matcher};
 use crate::prepare::{
     AvtItem, Binding, CompiledAvt, CompiledFunction, CompiledTemplate, CountPattern, Eval,
     Executable, Inst, ModeRef, Value, When, WithParam,
 };
-use crate::sink::{SequenceSink, Sink, TextSink, TreeSink, XmlWriter, attribute_name};
+use crate::sink::{
+    Compact, SequenceSink, Sink, Target, TextSink, TreeSink, WholeText, XmlWriter, attribute_name,
+};
 
 /// Fetches the documents that `document()` asks for, by absolute URI. The engine never
 /// reads files or the network itself.
@@ -198,6 +201,46 @@ impl Executable {
         base_uri: Option<&str>,
         options: &TransformOptions<'_>,
     ) -> std::result::Result<Transformation, TransformError> {
+        let ((output, WholeText), warnings) = self.run(source, base_uri, options, WholeText)?;
+        Ok(Transformation { output, warnings })
+    }
+
+    /// [`Executable::transform_with`], the result kept as a
+    /// [`CompactOutput`](crate::CompactOutput) instead of a string, and read as it is
+    /// written by `observer`: a large result in less memory, read without parsing its
+    /// text.
+    ///
+    /// # Errors
+    ///
+    /// As [`Executable::transform_with`].
+    pub fn transform_compact<'s>(
+        &self,
+        source: impl Into<Cow<'s, str>>,
+        base_uri: Option<&str>,
+        options: &TransformOptions<'_>,
+        observer: &mut dyn ResultObserver,
+    ) -> std::result::Result<CompactTransformation, TransformError> {
+        let target = Compact {
+            builder: CompactBuilder::default(),
+            observer,
+        };
+        // The pieces are all taken: nothing is left in the writer's buffer.
+        let ((_, target), warnings) = self.run(source, base_uri, options, target)?;
+        let mut output = target.builder.finish();
+        // The source tree is dropped: the room left in the buffers is released.
+        output.shrink_to_fit();
+        Ok(CompactTransformation { output, warnings })
+    }
+
+    /// Runs the stylesheet, its result written to `target`: what
+    /// [`XmlWriter::finish`] returns, and the warnings.
+    fn run<'s, T: Target>(
+        &self,
+        source: impl Into<Cow<'s, str>>,
+        base_uri: Option<&str>,
+        options: &TransformOptions<'_>,
+        target: T,
+    ) -> std::result::Result<((String, T), Vec<String>), TransformError> {
         let source = source.into();
         // The text `document()` parses again when asked for the source document.
         let source_text = match &source {
@@ -240,11 +283,11 @@ impl Executable {
         };
         let dc = DynamicContext::new(&runtime, clock);
         runtime.dc.set(Some(&dc));
-        let mut writer = XmlWriter::new(self.serialization);
+        let mut writer = XmlWriter::new(self.serialization, target);
         runtime.apply_rule(&root, 1, 1, self.default_mode, None, &[], &mut writer)?;
-        let output = writer.finish()?;
+        let finished = writer.finish()?;
         let warnings = runtime.warnings.take();
-        Ok(Transformation { output, warnings })
+        Ok((finished, warnings))
     }
 }
 

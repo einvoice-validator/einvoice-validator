@@ -388,8 +388,8 @@ pub(crate) fn svrl(outcome: &Outcome) -> (String, String) {
                     );
                     continue;
                 }
-                out.push_str(&s.svrl);
-                if !s.svrl.ends_with('\n') {
+                let _ = write!(out, "{}", s.svrl());
+                if s.svrl().is_empty() || !out.ends_with('\n') {
                     out.push('\n');
                 }
             }

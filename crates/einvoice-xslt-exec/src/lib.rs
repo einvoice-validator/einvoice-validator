@@ -9,7 +9,11 @@
 //! indexes the template rules of each mode by the kind and name of the nodes they can
 //! match. A transformation parses the document, applies templates to its document node in
 //! the default mode and writes the result straight to XML as it is produced (the result
-//! tree is never held in memory): for a compiled Schematron, the SVRL report.
+//! tree is never held in memory): for a compiled Schematron, the SVRL report. Written by
+//! [`Executable::transform_compact`], the result is kept as a [`CompactOutput`], each
+//! distinct piece of its text once, and a [`ResultObserver`] reads it as it is written, as a
+//! parser of the text would: the report of a large document in a fraction of its size, and
+//! read without parsing it again.
 //!
 //! Supported, as XSLT 2.0 and Saxon define them:
 //!
@@ -92,12 +96,14 @@
 //! ```
 
 mod error;
+mod output;
 mod pattern;
 mod prepare;
 mod run;
 mod sink;
 
 pub use error::{PrepareError, PrepareErrors, TransformError};
+pub use output::{CompactOutput, CompactTransformation, ResultObserver};
 pub use prepare::Executable;
 pub use run::{
     DEFAULT_MAX_NESTING, DEFAULT_MAX_STACK, DocumentResolver, TransformOptions, Transformation,

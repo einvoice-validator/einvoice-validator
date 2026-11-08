@@ -520,7 +520,8 @@ pub(crate) fn run(
         max_nesting: einvoice_xslt_exec::max_nesting_for_depth(max_depth),
         ..TransformOptions::default()
     };
-    let result = executable.transform_with(
+    let result = super::transform_observed(
+        executable,
         text.as_str(),
         uri.as_deref(),
         &options(einvoice_xpath_eval::DEFAULT_MAX_DEPTH),
@@ -550,9 +551,13 @@ pub(crate) fn run(
                             max_stack: RAISED_MAX_STACK,
                             ..TransformOptions::default()
                         };
-                        executable
-                            .transform_with(text.as_str(), uri.as_deref(), &raised)
-                            .map(|t| t.output)
+                        super::transform_observed(
+                            executable,
+                            text.as_str(),
+                            uri.as_deref(),
+                            &raised,
+                        )
+                        .map(|t| t.output)
                     })
                     .map_err(|e| e.to_string())?
                     .join()

@@ -12,7 +12,9 @@ use einvoice_xslt_exec::{
 use sha2::{Digest, Sha256};
 
 use crate::manifest::{MANIFEST_FILE, RuleSet, SchemaId, StylesheetEntry};
-use crate::report::{Report, RuleSetVersion, SchemaError, StylesheetFailure, StylesheetReport};
+use crate::report::{
+    Report, RuleSetVersion, SchemaError, StylesheetFailure, StylesheetReport, SvrlReader,
+};
 use crate::resources::{BUNDLE_URI, Resources};
 use crate::{Error, builtin};
 
@@ -374,15 +376,21 @@ impl Validator {
                 text.as_deref().map(Cow::Borrowed)
             }
             .ok_or_else(|| Error::internal("the document text was given away early"))?;
-            let result =
-                executable.transform_with(source, options.document_uri, &transform_options);
+            // The findings are read as the stylesheet writes its report.
+            let mut reader = SvrlReader::new(options.fail_closed);
+            let result = executable.transform_compact(
+                source,
+                options.document_uri,
+                &transform_options,
+                &mut reader,
+            );
             let report = match result {
                 Ok(result) => StylesheetReport::new(
                     entry,
                     result.output,
+                    reader,
                     result.warnings,
                     options.document_uri,
-                    options.fail_closed,
                 )?,
                 Err(e) => match transform_error(entry, &e) {
                     // The schema errors already make the document invalid: the verdict

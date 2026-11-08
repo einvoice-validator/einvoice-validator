@@ -6,6 +6,8 @@
 
 use std::fmt::Write as _;
 
+mod common;
+
 use proptest::prelude::*;
 
 fn run(xslt: &str, input: &str) -> String {
@@ -138,5 +140,112 @@ proptest! {
         let output = run(xslt, &input);
         let doc = roxmltree::Document::parse(&output).unwrap();
         prop_assert_eq!(doc.root_element().text().unwrap_or(""), format!("1.{}", expected.join(".")));
+    }
+}
+
+/// A node of a generated document.
+#[derive(Debug, Clone)]
+enum Generated {
+    Element(usize, Vec<(usize, String)>, Vec<Generated>),
+    Text(String),
+    Comment(String),
+}
+
+/// Element names (`p` and `q` are declared on the document element), attribute names.
+const ELEMENT_NAMES: [&str; 4] = ["a", "b", "p:c", "q:d"];
+const ATTRIBUTE_NAMES: [&str; 3] = ["x", "y", "p:z"];
+
+fn short_text() -> impl Strategy<Value = String> {
+    proptest::collection::vec(xml_char(), 0..6).prop_map(|c| c.into_iter().collect())
+}
+
+fn generated() -> impl Strategy<Value = Generated> {
+    let leaf = prop_oneof![
+        3 => short_text().prop_map(Generated::Text),
+        1 => proptest::collection::vec(proptest::char::range('a', 'c'), 0..4)
+            .prop_map(|c| Generated::Comment(c.into_iter().collect())),
+        2 => (0..ELEMENT_NAMES.len()).prop_map(|n| Generated::Element(n, Vec::new(), Vec::new())),
+    ];
+    leaf.prop_recursive(4, 40, 5, |inner| {
+        (
+            0..ELEMENT_NAMES.len(),
+            proptest::collection::vec((0..ATTRIBUTE_NAMES.len(), short_text()), 0..3),
+            proptest::collection::vec(inner, 0..5),
+        )
+            .prop_map(|(name, attributes, children)| Generated::Element(name, attributes, children))
+    })
+}
+
+fn write_generated(node: &Generated, out: &mut String) {
+    match node {
+        Generated::Element(name, attributes, children) => {
+            let name = ELEMENT_NAMES[*name];
+            write!(out, "<{name}").unwrap();
+            let mut seen = Vec::new();
+            for (attribute, value) in attributes {
+                if !seen.contains(attribute) {
+                    seen.push(*attribute);
+                    write!(
+                        out,
+                        " {}=\"{}\"",
+                        ATTRIBUTE_NAMES[*attribute],
+                        escape(value)
+                    )
+                    .unwrap();
+                }
+            }
+            out.push('>');
+            for child in children {
+                write_generated(child, out);
+            }
+            write!(out, "</{name}>").unwrap();
+        }
+        Generated::Text(text) => out.push_str(&escape(text)),
+        Generated::Comment(text) => write!(out, "<!--{text}-->").unwrap(),
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    /// A result kept compactly has the text of the result written as a string, and its
+    /// observer is given what a parser reads from that text: elements, attributes,
+    /// text (the whitespace of indentation in mixed and element content included) and
+    /// comments, with namespaces declared, inherited and fixed up.
+    #[test]
+    fn a_compact_result_is_the_text_a_parser_reads(
+        children in proptest::collection::vec(generated(), 0..6),
+        indent in any::<bool>(),
+        wrap in any::<bool>(),
+    ) {
+        let mut input = String::from(r#"<r xmlns:p="urn:p" xmlns:q="urn:q">"#);
+        for child in &children {
+            write_generated(child, &mut input);
+        }
+        input.push_str("</r>");
+        // The document copied, inside a literal result element whose prefix is that of
+        // another namespace, or as it is.
+        let body = if wrap {
+            r#"<p:out xmlns:p="urn:other" p:n="1"><xsl:sequence select="r/node()"/><xsl:comment>end</xsl:comment></p:out>"#
+        } else {
+            r#"<xsl:sequence select="r"/>"#
+        };
+        let xslt = format!(
+            r#"<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+              <xsl:output indent="{}"/>
+              <xsl:template match="/">{body}</xsl:template>
+            </xsl:stylesheet>"#,
+            if indent { "yes" } else { "no" }
+        );
+        let sheet = einvoice_xslt::load(&xslt).unwrap();
+        let executable = einvoice_xslt_exec::Executable::new(&sheet).unwrap();
+        let whole = executable.transform(input.as_str(), None).unwrap();
+        let mut recorder = common::Recorder::default();
+        let compact = executable
+            .transform_compact(input.as_str(), None, &einvoice_xslt_exec::TransformOptions::default(), &mut recorder)
+            .unwrap();
+        prop_assert_eq!(compact.output.to_text(), whole.output.clone());
+        prop_assert_eq!(compact.warnings, whole.warnings);
+        prop_assert_eq!(recorder.events, common::parsed_events(&whole.output).unwrap());
     }
 }

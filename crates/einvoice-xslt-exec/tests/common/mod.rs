@@ -13,9 +13,11 @@ pub(crate) mod peppol;
 
 use std::path::{Path, PathBuf};
 
+use einvoice_xpath::QName;
 use einvoice_xpath_eval::{DEFAULT_MAX_DEPTH, Document, LimitExceeded, NodeAxis, NodeKind};
 use einvoice_xslt_exec::{
-    Executable, TransformError, TransformOptions, Transformation, max_nesting_for_depth,
+    Executable, ResultObserver, TransformError, TransformOptions, Transformation,
+    max_nesting_for_depth,
 };
 
 pub(crate) const RULE_SET: &str = "cen-en16931-ubl-1.3.17";
@@ -135,6 +137,130 @@ pub(crate) fn depth(text: &str) -> u32 {
         .map_or(0, |d| u32::try_from(d).unwrap_or(u32::MAX))
 }
 
+/// What a parser reads of a result document: the events [`ResultObserver`] gives,
+/// adjacent text merged, names and attributes by namespace and local name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ResultEvent {
+    Start {
+        namespace: Option<String>,
+        local: String,
+        attributes: Vec<(Option<String>, String, String)>,
+    },
+    End,
+    Text(String),
+    Comment(String),
+}
+
+/// Records the events of a result as [`Executable::transform_compact`] gives them.
+#[derive(Debug, Default)]
+pub(crate) struct Recorder {
+    pub(crate) events: Vec<ResultEvent>,
+}
+
+fn namespace_of(name: &QName) -> Option<String> {
+    name.namespace.clone().filter(|n| !n.is_empty())
+}
+
+impl ResultObserver for Recorder {
+    fn start_element(&mut self, name: &QName, attributes: &[(QName, String)]) {
+        self.events.push(ResultEvent::Start {
+            namespace: namespace_of(name),
+            local: name.local.clone(),
+            attributes: attributes
+                .iter()
+                .map(|(n, v)| (namespace_of(n), n.local.clone(), v.clone()))
+                .collect(),
+        });
+    }
+
+    fn end_element(&mut self) {
+        self.events.push(ResultEvent::End);
+    }
+
+    fn text(&mut self, text: &str) {
+        if let Some(ResultEvent::Text(last)) = self.events.last_mut() {
+            last.push_str(text);
+        } else {
+            self.events.push(ResultEvent::Text(text.to_owned()));
+        }
+    }
+
+    fn comment(&mut self, text: &str) {
+        self.events.push(ResultEvent::Comment(text.to_owned()));
+    }
+}
+
+/// The events a parser (`einvoice_xml`) reads from a result document: text only
+/// inside the document element, adjacent text merged.
+pub(crate) fn parsed_events(text: &str) -> Result<Vec<ResultEvent>, String> {
+    let mut reader = einvoice_xml::Reader::new(text);
+    let mut events = Vec::new();
+    let mut depth = 0usize;
+    while let Some(event) = reader.next_event().map_err(|e| e.to_string())? {
+        match event {
+            einvoice_xml::Event::Start(start) => {
+                let name = start.name();
+                events.push(ResultEvent::Start {
+                    namespace: name.namespace.map(str::to_owned),
+                    local: name.local.to_owned(),
+                    attributes: start
+                        .attributes()
+                        .map(|a| {
+                            (
+                                a.name.namespace.map(str::to_owned),
+                                a.name.local.to_owned(),
+                                a.value.to_string(),
+                            )
+                        })
+                        .collect(),
+                });
+                depth += 1;
+            }
+            einvoice_xml::Event::End(_) => {
+                events.push(ResultEvent::End);
+                depth -= 1;
+            }
+            einvoice_xml::Event::Text(t) if depth > 0 => {
+                if let Some(ResultEvent::Text(last)) = events.last_mut() {
+                    last.push_str(&t.value);
+                } else {
+                    events.push(ResultEvent::Text(t.value.into_owned()));
+                }
+            }
+            einvoice_xml::Event::Comment(c) => {
+                events.push(ResultEvent::Comment(c.value.into_owned()));
+            }
+            _ => {}
+        }
+    }
+    Ok(events)
+}
+
+/// [`Executable::transform_with`] through [`Executable::transform_compact`]: the result
+/// as text, after checking that the events the observer was given are those a parser
+/// reads from that text.
+pub(crate) fn transform_observed<'s>(
+    executable: &Executable,
+    text: impl Into<std::borrow::Cow<'s, str>>,
+    uri: Option<&str>,
+    options: &TransformOptions<'_>,
+) -> Result<Transformation, TransformError> {
+    let mut recorder = Recorder::default();
+    let result = executable.transform_compact(text, uri, options, &mut recorder)?;
+    let output = result.output.to_text();
+    assert_eq!(result.output, output.as_str());
+    let parsed = parsed_events(&output);
+    assert!(
+        parsed.as_ref().is_ok_and(|p| *p == recorder.events),
+        "{uri:?}: the observer was not given what a parser reads ({:?})",
+        parsed.err()
+    );
+    Ok(Transformation {
+        output,
+        warnings: result.warnings,
+    })
+}
+
 /// Runs the stylesheet on a case as a caller with the default options does. A document
 /// deeper than [`DEFAULT_MAX_DEPTH`] must be refused, with a `LIMIT` error that names
 /// the depth; it is then run again with the maximum raised to [`RAISED_MAX_DEPTH`], on
@@ -145,7 +271,7 @@ pub(crate) fn transform_case(
     text: &str,
     uri: Option<&str>,
 ) -> Result<Transformation, TransformError> {
-    let result = executable.transform(text, uri);
+    let result = transform_observed(executable, text, uri, &TransformOptions::default());
     let deeper = depth(text) > DEFAULT_MAX_DEPTH;
     match &result {
         Err(e) if deeper => {
@@ -165,7 +291,7 @@ pub(crate) fn transform_case(
                 max_nesting: max_nesting_for_depth(RAISED_MAX_DEPTH),
                 ..TransformOptions::default()
             };
-            executable.transform_with(text, uri, &options)
+            transform_observed(executable, text, uri, &options)
         }
         _ => {
             assert!(

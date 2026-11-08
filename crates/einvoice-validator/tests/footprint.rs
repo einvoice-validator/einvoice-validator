@@ -21,13 +21,15 @@ static ALLOCATOR: PeakAlloc = PeakAlloc;
 
 /// The peak above the document given as a buffer, for the largest corpus document
 /// (3291892 bytes, mostly a base64 attachment): measured 51 KiB.
-const LARGEST_BUDGET: usize = 128 * 1024;
+const LARGEST_BUDGET: usize = 64 * 1024;
 
 /// The peak above the document given as a buffer, for the invoice of 1000 lines
-/// (806 KiB): measured 5020 KiB, the stylesheet's input tree, the SVRL report it writes
-/// and the reading of that report (7628 KiB in release 0.2.0, which also built a tree of
-/// the document to check it and another to validate it against the schema).
-const SYNTHETIC_BUDGET: usize = 5500 * 1024;
+/// (806 KiB): measured 1657 KiB, mostly the stylesheet's input tree; the SVRL report
+/// (1.4 MB of text, 8051 fired rules) is kept compactly and read as it is written.
+/// Before: 5020 KiB, when the report was written to a string and parsed again into a
+/// tree; 7628 KiB in release 0.2.0, which also built a tree of the document to check it
+/// and another to validate it against the schema.
+const SYNTHETIC_BUDGET: usize = 1850 * 1024;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

@@ -180,11 +180,12 @@ pub(crate) fn svrl(result: Result<Report, Error>) -> Result<Json, Error> {
                 message: failure.message,
             });
         }
+        let svrl = s.svrl().to_text();
         out.push(Json::Object(vec![
             ("stylesheet", Json::String(s.name)),
             ("version", Json::String(s.version)),
             ("sha256", Json::String(s.sha256)),
-            ("svrl", Json::String(s.svrl)),
+            ("svrl", Json::String(svrl)),
         ]));
     }
     Ok(Json::Array(out))

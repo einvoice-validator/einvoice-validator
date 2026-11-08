@@ -23,6 +23,7 @@ use einvoice_xpath_eval::{Document, Item, Node, NodeKind, TreeBuilder};
 use einvoice_xslt::NamespaceBinding;
 
 use crate::error::{Result, TransformError, err};
+use crate::output::{CompactBuilder, ResultObserver};
 
 /// The receiver of the events of a sequence constructor.
 pub(crate) trait Sink {
@@ -127,10 +128,95 @@ struct Open {
     has_text: bool,
 }
 
-/// Writes the final result tree as XML text as it is produced, without building it.
+/// Where [`XmlWriter`] puts the text it writes, and who reads the result as it is
+/// written.
+pub(crate) trait Target {
+    /// The text written since the previous call is a complete piece, to keep and clear
+    /// from `out`; or left in `out`, to which the writer appends.
+    fn commit(&mut self, out: &mut String) -> Result<()>;
+    /// Whether some text was taken from the writer.
+    fn has_taken(&self) -> bool;
+    /// The start of an element, its attributes as written.
+    fn start_element(&mut self, name: &QName, attributes: &[(QName, String)]);
+    /// The end of the innermost open element.
+    fn end_element(&mut self);
+    /// Character data inside the document element.
+    fn text(&mut self, text: &str);
+    /// A comment.
+    fn comment(&mut self, text: &str);
+}
+
+/// The result as one string: the writer's own buffer.
 #[derive(Debug)]
-pub(crate) struct XmlWriter {
+pub(crate) struct WholeText;
+
+impl Target for WholeText {
+    fn commit(&mut self, _out: &mut String) -> Result<()> {
+        Ok(())
+    }
+
+    fn has_taken(&self) -> bool {
+        false
+    }
+
+    fn start_element(&mut self, _name: &QName, _attributes: &[(QName, String)]) {}
+
+    fn end_element(&mut self) {}
+
+    fn text(&mut self, _text: &str) {}
+
+    fn comment(&mut self, _text: &str) {}
+}
+
+/// The result kept as a [`CompactOutput`], read by an observer as it is written.
+pub(crate) struct Compact<'o> {
+    pub(crate) builder: CompactBuilder,
+    pub(crate) observer: &'o mut dyn ResultObserver,
+}
+
+impl std::fmt::Debug for Compact<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Compact")
+            .field("builder", &self.builder)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Target for Compact<'_> {
+    fn commit(&mut self, out: &mut String) -> Result<()> {
+        self.builder.push(out)?;
+        out.clear();
+        Ok(())
+    }
+
+    fn has_taken(&self) -> bool {
+        !self.builder.is_empty()
+    }
+
+    fn start_element(&mut self, name: &QName, attributes: &[(QName, String)]) {
+        self.observer.start_element(name, attributes);
+    }
+
+    fn end_element(&mut self) {
+        self.observer.end_element();
+    }
+
+    fn text(&mut self, text: &str) {
+        self.observer.text(text);
+    }
+
+    fn comment(&mut self, text: &str) {
+        self.observer.comment(text);
+    }
+}
+
+/// Writes the final result tree as XML text as it is produced, without building it,
+/// into its buffer, which the target keeps whole or takes a piece at a time: after an
+/// end tag or an empty element, and after a start tag that content follows.
+#[derive(Debug)]
+pub(crate) struct XmlWriter<T> {
     out: String,
+    target: T,
     settings: Serialization,
     pending: Option<Pending>,
     open: Vec<Open>,
@@ -141,8 +227,8 @@ pub(crate) struct XmlWriter {
 
 const INDENT: &str = "   ";
 
-impl XmlWriter {
-    pub(crate) fn new(settings: Serialization) -> Self {
+impl<T: Target> XmlWriter<T> {
+    pub(crate) fn new(settings: Serialization, target: T) -> Self {
         let mut out = String::new();
         if !settings.omit_xml_declaration {
             out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"");
@@ -155,6 +241,7 @@ impl XmlWriter {
         }
         Self {
             out,
+            target,
             settings,
             pending: None,
             open: Vec::new(),
@@ -163,8 +250,8 @@ impl XmlWriter {
         }
     }
 
-    /// The serialized document.
-    pub(crate) fn finish(mut self) -> Result<String> {
+    /// The text not taken by the target (all of it for [`WholeText`]), and the target.
+    pub(crate) fn finish(mut self) -> Result<(String, T)> {
         self.flush();
         if !self.open.is_empty() {
             return err("INTERNAL", "unclosed element at the end of the result");
@@ -172,7 +259,8 @@ impl XmlWriter {
         if self.settings.indent {
             self.out.push('\n');
         }
-        Ok(self.out)
+        self.target.commit(&mut self.out)?;
+        Ok((self.out, self.target))
     }
 
     fn bound(&self, prefix: Option<&str>) -> Option<&str> {
@@ -229,12 +317,23 @@ impl XmlWriter {
             self.out.push('"');
         }
         self.out.push('>');
+        self.target.start_element(&pending.name, &attributes);
         self.open.push(Open {
             tag,
             bindings: self.scope.len() - bindings_before,
             has_elements: false,
             has_text: false,
         });
+    }
+
+    /// Writes the pending start tag, if any, as a piece of its own: content follows, the
+    /// element is not empty.
+    fn flush_tag(&mut self) -> Result<()> {
+        if self.pending.is_some() {
+            self.flush();
+            self.target.commit(&mut self.out)?;
+        }
+        Ok(())
     }
 
     /// Declares the namespace of an element name if its prefix is not bound to it in
@@ -308,11 +407,15 @@ impl XmlWriter {
         self.scope.push((Some(chosen), namespace));
     }
 
+    /// A line end and the indentation of the depth: whitespace in an element, the
+    /// innermost open one or the one just closed.
     fn indent(&mut self) {
+        let start = self.out.len();
         self.out.push('\n');
         for _ in 0..self.open.len() {
             self.out.push_str(INDENT);
         }
+        self.target.text(&self.out[start..]);
     }
 
     /// Before an element or comment: indentation, unless in mixed content.
@@ -322,13 +425,13 @@ impl XmlWriter {
             if !parent.has_text && self.settings.indent {
                 self.indent();
             }
-        } else if self.settings.indent && !self.out.is_empty() {
+        } else if self.settings.indent && (!self.out.is_empty() || self.target.has_taken()) {
             self.out.push('\n');
         }
     }
 
     fn write_text(&mut self, text: &str) -> Result<()> {
-        self.flush();
+        self.flush_tag()?;
         if text.is_empty() {
             return Ok(());
         }
@@ -343,13 +446,14 @@ impl XmlWriter {
         };
         parent.has_text = true;
         escape_text(&mut self.out, text);
+        self.target.text(text);
         Ok(())
     }
 }
 
-impl Sink for XmlWriter {
+impl<T: Target> Sink for XmlWriter<T> {
     fn start_element(&mut self, name: &QName, namespaces: &Arc<[NamespaceBinding]>) -> Result<()> {
-        self.flush();
+        self.flush_tag()?;
         self.last_atomic = false;
         self.before_markup();
         let mut declarations = Vec::new();
@@ -402,7 +506,8 @@ impl Sink for XmlWriter {
             self.out.pop();
             self.out.push_str("/>");
             self.scope.truncate(self.scope.len() - open.bindings);
-            return Ok(());
+            self.target.end_element();
+            return self.target.commit(&mut self.out);
         }
         let Some(open) = self.open.pop() else {
             return err("INTERNAL", "end of an element that is not open");
@@ -414,7 +519,8 @@ impl Sink for XmlWriter {
         self.out.push_str(&open.tag);
         self.out.push('>');
         self.scope.truncate(self.scope.len() - open.bindings);
-        Ok(())
+        self.target.end_element();
+        self.target.commit(&mut self.out)
     }
 
     fn text(&mut self, text: &str) -> Result<()> {
@@ -423,12 +529,13 @@ impl Sink for XmlWriter {
     }
 
     fn comment(&mut self, text: &str) -> Result<()> {
-        self.flush();
+        self.flush_tag()?;
         self.last_atomic = false;
         self.before_markup();
         self.out.push_str("<!--");
         self.out.push_str(text);
         self.out.push_str("-->");
+        self.target.comment(text);
         Ok(())
     }
 

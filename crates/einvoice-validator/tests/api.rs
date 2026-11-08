@@ -188,7 +188,12 @@ fn a_valid_example() {
         stylesheet.sha256,
         cen().rule_set().stylesheets()[0].sha256()
     );
-    assert!(stylesheet.svrl.contains("svrl:schematron-output"));
+    assert!(
+        stylesheet
+            .svrl()
+            .to_text()
+            .contains("svrl:schematron-output")
+    );
     assert_eq!(stylesheet.warnings, Vec::<String>::new());
     // Without a document URI, the SVRL names no document.
     let canonical = stylesheet.canonical_svrl().unwrap();
@@ -655,7 +660,7 @@ fn a_stylesheet_error_on_a_schema_invalid_document() {
     assert_eq!(report.schema_errors[0].kind.as_str(), "unknown-root");
     let failure = report.stylesheets[0].failure.as_ref().unwrap();
     assert_eq!((failure.code.as_str(), failure.line), ("FORG0001", Some(3)));
-    assert_eq!(report.stylesheets[0].svrl, "");
+    assert_eq!(report.stylesheets[0].svrl(), "");
     assert_eq!(
         report.stylesheets[0].canonical_svrl().unwrap_err().kind(),
         ErrorKind::Transform
@@ -837,7 +842,8 @@ fn check_codes(validator: &Validator) {
         .unwrap();
     assert!(
         report.stylesheets[0]
-            .svrl
+            .svrl()
+            .to_text()
             .ends_with("1</svrl:schematron-output>")
     );
 }

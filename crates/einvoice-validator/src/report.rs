@@ -2,7 +2,8 @@
 
 use std::fmt;
 
-use roxmltree::{Node, ParsingOptions};
+use einvoice_xpath::QName;
+use einvoice_xslt_exec::{CompactOutput, ResultObserver};
 
 pub use einvoice_xsd::{ErrorKind as SchemaErrorKind, ValidationError as SchemaError};
 
@@ -151,8 +152,9 @@ pub struct StylesheetReport {
     pub version: String,
     /// The SHA-256 of the stylesheet that ran.
     pub sha256: String,
-    /// The SVRL report, exactly as the stylesheet wrote it.
-    pub svrl: String,
+    /// The SVRL report, exactly as the stylesheet wrote it, kept compactly (see
+    /// [`StylesheetReport::svrl`]).
+    svrl: CompactOutput,
     /// Its failed asserts and successful reports, in report order.
     pub findings: Vec<Finding>,
     /// The number of rules that fired (its `svrl:fired-rule` elements): none means the
@@ -163,8 +165,9 @@ pub struct StylesheetReport {
     /// match), as the reference engine reports them: each distinct message once.
     pub warnings: Vec<String>,
     /// The dynamic error that stopped the stylesheet, if it did not finish: then
-    /// `svrl` is empty and there are no findings. This only happens in a report with
-    /// schema errors (see [`Validator::validate_with`](crate::Validator::validate_with)).
+    /// [`StylesheetReport::svrl`] is empty and there are no findings. This only happens
+    /// in a report with schema errors (see
+    /// [`Validator::validate_with`](crate::Validator::validate_with)).
     pub failure: Option<StylesheetFailure>,
     pub(crate) document_uri: Option<String>,
 }
@@ -183,6 +186,18 @@ pub struct StylesheetFailure {
 }
 
 impl StylesheetReport {
+    /// The SVRL report, exactly as the stylesheet wrote it: empty when the stylesheet
+    /// did not finish.
+    ///
+    /// It is kept compactly, each distinct piece of its text once (a compiled Schematron
+    /// writes the same `svrl:fired-rule` element each time a rule fires): its text is
+    /// made only when asked for, with [`CompactOutput::to_text`], `to_string()` or
+    /// written with `{}`; it compares equal to a `&str`.
+    #[must_use]
+    pub const fn svrl(&self) -> &CompactOutput {
+        &self.svrl
+    }
+
     /// The SVRL report in the canonical text form of the `einvoice-svrl` crate (version
     /// 1, or 2 for a report with `svrl:metadata`), in which the document's URI is written
     /// `{document}`: the form the expected results of the reference engine are stored
@@ -203,20 +218,22 @@ impl StylesheetReport {
             });
         }
         let uri = self.document_uri.as_deref();
-        einvoice_svrl::canonicalize(&self.svrl, &|u| Some(u) == uri)
+        einvoice_svrl::canonicalize(&self.svrl.to_text(), &|u| Some(u) == uri)
             .map_err(|e| Error::internal(format!("stylesheet {}: {e}", self.name)))
     }
 
+    /// The report of a stylesheet that finished: its SVRL report, as `reader` read it
+    /// while it was written.
     pub(crate) fn new(
         entry: &crate::StylesheetEntry,
-        svrl: String,
+        svrl: CompactOutput,
+        reader: SvrlReader,
         warnings: Vec<String>,
         document_uri: Option<&str>,
-        fail_closed: bool,
     ) -> Result<Self, Error> {
         // A stylesheet that does not write SVRL is not a validation stylesheet: the
         // bundle is wrong.
-        let (findings, fired_rules) = findings(&svrl, fail_closed).map_err(|m| {
+        let (findings, fired_rules) = reader.finish(&svrl).map_err(|m| {
             Error::bundle(format!(
                 "stylesheet {}: its result is not an SVRL report: {m}",
                 entry.name()
@@ -244,7 +261,7 @@ impl StylesheetReport {
             name: entry.name().to_owned(),
             version: entry.version().to_owned(),
             sha256: entry.sha256().to_owned(),
-            svrl: String::new(),
+            svrl: CompactOutput::default(),
             findings: Vec::new(),
             fired_rules: 0,
             warnings: Vec::new(),
@@ -319,84 +336,217 @@ impl Report {
     }
 }
 
-/// The failed asserts and successful reports of an SVRL report, with the context of the
-/// last fired rule and the id of the last active pattern before each, and the number of
-/// fired rules. `fail_closed`: see [`Severity::from_flag_fail_closed`].
-fn findings(svrl: &str, fail_closed: bool) -> Result<(Vec<Finding>, usize), String> {
-    let options = ParsingOptions {
-        allow_dtd: false,
-        nodes_limit: u32::MAX,
-        ..ParsingOptions::default()
-    };
-    let doc = roxmltree::Document::parse_with_options(svrl, options).map_err(|e| e.to_string())?;
-    let root = doc.root_element();
-    if !is_svrl(root, "schematron-output") {
-        return Err("the root is not svrl:schematron-output".to_owned());
-    }
-    let mut out = Vec::new();
-    let mut fired_rules = 0;
-    let mut pattern: Option<String> = None;
-    let mut context: Option<String> = None;
-    for child in root.children().filter(Node::is_element) {
-        if child.tag_name().namespace() != Some(SVRL_NS) {
-            continue;
-        }
-        let attribute = |name: &str| child.attribute(name).map(str::to_owned);
-        let kind = match child.tag_name().name() {
-            "active-pattern" => {
-                pattern = attribute("id").or_else(|| attribute("name"));
-                context = None;
-                continue;
-            }
-            "fired-rule" => {
-                fired_rules += 1;
-                context = attribute("context");
-                continue;
-            }
-            "failed-assert" => FindingKind::FailedAssert,
-            "successful-report" => FindingKind::SuccessfulReport,
-            _ => continue,
-        };
-        let text: String = child
-            .children()
-            .filter(|n| is_svrl(*n, "text"))
-            .flat_map(|n| {
-                n.descendants()
-                    .filter(Node::is_text)
-                    .filter_map(|d| d.text())
-            })
-            .collect();
-        let flag = attribute("flag");
-        let severity = if fail_closed {
-            Severity::from_flag_fail_closed(flag.as_deref())
-        } else {
-            Severity::from_flag(flag.as_deref())
-        };
-        out.push(Finding {
-            kind,
-            id: attribute("id"),
-            severity,
-            flag,
-            role: attribute("role"),
-            location: attribute("location").unwrap_or_default(),
-            context: context.clone(),
-            pattern: pattern.clone(),
-            test: attribute("test").unwrap_or_default(),
-            text: einvoice_svrl::normalize_space(&text),
-        });
-    }
-    Ok((out, fired_rules))
+/// Reads the failed asserts and successful reports of an SVRL report as the stylesheet
+/// writes it, with the context of the last fired rule and the id of the last active
+/// pattern before each, and counts the fired rules: what a parser of the report's text
+/// reads, without the text.
+#[derive(Debug, Default)]
+pub(crate) struct SvrlReader {
+    /// See [`Severity::from_flag_fail_closed`].
+    fail_closed: bool,
+    /// The number of open elements.
+    depth: usize,
+    /// The number of elements at the top of the report: a document has one.
+    roots: usize,
+    /// Whether the first of them is `svrl:schematron-output`.
+    root_is_svrl: bool,
+    /// Whether a comment holds `--` or ends with `-`, which XML forbids.
+    bad_comment: bool,
+    findings: Vec<Finding>,
+    fired_rules: usize,
+    pattern: Option<String>,
+    context: Option<String>,
+    /// The finding being read.
+    finding: Option<Reading>,
 }
 
-fn is_svrl(node: Node<'_, '_>, name: &str) -> bool {
-    node.is_element()
-        && node.tag_name().namespace() == Some(SVRL_NS)
-        && node.tag_name().name() == name
+/// A finding being read.
+#[derive(Debug)]
+struct Reading {
+    finding: Finding,
+    /// The text of its `svrl:text` children so far.
+    text: String,
+    /// Whether the text read is in one of them.
+    in_text: bool,
+}
+
+impl SvrlReader {
+    pub(crate) fn new(fail_closed: bool) -> Self {
+        Self {
+            fail_closed,
+            ..Self::default()
+        }
+    }
+
+    /// The findings and the number of fired rules; or why `svrl`, the text read, is not
+    /// an SVRL report: the error of a parser of the text when it is not well-formed.
+    fn finish(self, svrl: &CompactOutput) -> Result<(Vec<Finding>, usize), String> {
+        if self.roots != 1 || self.bad_comment {
+            // Not a well-formed document: the parser says where.
+            einvoice_xml::check(&svrl.to_text()).map_err(|e| e.to_string())?;
+            if self.roots != 1 {
+                return Err(format!(
+                    "{} elements at the top of the document, instead of one",
+                    self.roots
+                ));
+            }
+        }
+        if !self.root_is_svrl {
+            return Err("the root is not svrl:schematron-output".to_owned());
+        }
+        Ok((self.findings, self.fired_rules))
+    }
+}
+
+/// Whether `name` is the SVRL element `local`.
+fn is_svrl(name: &QName, local: &str) -> bool {
+    name.namespace.as_deref() == Some(SVRL_NS) && name.local == local
+}
+
+/// The value of the attribute in no namespace named `local`.
+fn attribute(attributes: &[(QName, String)], local: &str) -> Option<String> {
+    attributes
+        .iter()
+        .find(|(name, _)| {
+            name.namespace.as_deref().is_none_or(str::is_empty) && name.local == local
+        })
+        .map(|(_, value)| value.clone())
+}
+
+impl ResultObserver for SvrlReader {
+    fn start_element(&mut self, name: &QName, attributes: &[(QName, String)]) {
+        self.depth += 1;
+        match self.depth {
+            1 => {
+                self.roots += 1;
+                if self.roots == 1 {
+                    self.root_is_svrl = is_svrl(name, "schematron-output");
+                }
+            }
+            // The children of the root.
+            2 if self.roots == 1 && name.namespace.as_deref() == Some(SVRL_NS) => {
+                let kind = match name.local.as_str() {
+                    "active-pattern" => {
+                        self.pattern =
+                            attribute(attributes, "id").or_else(|| attribute(attributes, "name"));
+                        self.context = None;
+                        return;
+                    }
+                    "fired-rule" => {
+                        self.fired_rules += 1;
+                        self.context = attribute(attributes, "context");
+                        return;
+                    }
+                    "failed-assert" => FindingKind::FailedAssert,
+                    "successful-report" => FindingKind::SuccessfulReport,
+                    _ => return,
+                };
+                let flag = attribute(attributes, "flag");
+                let severity = if self.fail_closed {
+                    Severity::from_flag_fail_closed(flag.as_deref())
+                } else {
+                    Severity::from_flag(flag.as_deref())
+                };
+                let finding = Finding {
+                    kind,
+                    id: attribute(attributes, "id"),
+                    severity,
+                    flag,
+                    role: attribute(attributes, "role"),
+                    location: attribute(attributes, "location").unwrap_or_default(),
+                    context: self.context.clone(),
+                    pattern: self.pattern.clone(),
+                    test: attribute(attributes, "test").unwrap_or_default(),
+                    text: String::new(),
+                };
+                self.finding = Some(Reading {
+                    finding,
+                    text: String::new(),
+                    in_text: false,
+                });
+            }
+            // The children of a finding.
+            3 if is_svrl(name, "text") => {
+                if let Some(reading) = &mut self.finding {
+                    reading.in_text = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn end_element(&mut self) {
+        match self.depth {
+            2 => {
+                if let Some(Reading {
+                    mut finding, text, ..
+                }) = self.finding.take()
+                {
+                    finding.text = einvoice_svrl::normalize_space(&text);
+                    self.findings.push(finding);
+                }
+            }
+            3 => {
+                if let Some(reading) = &mut self.finding {
+                    reading.in_text = false;
+                }
+            }
+            _ => {}
+        }
+        self.depth = self.depth.saturating_sub(1);
+    }
+
+    fn text(&mut self, text: &str) {
+        if let Some(reading) = &mut self.finding
+            && reading.in_text
+        {
+            reading.text.push_str(text);
+        }
+    }
+
+    fn comment(&mut self, text: &str) {
+        if text.contains("--") || text.ends_with('-') {
+            self.bad_comment = true;
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The findings of an SVRL report read from its text, the parser's events given to
+    /// [`SvrlReader`] as the serializer gives them.
+    fn findings(svrl: &str, fail_closed: bool) -> Result<(Vec<Finding>, usize), String> {
+        let qname = |name: einvoice_xml::Name<'_, '_>| QName {
+            prefix: (!name.prefix.is_empty()).then(|| name.prefix.to_owned()),
+            namespace: name.namespace.map(str::to_owned),
+            local: name.local.to_owned(),
+        };
+        let mut reader = SvrlReader::new(fail_closed);
+        let mut parser = einvoice_xml::Reader::new(svrl);
+        let mut depth = 0;
+        while let Ok(Some(event)) = parser.next_event() {
+            match event {
+                einvoice_xml::Event::Start(start) => {
+                    let attributes: Vec<(QName, String)> = start
+                        .attributes()
+                        .map(|a| (qname(a.name), a.value.to_string()))
+                        .collect();
+                    reader.start_element(&qname(start.name()), &attributes);
+                    depth += 1;
+                }
+                einvoice_xml::Event::End(_) => {
+                    reader.end_element();
+                    depth -= 1;
+                }
+                einvoice_xml::Event::Text(text) if depth > 0 => reader.text(&text.value),
+                einvoice_xml::Event::Comment(comment) => reader.comment(&comment.value),
+                _ => {}
+            }
+        }
+        reader.finish(&CompactOutput::from(svrl))
+    }
 
     #[test]
     fn reads_findings_with_their_rule_and_pattern() {
@@ -437,10 +587,83 @@ mod tests {
         );
     }
 
+    /// The error of the parser that read the reports before (`roxmltree`), which the
+    /// streaming parser reproduces.
+    fn parser_error(text: &str) -> String {
+        let options = roxmltree::ParsingOptions {
+            allow_dtd: false,
+            nodes_limit: u32::MAX,
+            ..roxmltree::ParsingOptions::default()
+        };
+        let roxmltree = roxmltree::Document::parse_with_options(text, options)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            einvoice_xml::check(text).unwrap_err().to_string(),
+            roxmltree
+        );
+        roxmltree
+    }
+
+    fn svrl_name(local: &str) -> QName {
+        QName {
+            prefix: Some("svrl".to_owned()),
+            namespace: Some(SVRL_NS.to_owned()),
+            local: local.to_owned(),
+        }
+    }
+
     #[test]
     fn refuses_what_is_not_svrl() {
-        assert!(findings("<a/>", false).is_err());
-        assert!(findings("<a", false).is_err());
+        assert_eq!(
+            findings("<a/>", false).unwrap_err(),
+            "the root is not svrl:schematron-output"
+        );
+        // Not well-formed: the parser's error.
+        for text in ["<a", ""] {
+            assert_eq!(
+                findings(text, false).unwrap_err(),
+                parser_error(text),
+                "{text}"
+            );
+        }
+        // What the serializer can write and a parser refuses (the parser stops before
+        // giving the events): two elements at the top, comments that XML forbids.
+        let root = svrl_name("schematron-output");
+        let mut reader = SvrlReader::new(false);
+        for _ in 0..2 {
+            reader.start_element(&root, &[]);
+            reader.end_element();
+        }
+        let text = format!("<svrl:schematron-output xmlns:svrl=\"{SVRL_NS}\"/><a/>");
+        assert_eq!(
+            reader.finish(&CompactOutput::from(text.as_str())),
+            Err(parser_error(&text))
+        );
+        for comment in ["x -- y", "x-"] {
+            let mut reader = SvrlReader::new(false);
+            reader.start_element(&root, &[]);
+            reader.comment(comment);
+            reader.end_element();
+            let text = format!(
+                "<svrl:schematron-output xmlns:svrl=\"{SVRL_NS}\"><!--{comment}--></svrl:schematron-output>"
+            );
+            assert_eq!(
+                reader.finish(&CompactOutput::from(text.as_str())),
+                Err(parser_error(&text)),
+                "{comment}"
+            );
+        }
+        // Events the text does not have, which the parser accepts.
+        let mut reader = SvrlReader::new(false);
+        for _ in 0..2 {
+            reader.start_element(&root, &[]);
+            reader.end_element();
+        }
+        assert_eq!(
+            reader.finish(&CompactOutput::from("<a/>")).unwrap_err(),
+            "2 elements at the top of the document, instead of one"
+        );
     }
 
     #[test]

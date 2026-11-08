@@ -118,11 +118,37 @@ against.
   `einvoice_xml::Reader`, for a caller that reads the document itself (#18).
 - A memory budget (#18): the test `footprint` of `einvoice-validator` fails when the peak heap
   of a validation of the largest CEN corpus document, or of a synthetic invoice of 1000 lines,
-  exceeds the recorded budget (128 KiB and 5500 KiB above the document); the `footprint`
+  exceeds the recorded budget (64 KiB and 1850 KiB above the document); the `footprint`
   example measures the peak heap and time of a validation and of its stages on that document
   and on an invoice of 5000 lines.
+- `einvoice-xslt-exec`: `Executable::transform_compact` (#18) keeps the result as a
+  `CompactOutput`, each distinct piece of its text once (a piece runs from one tag written in
+  full to the next; the distinct pieces in blocks of up to 64 KiB, never reallocated), and
+  gives a `ResultObserver` the result as it is written, as a parser of its text reads it
+  (elements with their attributes after namespace fixup, character data with the whitespace of
+  indentation, comments). `CompactOutput` compares equal to the same text, `to_text()` makes
+  the text, `Display` writes it, `Debug` shows it as a `String`. The equivalence tests of every
+  corpus run through it and check, on each case, that the observer was given what
+  `einvoice-xml` reads from the text; a property test checks it, and the text, on generated
+  documents with mixed content, namespaces and indentation.
 
 ### Changed
+
+- `einvoice-validator` keeps each SVRL report compactly and reads its findings as the
+  stylesheet writes it (#18), with `Executable::transform_compact`, instead of writing it to a
+  string and parsing that string again with `roxmltree` (no longer a dependency of the
+  library). Breaking: `StylesheetReport::svrl` is a method returning `&CompactOutput`
+  (re-exported by `einvoice-validator`) instead of a `String` field; `.svrl().to_text()` gives
+  the text. A result that is not well-formed XML (no element at its top, two, or a comment
+  XML forbids) is still refused with the parser's error. On a synthetic invoice of 5000 lines
+  (4.1 MB; its SVRL report 7.1 MB, 40051 fired rules), the peak heap of a validation (document
+  given as a buffer) drops from 21719 KiB to 8310 KiB (5.41 to 2.07 times the document; the
+  stylesheet's input tree alone is 7514 KiB, 1.87 times), and the report kept from 9225 KiB to
+  181 KiB; with a failed assert on each line (5003 findings), from 28108 KiB to 13536 KiB; on
+  an invoice of 1000 lines, from 5020 KiB to 1657 KiB. Time on the CEN UBL corpus: 2 % less.
+  Every report (each field, the SVRL text and its canonical form) of every case and mutation
+  case of the CEN UBL and CII, Peppol, Factur-X, XRechnung and French corpora, the output of
+  `einvoice-validate` in each format and that of the npm package are unchanged.
 
 - Documents are read with the streaming parser `einvoice-xml` instead of `roxmltree` (#18). The
   validator checks a document and validates it against the schema in one pass, without a tree

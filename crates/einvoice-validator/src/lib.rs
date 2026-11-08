@@ -176,6 +176,10 @@ pub use einvoice_xslt_exec::max_nesting_for_depth;
 /// The default stack the stylesheets may use ([`ValidateOptions::max_stack`]).
 pub use einvoice_xslt_exec::DEFAULT_MAX_STACK;
 
+/// An SVRL report as the stylesheet wrote it, kept compactly
+/// ([`StylesheetReport::svrl`]).
+pub use einvoice_xslt_exec::CompactOutput;
+
 /// The version of this crate, as published.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

@@ -146,6 +146,7 @@ dependencies = [
  "einvoice-svrl",
  "einvoice-testkit",
  "einvoice-xml",
+ "einvoice-xpath",
  "einvoice-xpath-eval",
  "einvoice-xsd",
  "einvoice-xslt",
@@ -238,6 +239,7 @@ version = "0.2.0"
 dependencies = [
  "einvoice-svrl",
  "einvoice-xdm",
+ "einvoice-xml",
  "einvoice-xpath",
  "einvoice-xpath-eval",
  "einvoice-xslt",
