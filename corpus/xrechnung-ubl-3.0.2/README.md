@@ -23,7 +23,10 @@ tracked tree, then checks them:
    by KoSIT with SchXslt) and `resources/xrechnung/3.0.2/xsl/XRechnung-UBL-validation.xsl`
    (XRechnung Schematron 2.6.0), sorts the test-suite instances by syntax, and runs XML Mutate on
    the unit tests of the XRechnung Schematron (`test/instances/ubl-inv/` and `ubl-cn/`), as its build does: the
-   mutants are checked against the pinned SHA-256 of their listing. It copies the CEN examples
+   mutants are checked against the pinned SHA-256 of their listing. XML Mutate numbers the mutants
+   in the order it reads the tests and writes the number into the name and the content of each, so
+   the script gives it the tests one by one, `ubl-inv/` then `ubl-cn/`, each sorted by name, not
+   the directories, which it would read in the order of the file system. It copies the CEN examples
    that are the base documents of the mutation catalogue, and writes the rule-set bundle
    `target/xrechnung/xrechnung-3.0.2/ubl/bundle.toml`. Every pin is at the top of the
    script.

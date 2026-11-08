@@ -33,8 +33,10 @@
 #  4. XML Mutate 0.6 (de.kosit:xml-mutate, the tool the XRechnung Schematron
 #     build tests its rules with) expands each test into its mutants, each
 #     with the expectation of its active `<?xmute?>` instruction:
-#     source/xmute/ubl/ and source/xmute/cii/. The checksum of each set (the
-#     SHA-256 of its `sha256sum` listing, sorted by name) is pinned below.
+#     source/xmute/ubl/ and source/xmute/cii/. XML Mutate numbers the mutants
+#     in the order it reads the tests, so it is given them one by one, set by
+#     set, each sorted by name. The checksum of each set (the SHA-256 of its
+#     `sha256sum` listing, sorted by name) is pinned below.
 #  5. The CEN EN 16931 examples vendored in this repository (CII examples, UBL
 #     examples and test files, checked by `cargo xtask manifest`), copied to
 #     source/cen-cii-examples/, source/cen-ubl-examples/ and
@@ -65,8 +67,8 @@ schematron_archive_sha256=998976cbd42abba06fe897a915010ae4513cb1354b8a4447cdc898
 schematron_commit=217c6cbf8ac9a99d780cefb4f044b2c2778d4744
 xmute=0.6
 xmute_sha256=b7cd05eb21c47e15dbb1d3ef38487aa65539b335e6d6c355015bbaf6ab573bec
-xmute_ubl_sha256=789d63e5ce01ce327414fd3a30d6acf99e0b812e96c0707262e649f789359720
-xmute_cii_sha256=0ff0af3b2751563686e36c9be6a17b04418de15d4f9636486fa1aa1beddaa7c7
+xmute_ubl_sha256=93bc09b0f2fe35129490bc2676c19d1c09355fcc705781e91b1c5402e3f4ca61
+xmute_cii_sha256=3175760746792080f6952e6303bd5ac2fec2183dfe906174e454254d68de51ce
 cen_ubl_sha256=759f2d2e830c7fd1d5a6e8b4f61e5dbafc7a7805862c4ae1c749eeac6adde698
 cen_cii_sha256=0911e927f13f9ae2cdc7f973643f27bf0ad3c5da02483c04a5b8a47eb4822199
 xrechnung_ubl_sha256=e32d831668facbbd5136cc0119bf1dd6f92ac20738aa3b3f021586f5a305c738
@@ -199,15 +201,14 @@ say "test suite $testsuite: $count instances"
 
 archive=$downloads/xrechnung-schematron-v$schematron.tar.gz
 fetch "$schematron_url" "$archive" "$schematron_archive_sha256"
-# git reads the first header only, so gzip may die of SIGPIPE: the status of the
-# pipeline is git's (the archive itself is already checked).
-recorded=$(
-    set +o pipefail
-    gzip -dc "$archive" | git get-tar-commit-id
-) || fail "$archive records no commit id"
+# Decompressed to a file, not piped: git reads the first header only, and a
+# writer still feeding a pipe it has closed gets SIGPIPE, or EPIPE where SIGPIPE
+# is ignored (GitHub's runners), "gzip: stdout: Broken pipe".
+gzip -dc "$archive" >"$tmp/schematron.tar"
+recorded=$(git get-tar-commit-id <"$tmp/schematron.tar") || fail "$archive records no commit id"
 [ "$recorded" = "$schematron_commit" ] || fail "$archive is commit $recorded, expected $schematron_commit"
 mkdir -p "$tmp/unzip-schematron"
-tar -xzf "$archive" -C "$tmp/unzip-schematron" --strip-components=1 --no-same-owner --no-same-permissions
+tar -xf "$tmp/schematron.tar" -C "$tmp/unzip-schematron" --strip-components=1 --no-same-owner --no-same-permissions
 tests=$tmp/release/source/schematron-tests
 mkdir -p "$tests"
 for set in ubl-inv ubl-cn cii; do
@@ -234,7 +235,18 @@ mutate() {
         say "XML Mutate $xmute: the $syntax mutants of the previous run reused, listing SHA-256 verified"
         return 0
     fi
-    for set in "$@"; do args+=("$tests/$set/"); done
+    # XML Mutate numbers the mutants of a run with one counter, document after
+    # document, in the order of its arguments, and writes the number into the
+    # name of each mutant and into its active comment. Given a directory, it
+    # takes the order the file system lists it in (ext4 orders entries by a
+    # hash with a seed of its own per file system), so the files are given one
+    # by one: set by set, each sorted by name (LC_ALL=C).
+    for set in "$@"; do
+        while IFS= read -r -d '' file; do
+            args+=("$file")
+        done < <(find "$tests/$set" -type f -name '*.xml' -print0 | LC_ALL=C sort -z)
+    done
+    [ "${#args[@]}" -gt 0 ] || fail "no unit test in $*"
     mkdir -p "$out"
     "${JAVA:-java}" -jar "$xmute_jar" --mode MUTATE --target "$out" \
         --schematron "xrubl=$xsl/XRechnung-UBL-validation.xsl" \

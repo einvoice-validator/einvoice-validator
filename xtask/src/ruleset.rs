@@ -461,30 +461,30 @@ pub(crate) const FACTURX: RuleSet = RuleSet {
 /// active mutation then contains `--`, so the document is not well-formed XML
 /// and no XML processor reads it.
 const XMUTE_UBL_NOT_WELL_FORMED: &[&str] = &[
-    "xmute/ubl/ubl-cn-br-de-27-test-852-code--0-1-.xml",
-    "xmute/ubl/ubl-cn-peppol-en16931-r040-928-code--0.02.xml",
-    "xmute/ubl/ubl-cn-peppol-en16931-r040-932-code--0.02.xml",
-    "xmute/ubl/ubl-cn-peppol-en16931-r055-1-728-code--2048.44.xml",
-    "xmute/ubl/ubl-cn-peppol-en16931-r055-1-732-code--2048.44.xml",
-    "xmute/ubl/ubl-cn-peppol-en16931-r055-2-776-code--2000.xml",
-    "xmute/ubl/ubl-cn-peppol-en16931-r055-2-780-code--2000.xml",
-    "xmute/ubl/ubl-cn-peppol-en16931-r121-901-code--2.xml",
-    "xmute/ubl/ubl-inv-br-de-27-test-97-code--0-1-.xml",
-    "xmute/ubl/ubl-inv-peppol-en16931-r040-267-code--0.02.xml",
-    "xmute/ubl/ubl-inv-peppol-en16931-r040-271-code--0.02.xml",
-    "xmute/ubl/ubl-inv-peppol-en16931-r055-1-236-code--2048.44.xml",
-    "xmute/ubl/ubl-inv-peppol-en16931-r055-1-240-code--2048.44.xml",
-    "xmute/ubl/ubl-inv-peppol-en16931-r055-2-204-code--2000.xml",
-    "xmute/ubl/ubl-inv-peppol-en16931-r055-2-208-code--2000.xml",
-    "xmute/ubl/ubl-inv-peppol-en16931-r121-231-code--2.xml",
+    "xmute/ubl/ubl-cn-br-de-27-test-777-code--0-1-.xml",
+    "xmute/ubl/ubl-cn-peppol-en16931-r040-1016-code--0.02.xml",
+    "xmute/ubl/ubl-cn-peppol-en16931-r040-1020-code--0.02.xml",
+    "xmute/ubl/ubl-cn-peppol-en16931-r055-1-1064-code--2048.44.xml",
+    "xmute/ubl/ubl-cn-peppol-en16931-r055-1-1068-code--2048.44.xml",
+    "xmute/ubl/ubl-cn-peppol-en16931-r055-2-1071-code--2000.xml",
+    "xmute/ubl/ubl-cn-peppol-en16931-r055-2-1075-code--2000.xml",
+    "xmute/ubl/ubl-cn-peppol-en16931-r121-1116-code--2.xml",
+    "xmute/ubl/ubl-inv-br-de-27-test-147-code--0-1-.xml",
+    "xmute/ubl/ubl-inv-peppol-en16931-r040-543-code--0.02.xml",
+    "xmute/ubl/ubl-inv-peppol-en16931-r040-547-code--0.02.xml",
+    "xmute/ubl/ubl-inv-peppol-en16931-r055-1-591-code--2048.44.xml",
+    "xmute/ubl/ubl-inv-peppol-en16931-r055-1-595-code--2048.44.xml",
+    "xmute/ubl/ubl-inv-peppol-en16931-r055-2-598-code--2000.xml",
+    "xmute/ubl/ubl-inv-peppol-en16931-r055-2-602-code--2000.xml",
+    "xmute/ubl/ubl-inv-peppol-en16931-r121-643-code--2.xml",
 ];
 /// The same, for CII.
 const XMUTE_CII_NOT_WELL_FORMED: &[&str] = &[
-    "xmute/cii/cii-br-de-27-test-248-code--0-1-.xml",
-    "xmute/cii/cii-peppol-en16931-r055-155-code--123.45.xml",
-    "xmute/cii/cii-peppol-en16931-r055-157-code--22.04.xml",
-    "xmute/cii/cii-peppol-en16931-r121-596-code--10.xml",
-    "xmute/cii/cii-peppol-en16931-r121-599-code--10.xml",
+    "xmute/cii/cii-br-de-27-test-131-code--0-1-.xml",
+    "xmute/cii/cii-peppol-en16931-r055-570-code--123.45.xml",
+    "xmute/cii/cii-peppol-en16931-r055-572-code--22.04.xml",
+    "xmute/cii/cii-peppol-en16931-r121-624-code--10.xml",
+    "xmute/cii/cii-peppol-en16931-r121-627-code--10.xml",
 ];
 
 /// A stylesheet of the XRechnung validator configuration.
