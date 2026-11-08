@@ -63,15 +63,34 @@ pub const NPM: Artefact = Artefact {
 pub const ARTEFACTS: [Artefact; 2] = [CLI, NPM];
 
 /// The licences a crate may be used under here, each with a phrase of its text that
-/// identifies its file in a package (compared with the white space collapsed). A crate
-/// whose licence expression offers none of them, alone or with others of them, is
-/// refused: using it is a decision to record (in `deny.toml` as well).
-const KNOWN: [(&str, &str); 2] = [
+/// identifies its file in a package (compared with the white space collapsed), in the
+/// order of preference. A crate whose licence expression offers none of them, alone or
+/// with others of them, is refused: using it is a decision to record (in `deny.toml` as
+/// well). Besides MIT, they are the licences of crates that offer no MIT alternative:
+/// Unicode-3.0 (unicode-ident's tables), and those of the HTTPS client of the feature
+/// `fetch` (ring: Apache-2.0 and ISC; rustls-webpki and untrusted: ISC; subtle:
+/// BSD-3-Clause; webpki-roots: CDLA-Permissive-2.0).
+const KNOWN: [(&str, &str); 6] = [
     (
         "MIT",
         "Permission is hereby granted, free of charge, to any person obtaining a copy",
     ),
     ("Unicode-3.0", "UNICODE LICENSE V3"),
+    ("Apache-2.0", "Apache License Version 2.0, January 2004"),
+    (
+        "ISC",
+        // One line of the text: untrusted ships it as a comment, a `//` on each line.
+        "purpose with or without fee is hereby granted, provided that the above",
+    ),
+    (
+        "BSD-3-Clause",
+        "Neither the name of the copyright holder nor the names of its contributors may \
+         be used to endorse or promote products derived from this software",
+    ),
+    (
+        "CDLA-Permissive-2.0",
+        "Community Data License Agreement - Permissive - Version 2.0",
+    ),
 ];
 
 /// The licence text of a crate, from its package.
@@ -173,6 +192,20 @@ fn primary(tokens: &[&str], at: &mut usize, depth: usize) -> Result<Dnf, String>
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b));
     if identifier {
+        // `<licence> WITH <exception>`: one term, a licence of its own (wasi's
+        // `Apache-2.0 WITH LLVM-exception`), unknown unless KNOWN names it.
+        if tokens.get(*at) == Some(&"WITH") {
+            let exception = tokens
+                .get(*at + 1)
+                .filter(|e| {
+                    !matches!(**e, "AND" | "OR" | "WITH" | "(" | ")")
+                        && e.bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b))
+                })
+                .ok_or("licence expression: an exception expected after WITH")?;
+            *at += 2;
+            return Ok(vec![BTreeSet::from([format!("{token} WITH {exception}")])]);
+        }
         Ok(vec![BTreeSet::from([token.to_owned()])])
     } else {
         Err(format!("licence expression: unexpected {token:?}"))
@@ -180,19 +213,23 @@ fn primary(tokens: &[&str], at: &mut usize, depth: usize) -> Result<Dnf, String>
 }
 
 /// The licences to use a crate under, from its licence expression: the alternative made
-/// only of licences of `KNOWN`, the one with the fewest terms (the first of those), in
-/// the order of `KNOWN`. `MIT OR Apache-2.0` gives `MIT`; `(MIT OR Apache-2.0) AND
-/// Unicode-3.0` gives `MIT`, `Unicode-3.0`.
+/// only of licences of `KNOWN`, the one with the fewest terms, and of those the one
+/// whose licences come first in `KNOWN` (MIT first), in the order of `KNOWN`.
+/// `Apache-2.0 OR MIT` gives `MIT`; `(MIT OR Apache-2.0) AND Unicode-3.0` gives `MIT`,
+/// `Unicode-3.0`; `Apache-2.0 AND ISC` gives both.
 ///
 /// # Errors
 ///
 /// When the expression is not valid, or no alternative is made of known licences only.
 pub fn choose(expression: &str) -> Result<Vec<String>, String> {
-    let known = |term: &String| KNOWN.iter().any(|(id, _)| id == term);
+    let rank = |term: &String| KNOWN.iter().position(|(id, _)| id == term);
     let chosen = alternatives(expression)?
         .into_iter()
-        .filter(|terms| terms.iter().all(known))
-        .min_by_key(BTreeSet::len)
+        .filter(|terms| terms.iter().all(|t| rank(t).is_some()))
+        .min_by_key(|terms| {
+            let ranks: usize = terms.iter().filter_map(rank).sum();
+            (terms.len(), ranks)
+        })
         .ok_or_else(|| {
             format!("licence expression {expression:?}: no alternative of known licences")
         })?;
@@ -580,12 +617,28 @@ mod tests {
                 set(&["B", "D"])
             ]
         );
+        // An exception makes one term with its licence.
+        assert_eq!(
+            alternatives("Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT").unwrap(),
+            [
+                set(&["Apache-2.0 WITH LLVM-exception"]),
+                set(&["Apache-2.0"]),
+                set(&["MIT"])
+            ]
+        );
+        assert_eq!(
+            choose("Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT").unwrap(),
+            ["MIT"]
+        );
+        assert!(choose("Apache-2.0 WITH LLVM-exception").is_err());
         for bad in [
             "",
             "MIT OR",
             "(MIT",
             "MIT)",
-            "MIT WITH X",
+            "MIT WITH",
+            "MIT WITH (X)",
+            "MIT WITH X WITH Y",
             "GPL-2.0+",
             "AND MIT",
             "A B",
@@ -607,8 +660,19 @@ mod tests {
             ["MIT", "Unicode-3.0"]
         );
         assert_eq!(choose("MIT OR (MIT AND Unicode-3.0)").unwrap(), ["MIT"]);
-        assert!(choose("Apache-2.0").is_err());
-        assert!(choose("MIT AND Apache-2.0").is_err());
+        // MIT is preferred whatever the order of the alternatives.
+        assert_eq!(choose("Apache-2.0 OR ISC OR MIT").unwrap(), ["MIT"]);
+        assert_eq!(choose("ISC OR Apache-2.0").unwrap(), ["Apache-2.0"]);
+        // Without an MIT alternative, the licences of the expression.
+        assert_eq!(choose("Apache-2.0 AND ISC").unwrap(), ["Apache-2.0", "ISC"]);
+        assert_eq!(choose("BSD-3-Clause").unwrap(), ["BSD-3-Clause"]);
+        assert_eq!(
+            choose("CDLA-Permissive-2.0").unwrap(),
+            ["CDLA-Permissive-2.0"]
+        );
+        assert_eq!(choose("MIT AND Apache-2.0").unwrap(), ["MIT", "Apache-2.0"]);
+        assert!(choose("GPL-3.0-only").is_err());
+        assert!(choose("MIT AND MPL-2.0").is_err());
         assert!(choose("MIT OR").is_err());
     }
 
