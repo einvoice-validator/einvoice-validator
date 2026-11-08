@@ -13,8 +13,8 @@ readme = "README.md"
 license.workspace = true
 
 [dependencies]
-einvoice-xdm = { path = "../einvoice-xdm", version = "0.1.0" }
-einvoice-xpath = { path = "../einvoice-xpath", version = "0.1.0" }
+einvoice-xdm = { path = "../einvoice-xdm", version = "0.2.0" }
+einvoice-xpath = { path = "../einvoice-xpath", version = "0.2.0" }
 roxmltree = "0.21.2"
 
 [dev-dependencies]

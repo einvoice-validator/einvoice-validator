@@ -92,7 +92,7 @@ dependencies = [
 
 [[package]]
 name = "einvoice-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "einvoice-svrl",
  "einvoice-validator",
@@ -102,14 +102,14 @@ dependencies = [
 
 [[package]]
 name = "einvoice-svrl"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "roxmltree",
 ]
 
 [[package]]
 name = "einvoice-validator"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "einvoice-svrl",
  "einvoice-xpath-eval",
@@ -124,7 +124,7 @@ dependencies = [
 
 [[package]]
 name = "einvoice-xdm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "num-bigint",
  "num-integer",
@@ -138,7 +138,7 @@ dependencies = [
 
 [[package]]
 name = "einvoice-xpath"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proptest",
  "roxmltree",
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "einvoice-xpath-eval"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "einvoice-xdm",
  "einvoice-xpath",
@@ -158,7 +158,7 @@ dependencies = [
 
 [[package]]
 name = "einvoice-xsd"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "peak_alloc",
  "proptest",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "einvoice-xslt"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "einvoice-xpath",
  "roxmltree",
@@ -177,7 +177,7 @@ dependencies = [
 
 [[package]]
 name = "einvoice-xslt-exec"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "einvoice-svrl",
  "einvoice-xdm",
@@ -378,7 +378,7 @@ checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "einvoice-svrl",
  "roxmltree",

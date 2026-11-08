@@ -20,10 +20,10 @@ name = "einvoice-validate"
 path = "src/main.rs"
 
 [dependencies]
-einvoice-validator = { path = "../einvoice-validator", version = "0.1.0" }
+einvoice-validator = { path = "../einvoice-validator", version = "0.2.0" }
 
 [dev-dependencies]
-einvoice-svrl = { path = "../einvoice-svrl", version = "0.1.0" }
+einvoice-svrl = { path = "../einvoice-svrl", version = "0.2.0" }
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 sha2 = "0.11.1"
 

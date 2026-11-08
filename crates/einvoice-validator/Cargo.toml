@@ -25,11 +25,11 @@ cen-ubl = []
 cen-cii = []
 
 [dependencies]
-einvoice-svrl = { path = "../einvoice-svrl", version = "0.1.0" }
-einvoice-xpath-eval = { path = "../einvoice-xpath-eval", version = "0.1.0" }
-einvoice-xsd = { path = "../einvoice-xsd", version = "0.1.0" }
-einvoice-xslt = { path = "../einvoice-xslt", version = "0.1.0" }
-einvoice-xslt-exec = { path = "../einvoice-xslt-exec", version = "0.1.0" }
+einvoice-svrl = { path = "../einvoice-svrl", version = "0.2.0" }
+einvoice-xpath-eval = { path = "../einvoice-xpath-eval", version = "0.2.0" }
+einvoice-xsd = { path = "../einvoice-xsd", version = "0.2.0" }
+einvoice-xslt = { path = "../einvoice-xslt", version = "0.2.0" }
+einvoice-xslt-exec = { path = "../einvoice-xslt-exec", version = "0.2.0" }
 roxmltree = "0.21.2"
 sha2 = "0.11.1"
 
