@@ -83,13 +83,14 @@
 //!   BIS Billing publishes its rules as Schematron only: its bundle is built by
 //!   compiling them with ph-schematron as the reference validators do, through Apache
 //!   Maven, which needs Java and network access to Maven Central. The HTTP client is
-//!   minimal and pure Rust but for its cryptography (rustls with the ring provider and
-//!   the Mozilla roots of webpki-roots): HTTPS only (plain HTTP only to a loopback
-//!   address, for a local mirror), at most five redirects, never from HTTPS to HTTP,
-//!   five attempts with a doubling delay on an I/O error and on HTTP 408, 429 and 5xx
-//!   (honouring `Retry-After`), an interrupted download resumed where it stopped, a
-//!   size limit (`DEFAULT_MAX_SIZE`, 64 MiB); the archives (ZIP, gzip, tar) are read in
-//!   memory, refusing absolute paths, `..`, links and sizes beyond their limits.
+//!   minimal and pure Rust, its cryptography included (rustls, with a provider on the
+//!   `RustCrypto` crates, and the Mozilla roots of webpki-roots): HTTPS only (plain
+//!   HTTP only to a loopback address, for a local mirror), at most five redirects,
+//!   never from HTTPS to HTTP, five attempts with a doubling delay on an I/O error and
+//!   on HTTP 408, 429 and 5xx (honouring `Retry-After`), an interrupted download resumed
+//!   where it stopped, a size limit (`DEFAULT_MAX_SIZE`, 64 MiB); the archives (ZIP,
+//!   gzip, tar) are read in memory, refusing absolute paths, `..`, links and sizes
+//!   beyond their limits.
 //! - Nothing is downloaded otherwise: [`RuleSetCache::load`] and
 //!   [`Validator::from_cache`] read the cache only, and fail with
 //!   [`Error::NotCached`] for a rule set that has not been fetched. On every load the

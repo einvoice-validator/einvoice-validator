@@ -143,9 +143,9 @@ ids (`customLevel`), applied to the documents each scenario matches. On every do
 test corpora, the verdict of each bundle is the one the reference validator's reading of the
 Saxon-HE reports gives. `--fail-closed` makes every other finding without a known severity fatal.
 
-Downloading uses rustls with the `ring` provider, which contains C and assembly: it is the
-`fetch` feature of `einvoice-cli` (on by default). The validation engine and the library are pure
-Rust; `cargo install einvoice-cli --no-default-features` builds a tool without network code.
+Downloading uses rustls with a cryptography provider on the RustCrypto crates, pure Rust like
+the rest: it is the `fetch` feature of `einvoice-cli` (on by default);
+`cargo install einvoice-cli --no-default-features` builds a tool without network code.
 
 **Library.** A `Validator` is built once from a rule set (schemas loaded, stylesheets prepared),
 is `Send + Sync`, and validates any number of documents:
@@ -199,7 +199,10 @@ document today) to 2.6 times (CEN CII).
   with the ISO Schematron skeleton of ph-schematron, the output pinned by checksum. The engine
   is built to execute that compiled XSLT as is: no rule is translated into Rust by hand, so a
   new rule-set release needs new artefacts and new expected results, not new code.
-- **Pure Rust.** No JVM, no C library, no FFI; `unsafe` code is forbidden in every crate.
+- **Pure Rust.** No JVM, no C library, no FFI; `unsafe` code is forbidden in every crate. The
+  engine, the library, the CLI and the WebAssembly module, downloads included, build no C and
+  no assembly file; [docs/dependencies.md](docs/dependencies.md) audits the third-party crates
+  (their `unsafe`, build scripts and inline assembly), and a test keeps it in step.
 - **Exact decimals.** `xs:decimal` and `xs:integer` are arbitrary precision, with the division
   precision, rounding and string forms of the reference engine: the amount and total rules
   compute exactly what Saxon-HE computes, never through floating point where the stylesheet

@@ -66,7 +66,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   `RuleSetCache::fetch(name, &FetchOptions::new())` downloads the files of the family, checks
   their digests and builds the bundles exactly as the repository's `scripts/fetch-*.sh` do
   (Peppol BIS Billing, published as Schematron only, is compiled with ph-schematron, which
-  needs Java). The feature adds a minimal HTTPS client on rustls (ring, webpki-roots); it is
+  needs Java). The feature adds a minimal HTTPS client on rustls, with a cryptography
+  provider on the RustCrypto crates (pure Rust) and the Mozilla roots of webpki-roots; it is
   ignored on WebAssembly.
 
 With the default feature `pdf`, the module `pdf` extracts the invoice XML a Factur-X, ZUGFeRD

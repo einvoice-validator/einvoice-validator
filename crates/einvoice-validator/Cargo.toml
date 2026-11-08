@@ -31,9 +31,23 @@ pdf = ["dep:einvoice-pdf"]
 # RuleSetCache::fetch: downloads the rule sets that are not redistributed (Factur-X,
 # XRechnung, the French rules, Peppol BIS Billing 3.0) from their publishers, at pinned
 # URLs, checked against pinned digests, and assembles their bundles in the cache. A
-# minimal HTTPS client on rustls (the ring provider, the Mozilla roots of webpki-roots)
-# and ZIP, gzip and tar readers on miniz_oxide. Ignored on WebAssembly.
-fetch = ["dep:miniz_oxide", "dep:rustls", "dep:webpki-roots"]
+# minimal HTTPS client on rustls, with a cryptography provider on the RustCrypto crates
+# (src/rulesets/fetch/tls.rs: AES-GCM, ChaCha20-Poly1305, ECDHE and ECDSA on P-256 and
+# P-384, RSA signature verification, SHA-2, HMAC; pure Rust) and the Mozilla roots of
+# webpki-roots, and ZIP, gzip and tar readers on miniz_oxide. Ignored on WebAssembly.
+fetch = [
+    "dep:miniz_oxide",
+    "dep:rustls",
+    "dep:webpki-roots",
+    "dep:aes-gcm",
+    "dep:chacha20poly1305",
+    "dep:ecdsa",
+    "dep:getrandom",
+    "dep:hmac",
+    "dep:p256",
+    "dep:p384",
+    "dep:rsa",
+]
 
 [dependencies]
 einvoice-pdf = { path = "../einvoice-pdf", version = "0.2.0", optional = true }
@@ -48,7 +62,23 @@ sha2 = "0.11.1"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 miniz_oxide = { version = "0.9.1", optional = true }
-rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+# The TLS client of the feature `fetch`: rustls without a built-in cryptography provider
+# (`custom-provider`: neither ring nor aws-lc-rs, both C and assembly), and the
+# RustCrypto crates of the provider of src/rulesets/fetch/tls.rs, without their default
+# features.
+aes-gcm = { version = "0.11.1", default-features = false, features = ["aes"], optional = true }
+chacha20poly1305 = { version = "0.11.0", default-features = false, optional = true }
+# Only for its DER signatures (`der`); p256 and p384 bring it anyway.
+ecdsa = { version = "0.17.0", default-features = false, features = ["der"], optional = true }
+getrandom = { version = "0.4.3", default-features = false, optional = true }
+hmac = { version = "0.13.0", default-features = false, optional = true }
+p256 = { version = "0.14.0", default-features = false, features = ["ecdh", "ecdsa"], optional = true }
+p384 = { version = "0.14.0", default-features = false, features = ["ecdh", "ecdsa"], optional = true }
+# A release candidate: the 0.10 series is the one built on the same RustCrypto releases as
+# the crates above (digest 0.11, crypto-bigint 0.7); 0.9 would duplicate them. Signature
+# verification with public keys only.
+rsa = { version = "0.10.0-rc.22", default-features = false, features = ["encoding", "pkcs1v15", "std"], optional = true }
+rustls = { version = "0.23.46", default-features = false, features = ["custom-provider", "std", "tls12"], optional = true }
 webpki-roots = { version = "1.0.11", optional = true }
 
 [dev-dependencies]

@@ -8,6 +8,9 @@
 //! - [`notices`]: the third-party notices of the `einvoice-validate` binary and of the
 //!   npm package, generated from the resolved dependency graph and the packages of the
 //!   crates, for the files those artefacts ship and the tests that keep them up to date;
+//! - [`supply_chain`]: what the third-party crates of the distributed graphs hold beyond
+//!   Rust (build scripts, inline assembly, native files), against the audit of
+//!   `docs/dependencies.md`;
 //! - [`invoice`]: synthetic invoices with many lines, for the measurements and budgets of
 //!   validations of large documents.
 //!
@@ -18,4 +21,5 @@ pub mod invoice;
 mod json;
 pub mod notices;
 pub mod pdf;
+pub mod supply_chain;
 pub mod workspace;

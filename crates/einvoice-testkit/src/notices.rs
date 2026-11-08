@@ -68,8 +68,9 @@ pub const ARTEFACTS: [Artefact; 2] = [CLI, NPM];
 /// with others of them, is refused: using it is a decision to record (in `deny.toml` as
 /// well). Besides MIT, they are the licences of crates that offer no MIT alternative:
 /// Unicode-3.0 (unicode-ident's tables), and those of the HTTPS client of the feature
-/// `fetch` (ring: Apache-2.0 and ISC; rustls-webpki and untrusted: ISC; subtle:
-/// BSD-3-Clause; webpki-roots: CDLA-Permissive-2.0).
+/// `fetch` (rustls-webpki and untrusted: ISC; subtle: BSD-3-Clause; webpki-roots:
+/// CDLA-Permissive-2.0); and Apache-2.0, which no crate of the graphs needs today
+/// (`deny.toml` allows it for no crate).
 const KNOWN: [(&str, &str); 6] = [
     (
         "MIT",
@@ -92,6 +93,11 @@ const KNOWN: [(&str, &str); 6] = [
         "Community Data License Agreement - Permissive - Version 2.0",
     ),
 ];
+
+/// The names (prefixes, compared without case) of the files at the root of a package that
+/// may hold its licence texts. `AUTHORS`: r-efi keeps its copyright and licence notices
+/// there, and has no `LICENSE` file.
+const LICENCE_FILES: [&str; 4] = ["LICENSE", "LICENCE", "COPYING", "AUTHORS"];
 
 /// The licence text of a crate, from its package.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,9 +133,14 @@ pub struct ThirdParty {
 /// # Errors
 ///
 /// When the expression is not made of licence identifiers, `AND`, `OR` and parentheses
-/// (`WITH` and `+` are not expected here).
+/// (`WITH` and `+` are not expected here). A `/` is read as `OR`: the separator of
+/// alternatives in the licence field before SPDX expressions, which some manifests still
+/// write (ff's `MIT/Apache-2.0`), and which crates.io and cargo-deny read that way.
 pub fn alternatives(expression: &str) -> Result<Vec<BTreeSet<String>>, String> {
-    let spaced = expression.replace('(', " ( ").replace(')', " ) ");
+    let spaced = expression
+        .replace('(', " ( ")
+        .replace(')', " ) ")
+        .replace('/', " OR ");
     let tokens: Vec<&str> = spaced.split_whitespace().collect();
     let mut at = 0;
     let result = or(&tokens, &mut at, 0)?;
@@ -268,10 +279,7 @@ pub fn licence_text(licence: &str, files: &[(String, String)]) -> Result<Text, S
         .iter()
         .filter(|(name, content)| {
             let upper = name.to_ascii_uppercase();
-            ["LICENSE", "LICENCE", "COPYING"]
-                .iter()
-                .any(|p| upper.starts_with(p))
-                && collapse(content).contains(phrase)
+            LICENCE_FILES.iter().any(|p| upper.starts_with(p)) && collapse(content).contains(phrase)
         })
         .collect();
     matches.sort_by_key(|(name, _)| (!name.to_ascii_uppercase().contains(&key), name.clone()));
@@ -299,9 +307,7 @@ fn root_files(dir: &Path) -> Result<Vec<(String, String)>, String> {
             continue;
         };
         let upper = name.to_ascii_uppercase();
-        let licence_like = ["LICENSE", "LICENCE", "COPYING"]
-            .iter()
-            .any(|p| upper.starts_with(p));
+        let licence_like = LICENCE_FILES.iter().any(|p| upper.starts_with(p));
         if !licence_like || !entry.path().is_file() {
             continue;
         }
@@ -603,6 +609,12 @@ mod tests {
                 set(&["Apache-2.0", "Unicode-3.0"])
             ]
         );
+        // The old separator `/` is OR.
+        assert_eq!(
+            alternatives("MIT/Apache-2.0").unwrap(),
+            [set(&["MIT"]), set(&["Apache-2.0"])]
+        );
+        assert_eq!(choose("MIT/Apache-2.0").unwrap(), ["MIT"]);
         // AND binds tighter than OR.
         assert_eq!(
             alternatives("A OR B AND C").unwrap(),
@@ -714,6 +726,9 @@ mod tests {
         );
         assert!(licence_text("MIT", &files(&[("LICENSE", "MIT OR Apache-2.0")])).is_err());
         assert!(licence_text("MIT", &files(&[("README", MIT)])).is_err());
+        // A package that keeps its notices in AUTHORS only.
+        let authors = files(&[("AUTHORS", MIT), ("README.md", "MIT")]);
+        assert_eq!(licence_text("MIT", &authors).unwrap().file, "AUTHORS");
         assert!(licence_text("Apache-2.0", &both).is_err());
     }
 

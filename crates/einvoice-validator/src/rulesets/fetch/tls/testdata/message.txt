@@ -1,0 +1,1 @@
+einvoice-validator: a message signed for the known-answer tests

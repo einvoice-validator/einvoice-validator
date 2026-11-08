@@ -376,6 +376,32 @@ stubbed expect "crates: pre-releases are ignored" 0 "locked 0.4.8, newest compat
     "${crates_args[@]}"
 check "crates: pre-releases leave it current" json '.[0].status == "current" and .[0].latest == "0.4.8"'
 
+# A requirement on a pre-release, as Cargo reads it: satisfied by that pre-release, the
+# later ones of the same version and the release; the newest stable is older.
+prerelease_ws() {
+    workspace_ws
+    sed -i.bak 's/^num-bigint = .*/num-bigint = "0.5.0-rc.2"/' "$tmp/ws/crates/a/Cargo.toml"
+    sed -i.bak '/^name = "num-bigint"$/{n;s/^version = .*/version = "0.5.0-rc.2"/;}' "$tmp/ws/Cargo.lock"
+}
+prerelease_ws
+crate_json num-bigint 0.4.8 0.5.0-rc.1 0.5.0-rc.2 0.5.0-rc.10
+stubbed expect "crates: a pre-release requirement, no release yet: current" 0 \
+    "locked 0.5.0-rc.2, newest compatible none, newest 0.4.8;" "${crates_args[@]}"
+check "crates: a pre-release requirement is current, not a major update" \
+    json '.[] | select(.name == "crate num-bigint") | .status == "current" and (.actionable | not)'
+prerelease_ws
+crate_json num-bigint 0.4.8 0.5.0-rc.2 0.5.0 0.5.1 0.6.0
+stubbed expect "crates: a pre-release requirement, released since: compatible update and major" 0 \
+    "locked 0.5.0-rc.2, newest compatible 0.5.1, newest 0.6.0 (major, manual migration)" "${crates_args[@]}"
+prerelease_ws
+sed -i.bak 's/^num-bigint = .*/num-bigint = "0.5.0-rc.10"/' "$tmp/ws/crates/a/Cargo.toml"
+stubbed expect "crates: an earlier pre-release does not satisfy a later one (rc.2 < rc.10)" 2 \
+    'has no version of num-bigint that satisfies "0.5.0-rc.10" for a (found: 0.5.0-rc.2)' crates
+prerelease_ws
+sed -i.bak 's/^num-bigint = .*/num-bigint = "0.4.8"/' "$tmp/ws/crates/a/Cargo.toml"
+stubbed expect "crates: a pre-release does not satisfy a requirement without one" 2 \
+    'has no version of num-bigint that satisfies "0.4.8" for a (found: 0.5.0-rc.2)' crates
+
 workspace_ws
 crate_json num-bigint 0.4.8:yanked 0.4.9
 stubbed expect "crates: a yanked locked version is reported" 0 "; locked version yanked" "${crates_args[@]}"

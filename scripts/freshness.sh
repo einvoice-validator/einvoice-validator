@@ -22,7 +22,8 @@
 # Cargo dependencies: every direct dependency, dev-dependency and
 # build-dependency on crates.io of every workspace member, read from the
 # manifests and Cargo.lock (a strict TOML subset; anything else is refused),
-# then looked up on crates.io, yanked and pre-release versions ignored. One row
+# then looked up on crates.io, yanked and pre-release versions ignored (a
+# requirement may name a pre-release, "0.10.0-rc.22", read as Cargo reads it). One row
 # per crate and locked version, severity info, note "locked L, newest compatible
 # C, newest N". Statuses: "current"; "compatible update" (within the version
 # requirement: Dependabot proposes it, so it opens no issue); "major update"
@@ -474,18 +475,31 @@ def semver:
   [capture("^(?<ma>0|[1-9][0-9]*)\\.(?<mi>0|[1-9][0-9]*)\\.(?<pa>0|[1-9][0-9]*)(?:-(?<pre>[0-9A-Za-z.-]+))?(?:\\+[0-9A-Za-z.-]+)?$")]
   | first // null
   | if . == null then null else {ma: (.ma | tonumber), mi: (.mi | tonumber), pa: (.pa | tonumber), pre} end;
+# Sort key of pre-release identifiers (semver 11.4): numeric ones by value, below
+# alphanumeric ones, compared in order, a shorter list first.
+def prekey: split(".") | map(if test("^[0-9]+$") then [0, tonumber] else [1, .] end);
 # Sort key of a valid version string; a pre-release sorts before its release.
-def vkey: semver | [.ma, .mi, .pa, (if .pre == null then 1 else 0 end)];
+def vkey: semver | [.ma, .mi, .pa, (if .pre == null then [1] else [0, (.pre | prekey)] end)];
+# A caret requirement: MAJOR[.MINOR[.PATCH[-PRE]]], with or without ^.
 def req:
-  [capture("^\\^?\\s*(?<ma>[0-9]+)(?:\\.(?<mi>[0-9]+)(?:\\.(?<pa>[0-9]+))?)?$")] | first // null
+  [capture("^\\^?\\s*(?<ma>[0-9]+)(?:\\.(?<mi>[0-9]+)(?:\\.(?<pa>[0-9]+)(?:-(?<pre>[0-9A-Za-z.-]+))?)?)?$")]
+  | first // null
   | if . == null then null
     else {ma: (.ma | tonumber), mi: (.mi | if . == null then null else tonumber end),
-          pa: (.pa | if . == null then null else tonumber end)} end;
-# Does the version string . satisfy the caret requirement $r? (Pre-releases never do.)
+          pa: (.pa | if . == null then null else tonumber end), pre} end;
+# Does the version string . satisfy the caret requirement $r? As Cargo: a pre-release
+# only satisfies a requirement with a pre-release of the same MAJOR.MINOR.PATCH, from
+# that pre-release on (0.10.0-rc.22 and 0.10.0-rc.23 satisfy "0.10.0-rc.22", and so does
+# 0.10.0); no pre-release satisfies a requirement without one.
 def satisfies($r):
   semver as $v
-  | $v != null and $v.pre == null
-    and ([$v.ma, $v.mi, $v.pa] >= [$r.ma, ($r.mi // 0), ($r.pa // 0)])
+  | $v != null
+    and (if $v.pre == null then
+           [$v.ma, $v.mi, $v.pa] >= [$r.ma, ($r.mi // 0), ($r.pa // 0)]
+         else
+           $r.pre != null and [$v.ma, $v.mi, $v.pa] == [$r.ma, $r.mi, $r.pa]
+           and ($v.pre | prekey) >= ($r.pre | prekey)
+         end)
     and (if $r.ma > 0 or $r.mi == null then $v.ma == $r.ma
          elif $r.mi > 0 or $r.pa == null then $v.ma == 0 and $v.mi == $r.mi
          else $v.ma == 0 and $v.mi == 0 and $v.pa == $r.pa end);

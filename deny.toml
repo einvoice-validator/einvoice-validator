@@ -9,7 +9,14 @@ version = 2
 # Vulnerabilities, unsound and unmaintained crates are errors (the version 2
 # defaults), and so is a yanked release: no warning is tolerated.
 yanked = "deny"
-ignore = []
+ignore = [
+    # The Marvin attack on the rsa crate (every release): timing leaks in the operations
+    # with an RSA private key (decryption, signing). The crate is only used by the TLS
+    # client of the feature `fetch` of einvoice-validator to verify signatures with the
+    # public keys of servers and certificate authorities, which hold nothing secret: no
+    # private key is ever loaded (src/rulesets/fetch/tls.rs).
+    { id = "RUSTSEC-2023-0071", reason = "rsa verifies signatures with public keys only: the timing leak concerns private-key operations, never run" },
+]
 
 [licenses]
 version = 2
@@ -66,15 +73,13 @@ exceptions = [
     { crate = "unicode-ident", allow = ["Unicode-3.0"] },
     # The HTTPS client of the feature `fetch` of einvoice-validator (on by default in
     # einvoice-cli, never built for WebAssembly), which downloads the rule sets that are
-    # not redistributed: rustls itself is "Apache-2.0 OR ISC OR MIT" (MIT chosen), and its
-    # cryptography and certificate verification come under permissive licences without an
-    # MIT alternative. ring (the crypto provider: "Apache-2.0 AND ISC", the
-    # BoringSSL-derived code under Apache-2.0, the rest ISC) was chosen over aws-lc-rs,
-    # whose aws-lc-sys adds the OpenSSL licence and a larger C build; rustls-webpki and
-    # untrusted are ISC; subtle (constant-time comparisons) is BSD-3-Clause; the Mozilla
-    # root certificates of webpki-roots are data under CDLA-Permissive-2.0. Each allowed
-    # for its crate only; their texts are in crates/einvoice-cli/THIRD-PARTY-NOTICES.
-    { crate = "ring", allow = ["Apache-2.0", "ISC"] },
+    # not redistributed: rustls itself is "Apache-2.0 OR ISC OR MIT" (MIT chosen), and so
+    # are the RustCrypto crates of its cryptography (MIT chosen); its certificate
+    # verification and two helpers come under permissive licences without an MIT
+    # alternative: rustls-webpki and untrusted are ISC; subtle (constant-time
+    # comparisons, also used by the RustCrypto crates) is BSD-3-Clause; the Mozilla root
+    # certificates of webpki-roots are data under CDLA-Permissive-2.0. Each allowed for
+    # its crate only; their texts are in crates/einvoice-cli/THIRD-PARTY-NOTICES.
     { crate = "rustls-webpki", allow = ["ISC"] },
     { crate = "untrusted", allow = ["ISC"] },
     { crate = "subtle", allow = ["BSD-3-Clause"] },
@@ -89,11 +94,39 @@ wildcards = "deny"
 # Workspace members depend on each other by path.
 allow-wildcard-paths = true
 highlight = "all"
-skip = [
-    # ring 0.17 (the crypto provider of rustls, feature `fetch`) needs getrandom 0.2;
-    # proptest (dev-dependency) needs rand 0.10 and getrandom 0.4. No release of ring
-    # uses a newer getrandom yet.
-    { crate = "getrandom@0.2", reason = "ring 0.17 needs getrandom 0.2, proptest's rand 0.10 needs 0.4" },
+skip = []
+# No C, C++ or assembly is built or linked: the crates that compile or link native code
+# from a build script (C compiler drivers, CMake, bindings generators, system-library
+# finders, the -sys crates of C libraries, and the crypto libraries made of C and
+# assembly) are refused everywhere in the graph, dev-dependencies and the tooling of
+# xtask included, for every target. None is needed: no build script of the graph
+# compiles anything but Rust probes (docs/dependencies.md lists them, and
+# crates/einvoice-testkit/tests/supply_chain.rs checks the packages themselves). The
+# same list is NATIVE_BUILD_CRATES in crates/einvoice-testkit/src/supply_chain.rs.
+deny = [
+    { crate = "autotools", reason = "builds C with autotools" },
+    { crate = "aws-lc-fips-sys", reason = "C and assembly (AWS-LC)" },
+    { crate = "aws-lc-rs", reason = "C and assembly (AWS-LC)" },
+    { crate = "aws-lc-sys", reason = "C and assembly (AWS-LC)" },
+    { crate = "bindgen", reason = "generates bindings to C libraries" },
+    { crate = "boring-sys", reason = "C and assembly (BoringSSL)" },
+    { crate = "bzip2-sys", reason = "C (libbzip2)" },
+    { crate = "cc", reason = "compiles C, C++ and assembly" },
+    { crate = "cmake", reason = "builds C and C++ with CMake" },
+    { crate = "cxx", reason = "C++ interoperability" },
+    { crate = "cxx-build", reason = "compiles C++" },
+    { crate = "libz-sys", reason = "C (zlib)" },
+    { crate = "lzma-sys", reason = "C (liblzma)" },
+    { crate = "nasm-rs", reason = "assembles with NASM" },
+    { crate = "openssl-src", reason = "C and assembly (OpenSSL)" },
+    { crate = "openssl-sys", reason = "C (OpenSSL)" },
+    { crate = "pkg-config", reason = "finds system C libraries to link" },
+    { crate = "ring", reason = "C and assembly (BoringSSL-derived)" },
+    { crate = "sha1-asm", reason = "assembly" },
+    { crate = "sha2-asm", reason = "assembly" },
+    { crate = "system-deps", reason = "finds system C libraries to link" },
+    { crate = "vcpkg", reason = "finds C libraries to link" },
+    { crate = "zstd-sys", reason = "C (zstd)" },
 ]
 
 [sources]

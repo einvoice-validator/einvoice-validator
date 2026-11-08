@@ -211,9 +211,16 @@ against.
     stack of a level of a recursion through `xsl:apply-templates` in a debug build is 792 bytes
     for a selection read from the tree (888 before), 1648 for another selection, which no
     official stylesheet recurses through.
+- The HTTPS client of the feature `fetch` (#35) runs rustls on a cryptography provider of its own
+  on the RustCrypto crates (TLS 1.2 and 1.3, AES-GCM and ChaCha20-Poly1305, ECDHE on P-256 and
+  P-384, ECDSA and RSA verification): no C or assembly file is built anywhere. `deny.toml` bans
+  the crates that build native code (`cc`, `cmake`, `bindgen`, `pkg-config`, `ring`,
+  `aws-lc-sys`, `openssl-sys` and others), and `docs/dependencies.md` audits every third-party
+  crate of the binary, the library and the WebAssembly module (`unsafe`, build scripts, inline
+  assembly), checked by `tests/supply_chain.rs` of `einvoice-testkit`.
 - The manifests written by `scripts/fetch-*.sh` have neutral comments; `fetch-peppol.sh` pins
-  the embedded CEN version (`cen=1.3.16`). `einvoice-cli` depends on rustls/ring/webpki-roots by
-  default (feature `fetch`; licences in THIRD-PARTY-NOTICES; `--no-default-features` leaves them
+  the embedded CEN version (`cen=1.3.16`). `einvoice-cli` depends on rustls, the RustCrypto
+  crates and webpki-roots by default (feature `fetch`; licences in THIRD-PARTY-NOTICES; `--no-default-features` leaves them
   out).
 - `einvoice-validator` keeps each SVRL report compactly and reads its findings as the
   stylesheet writes it (#18), with `Executable::transform_compact`, instead of writing it to a

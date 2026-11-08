@@ -7,6 +7,7 @@ mod archive;
 mod assemble;
 mod http;
 mod peppol;
+mod tls;
 
 use std::fmt;
 use std::io::Write as _;

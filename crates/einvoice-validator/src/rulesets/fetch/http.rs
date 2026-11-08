@@ -1,6 +1,6 @@
 //! A minimal HTTP/1.1 client for the pinned downloads: `GET` only, one request per
-//! connection, TLS with rustls and the Mozilla root certificates of webpki-roots (no
-//! system library). Redirects are followed a few times, never from HTTPS to plain HTTP;
+//! connection, TLS with rustls (the pure-Rust cryptography provider of `super::tls`) and
+//! the Mozilla root certificates of webpki-roots (no system library). Redirects are followed a few times, never from HTTPS to plain HTTP;
 //! plain HTTP is only allowed to a loopback address (a local mirror or test server).
 //! The response is read with a size limit, and a download interrupted half-way resumes
 //! where it stopped (`Range`) when the server allows it. What is downloaded is checked
@@ -192,8 +192,8 @@ impl std::fmt::Display for Url {
     }
 }
 
-/// The TLS configuration: the ring provider of rustls, its safe default protocol
-/// versions, the Mozilla roots.
+/// The TLS configuration: the pure-Rust provider of [`super::tls`], rustls' safe default
+/// protocol versions (TLS 1.2 and 1.3), the Mozilla roots.
 fn tls_config() -> Result<Arc<rustls::ClientConfig>, HttpError> {
     static CONFIG: OnceLock<Result<Arc<rustls::ClientConfig>, String>> = OnceLock::new();
     CONFIG
@@ -201,12 +201,10 @@ fn tls_config() -> Result<Arc<rustls::ClientConfig>, HttpError> {
             let roots = rustls::RootCertStore {
                 roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
             };
-            rustls::ClientConfig::builder_with_provider(Arc::new(
-                rustls::crypto::ring::default_provider(),
-            ))
-            .with_safe_default_protocol_versions()
-            .map(|b| Arc::new(b.with_root_certificates(roots).with_no_client_auth()))
-            .map_err(|e| format!("TLS configuration: {e}"))
+            rustls::ClientConfig::builder_with_provider(Arc::new(super::tls::provider()))
+                .with_safe_default_protocol_versions()
+                .map(|b| Arc::new(b.with_root_certificates(roots).with_no_client_auth()))
+                .map_err(|e| format!("TLS configuration: {e}"))
         })
         .clone()
         .map_err(HttpError::fatal)

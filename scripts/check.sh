@@ -269,7 +269,16 @@ job_package() {
     cargo package --locked --allow-dirty --target-dir target/package-check "${packages[@]}" || status=1
     return "$status"
 }
+# The dependency policy: first the packages of the distributed graphs themselves (no C,
+# C++ or assembly file, no build script or build dependency that builds native code,
+# every crate, build script and use of inline assembly audited in docs/dependencies.md:
+# tests/supply_chain.rs of einvoice-testkit), then cargo-deny (licences, advisories,
+# sources, and the bans of deny.toml, which refuse the crates that build native code).
 job_deny() {
+    need_toolchain || return 1
+    # The test reads every package offline: fetch them first (all targets).
+    cargo fetch --locked || return 1
+    cargo test --locked -p einvoice-testkit --test supply_chain || return 1
     if ! cargo deny --version >/dev/null 2>&1; then
         echo "SKIPPED: cargo-deny is not installed (cargo install --locked cargo-deny)"
         return 0
@@ -499,11 +508,15 @@ job_corpora() {
 # its publisher, for real, into target/rules-cache/, and compares each bundle with the
 # one its fetch script wrote in target/ (run the facturx, xrechnung, fr-ctc and peppol
 # jobs first). EINVOICE_FETCH_FROM may name directories (':'-separated) holding
-# published files to use instead of downloading them.
+# published files to use instead of downloading them. Then a TLS handshake with each
+# publisher's host through the client's cryptography provider, which prints what was
+# negotiated (EINVOICE_TLS_PROBE_HOSTS may name other hosts, ','-separated).
 job_rules-online() {
     need_toolchain || return 1
     cargo test --locked --all-features -p einvoice-validator --test rulesets -- \
-        --ignored --nocapture
+        --ignored --nocapture &&
+        cargo test --locked --all-features -p einvoice-validator --lib \
+            rulesets::fetch::tls::tests::publishers_hosts_handshake -- --ignored --nocapture
 }
 # The pre-commit guard on the index; nothing staged, nothing to check.
 job_privacy() {

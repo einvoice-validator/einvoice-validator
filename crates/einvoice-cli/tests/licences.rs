@@ -209,12 +209,21 @@ fn every_third_party_crate_compiled_in_has_its_notice_and_licence_text() {
         "sha2",
         "miniz_oxide",
         "memchr",
-        // The HTTPS client of `rules fetch` (default feature `fetch`).
+        // The HTTPS client of `rules fetch` (default feature `fetch`): rustls, the
+        // RustCrypto crates of its cryptography provider, the Mozilla roots.
         "rustls",
-        "ring",
+        "aes-gcm",
+        "chacha20poly1305",
+        "p256",
+        "rsa",
         "webpki-roots",
     ] {
         assert!(names.contains(name), "{name}: {names:?}");
+    }
+    // Nothing that builds C or assembly (deny.toml bans them, tests/supply_chain.rs of
+    // einvoice-testkit checks the packages).
+    for name in ["ring", "cc", "aws-lc-sys", "openssl-sys"] {
+        assert!(!names.contains(name), "{name}: {names:?}");
     }
     // No crate of this project, no build dependency, no procedural macro.
     let members = workspace::members().unwrap();
@@ -235,7 +244,7 @@ fn every_third_party_crate_compiled_in_has_its_notice_and_licence_text() {
         );
         assert!(section.starts_with(&heading), "{}: {section}", c.name);
         // MIT where there is a choice, and the text of each licence chosen. Without an
-        // MIT alternative (the HTTPS client of the feature `fetch`: ring, rustls-webpki,
+        // MIT alternative (the HTTPS client of the feature `fetch`: rustls-webpki,
         // untrusted, subtle, webpki-roots), the licences the crate offers.
         let mit_offered = notices::alternatives(&c.license)
             .unwrap()
@@ -245,14 +254,7 @@ fn every_third_party_crate_compiled_in_has_its_notice_and_licence_text() {
             assert_eq!(c.chosen, ["MIT"], "{}", c.name);
         } else {
             assert!(
-                [
-                    "ring",
-                    "rustls-webpki",
-                    "untrusted",
-                    "subtle",
-                    "webpki-roots"
-                ]
-                .contains(&c.name.as_str()),
+                ["rustls-webpki", "untrusted", "subtle", "webpki-roots"].contains(&c.name.as_str()),
                 "{}: {} offers no MIT alternative",
                 c.name,
                 c.license
