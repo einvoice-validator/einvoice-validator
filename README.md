@@ -3,16 +3,20 @@
 Validate EN 16931 and Peppol BIS Billing 3.0 e-invoices against the **official** validation
 artefacts, in pure Rust: no JVM, no C library, no FFI.
 
+[![einvoice-validator on crates.io](https://img.shields.io/crates/v/einvoice-validator.svg?label=einvoice-validator)](https://crates.io/crates/einvoice-validator)
+[![einvoice-cli on crates.io](https://img.shields.io/crates/v/einvoice-cli.svg?label=einvoice-cli)](https://crates.io/crates/einvoice-cli)
+[![Documentation on docs.rs](https://docs.rs/einvoice-validator/badge.svg)](https://docs.rs/einvoice-validator)
 [![CI](https://github.com/einvoice-validator/einvoice-validator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/einvoice-validator/einvoice-validator/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
 ## Status
 
-**Version 0.1.0, released on crates.io:** the library is the crate
-[`einvoice-validator`](https://crates.io/crates/einvoice-validator), the command-line tool
+**Version 0.1.0, released on 2026-11-08** ([release notes](https://github.com/einvoice-validator/einvoice-validator/releases/tag/v0.1.0)):
+the library is the crate [`einvoice-validator`](https://crates.io/crates/einvoice-validator)
+(API documentation on [docs.rs](https://docs.rs/einvoice-validator)), the command-line tool
 `einvoice-validate` the crate [`einvoice-cli`](https://crates.io/crates/einvoice-cli) (see
-[Usage](#usage)). Before 1.0.0, a minor version may break the public API
-([RELEASING.md](RELEASING.md)). The library and the tool validate UBL 2.1 invoices and credit
+[Usage](#usage)); all nine crates of the workspace are published on crates.io at 0.1.0. Before
+1.0.0, a minor version may break the public API ([RELEASING.md](RELEASING.md)). The library and the tool validate UBL 2.1 invoices and credit
 notes: the XML, the UBL 2.1 schema, then the official stylesheets of the rule set. The CEN
 EN 16931 UBL 1.3.17 rule set is built in; Peppol BIS Billing 3.0.22 (its own rules and the CEN
 rules it embeds) is used as a bundle built locally, since its files may not be redistributed. On

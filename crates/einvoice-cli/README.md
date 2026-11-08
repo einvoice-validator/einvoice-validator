@@ -8,7 +8,7 @@ executed with the behaviour of Saxon-HE. It is part of
 [einvoice-validator](https://github.com/einvoice-validator/einvoice-validator).
 
 ```sh
-cargo install einvoice-cli                      # installs einvoice-validate, from crates.io
+cargo install --locked einvoice-cli             # installs einvoice-validate, from crates.io
 ```
 
 Or from a clone of the repository:
