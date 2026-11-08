@@ -12,6 +12,10 @@ against.
 
 ### Added
 
+- `einvoice-xpath-eval`: `ValueType` and `BindingValue`, the static type of a host variable or
+  function result, inferred as Saxon-HE 12.10 does in a stylesheet; `VariableInfo::value_type`,
+  `StaticContext::function_type`, `SimpleStaticContext::declare_typed_variable` and
+  `declare_typed_function` (#21).
 - CEN EN 16931 for UN/CEFACT CII D16B, release 1.3.17 (#12): the artefacts vendored
   unmodified in `artefacts/cen-en16931-cii-1.3.17/` (EUPL-1.2; the CII D16B schemas of the
   source archive are not vendored), and their corpus in `corpus/cen-en16931-cii-1.3.17/`: the
@@ -39,6 +43,12 @@ against.
 
 ### Changed
 
+- `einvoice-xpath-eval`: `xs:decimal` of an argument statically `xs:decimal` returns it
+  unchanged, an `xs:integer` value included; `div` of operands statically `xs:decimal` (or one
+  `xs:integer`) is Saxon's decimal division (#21). Breaking: `VariableInfo` has a new field and
+  is no longer `Copy`/`Eq`.
+- `einvoice-xslt-exec` passes the static types of variables, parameters and function results to
+  the XPath compiler (#21).
 - CI and the fetch scripts retry failed downloads (curl, Maven, cargo, rustup, apt) and cache the
   tool archives and Saxon-HE jars, checked against their pinned checksums.
 - `einvoice-xsd`: validation copies no values out of the document; on the largest CEN document
