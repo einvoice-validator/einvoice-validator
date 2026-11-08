@@ -143,6 +143,20 @@ impl Builtin {
             Self::AnyUri => uri::is_any_uri(value),
         }
     }
+
+    /// Whether `raw`, before whitespace processing, is in the lexical space once
+    /// processed: `self.is_valid(&normalize(raw, self.white_space()))`, without
+    /// building the processed value when the check does not need it (the string
+    /// types accept every value; base64 skips whitespace as it goes).
+    pub(crate) fn is_valid_raw(self, raw: &str) -> bool {
+        match self {
+            Self::AnySimpleType | Self::String | Self::NormalizedString | Self::Token => true,
+            // Collapsing, then dropping the single spaces left between
+            // characters, drops every whitespace character.
+            Self::Base64Binary => is_base64_skipping(raw, is_xml_space_byte),
+            _ => self.is_valid(&normalize(raw, self.white_space())),
+        }
+    }
 }
 
 /// The local names of the XML Schema 1.0 built-in types that this crate does not
@@ -187,6 +201,11 @@ pub(crate) fn is_xml_space(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\n' | '\r')
 }
 
+/// [`is_xml_space`] on a byte of UTF-8 text.
+fn is_xml_space_byte(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | b'\r')
+}
+
 /// Applies a `whiteSpace` facet.
 pub(crate) fn normalize(value: &str, white_space: WhiteSpace) -> std::borrow::Cow<'_, str> {
     use std::borrow::Cow;
@@ -200,20 +219,19 @@ pub(crate) fn normalize(value: &str, white_space: WhiteSpace) -> std::borrow::Co
             }
         }
         WhiteSpace::Collapse => {
-            let collapsed_already = !value.starts_with(is_xml_space)
-                && !value.ends_with(is_xml_space)
-                && !value.contains(['\t', '\n', '\r'])
-                && !value.contains("  ");
-            if collapsed_already {
-                Cow::Borrowed(value)
+            // Leading and trailing whitespace only: the value is a slice.
+            let trimmed = value.trim_matches(is_xml_space);
+            if !trimmed.contains(['\t', '\n', '\r']) && !trimmed.contains("  ") {
+                Cow::Borrowed(trimmed)
             } else {
-                Cow::Owned(
-                    value
-                        .split(is_xml_space)
-                        .filter(|s| !s.is_empty())
-                        .collect::<Vec<_>>()
-                        .join(" "),
-                )
+                let mut collapsed = String::with_capacity(trimmed.len());
+                for word in trimmed.split(is_xml_space).filter(|s| !s.is_empty()) {
+                    if !collapsed.is_empty() {
+                        collapsed.push(' ');
+                    }
+                    collapsed.push_str(word);
+                }
+                Cow::Owned(collapsed)
             }
         }
     }
@@ -300,19 +318,35 @@ fn is_base64_char(b: u8) -> bool {
 /// two (second character in `AQgw`), with single spaces allowed between characters.
 /// The value is already collapsed, so it has no leading, trailing or double spaces.
 pub(crate) fn is_base64(value: &str) -> bool {
-    let bytes: Vec<u8> = value.bytes().filter(|&b| b != b' ').collect();
-    if !bytes.len().is_multiple_of(4) {
+    is_base64_skipping(value, |b| b == b' ')
+}
+
+/// [`is_base64`] on the characters of `value` that `skip` does not drop, in one
+/// pass: the characters left must be a multiple of four, every one of them base64
+/// except a final run of at most two `=`, and the padding must fit the last
+/// character before it.
+fn is_base64_skipping(value: &str, skip: impl Fn(u8) -> bool) -> bool {
+    let mut count = 0_usize;
+    let mut padding = 0_usize;
+    let mut last = None;
+    for b in value.bytes().filter(|&b| !skip(b)) {
+        count += 1;
+        if b == b'=' {
+            padding += 1;
+        } else if padding > 0 || !is_base64_char(b) {
+            // A character after padding, or outside the alphabet.
+            return false;
+        } else {
+            last = Some(b);
+        }
+    }
+    if !count.is_multiple_of(4) || padding > 2 {
         return false;
     }
-    let padding = bytes.iter().rev().take_while(|&&b| b == b'=').count();
-    let data = &bytes[..bytes.len() - padding];
-    if padding > 2 || !data.iter().all(|&b| is_base64_char(b)) {
-        return false;
-    }
-    match (padding, data.last()) {
+    match (padding, last) {
         (0, _) => true,
-        (1, Some(last)) => b"AEIMQUYcgkosw048".contains(last),
-        (2, Some(last)) => b"AQgw".contains(last),
+        (1, Some(last)) => b"AEIMQUYcgkosw048".contains(&last),
+        (2, Some(last)) => b"AQgw".contains(&last),
         _ => false,
     }
 }
@@ -610,5 +644,64 @@ mod tests {
         assert_eq!(normalize(" a \t\n b ", WhiteSpace::Collapse), "a b");
         assert_eq!(normalize("a\tb\n", WhiteSpace::Replace), "a b ");
         assert_eq!(normalize(" a ", WhiteSpace::Preserve), " a ");
+        // Only leading and trailing whitespace: a slice of the value, not a copy.
+        assert!(matches!(
+            normalize("\n  12.50\t", WhiteSpace::Collapse),
+            std::borrow::Cow::Borrowed("12.50")
+        ));
+    }
+
+    /// The collapsed value as XML Schema Part 2 defines it: runs of whitespace
+    /// become one space, then leading and trailing spaces go.
+    fn reference_collapse(value: &str) -> String {
+        value
+            .split(is_xml_space)
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// `base64Binary` checked on a copy of the value without its spaces.
+    fn reference_base64(value: &str) -> bool {
+        let bytes: Vec<u8> = value.bytes().filter(|&b| b != b' ').collect();
+        if !bytes.len().is_multiple_of(4) {
+            return false;
+        }
+        let padding = bytes.iter().rev().take_while(|&&b| b == b'=').count();
+        let data = &bytes[..bytes.len() - padding];
+        if padding > 2 || !data.iter().all(|&b| is_base64_char(b)) {
+            return false;
+        }
+        match (padding, data.last()) {
+            (0, _) => true,
+            (1, Some(last)) => b"AEIMQUYcgkosw048".contains(last),
+            (2, Some(last)) => b"AQgw".contains(last),
+            _ => false,
+        }
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(4000))]
+
+        #[test]
+        fn collapse_matches_the_definition(value in "[ \t\n\ra-c.]{0,12}") {
+            let collapsed = normalize(&value, WhiteSpace::Collapse);
+            proptest::prop_assert_eq!(collapsed.as_ref(), reference_collapse(&value));
+        }
+
+        #[test]
+        fn base64_in_one_pass(value in "[A-Da-dQgwU0-3+/= !\t\n\r-]{0,16}") {
+            proptest::prop_assert_eq!(is_base64(&value), reference_base64(&value));
+        }
+
+        #[test]
+        fn raw_values_as_processed_values(
+            value in "[ \t\n\r0-9a-zA-Z+/=:.T-]{0,16}",
+            index in 0..Builtin::ALL.len(),
+        ) {
+            let builtin = Builtin::ALL[index];
+            let processed = normalize(&value, builtin.white_space());
+            proptest::prop_assert_eq!(builtin.is_valid_raw(&value), builtin.is_valid(&processed));
+        }
     }
 }

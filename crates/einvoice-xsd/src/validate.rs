@@ -12,7 +12,17 @@
 //!   content) is reported and the remaining children of that element are not
 //!   examined; text errors before it are reported once per text node;
 //! * an `xsi:type` that cannot be used is reported and the declared type is used.
+//!
+//! The walk copies nothing out of the parsed document: element and attribute names
+//! are only spelt out in errors, the text of an element with simple content is a
+//! slice of the parsed text (copied only when comments or processing instructions
+//! split it into several text nodes), values are checked on that slice (whitespace
+//! processing builds a new string only when a check needs the processed value and
+//! it differs from a slice of the text), and the `xs:ID` values seen are slices
+//! too. Errors record the byte offset of their element; lines and columns are
+//! computed at the end, in one pass over the text.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 use roxmltree::Node;
@@ -36,13 +46,14 @@ enum Assignment {
     Lax,
 }
 
-enum FrameContent<'s> {
+enum FrameContent<'s, 'd> {
     Empty {
         stopped: bool,
     },
     Simple {
         type_id: TypeId,
-        text: String,
+        /// The text so far: a slice of the document while there is one text node.
+        text: Cow<'d, str>,
         stopped: bool,
     },
     Children {
@@ -56,15 +67,73 @@ enum FrameContent<'s> {
 struct Frame<'s, 'd, 'i> {
     node: Node<'d, 'i>,
     next: Option<Node<'d, 'i>>,
-    content: FrameContent<'s>,
+    content: FrameContent<'s, 'd>,
 }
 
 struct Validator<'s, 'd, 'i> {
     schema: &'s Schema,
     doc: &'d roxmltree::Document<'i>,
-    errors: Vec<ValidationError>,
-    ids: HashSet<String>,
-    line_starts: Option<Vec<usize>>,
+    /// Each error with the byte offset of its element; its line and column are
+    /// filled in by [`positions`].
+    errors: Vec<(usize, ValidationError)>,
+    /// The `xs:ID` values seen, whitespace-processed.
+    ids: HashSet<Cow<'d, str>>,
+}
+
+/// Lines and columns from byte offsets, walking forward through a text.
+struct Cursor<'t> {
+    text: &'t [u8],
+    offset: usize,
+    /// 1-based.
+    line: usize,
+    /// Characters since the start of the line.
+    column: usize,
+}
+
+impl<'t> Cursor<'t> {
+    fn new(text: &'t str) -> Self {
+        Self {
+            text: text.as_bytes(),
+            offset: 0,
+            line: 1,
+            column: 0,
+        }
+    }
+
+    /// The 1-based line and column of the character at byte `offset` (a character
+    /// boundary at or after the previous offset): the lines are counted by line
+    /// feeds, the columns in characters.
+    fn advance(&mut self, offset: usize) -> (u32, u32) {
+        let end = offset.min(self.text.len());
+        for &b in self.text.get(self.offset..end).unwrap_or(&[]) {
+            if b == b'\n' {
+                self.line += 1;
+                self.column = 0;
+            } else if b & 0xC0 != 0x80 {
+                // Not a UTF-8 continuation byte: a character starts here.
+                self.column += 1;
+            }
+        }
+        self.offset = self.offset.max(end);
+        (
+            u32::try_from(self.line).unwrap_or(u32::MAX),
+            u32::try_from(self.column + 1).unwrap_or(u32::MAX),
+        )
+    }
+}
+
+/// The errors in document order (by the position of their element, in the order
+/// they were found for the same element), with their lines and columns.
+fn positions(text: &str, mut errors: Vec<(usize, ValidationError)>) -> Vec<ValidationError> {
+    errors.sort_by_key(|(offset, _)| *offset);
+    let mut cursor = Cursor::new(text);
+    errors
+        .into_iter()
+        .map(|(offset, mut error)| {
+            (error.line, error.column) = cursor.advance(offset);
+            error
+        })
+        .collect()
 }
 
 /// Why a value is not valid.
@@ -110,32 +179,13 @@ pub(crate) fn validate(schema: &Schema, xml: &str) -> Result<Report, DocumentErr
         doc: &doc,
         errors: Vec::new(),
         ids: HashSet::new(),
-        line_starts: None,
     };
     validator.run()?;
-    let mut errors = validator.errors;
-    errors.sort_by_key(|e| (e.line, e.column));
+    let errors = positions(xml, validator.errors);
     Ok(Report { errors })
 }
 
 impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
-    fn position(&mut self, node: Node<'_, '_>) -> (u32, u32) {
-        let text = self.doc.input_text();
-        let starts = self.line_starts.get_or_insert_with(|| {
-            std::iter::once(0)
-                .chain(text.match_indices('\n').map(|(i, _)| i + 1))
-                .collect()
-        });
-        let offset = node.range().start;
-        let line = starts.partition_point(|&s| s <= offset);
-        let start = starts[line.saturating_sub(1)];
-        let column = text.get(start..offset).map_or(0, |s| s.chars().count()) + 1;
-        (
-            u32::try_from(line).unwrap_or(u32::MAX),
-            u32::try_from(column).unwrap_or(u32::MAX),
-        )
-    }
-
     fn report(&mut self, node: Node<'_, '_>, kind: ErrorKind, message: String) {
         self.report_attribute(node, kind, None, message);
     }
@@ -147,19 +197,21 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
         attribute: Option<String>,
         message: String,
     ) {
-        let (line, column) = self.position(node);
-        self.errors.push(ValidationError {
-            kind,
-            line,
-            column,
-            element: element_name(node),
-            attribute,
-            message,
-        });
+        self.errors.push((
+            node.range().start,
+            ValidationError {
+                kind,
+                line: 0,
+                column: 0,
+                element: element_name(node),
+                attribute,
+                message,
+            },
+        ));
     }
 
-    fn unsupported(&mut self, node: Node<'_, '_>, message: String) -> DocumentError {
-        let (line, column) = self.position(node);
+    fn unsupported(&self, node: Node<'_, '_>, message: String) -> DocumentError {
+        let (line, column) = Cursor::new(self.doc.input_text()).advance(node.range().start);
         DocumentError::Unsupported {
             line,
             column,
@@ -268,14 +320,14 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
         let content = match &schema.types[type_id] {
             TypeDef::Simple(_) => FrameContent::Simple {
                 type_id,
-                text: String::new(),
+                text: Cow::Borrowed(""),
                 stopped: false,
             },
             TypeDef::Complex(complex) => match &complex.content {
                 Content::Empty => FrameContent::Empty { stopped: false },
                 Content::Simple(simple) => FrameContent::Simple {
                     type_id: *simple,
-                    text: String::new(),
+                    text: Cow::Borrowed(""),
                     stopped: false,
                 },
                 Content::ElementOnly(automaton) => FrameContent::Children {
@@ -363,8 +415,14 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
         Ok(Some(type_id))
     }
 
-    /// Checks a value against a simple type; when valid, registers `xs:ID` values.
-    fn check_value(&mut self, type_id: TypeId, raw: &str) -> Option<ValueProblem> {
+    /// Checks a value, before whitespace processing, against a simple type; when
+    /// valid, registers `xs:ID` values. The processed value is only built when an
+    /// `enumeration` facet or the `xs:ID` registry needs it.
+    #[expect(
+        clippy::ptr_arg,
+        reason = "a value borrowed from the document (Cow::Borrowed) keeps its lifetime, so that the xs:ID registry holds a slice of the document rather than a copy"
+    )]
+    fn check_value(&mut self, type_id: TypeId, raw: &Cow<'d, str>) -> Option<ValueProblem> {
         let schema = self.schema;
         let TypeDef::Simple(simple) = &schema.types[type_id] else {
             return Some(ValueProblem::Invalid(format!(
@@ -372,14 +430,22 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                 self.type_name(type_id)
             )));
         };
-        let value = datatypes::normalize(raw, simple.builtin.white_space());
-        if !simple.builtin.is_valid(&value) {
+        if !simple.builtin.is_valid_raw(raw) {
             return Some(ValueProblem::Invalid(format!(
                 "{} is not a valid value of {}",
                 quote(raw),
                 self.type_name(type_id)
             )));
         }
+        let is_id = simple.builtin == Builtin::Id;
+        if !is_id && !schema.has_enumeration(type_id) {
+            return None;
+        }
+        let white_space = simple.builtin.white_space();
+        let value: Cow<'d, str> = match raw {
+            Cow::Borrowed(raw) => datatypes::normalize(raw, white_space),
+            Cow::Owned(raw) => Cow::Owned(datatypes::normalize(raw, white_space).into_owned()),
+        };
         let mut current = type_id;
         while let TypeDef::Simple(step) = &schema.types[current] {
             if let Some(values) = &step.enumeration
@@ -398,7 +464,7 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             }
             current = step.base;
         }
-        if simple.builtin == Builtin::Id && !self.ids.insert(value.into_owned()) {
+        if is_id && !self.ids.insert(value) {
             return Some(ValueProblem::DuplicateId(format!(
                 "the ID {} is already used in the document",
                 quote(raw)
@@ -407,7 +473,7 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
         None
     }
 
-    fn attributes(&mut self, node: Node<'_, '_>, type_id: TypeId) {
+    fn attributes(&mut self, node: Node<'d, 'i>, type_id: TypeId) {
         let schema = self.schema;
         let (uses, wildcard) = match &schema.types[type_id] {
             TypeDef::Simple(_) => (&[][..], None),
@@ -426,20 +492,21 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             {
                 continue;
             }
-            let name = clark(namespace, local);
+            // Spelt out only for an error.
+            let name = || Some(clark(namespace, local));
             if let Some(attribute_use) = uses.iter().find(|u| u.name.matches(namespace, local)) {
-                match self.check_value(attribute_use.type_id, attribute.value()) {
+                match self.check_value(attribute_use.type_id, &Cow::Borrowed(attribute.value())) {
                     None => {}
                     Some(ValueProblem::Invalid(problem)) => {
                         self.report_attribute(
                             node,
                             ErrorKind::InvalidAttributeValue,
-                            Some(name),
+                            name(),
                             problem,
                         );
                     }
                     Some(ValueProblem::DuplicateId(problem)) => {
-                        self.report_attribute(node, ErrorKind::DuplicateId, Some(name), problem);
+                        self.report_attribute(node, ErrorKind::DuplicateId, name(), problem);
                     }
                 }
                 continue;
@@ -452,7 +519,7 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                         self.report_attribute(
                             node,
                             ErrorKind::UndeclaredAttribute,
-                            Some(name),
+                            name(),
                             "no global attribute declaration, required by a strict wildcard"
                                 .to_owned(),
                         );
@@ -461,7 +528,7 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                 _ => self.report_attribute(
                     node,
                     ErrorKind::AttributeNotAllowed,
-                    Some(name),
+                    name(),
                     "the attribute is not allowed".to_owned(),
                 ),
             }
@@ -484,7 +551,7 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
         }
     }
 
-    fn text(&mut self, frame: &mut Frame<'s, 'd, 'i>, node: Node<'_, '_>) {
+    fn text(&mut self, frame: &mut Frame<'s, 'd, 'i>, node: Node<'d, 'i>) {
         let text = node.text().unwrap_or("");
         let parent = frame.node;
         match &mut frame.content {
@@ -499,7 +566,13 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                 text: value,
                 stopped: false,
                 ..
-            } => value.push_str(text),
+            } => {
+                if value.is_empty() {
+                    *value = Cow::Borrowed(text);
+                } else {
+                    value.to_mut().push_str(text);
+                }
+            }
             FrameContent::Children {
                 mixed: false,
                 stopped: false,
@@ -520,7 +593,6 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
     fn child(&mut self, frame: &mut Frame<'s, 'd, 'i>, child: Node<'_, '_>) -> Option<Assignment> {
         let schema = self.schema;
         let parent = frame.node;
-        let child_name = element_name(child);
         match &mut frame.content {
             FrameContent::Empty { stopped } => {
                 if !*stopped {
@@ -528,7 +600,7 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                     self.report(
                         parent,
                         ErrorKind::ContentNotEmpty,
-                        format!("child element {child_name} in empty content"),
+                        format!("child element {} in empty content", element_name(child)),
                     );
                 }
                 None
@@ -539,7 +611,7 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                     self.report(
                         parent,
                         ErrorKind::ElementInSimpleContent,
-                        format!("child element {child_name} in simple content"),
+                        format!("child element {} in simple content", element_name(child)),
                     );
                 }
                 None
@@ -621,6 +693,44 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                 );
             }
             _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Line and column as a table of line starts gives them: the line is the number
+    /// of line starts at or before the offset, the column one more than the number
+    /// of characters between the start of that line and the offset.
+    fn reference_position(text: &str, offset: usize) -> (u32, u32) {
+        let starts: Vec<usize> = std::iter::once(0)
+            .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+            .collect();
+        let line = starts.partition_point(|&s| s <= offset);
+        let start = starts[line - 1];
+        let column = text[start..offset].chars().count() + 1;
+        (u32::try_from(line).unwrap(), u32::try_from(column).unwrap())
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn cursor_positions(
+            text in "[a\n\ré€😀<]{0,40}",
+            picks in proptest::collection::vec(proptest::prelude::any::<proptest::sample::Index>(), 0..8),
+        ) {
+            let boundaries: Vec<usize> = text
+                .char_indices()
+                .map(|(i, _)| i)
+                .chain(std::iter::once(text.len()))
+                .collect();
+            let mut offsets: Vec<usize> = picks.iter().map(|i| boundaries[i.index(boundaries.len())]).collect();
+            offsets.sort_unstable();
+            let mut cursor = Cursor::new(&text);
+            for offset in offsets {
+                proptest::prop_assert_eq!(cursor.advance(offset), reference_position(&text, offset));
+            }
         }
     }
 }

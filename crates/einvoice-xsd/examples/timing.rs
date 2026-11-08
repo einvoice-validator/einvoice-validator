@@ -55,7 +55,8 @@ fn run() -> Result<(), String> {
 
     let (median, min) = measure(|| einvoice_xsd::Schema::ubl_2_1().map_err(|e| e.to_string()))?;
     println!(
-        "load UBL 2.1 schemas (15 documents, both entry points): median {median:.2?}, min {min:.2?}"
+        "load UBL 2.1 schemas ({} documents, both entry points): median {median:.2?}, min {min:.2?}",
+        einvoice_xsd::UBL_2_1_FILES.len()
     );
 
     let schema = einvoice_xsd::Schema::ubl_2_1().map_err(|e| e.to_string())?;

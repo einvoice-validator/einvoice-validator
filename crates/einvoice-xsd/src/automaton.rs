@@ -42,8 +42,11 @@ pub(crate) enum Term {
 #[derive(Debug, Clone)]
 pub(crate) struct Automaton {
     terms: Vec<Term>,
-    first: Vec<usize>,
-    follow: Vec<Vec<usize>>,
+    /// The positions that may come next from each state, sorted, one run per state
+    /// (the start state, then the state after each position), in one array:
+    /// `successors[offsets[i]..offsets[i + 1]]` for the state of index `i`.
+    successors: Vec<u32>,
+    offsets: Vec<u32>,
     is_final: Vec<bool>,
     nullable: bool,
 }
@@ -186,10 +189,22 @@ impl Automaton {
         for &p in &sets.last {
             is_final[p] = true;
         }
+        let too_large = || format!("content model with too many positions ({})", terms.len());
+        let mut successors = Vec::new();
+        let mut offsets = Vec::with_capacity(terms.len() + 2);
+        offsets.push(0);
+        for set in std::iter::once(sets.first).chain(follow) {
+            for p in dedup(set) {
+                successors.push(u32::try_from(p).map_err(|_| too_large())?);
+            }
+            offsets.push(u32::try_from(successors.len()).map_err(|_| too_large())?);
+        }
+        terms.shrink_to_fit();
+        successors.shrink_to_fit();
         let automaton = Self {
-            first: dedup(sets.first),
-            follow: follow.into_iter().map(dedup).collect(),
             terms,
+            successors,
+            offsets,
             is_final,
             nullable: sets.nullable,
         };
@@ -213,9 +228,11 @@ impl Automaton {
             // some namespace.
             (Term::Wildcard(_), Term::Wildcard(_)) => true,
         };
-        for set in std::iter::once(&self.first).chain(self.follow.iter()) {
+        for state in 0..self.offsets.len() - 1 {
+            let set = self.state_successors(state);
             for (i, &a) in set.iter().enumerate() {
                 for &b in &set[i + 1..] {
+                    let (a, b) = (a as usize, b as usize);
                     if compete(&self.terms[a], &self.terms[b]) {
                         return Err(format!(
                             "content model is not deterministic: {} and {} compete",
@@ -229,6 +246,14 @@ impl Automaton {
         Ok(())
     }
 
+    /// The successors of the state of index `state` (0 for the start state, `p + 1`
+    /// after position `p`).
+    fn state_successors(&self, state: usize) -> &[u32] {
+        let start = self.offsets[state] as usize;
+        let end = self.offsets[state + 1] as usize;
+        &self.successors[start..end]
+    }
+
     fn describe(&self, position: usize, elements: &[ElementDecl]) -> String {
         match &self.terms[position] {
             Term::Element(e) => elements[*e].name.to_string(),
@@ -236,11 +261,8 @@ impl Automaton {
         }
     }
 
-    fn successors(&self, state: State) -> &[usize] {
-        match state {
-            None => &self.first,
-            Some(p) => &self.follow[p],
-        }
+    fn successors(&self, state: State) -> &[u32] {
+        self.state_successors(state.map_or(0, |p| p + 1))
     }
 
     /// The position a child element matches from `state`, with its term.
@@ -252,6 +274,7 @@ impl Automaton {
         elements: &[ElementDecl],
     ) -> Option<(usize, &Term)> {
         self.successors(state).iter().find_map(|&p| {
+            let p = p as usize;
             let term = &self.terms[p];
             let matches = match term {
                 Term::Element(e) => elements[*e].name.matches(namespace, local),
@@ -273,7 +296,7 @@ impl Automaton {
         let mut names: Vec<String> = self
             .successors(state)
             .iter()
-            .map(|&p| match &self.terms[p] {
+            .map(|&p| match &self.terms[p as usize] {
                 Term::Element(e) => elements[*e].name.to_string(),
                 Term::Wildcard(w) => match &w.namespaces {
                     crate::model::NamespaceConstraint::Any => "##any".to_owned(),

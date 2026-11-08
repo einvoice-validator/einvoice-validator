@@ -8,6 +8,7 @@
 //! document is not in the set: it is recorded in [`Schema::omitted_imports`].
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use roxmltree::{Node, NodeId};
 
@@ -193,14 +194,26 @@ pub(crate) fn load(files: &[(&str, &str)], entry_points: &[&str]) -> Result<Sche
     }
     loader.resolve_global_elements()?;
     loader.check_simple_types()?;
-    Ok(Schema {
+    let mut schema = Schema {
         types: loader.types,
         elements: loader.elements,
-        global_elements: loader.global_elements,
-        global_types: loader.global_types,
+        global_elements: by_namespace_key(loader.global_elements),
+        global_types: by_namespace_key(loader.global_types),
         documents: docs.iter().map(|d| d.path.clone()).collect(),
         omitted_imports: omitted,
-    })
+    };
+    schema.shrink_to_fit();
+    Ok(schema)
+}
+
+/// A global component map keyed as [`Schema`] keys it
+/// ([`namespace_key`](crate::model::namespace_key)).
+fn by_namespace_key<T>(
+    map: HashMap<Option<String>, HashMap<String, T>>,
+) -> HashMap<String, HashMap<String, T>> {
+    map.into_iter()
+        .map(|(namespace, by_name)| (namespace.unwrap_or_default(), by_name))
+        .collect()
 }
 
 /// Parses the entry points and every document they import or include, except for
@@ -451,7 +464,7 @@ impl<'d, 'a> Loader<'d, 'a> {
             max: None,
         };
         // A lone ##any wildcard is always deterministic.
-        let automaton = Automaton::compile(&any, &[]).ok();
+        let automaton = Automaton::compile(&any, &[]).ok().map(Box::new);
         let name = QName::new(Some(XS), "anyType");
         let id = self.push_type(
             TypeDef::Complex(ComplexType {
@@ -459,7 +472,7 @@ impl<'d, 'a> Loader<'d, 'a> {
                 base: ANY_TYPE,
                 is_abstract: false,
                 content: automaton.map_or(Content::Empty, Content::Mixed),
-                attributes: Vec::new(),
+                attributes: Arc::from([]),
                 attribute_wildcard: Some(Wildcard {
                     namespaces: NamespaceConstraint::Any,
                     process: ProcessContents::Lax,
@@ -840,7 +853,7 @@ impl<'d, 'a> Loader<'d, 'a> {
                     base: ANY_TYPE,
                     is_abstract,
                     content,
-                    attributes,
+                    attributes: attributes.into(),
                     attribute_wildcard: wildcard,
                 })
             }
@@ -1137,9 +1150,9 @@ impl<'d, 'a> Loader<'d, 'a> {
         let automaton = Automaton::compile(&particle, &self.elements)
             .map_err(|message| error(self.doc(doc), node, LoadErrorKind::Invalid, message))?;
         Ok(match (automaton.is_empty(), mixed) {
-            (_, true) => Content::Mixed(automaton),
+            (_, true) => Content::Mixed(Box::new(automaton)),
             (true, false) => Content::Empty,
-            (false, false) => Content::ElementOnly(automaton),
+            (false, false) => Content::ElementOnly(Box::new(automaton)),
         })
     }
 
@@ -1163,15 +1176,15 @@ impl<'d, 'a> Loader<'d, 'a> {
         base: TypeId,
         own: Vec<AttributeUse>,
         own_wildcard: Option<Wildcard>,
-    ) -> Result<(Content, Vec<AttributeUse>, Option<Wildcard>)> {
-        let (content_type, mut attributes, base_wildcard) = match &self.types[base] {
-            TypeDef::Simple(_) => (base, Vec::new(), None),
+    ) -> Result<(Content, Arc<[AttributeUse]>, Option<Wildcard>)> {
+        let (content_type, base_attributes, base_wildcard) = match &self.types[base] {
+            TypeDef::Simple(_) => (base, Arc::from([]), None),
             TypeDef::Complex(ComplexType {
                 content: Content::Simple(s),
                 attributes,
                 attribute_wildcard,
                 ..
-            }) => (*s, attributes.clone(), attribute_wildcard.clone()),
+            }) => (*s, Arc::clone(attributes), attribute_wildcard.clone()),
             TypeDef::Complex(_) => {
                 return Err(error(
                     d,
@@ -1181,17 +1194,24 @@ impl<'d, 'a> Loader<'d, 'a> {
                 ));
             }
         };
-        for attribute in own {
-            if attributes.iter().any(|a| a.name == attribute.name) {
-                return Err(error(
-                    d,
-                    derivation,
-                    LoadErrorKind::Invalid,
-                    format!("attribute {} already in the base type", attribute.name),
-                ));
+        // Without attributes of its own, the extension shares the base's list.
+        let attributes = if own.is_empty() {
+            base_attributes
+        } else {
+            let mut attributes = base_attributes.to_vec();
+            for attribute in own {
+                if attributes.iter().any(|a| a.name == attribute.name) {
+                    return Err(error(
+                        d,
+                        derivation,
+                        LoadErrorKind::Invalid,
+                        format!("attribute {} already in the base type", attribute.name),
+                    ));
+                }
+                attributes.push(attribute);
             }
-            attributes.push(attribute);
-        }
+            attributes.into()
+        };
         let attribute_wildcard = match (base_wildcard, own_wildcard) {
             (Some(_), Some(_)) => {
                 return Err(error(
@@ -1395,14 +1415,18 @@ impl<'d, 'a> Loader<'d, 'a> {
 }
 
 /// The attribute uses of a restriction: the base's, each replaced by the
-/// restriction's own use of the same name. A restriction cannot add attributes
-/// (the base types of the supported schemas have no attribute wildcard).
+/// restriction's own use of the same name (the base's list itself, shared, when the
+/// restriction has none). A restriction cannot add attributes (the base types of
+/// the supported schemas have no attribute wildcard).
 fn restrict_attributes(
     doc: &Doc<'_>,
     node: Node<'_, '_>,
-    base: &[AttributeUse],
+    base: &Arc<[AttributeUse]>,
     own: Vec<AttributeUse>,
-) -> Result<Vec<AttributeUse>> {
+) -> Result<Arc<[AttributeUse]>> {
+    if own.is_empty() {
+        return Ok(Arc::clone(base));
+    }
     let mut attributes = base.to_vec();
     for attribute in own {
         match attributes.iter_mut().find(|a| a.name == attribute.name) {
@@ -1417,7 +1441,7 @@ fn restrict_attributes(
             }
         }
     }
-    Ok(attributes)
+    Ok(attributes.into())
 }
 
 #[cfg(test)]

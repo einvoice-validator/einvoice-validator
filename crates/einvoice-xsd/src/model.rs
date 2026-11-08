@@ -1,6 +1,7 @@
 //! The compiled schema components.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::automaton::Automaton;
 use crate::datatypes::Builtin;
@@ -115,9 +116,9 @@ pub(crate) enum Content {
     /// Text only, valid for the given simple type.
     Simple(TypeId),
     /// Child elements, whitespace between them.
-    ElementOnly(Automaton),
+    ElementOnly(Box<Automaton>),
     /// Child elements and text.
-    Mixed(Automaton),
+    Mixed(Box<Automaton>),
 }
 
 #[derive(Debug, Clone)]
@@ -128,7 +129,8 @@ pub(crate) struct ComplexType {
     pub(crate) base: TypeId,
     pub(crate) is_abstract: bool,
     pub(crate) content: Content,
-    pub(crate) attributes: Vec<AttributeUse>,
+    /// Shared with the base type when the derivation adds or changes none.
+    pub(crate) attributes: Arc<[AttributeUse]>,
     pub(crate) attribute_wildcard: Option<Wildcard>,
 }
 
@@ -172,10 +174,12 @@ impl TypeDef {
 pub struct Schema {
     pub(crate) types: Vec<TypeDef>,
     pub(crate) elements: Vec<ElementDecl>,
-    /// Global element declarations by namespace, then local name.
-    pub(crate) global_elements: HashMap<Option<String>, HashMap<String, ElementId>>,
-    /// Global type definitions by namespace, then local name (built-ins included).
-    pub(crate) global_types: HashMap<Option<String>, HashMap<String, TypeId>>,
+    /// Global element declarations by namespace ([`namespace_key`]), then local
+    /// name.
+    pub(crate) global_elements: HashMap<String, HashMap<String, ElementId>>,
+    /// Global type definitions by namespace ([`namespace_key`]), then local name
+    /// (built-ins included).
+    pub(crate) global_types: HashMap<String, HashMap<String, TypeId>>,
     /// The schema documents that were loaded, in load order.
     pub(crate) documents: Vec<String>,
     /// The imports that were not loaded, in the order they were found.
@@ -201,15 +205,64 @@ pub struct OmittedImport {
     pub location: String,
 }
 
+/// The key of a namespace in the global component maps of [`Schema`]: the
+/// namespace name, or the empty string for no namespace (a target namespace is never
+/// empty: the loader refuses `targetNamespace=""`), so that a lookup borrows the name
+/// instead of copying it. `None` for `Some("")`, which names no namespace of the set.
+pub(crate) fn namespace_key(namespace: Option<&str>) -> Option<&str> {
+    match namespace {
+        None => Some(""),
+        Some("") => None,
+        Some(ns) => Some(ns),
+    }
+}
+
 impl Schema {
     pub(crate) fn global_element(&self, namespace: Option<&str>, local: &str) -> Option<ElementId> {
-        let by_name = self.global_elements.get(&namespace.map(str::to_owned))?;
+        let by_name = self.global_elements.get(namespace_key(namespace)?)?;
         by_name.get(local).copied()
     }
 
     pub(crate) fn global_type(&self, namespace: Option<&str>, local: &str) -> Option<TypeId> {
-        let by_name = self.global_types.get(&namespace.map(str::to_owned))?;
+        let by_name = self.global_types.get(namespace_key(namespace)?)?;
         by_name.get(local).copied()
+    }
+
+    /// Releases the spare capacity that loading leaves in the tables: the schema
+    /// is kept for many validations.
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.types.shrink_to_fit();
+        for type_def in &mut self.types {
+            if let TypeDef::Simple(SimpleType {
+                enumeration: Some(values),
+                ..
+            }) = type_def
+            {
+                values.shrink_to_fit();
+            }
+        }
+        self.elements.shrink_to_fit();
+        for by_name in self.global_elements.values_mut() {
+            by_name.shrink_to_fit();
+        }
+        self.global_elements.shrink_to_fit();
+        for by_name in self.global_types.values_mut() {
+            by_name.shrink_to_fit();
+        }
+        self.global_types.shrink_to_fit();
+    }
+
+    /// Whether a simple type or one of the simple types it is derived from has an
+    /// `enumeration` facet.
+    pub(crate) fn has_enumeration(&self, type_id: TypeId) -> bool {
+        let mut current = type_id;
+        while let TypeDef::Simple(step) = &self.types[current] {
+            if step.enumeration.is_some() {
+                return true;
+            }
+            current = step.base;
+        }
+        false
     }
 
     /// Whether `derived` is `base` or derived from it through any number of
