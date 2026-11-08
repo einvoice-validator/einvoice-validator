@@ -9,4 +9,5 @@ corpus/*/vefa/** -text
 corpus/*/mutations/** -text
 corpus/*/LICENSE.txt -text
 crates/einvoice-validator/bundles/cen-ubl/ubl/** -text
+crates/einvoice-validator/bundles/cen-cii/cii/** -text
 crates/*/LICENSES/EUPL-1.2.txt -text

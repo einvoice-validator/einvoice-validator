@@ -1,0 +1,2 @@
+error FORG0001
+message Cannot convert string "INF" to xs:decimal: invalid character 'I'

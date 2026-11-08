@@ -13,8 +13,7 @@
 //!   the NNN-th `<test>` (1-based) of that test set.
 //! - `mutations.tsv`: the mutation cases, see [`render_mutation_index`].
 //! - `mutations/<mutation id>.xml`: the documents of the mutation catalogue
-//!   (`corpus/mutations.toml`, see [`crate::mutation`]) applied to the base
-//!   cases of the rule set.
+//!   of the rule set (see [`crate::mutation`]) applied to its base cases.
 //! - `<golden dir>/<case id>.svrl.txt`, one golden directory per stylesheet:
 //!   the canonical SVRL Saxon-HE produced; for a mutation case on which
 //!   Saxon-HE stops with a dynamic error, `<golden dir>/<case id>.error.txt`
@@ -244,26 +243,21 @@ fn derive_mutations(
     let mut mutations = Vec::new();
     // Every mutation that cannot be applied is reported, not only the first.
     let mut failures = Vec::new();
-    for m in mutation::catalogue(root)? {
+    let catalogue = rule_set.mutation_catalogue;
+    for m in mutation::catalogue(root, catalogue)? {
         if let Some(only) = &m.only
             && let Some(unknown) = only
                 .iter()
                 .find(|o| !crate::ruleset::ALL.iter().any(|r| r.name == o.as_str()))
         {
             return Err(Error::new(format!(
-                "{}: {}: unknown rule set {unknown} in `only`",
-                mutation::CATALOGUE,
+                "{catalogue}: {}: unknown rule set {unknown} in `only`",
                 m.id
             )));
         }
-        let (base_id, base_text) = bases.get(m.base.as_str()).ok_or_else(|| {
-            Error::new(format!(
-                "{}: {}: unknown base {}",
-                mutation::CATALOGUE,
-                m.id,
-                m.base
-            ))
-        })?;
+        let (base_id, base_text) = bases
+            .get(m.base.as_str())
+            .ok_or_else(|| Error::new(format!("{catalogue}: {}: unknown base {}", m.id, m.base)))?;
         if !m.applies_to(rule_set.name) {
             continue;
         }
@@ -287,9 +281,8 @@ fn derive_mutations(
         Ok(mutations)
     } else {
         Err(Error::new(format!(
-            "{} mutations of {} cannot be applied:\n  {}",
+            "{} mutations of {catalogue} cannot be applied:\n  {}",
             failures.len(),
-            mutation::CATALOGUE,
             failures.join("\n  ")
         )))
     }

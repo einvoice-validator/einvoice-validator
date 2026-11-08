@@ -284,6 +284,7 @@ mod tests {
             document_dirs: &[],
             vefa_dirs: &[],
             ignored: &[],
+            mutation_catalogue: "",
             mutation_bases: &[],
         };
         let root = std::env::temp_dir().join(format!("xtask-crosscheck-{}", std::process::id()));

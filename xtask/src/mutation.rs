@@ -1,7 +1,9 @@
 //! Mutation cases: documents derived from a few base cases of a rule set by
-//! the edits of the mutation catalogue, `corpus/mutations.toml`.
+//! the edits of a mutation catalogue: `corpus/mutations.toml` for the UBL rule
+//! sets, `corpus/mutations-cii.toml` for the CII ones
+//! ([`crate::ruleset::RuleSet::mutation_catalogue`]).
 //!
-//! The catalogue is shared by every rule set. Each `[[mutation]]` has:
+//! A catalogue is shared by every rule set of its syntax. Each `[[mutation]]` has:
 //!
 //! - `id`: lower-case words separated by `-`, in `/`-separated groups
 //!   (`amounts/payable-plus-one-cent`); the case id is
@@ -31,14 +33,12 @@ use roxmltree::{Document, Node};
 use crate::toml::{self, Value};
 use crate::util::{self, Error, Result};
 
-/// The catalogue, relative to the repository root.
-pub(crate) const CATALOGUE: &str = "corpus/mutations.toml";
 /// Directory of the mutated documents, relative to the corpus directory; also
 /// the prefix of their case ids.
 pub(crate) const DIR: &str = "mutations";
 
-/// The prefixes a path may use.
-const NAMESPACES: [(&str, &str); 5] = [
+/// The prefixes a path may use: those of UBL, then those of CII.
+const NAMESPACES: [(&str, &str); 9] = [
     (
         "cbc",
         "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
@@ -58,6 +58,22 @@ const NAMESPACES: [(&str, &str); 5] = [
     (
         "cn",
         "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2",
+    ),
+    (
+        "rsm",
+        "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100",
+    ),
+    (
+        "ram",
+        "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+    ),
+    (
+        "udt",
+        "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100",
+    ),
+    (
+        "qdt",
+        "urn:un:unece:uncefact:data:standard:QualifiedDataType:100",
     ),
 ];
 
@@ -142,10 +158,10 @@ pub(crate) enum Edit {
     ReplaceIn(Path, String, String),
 }
 
-/// Reads the catalogue.
-pub(crate) fn catalogue(root: &FsPath) -> Result<Vec<Mutation>> {
-    let text = util::read_string(&util::join(root, CATALOGUE))?;
-    parse_catalogue(&text, CATALOGUE)
+/// Reads the catalogue `file` (relative to the repository root).
+pub(crate) fn catalogue(root: &FsPath, file: &str) -> Result<Vec<Mutation>> {
+    let text = util::read_string(&util::join(root, file))?;
+    parse_catalogue(&text, file)
 }
 
 fn parse_catalogue(text: &str, file: &str) -> Result<Vec<Mutation>> {

@@ -1,0 +1,2 @@
+error XPTY0004
+message A sequence of more than one item is not allowed as the value in 'cast as' expression (<ram:LineTotalAmount>, <ram:LineTotalAmount>)

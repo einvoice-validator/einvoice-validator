@@ -1,0 +1,2 @@
+error FORG0001
+message Cannot convert string "8E2" to xs:decimal: invalid character 'E'

@@ -1,6 +1,6 @@
-//! The CEN EN 16931 UBL 1.3.17 corpus (`corpus/README.md`): its cases, its stylesheet and
-//! the canonical comparison with the Saxon-HE goldens. Shared by the equivalence test
-//! and the examples.
+//! The vendored corpora (`corpus/README.md`), CEN EN 16931 UBL 1.3.17 by default and CII
+//! 1.3.17: their cases, their stylesheets and the canonical comparison with the Saxon-HE
+//! goldens. Shared by the equivalence tests and the examples.
 
 #![allow(
     dead_code,
@@ -16,6 +16,9 @@ use einvoice_xslt_exec::Executable;
 pub(crate) const RULE_SET: &str = "cen-en16931-ubl-1.3.17";
 pub(crate) const XSLT: &str =
     "artefacts/cen-en16931-ubl-1.3.17/ubl/xslt/EN16931-UBL-validation.xslt";
+pub(crate) const CII_RULE_SET: &str = "cen-en16931-cii-1.3.17";
+pub(crate) const CII_XSLT: &str =
+    "artefacts/cen-en16931-cii-1.3.17/cii/xslt/EN16931-CII-validation.xslt";
 
 pub(crate) fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -46,9 +49,14 @@ pub(crate) struct Case {
     pub(crate) golden: PathBuf,
 }
 
-/// Every case of `corpus/<rule set>/cases.tsv`.
+/// Every case of `corpus/<RULE_SET>/cases.tsv`.
 pub(crate) fn cases(root: &Path) -> Result<Vec<Case>, String> {
-    let corpus = join(root, &format!("corpus/{RULE_SET}"));
+    cases_of(root, RULE_SET)
+}
+
+/// Every case of `corpus/<rule_set>/cases.tsv`.
+pub(crate) fn cases_of(root: &Path, rule_set: &str) -> Result<Vec<Case>, String> {
+    let corpus = join(root, &format!("corpus/{rule_set}"));
     read(&corpus.join("cases.tsv"))?
         .lines()
         .skip(1)

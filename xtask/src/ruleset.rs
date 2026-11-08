@@ -62,8 +62,13 @@ pub(crate) struct RuleSet {
     /// Files in those directories that are neither documents nor test sets,
     /// relative to the source directory. Each must exist.
     pub(crate) ignored: &'static [&'static str],
-    /// The base documents of the mutation catalogue (`corpus/mutations.toml`):
-    /// (base name, id of a whole-document case).
+    /// The mutation catalogue applied to the rule set, relative to the
+    /// repository root: one per syntax, as its paths name the elements of one
+    /// syntax (`corpus/mutations.toml` for UBL, `corpus/mutations-cii.toml`
+    /// for CII).
+    pub(crate) mutation_catalogue: &'static str,
+    /// The base documents of the mutation catalogue: (base name, id of a
+    /// whole-document case).
     pub(crate) mutation_bases: &'static [(&'static str, &'static str)],
 }
 
@@ -108,6 +113,11 @@ impl RuleSet {
     }
 }
 
+/// The mutation catalogue of the UBL rule sets.
+pub(crate) const UBL_MUTATIONS: &str = "corpus/mutations.toml";
+/// The mutation catalogue of the CII rule sets.
+pub(crate) const CII_MUTATIONS: &str = "corpus/mutations-cii.toml";
+
 /// CEN EN 16931 validation artefacts for UBL, release 1.3.17.
 pub(crate) const CEN_UBL: RuleSet = RuleSet {
     name: "cen-en16931-ubl-1.3.17",
@@ -127,10 +137,39 @@ pub(crate) const CEN_UBL: RuleSet = RuleSet {
     ],
     vefa_dirs: &["test/Invoice-unit-UBL", "test/CreditNote-unit-UBL"],
     ignored: &[],
+    mutation_catalogue: UBL_MUTATIONS,
     mutation_bases: &[
         ("invoice", "testfiles/Invoice-Max_content.xml"),
         ("credit-note", "testfiles/CreditNote-Max_content.xml"),
         ("allowances", "examples/ubl-tc434-example2.xml"),
+    ],
+};
+
+/// CEN EN 16931 validation artefacts for UN/CEFACT CII D16B, release 1.3.17.
+/// The upstream build runs the examples and the VEFA test sets of `test/cii`
+/// (`buildconfig-cii.xml`); there are no other CII test documents.
+pub(crate) const CEN_CII: RuleSet = RuleSet {
+    name: "cen-en16931-cii-1.3.17",
+    origin: Origin::Vendored {
+        licence: "LICENSE.txt",
+    },
+    source: "artefacts/cen-en16931-cii-1.3.17",
+    stylesheets: &[Stylesheet {
+        name: "EN16931-CII-validation",
+        xslt: "artefacts/cen-en16931-cii-1.3.17/cii/xslt/EN16931-CII-validation.xslt",
+        golden_dir: "golden",
+        sha256_pin: None,
+    }],
+    document_dirs: &[("examples", "cii/examples")],
+    vefa_dirs: &["test/cii"],
+    ignored: &[],
+    mutation_catalogue: CII_MUTATIONS,
+    mutation_bases: &[
+        ("invoice", "examples/CII_example5.xml"),
+        ("single", "examples/CII_example3.xml"),
+        ("allowances", "examples/CII_example2.xml"),
+        ("zero", "examples/CII_business_example_Z.xml"),
+        ("outside", "examples/XRechnung-O.xml"),
     ],
 };
 
@@ -177,6 +216,7 @@ pub(crate) const PEPPOL_UBL: RuleSet = RuleSet {
         // `*.xml` files of a test folder, does not run it.
         "unit-UBL-PEPPOL/PEPPOL-COMMON-R048.xm",
     ],
+    mutation_catalogue: UBL_MUTATIONS,
     mutation_bases: &[
         ("invoice", "examples/base-example.xml"),
         ("credit-note", "examples/base-creditnote-correction.xml"),
@@ -185,7 +225,7 @@ pub(crate) const PEPPOL_UBL: RuleSet = RuleSet {
 };
 
 /// The vendored rule sets: their corpus is committed.
-pub(crate) const VENDORED: &[&RuleSet] = &[&CEN_UBL];
+pub(crate) const VENDORED: &[&RuleSet] = &[&CEN_UBL, &CEN_CII];
 
 /// Every rule set, vendored or fetched.
-pub(crate) const ALL: &[&RuleSet] = &[&CEN_UBL, &PEPPOL_UBL];
+pub(crate) const ALL: &[&RuleSet] = &[&CEN_UBL, &CEN_CII, &PEPPOL_UBL];

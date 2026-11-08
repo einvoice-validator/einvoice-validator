@@ -4,13 +4,14 @@ Documents to validate and the results the reference engine gives for them, one d
 official rule set. The data in the directory of a vendored rule set is derived from the official
 artefacts under `artefacts/` and shares their licence (see the README of each directory); the
 Peppol directory holds only files of the project, its corpus is built locally (see below). This
-README, `SVRL-CANONICAL.md` and the mutation catalogue `mutations.toml` are part of the project
+README, `SVRL-CANONICAL.md` and the mutation catalogues `mutations.toml` and `mutations-cii.toml` are part of the project
 (MIT); the documents the catalogue derives from the official examples share the licence of
 those examples.
 
 | Directory | Rule set | Cases | Mutation cases |
 |---|---|---|---|
 | `cen-en16931-ubl-1.3.17/` | CEN EN 16931 UBL, release 1.3.17 | 1179 | 504 |
+| `cen-en16931-cii-1.3.17/` | CEN EN 16931 UN/CEFACT CII D16B, release 1.3.17 (no XML schema: the CII schemas are not vendored) | 24 | 808 |
 | `peppol-bis-billing-ubl-3.0.22/` | Peppol BIS Billing 3.0.22, UBL: its own rules and the CEN EN 16931 rules it embeds (two stylesheets); built locally, not committed (see below) | 707 | 505 |
 
 ## Cases
@@ -55,6 +56,13 @@ edits, their paths and their checks are described in `xtask/src/mutation.rs`; th
 documents of each rule set are named in `xtask/src/ruleset.rs`. `cargo xtask corpus` applies
 the catalogue to the bases of each rule set: the result is deterministic, and the documents
 keep every byte of their base that an edit does not touch.
+
+`mutations-cii.toml` is the same for the CII syntax, in the same format, applied to the CII rule
+set: the same families of edits on five CII examples (bases `invoice`, `single`, `allowances`,
+`zero` and `outside`, see the head of the file), plus the charge indicator in every lexical form
+(the CII rules cast it to `xs:boolean`), and, for each CII-SR and CII-DT rule of the form
+`not(X)`, the element or attribute `X` added where the rule looks for it. Paths in CII edits use
+the prefixes `rsm`, `ram`, `udt` and `qdt`.
 
 `<rule set>/mutations.tsv` lists the mutation cases, one per line after a header,
 tab-separated: `case` (`mutations/<id>.xml`, also the document's path in the corpus
@@ -143,3 +151,6 @@ runs the vendored stylesheet on every case and its canonical SVRL must equal the
 `tests/peppol_equivalence.rs` does the same on the Peppol corpus when it has been built;
 `tests/mutation_equivalence.rs` does it on the mutation cases of both, where a golden may also
 be a dynamic error, whose code the engine must raise (its message may be worded differently).
+`tests/cii_equivalence.rs` does both on the CII corpus; the tests of `einvoice-validator`
+(`tests/cii_corpus.rs`) and `einvoice-cli` (`tests/cii.rs`) check the built-in rule set
+`cen-cii` and the detection of the syntax on it.

@@ -1,0 +1,2 @@
+error FORG0001
+message Cannot convert string "one hundred" to xs:decimal: invalid character 'o'

@@ -1,0 +1,25 @@
+case	input	kind	scope	success	error	warning	description
+examples/CII-BR-CO-10-RoundingIssue.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII-BR-CO-10-RoundingIssue.xml	document
+examples/CII_business_example_01.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_business_example_01.xml	document
+examples/CII_business_example_02.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_business_example_02.xml	document
+examples/CII_business_example_Z.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_business_example_Z.xml	document
+examples/CII_example1.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_example1.xml	document
+examples/CII_example2.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_example2.xml	document
+examples/CII_example3.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_example3.xml	document
+examples/CII_example4.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_example4.xml	document
+examples/CII_example5.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_example5.xml	document
+examples/CII_example6.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_example6.xml	document
+examples/CII_example7.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_example7.xml	document
+examples/CII_example8.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_example8.xml	document
+examples/CII_example9.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/CII_example9.xml	document
+examples/XRechnung-O.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/XRechnung-O.xml	document
+examples/huf_example_cii.xml	artefacts/cen-en16931-cii-1.3.17/cii/examples/huf_example_cii.xml	document
+vefa/cii/BR-CO-15-2.001.xml	corpus/cen-en16931-cii-1.3.17/vefa/cii/BR-CO-15-2.001.xml	vefa	BR-CO-15	BR-CO-15			Verify that Invoice total amount with VAT = Invoice total amount without VAT + Invoice total VAT amount, when there exists TaxCurrency != Document Currency
+vefa/cii/BR-CO-15-2.002.xml	corpus/cen-en16931-cii-1.3.17/vefa/cii/BR-CO-15-2.002.xml	vefa	BR-CO-15		BR-CO-15		Trigger error if an Invoice total amount with VAT != Invoice total amount without VAT + Invoice total VAT amount, when there exists TaxCurrency != Document Currency
+vefa/cii/BR-CO-15-2.003.xml	corpus/cen-en16931-cii-1.3.17/vefa/cii/BR-CO-15-2.003.xml	vefa	BR-CO-15		BR-CO-15		Trigger error if Tax Total currency != Document Currency
+vefa/cii/BR-CO-15-2.004.xml	corpus/cen-en16931-cii-1.3.17/vefa/cii/BR-CO-15-2.004.xml	vefa	BR-CO-15		BR-CO-15		Trigger error if Tax Total currency of Document Currency occurs more than once
+vefa/cii/BR-CO-17.001.xml	corpus/cen-en16931-cii-1.3.17/vefa/cii/BR-CO-17.001.xml	vefa	BR-CO-17	BR-CO-17			Verify that VAT category tax amount = VAT category taxable amount x (VAT category rate / 100), rounded "half up" to two decimals.
+vefa/cii/BR-CO-17.002.xml	corpus/cen-en16931-cii-1.3.17/vefa/cii/BR-CO-17.002.xml	vefa	BR-CO-17	BR-CO-17			Verify that VAT category tax amount = VAT category taxable amount x (VAT category rate / 100), rounded "half up" to two decimals.
+vefa/cii/BR-CO-17.003.xml	corpus/cen-en16931-cii-1.3.17/vefa/cii/BR-CO-17.003.xml	vefa	BR-CO-17	BR-CO-17			Verify that VAT category tax amount = VAT category taxable amount x (VAT category rate / 100), rounded "half up" to two decimals.
+vefa/cii/BR-CO-17.004.xml	corpus/cen-en16931-cii-1.3.17/vefa/cii/BR-CO-17.004.xml	vefa	BR-CO-17		BR-CO-17		Verify that VAT category tax amount = VAT category taxable amount x (VAT category rate / 100), rounded "half up" to two decimals.
+vefa/cii/BR-CO-17.005.xml	corpus/cen-en16931-cii-1.3.17/vefa/cii/BR-CO-17.005.xml	vefa	BR-CO-17		BR-CO-17		Verify that VAT category tax amount = VAT category taxable amount x (VAT category rate / 100), rounded "half up" to two decimals.

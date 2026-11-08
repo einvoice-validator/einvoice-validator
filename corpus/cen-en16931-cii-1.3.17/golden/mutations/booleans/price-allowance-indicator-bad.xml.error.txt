@@ -1,0 +1,2 @@
+error FORG0001
+message The string "no" cannot be cast to a boolean

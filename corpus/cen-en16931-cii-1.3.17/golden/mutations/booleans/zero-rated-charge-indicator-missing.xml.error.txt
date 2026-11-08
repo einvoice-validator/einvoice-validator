@@ -1,0 +1,2 @@
+error XPTY0004
+message An empty sequence is not allowed as the value in 'cast as' expression
