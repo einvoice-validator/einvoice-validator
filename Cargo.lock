@@ -203,6 +203,7 @@ name = "einvoice-xpath-eval"
 version = "0.2.0"
 dependencies = [
  "einvoice-xdm",
+ "einvoice-xml",
  "einvoice-xpath",
  "peak_alloc",
  "proptest",

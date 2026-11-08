@@ -14,11 +14,12 @@ license.workspace = true
 
 [dependencies]
 einvoice-xdm = { path = "../einvoice-xdm", version = "0.2.0" }
+einvoice-xml = { path = "../einvoice-xml", version = "0.2.0" }
 einvoice-xpath = { path = "../einvoice-xpath", version = "0.2.0" }
-roxmltree = "0.21.2"
 
 [dev-dependencies]
 peak_alloc = "0.3.0"
+roxmltree = "0.21.2"
 sha2 = "0.11.1"
 
 # Its random source (getrandom) does not build for wasm32-unknown-unknown, where the

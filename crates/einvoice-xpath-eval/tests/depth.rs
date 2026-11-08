@@ -45,6 +45,11 @@ fn the_default_maximum_depth() {
     assert_eq!(error.limit(), Some(limit));
     // Not well-formed is not a limit.
     assert_eq!(Document::parse("<a>", None).unwrap_err().limit(), None);
+    // Well-formedness is checked first, in the whole text: an element too deep followed
+    // by an error is not well-formed.
+    let error = Document::parse(format!("{}<", nested(257)), None).unwrap_err();
+    assert_eq!(error.limit(), None);
+    assert_eq!(error.message(), "XML: unknown token at 1:1801");
 }
 
 #[test]

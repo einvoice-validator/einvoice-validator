@@ -9,7 +9,9 @@
 //! Trees are built with a [`TreeBuilder`] (the XSLT layer builds its temporary trees with
 //! it) or parsed from XML text with [`Document::parse`], which keeps every text node,
 //! whitespace-only ones included, as Saxon does with `-strip:none`, and the namespace
-//! prefixes as written in the source (they appear in `fn:name`).
+//! prefixes as written in the source (they appear in `fn:name`). Parsing reads the text
+//! twice with the streaming reader of `einvoice-xml`, which builds no tree of its own:
+//! once to check it and count its nodes, then to fill an arena of exactly that size.
 //!
 //! A built tree may have no document node: a parentless element, attribute, text node or
 //! comment ([`TreeBuilder::parentless`]), as the XSLT layer constructs them in a sequence
@@ -233,8 +235,9 @@ impl fmt::Debug for Document {
 impl Document {
     /// Parses XML text. Every text node is kept, whitespace-only ones included; a document
     /// type declaration is refused (its default attributes and entities would change the
-    /// tree without notice). `base_uri`, if given, is the base URI of every node (the
-    /// location the text was read from, Saxon's system id).
+    /// tree without notice). Line ends are normalised as XML 1.0 requires (section
+    /// 2.11), in comments and processing instructions too. `base_uri`, if given, is the
+    /// base URI of every node (the location the text was read from, Saxon's system id).
     ///
     /// The text can be borrowed (`&str`) or given (`String`). Borrowed, the texts of the
     /// nodes are copied into the tree. Given, the tree keeps it and refers to it for every
@@ -1160,218 +1163,327 @@ fn offset_in(input: &str, part: &str) -> Option<usize> {
     (start.checked_add(part.len())? <= input.len()).then_some(start)
 }
 
-/// A name as the parser sees it: prefix as written (empty for none), namespace URI and
-/// local part, all borrowed from the text or the parsed document.
-type NameKey<'a> = (&'a str, Option<&'a str>, &'a str);
+/// The error of a document the reader refuses.
+fn xml_error(e: &einvoice_xml::Error) -> DocumentError {
+    DocumentError::new(format!("XML: {e}"))
+}
 
-/// Builds the tree of a parsed document, in two passes over the parser's tree: the first
-/// counts the nodes and the bytes of text to copy, so that the arena is allocated once at
-/// its exact size; the second fills it. With `keep_source`, every text that is a slice of
-/// `input` is stored as a range of it instead of being copied (the document then keeps
-/// `input`). An element nested deeper than `max_depth` is refused by the first pass,
-/// before the arena is allocated.
+/// The namespace names of a parsed document, numbered in order of appearance, so that
+/// a name is looked up by its prefix, local part and namespace number: the namespace
+/// names the reader gives only live until its next event.
+struct Namespaces<'a> {
+    input: &'a str,
+    ids: HashMap<Box<str>, u32>,
+    /// The last namespace name looked up, when it is a slice of the input (whose
+    /// content its address and length then identify): its offset, length and number.
+    last: Option<(usize, usize, u32)>,
+}
+
+impl<'a> Namespaces<'a> {
+    fn new(input: &'a str) -> Self {
+        Self {
+            input,
+            ids: HashMap::new(),
+            last: None,
+        }
+    }
+
+    /// The number of a namespace name, [`NONE`] for no namespace.
+    fn id(&mut self, namespace: Option<&str>) -> Result<u32, DocumentError> {
+        let Some(namespace) = namespace else {
+            return Ok(NONE);
+        };
+        let at = offset_in(self.input, namespace);
+        if let (Some(at), Some((last, len, id))) = (at, self.last)
+            && at == last
+            && namespace.len() == len
+        {
+            return Ok(id);
+        }
+        let id = if let Some(&id) = self.ids.get(namespace) {
+            id
+        } else {
+            let id = to_u32(self.ids.len())?;
+            self.ids.insert(namespace.into(), id);
+            id
+        };
+        if let Some(at) = at {
+            self.last = Some((at, namespace.len(), id));
+        }
+        Ok(id)
+    }
+}
+
+/// A name as the reader gives it: prefix as written (empty for none), local part (both
+/// slices of the text) and the number of its namespace name ([`Namespaces::id`]).
+type NameKey<'a> = (&'a str, &'a str, u32);
+
+/// The names of a parsed document in the builder's table, by [`NameKey`].
+struct Names<'a> {
+    namespaces: Namespaces<'a>,
+    ids: HashMap<NameKey<'a>, u32>,
+}
+
+impl<'a> Names<'a> {
+    fn new(input: &'a str) -> Self {
+        Self {
+            namespaces: Namespaces::new(input),
+            ids: HashMap::new(),
+        }
+    }
+
+    /// The identity of a name in the builder's table, added on first sight.
+    fn id(
+        &mut self,
+        builder: &mut TreeBuilder,
+        name: einvoice_xml::Name<'_, 'a>,
+    ) -> Result<u32, DocumentError> {
+        let key = (name.prefix, name.local, self.namespaces.id(name.namespace)?);
+        if let Some(&id) = self.ids.get(&key) {
+            return Ok(id);
+        }
+        let id = builder.push_name(QName {
+            prefix: (!name.prefix.is_empty()).then(|| name.prefix.to_owned()),
+            namespace: name.namespace.map(str::to_owned),
+            local: name.local.to_owned(),
+        })?;
+        self.ids.insert(key, id);
+        Ok(id)
+    }
+}
+
+/// What a pass over the events of a document does with its nodes, in document order.
+/// Adjacent text events make one text node, given to [`Pass::text`] once complete and
+/// only when not empty; text outside the document element is not part of the data
+/// model and is not given.
+trait Pass<'a> {
+    fn start(&mut self, start: einvoice_xml::StartElement<'_, 'a>) -> Result<(), DocumentError>;
+    fn end(&mut self) -> Result<(), DocumentError>;
+    fn text(&mut self, text: &str) -> Result<(), DocumentError>;
+    fn comment(&mut self, value: &str) -> Result<(), DocumentError>;
+    fn processing_instruction(
+        &mut self,
+        pi: &einvoice_xml::ProcessingInstruction<'a>,
+    ) -> Result<(), DocumentError>;
+}
+
+/// Reads `input` to the end, giving its nodes to `pass`. A well-formedness error comes
+/// first, wherever it is in the text; then an element nested deeper than `max_depth`
+/// (the first in document order), the elements after it not being given to `pass`.
+fn read<'a>(input: &'a str, max_depth: u32, pass: &mut impl Pass<'a>) -> Result<(), DocumentError> {
+    let mut reader = einvoice_xml::Reader::new(input);
+    let mut depth = 0u32;
+    // The text node being read: adjacent text events (character data and CDATA
+    // sections) make one.
+    let mut text: Option<Cow<'a, str>> = None;
+    let mut too_deep: Option<LimitExceeded> = None;
+    while let Some(event) = reader.next_event().map_err(|e| xml_error(&e))? {
+        if let einvoice_xml::Event::Text(t) = event {
+            if depth > 0 && too_deep.is_none() {
+                match &mut text {
+                    None => text = Some(t.value),
+                    Some(joined) => joined.to_mut().push_str(&t.value),
+                }
+            }
+            continue;
+        }
+        if let Some(joined) = text.take()
+            && !joined.is_empty()
+        {
+            pass.text(&joined)?;
+        }
+        match event {
+            einvoice_xml::Event::Start(start) => {
+                depth = depth.saturating_add(1);
+                if depth > max_depth && too_deep.is_none() {
+                    // The rest is only checked for well-formedness.
+                    let at = einvoice_xml::TextPos::at(input, start.range().start);
+                    too_deep = Some(LimitExceeded::Depth {
+                        max: max_depth,
+                        line: at.row,
+                        column: at.col,
+                    });
+                }
+                if too_deep.is_none() {
+                    pass.start(start)?;
+                }
+            }
+            einvoice_xml::Event::End(_) => {
+                depth = depth.saturating_sub(1);
+                if too_deep.is_none() {
+                    pass.end()?;
+                }
+            }
+            einvoice_xml::Event::Comment(comment) if too_deep.is_none() => {
+                pass.comment(&comment.value)?;
+            }
+            einvoice_xml::Event::ProcessingInstruction(pi) if too_deep.is_none() => {
+                pass.processing_instruction(&pi)?;
+            }
+            _ => {}
+        }
+    }
+    match too_deep {
+        Some(limit) => Err(DocumentError::limit_exceeded(limit)),
+        None => Ok(()),
+    }
+}
+
+/// The first pass: the number of nodes of the tree (the document node included) and
+/// the bytes of text to copy into it: all of them, or with `keep_source` those that
+/// are not slices of the text.
+struct Sizes<'a> {
+    input: &'a str,
+    keep_source: bool,
+    nodes: usize,
+    text_bytes: usize,
+}
+
+impl Sizes<'_> {
+    fn add(&mut self, text: &str) {
+        self.nodes += 1;
+        if !(self.keep_source && offset_in(self.input, text).is_some()) {
+            self.text_bytes += text.len();
+        }
+    }
+}
+
+impl<'a> Pass<'a> for Sizes<'a> {
+    fn start(&mut self, start: einvoice_xml::StartElement<'_, 'a>) -> Result<(), DocumentError> {
+        self.nodes += 1;
+        for attribute in start.attributes() {
+            self.add(attribute.value);
+        }
+        Ok(())
+    }
+
+    fn end(&mut self) -> Result<(), DocumentError> {
+        Ok(())
+    }
+
+    fn text(&mut self, text: &str) -> Result<(), DocumentError> {
+        self.add(text);
+        Ok(())
+    }
+
+    fn comment(&mut self, value: &str) -> Result<(), DocumentError> {
+        self.add(value);
+        Ok(())
+    }
+
+    fn processing_instruction(
+        &mut self,
+        pi: &einvoice_xml::ProcessingInstruction<'a>,
+    ) -> Result<(), DocumentError> {
+        self.add(pi.value.as_deref().unwrap_or(""));
+        Ok(())
+    }
+}
+
+/// The second pass: the tree, in a builder sized by the first.
+struct Fill<'a> {
+    input: &'a str,
+    keep_source: bool,
+    builder: TreeBuilder,
+    names: Names<'a>,
+}
+
+impl Fill<'_> {
+    /// Where a text is stored: as a range of the input if `keep_source` and it is a
+    /// slice of it, else copied.
+    fn node_text<'s>(&self, text: &'s str) -> Result<NodeText<'s>, DocumentError> {
+        Ok(
+            match self
+                .keep_source
+                .then(|| offset_in(self.input, text))
+                .flatten()
+            {
+                Some(start) => NodeText::Source(to_u32(start)?, to_u32(text.len())?),
+                None => NodeText::Copy(text),
+            },
+        )
+    }
+}
+
+impl<'a> Pass<'a> for Fill<'a> {
+    fn start(&mut self, start: einvoice_xml::StartElement<'_, 'a>) -> Result<(), DocumentError> {
+        let id = self.names.id(&mut self.builder, start.name())?;
+        self.builder.open_element(id)?;
+        // The reader refuses duplicate attributes: each one is new.
+        for attribute in start.attributes() {
+            let id = self.names.id(&mut self.builder, attribute.name)?;
+            let text = self.node_text(attribute.value)?;
+            self.builder.push_attribute(
+                id,
+                is_xml_base(attribute.name.namespace, attribute.name.local),
+                text,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn end(&mut self) -> Result<(), DocumentError> {
+        self.builder.end_element()
+    }
+
+    fn text(&mut self, text: &str) -> Result<(), DocumentError> {
+        let text = self.node_text(text)?;
+        self.builder.append(NodeKind::Text, NONE, text).map(drop)
+    }
+
+    fn comment(&mut self, value: &str) -> Result<(), DocumentError> {
+        let text = self.node_text(value)?;
+        self.builder.append(NodeKind::Comment, NONE, text).map(drop)
+    }
+
+    fn processing_instruction(
+        &mut self,
+        pi: &einvoice_xml::ProcessingInstruction<'a>,
+    ) -> Result<(), DocumentError> {
+        let target = einvoice_xml::Name {
+            prefix: "",
+            local: pi.target,
+            namespace: None,
+        };
+        let id = self.names.id(&mut self.builder, target)?;
+        let text = self.node_text(pi.value.as_deref().unwrap_or(""))?;
+        self.builder
+            .append(NodeKind::ProcessingInstruction, id, text)
+            .map(drop)
+    }
+}
+
+/// Builds the tree of a document, in two passes of the streaming reader over its text:
+/// the first checks it (well-formedness, then depth) and counts the nodes and the bytes
+/// of text to copy, so that the arena is allocated once at its exact size; the second
+/// fills it. With `keep_source`, every text that is a slice of `input` is stored as a
+/// range of it instead of being copied (the document then keeps `input`). An element
+/// nested deeper than `max_depth` is refused by the first pass, before the arena is
+/// allocated.
 fn build_parsed(
     input: &str,
     keep_source: bool,
     max_depth: u32,
 ) -> Result<TreeBuilder, DocumentError> {
-    let options = roxmltree::ParsingOptions {
-        allow_dtd: false,
-        nodes_limit: u32::MAX,
-        ..roxmltree::ParsingOptions::default()
+    let mut sizes = Sizes {
+        input,
+        keep_source,
+        nodes: 1,
+        text_bytes: 0,
     };
-    let parsed = roxmltree::Document::parse_with_options(input, options)
-        .map_err(|e| DocumentError::new(format!("XML: {e}")))?;
-    let (nodes, text_bytes) = sizes(&parsed, input, keep_source, max_depth)?;
-    let mut builder =
-        TreeBuilder::with_capacity(nodes, text_bytes, if keep_source { input.len() } else { 0 });
-    let mut names: HashMap<NameKey<'_>, u32> = HashMap::new();
-    let node_text = |text| node_text(input, keep_source, text);
-    // Elements still open, innermost last: closed when the walk in document order
-    // reaches a node that is not inside them.
-    let mut open: Vec<roxmltree::NodeId> = Vec::new();
-    for node in parsed.root().descendants().skip(1) {
-        let parent = node.parent().map(|p| p.id());
-        while open.last().is_some_and(|&id| Some(id) != parent) {
-            open.pop();
-            builder.end_element()?;
-        }
-        match node.node_type() {
-            roxmltree::NodeType::Root => {}
-            roxmltree::NodeType::Element => {
-                let tag = node.tag_name();
-                let key = (
-                    element_prefix(input, node),
-                    tag.namespace().filter(|ns| !ns.is_empty()),
-                    tag.name(),
-                );
-                let id = name_id(&mut builder, &mut names, key)?;
-                builder.open_element(id)?;
-                // The parser refuses duplicate attributes: each one is new.
-                for attribute in node.attributes() {
-                    let namespace = attribute.namespace().filter(|ns| !ns.is_empty());
-                    let local = attribute.name();
-                    let prefix = input
-                        .get(attribute.range_qname())
-                        .and_then(|q| q.split_once(':'))
-                        .map_or("", |(prefix, _)| prefix);
-                    let id = name_id(&mut builder, &mut names, (prefix, namespace, local))?;
-                    builder.push_attribute(
-                        id,
-                        is_xml_base(namespace, local),
-                        node_text(attribute.value())?,
-                    )?;
-                }
-                open.push(node.id());
-            }
-            roxmltree::NodeType::Text => {
-                // The parser merges adjacent text, so the text nodes it gives are never
-                // adjacent.
-                if is_in_element(node) {
-                    let text = node.text().unwrap_or_default();
-                    if !text.is_empty() {
-                        builder.append(NodeKind::Text, NONE, node_text(text)?)?;
-                    }
-                }
-            }
-            roxmltree::NodeType::Comment => {
-                let text = node_text(node.text().unwrap_or_default())?;
-                builder.append(NodeKind::Comment, NONE, text)?;
-            }
-            roxmltree::NodeType::PI => {
-                if let Some(pi) = node.pi() {
-                    let id = name_id(&mut builder, &mut names, ("", None, pi.target))?;
-                    let text = node_text(pi.value.unwrap_or(""))?;
-                    builder.append(NodeKind::ProcessingInstruction, id, text)?;
-                }
-            }
-        }
-    }
-    for _ in open {
-        builder.end_element()?;
-    }
-    Ok(builder)
-}
-
-/// The number of nodes of the tree of a parsed document (the document node included) and
-/// the bytes of text to copy into it: all of them, or with `keep_source` those that are
-/// not slices of `input`.
-///
-/// # Errors
-///
-/// An element nested deeper than `max_depth` ([`LimitExceeded::Depth`]).
-fn sizes(
-    parsed: &roxmltree::Document<'_>,
-    input: &str,
-    keep_source: bool,
-    max_depth: u32,
-) -> Result<(usize, usize), DocumentError> {
-    let copied = |text: &str| {
-        if keep_source && offset_in(input, text).is_some() {
-            0
-        } else {
-            text.len()
-        }
+    read(input, max_depth, &mut sizes)?;
+    let mut fill = Fill {
+        input,
+        keep_source,
+        builder: TreeBuilder::with_capacity(
+            sizes.nodes,
+            sizes.text_bytes,
+            if keep_source { input.len() } else { 0 },
+        ),
+        names: Names::new(input),
     };
-    let (mut nodes, mut text_bytes) = (1usize, 0usize);
-    // The elements still open, innermost last, as in `build_parsed`: their number is
-    // the depth of the parent of the next element.
-    let mut open: Vec<roxmltree::NodeId> = Vec::new();
-    for node in parsed.root().descendants().skip(1) {
-        match node.node_type() {
-            roxmltree::NodeType::Root => {}
-            roxmltree::NodeType::Element => {
-                let parent = node.parent().map(|p| p.id());
-                while open.last().is_some_and(|&id| Some(id) != parent) {
-                    open.pop();
-                }
-                if u32::try_from(open.len()).map_or(true, |depth| depth >= max_depth) {
-                    let at = parsed.text_pos_at(node.range().start);
-                    return Err(DocumentError::limit_exceeded(LimitExceeded::Depth {
-                        max: max_depth,
-                        line: at.row,
-                        column: at.col,
-                    }));
-                }
-                open.push(node.id());
-                nodes += 1;
-                for attribute in node.attributes() {
-                    nodes += 1;
-                    text_bytes += copied(attribute.value());
-                }
-            }
-            roxmltree::NodeType::Text => {
-                if is_in_element(node) {
-                    nodes += 1;
-                    text_bytes += copied(node.text().unwrap_or_default());
-                }
-            }
-            roxmltree::NodeType::Comment => {
-                nodes += 1;
-                text_bytes += copied(node.text().unwrap_or_default());
-            }
-            roxmltree::NodeType::PI => {
-                nodes += 1;
-                text_bytes += node.pi().map_or(0, |pi| copied(pi.value.unwrap_or("")));
-            }
-        }
-    }
-    Ok((nodes, text_bytes))
-}
-
-/// The identity of a name in the builder's table, added on first sight.
-fn name_id<'a>(
-    builder: &mut TreeBuilder,
-    names: &mut HashMap<NameKey<'a>, u32>,
-    key: NameKey<'a>,
-) -> Result<u32, DocumentError> {
-    if let Some(&id) = names.get(&key) {
-        return Ok(id);
-    }
-    let (prefix, namespace, local) = key;
-    let id = builder.push_name(QName {
-        prefix: (!prefix.is_empty()).then(|| prefix.to_owned()),
-        namespace: namespace.map(str::to_owned),
-        local: local.to_owned(),
-    })?;
-    names.insert(key, id);
-    Ok(id)
-}
-
-/// Where the text of a parsed node is stored: as a range of `input` if `keep_source` and
-/// it is a slice of it, else copied.
-fn node_text<'s>(
-    input: &str,
-    keep_source: bool,
-    text: &'s str,
-) -> Result<NodeText<'s>, DocumentError> {
-    Ok(
-        match keep_source.then(|| offset_in(input, text)).flatten() {
-            Some(start) => NodeText::Source(to_u32(start)?, to_u32(text.len())?),
-            None => NodeText::Copy(text),
-        },
-    )
-}
-
-/// Whether a node is inside an element: text between the top-level nodes is not part of
-/// the data model.
-fn is_in_element(node: roxmltree::Node<'_, '_>) -> bool {
-    node.parent().is_some_and(|p| !p.is_root())
-}
-
-/// The prefix an element name is written with, empty for none.
-fn element_prefix<'a>(input: &'a str, node: roxmltree::Node<'_, '_>) -> &'a str {
-    let start = node.range().start + 1;
-    let written = input
-        .get(start..)
-        .map(|rest| {
-            let end = rest
-                .find(|c: char| c.is_ascii_whitespace() || c == '/' || c == '>')
-                .unwrap_or(rest.len());
-            &rest[..end]
-        })
-        .unwrap_or_default();
-    written.split_once(':').map_or("", |(prefix, _)| prefix)
+    read(input, max_depth, &mut fill)?;
+    Ok(fill.builder)
 }
 
 /// The `file:` URI that Saxon-HE gives a document read from a file: Java's
@@ -1597,6 +1709,50 @@ mod tests {
         assert_eq!(top.children().count(), 3);
         assert!(Document::parse("<!DOCTYPE r [<!ENTITY e 'x'>]><r>&e;</r>", None).is_err());
         assert!(Document::parse("<r><a></r>", None).is_err());
+    }
+
+    #[test]
+    fn adjacent_text_is_one_node() {
+        let text = "<r>a<![CDATA[<b>]]>c&amp;d<!--x-->e\r\nf<s/></r>";
+        for tree in [parse(text), Document::parse(text.to_owned(), None).unwrap()] {
+            let top = tree.root().children().next().unwrap();
+            let children: Vec<_> = top
+                .children()
+                .map(|t| (t.kind(), t.string_value().into_owned()))
+                .collect();
+            assert_eq!(
+                children,
+                [
+                    (NodeKind::Text, "a<b>c&d".to_owned()),
+                    (NodeKind::Comment, "x".to_owned()),
+                    (NodeKind::Text, "e\nf".to_owned()),
+                    (NodeKind::Element, String::new()),
+                ]
+            );
+        }
+        // Line ends are normalised in comments and processing instructions too (XML 1.0,
+        // section 2.11).
+        let tree = parse("<r><!--a\r\nb\rc--><?p a\r\nb?></r>");
+        let values: Vec<_> = tree
+            .root()
+            .children()
+            .next()
+            .unwrap()
+            .children()
+            .map(|n| n.string_value().into_owned())
+            .collect();
+        assert_eq!(values, ["a\nb\nc", "a\nb"]);
+        // A carriage return next to a reference is a line end like any other.
+        assert_eq!(parse("<r>x\r&amp;y</r>").root().string_value(), "x\n&y");
+    }
+
+    #[test]
+    fn errors_are_those_of_the_reader() {
+        let error = Document::parse("<r>\n<a></r>", None).unwrap_err();
+        assert_eq!(error.message(), "XML: expected 'a' tag, not 'r' at 2:4");
+        assert_eq!(error.limit(), None);
+        let error = Document::parse("<!DOCTYPE r><r/>", None).unwrap_err();
+        assert_eq!(error.message(), "XML: XML with DTD detected");
     }
 
     #[test]

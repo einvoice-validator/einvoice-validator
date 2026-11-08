@@ -323,8 +323,17 @@ fn source_text() -> impl Strategy<Value = String> {
     })
 }
 
+/// `\r\n` and lone `\r` as `\n`: the line-end normalisation of XML 1.0 (section 2.11).
+fn line_ends(s: &str) -> String {
+    s.replace("\r\n", "\n").replace('\r', "\n")
+}
+
 /// The tree of a parsed document, built through the public [`TreeBuilder`] from the
-/// parser's values: the reference for [`Document::parse`].
+/// values `roxmltree` gives: the reference for [`Document::parse`], which reads with
+/// `einvoice-xml`. `roxmltree` does not normalise line ends in comments and processing
+/// instructions, nor a carriage return next to a reference in text; XML 1.0 does (section
+/// 2.11), and so does the reference: the documents of [`source_text`] write no
+/// carriage return by a character reference, so that every one is a line end.
 fn reference_tree(text: &str) -> Rc<Document> {
     fn name(prefix: Option<&str>, namespace: Option<&str>, local: &str) -> QName {
         QName {
@@ -360,14 +369,16 @@ fn reference_tree(text: &str) -> Rc<Document> {
             }
             roxmltree::NodeType::Text => {
                 if node.parent().is_some_and(|p| !p.is_root()) {
-                    builder.text(node.text().unwrap()).unwrap();
+                    builder.text(&line_ends(node.text().unwrap())).unwrap();
                 }
             }
-            roxmltree::NodeType::Comment => builder.comment(node.text().unwrap()).unwrap(),
+            roxmltree::NodeType::Comment => {
+                builder.comment(&line_ends(node.text().unwrap())).unwrap();
+            }
             roxmltree::NodeType::PI => {
                 let pi = node.pi().unwrap();
                 builder
-                    .processing_instruction(pi.target, pi.value.unwrap_or(""))
+                    .processing_instruction(pi.target, &line_ends(pi.value.unwrap_or("")))
                     .unwrap();
             }
         }

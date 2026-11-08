@@ -1,7 +1,9 @@
 # einvoice-xpath-eval
 
 Node model and evaluator of the XPath 2.0 subset that the official e-invoicing validation
-stylesheets use, with the behaviour of Saxon-HE 12.10: immutable XML trees, expressions
+stylesheets use, with the behaviour of Saxon-HE 12.10: immutable XML trees (parsed with the
+streaming reader [`einvoice-xml`](https://crates.io/crates/einvoice-xml), in an arena sized
+exactly before it is filled), expressions
 parsed by [`einvoice-xpath`](https://crates.io/crates/einvoice-xpath) compiled against a
 static context (unknown functions and variables are errors at compile time), then evaluated
 lazily with the atomic values of [`einvoice-xdm`](https://crates.io/crates/einvoice-xdm).
