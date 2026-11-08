@@ -45,7 +45,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   `Syntax::detect(document)` tells from the root element whether a document is UBL or CII,
   and `builtin_rule_set()` names its built-in rule set.
 - Bundles: a directory or in-memory set of files with a `bundle.toml` manifest naming the
-  stylesheets and their SHA-256 (`Validator::from_bundle_dir`, `Validator::from_bundle`).
+  stylesheets, the resources they read with `document()` (code lists), and their SHA-256
+  (`Validator::from_bundle_dir`, `Validator::from_bundle`).
   Peppol BIS Billing 3.0 is used this way, since its files may not be redistributed: the
   repository's `scripts/fetch-peppol.sh` downloads the pinned release, compiles its
   stylesheets and writes the manifest.

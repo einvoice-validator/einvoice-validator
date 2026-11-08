@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 
 use crate::manifest::{MANIFEST_FILE, RuleSet, SchemaId, StylesheetEntry};
 use crate::report::{Report, RuleSetVersion, StylesheetFailure, StylesheetReport};
+use crate::resources::{BUNDLE_URI, Resources};
 use crate::{Error, builtin};
 
 /// Options of one validation.
@@ -129,6 +130,8 @@ pub struct Validator {
     schema: Option<Arc<einvoice_xsd::Schema>>,
     /// The prepared stylesheets, in the order of `rule_set.stylesheets()`.
     stylesheets: Arc<[Executable]>,
+    /// The resources the stylesheets read with `document()`.
+    resources: Arc<Resources>,
 }
 
 impl Validator {
@@ -177,18 +180,31 @@ impl Validator {
     /// supported subset.
     pub fn from_bundle(manifest: &str, files: &[(&str, &[u8])]) -> Result<Self, Error> {
         let rule_set = RuleSet::parse(manifest)?;
+        let file = |path: &str| files.iter().find(|(p, _)| *p == path).map(|(_, b)| *b);
         let mut stylesheets = Vec::with_capacity(rule_set.stylesheets().len());
         for entry in rule_set.stylesheets() {
-            let Some((_, bytes)) = files.iter().find(|(path, _)| *path == entry.path()) else {
+            let Some(bytes) = file(entry.path()) else {
                 return Err(Error::bundle(format!(
                     "stylesheet {}: file {} missing from the bundle",
                     entry.name(),
                     entry.path()
                 )));
             };
-            stylesheets.push(prepare(entry, bytes, None)?);
+            // In memory, the files of the bundle have URIs of their own.
+            let base_uri = format!("{BUNDLE_URI}{}", entry.path());
+            stylesheets.push(prepare(entry, bytes, Some(base_uri))?);
         }
-        Self::with(rule_set, stylesheets)
+        let mut resources = Resources::default();
+        for entry in rule_set.resources() {
+            let Some(bytes) = file(entry.path()) else {
+                return Err(Error::bundle(format!(
+                    "resource {}: file missing from the bundle",
+                    entry.path()
+                )));
+            };
+            resources.add(entry, bytes, format!("{BUNDLE_URI}{}", entry.path()))?;
+        }
+        Self::with(rule_set, stylesheets, resources)
     }
 
     /// Loads the bundle in the directory `dir`: its manifest [`MANIFEST_FILE`] and the
@@ -213,10 +229,31 @@ impl Validator {
             let base_uri = std::path::absolute(&path).ok().and_then(|p| file_uri(&p));
             stylesheets.push(prepare(entry, &bytes, base_uri)?);
         }
-        Self::with(rule_set, stylesheets)
+        let mut resources = Resources::default();
+        for entry in rule_set.resources() {
+            let mut path = dir.to_path_buf();
+            path.extend(entry.path().split('/'));
+            let bytes = read(&path)?;
+            let uri = std::path::absolute(&path)
+                .ok()
+                .and_then(|p| file_uri(&p))
+                .ok_or_else(|| {
+                    Error::bundle(format!(
+                        "resource {}: no file URI for {}",
+                        entry.path(),
+                        path.display()
+                    ))
+                })?;
+            resources.add(entry, &bytes, uri)?;
+        }
+        Self::with(rule_set, stylesheets, resources)
     }
 
-    fn with(rule_set: RuleSet, stylesheets: Vec<Executable>) -> Result<Self, Error> {
+    fn with(
+        rule_set: RuleSet,
+        stylesheets: Vec<Executable>,
+        resources: Resources,
+    ) -> Result<Self, Error> {
         let schema = match rule_set.schema() {
             None => None,
             Some(SchemaId::Ubl21) => Some(einvoice_xsd::Schema::ubl_2_1().map_err(|e| {
@@ -231,6 +268,7 @@ impl Validator {
             rule_set,
             schema: schema.map(Arc::new),
             stylesheets: stylesheets.into(),
+            resources: Arc::new(resources),
         })
     }
 
@@ -343,6 +381,7 @@ impl Validator {
             max_depth: options.max_depth,
             max_nesting: max_nesting_for_depth(options.max_depth),
             max_stack: options.max_stack,
+            resolver: Some(&*self.resources),
             ..TransformOptions::default()
         };
         let mut stylesheets = Vec::with_capacity(self.stylesheets.len());
@@ -517,7 +556,7 @@ const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
 
 /// The text of a document given as bytes: UTF-8, with or without a byte order mark,
 /// and an XML declaration, if any, naming UTF-8 or US-ASCII.
-fn decode(bytes: &[u8]) -> Result<&str, Error> {
+pub(crate) fn decode(bytes: &[u8]) -> Result<&str, Error> {
     refuse_utf16(bytes)?;
     let bytes = bytes.strip_prefix(BOM).unwrap_or(bytes);
     check_encoding(bytes)?;

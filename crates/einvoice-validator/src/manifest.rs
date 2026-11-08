@@ -1,5 +1,6 @@
 //! The manifest of a rule-set bundle (`bundle.toml`): what the rule set is, which XML
-//! schema and which stylesheets it runs, and the SHA-256 of each stylesheet.
+//! schema and which stylesheets it runs, the resources the stylesheets read with
+//! `document()`, and the SHA-256 of each file.
 
 use std::fmt;
 
@@ -8,8 +9,9 @@ use crate::Error;
 /// The file name of the manifest in a bundle directory.
 pub const MANIFEST_FILE: &str = "bundle.toml";
 
-/// The manifest format this crate reads (the `format` key).
-pub const MANIFEST_FORMAT: u32 = 1;
+/// The newest manifest format this crate reads (the `format` key): format 2 adds the
+/// `[[resource]]` tables to format 1, which is read too.
+pub const MANIFEST_FORMAT: u32 = 2;
 
 /// The XML schema a rule set validates documents against before running its
 /// stylesheets.
@@ -82,9 +84,32 @@ impl StylesheetEntry {
     }
 }
 
+/// A file of the bundle that the stylesheets read with `document()` (a code list, ...),
+/// as the manifest describes it (format 2, `[[resource]]`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResourceEntry {
+    path: String,
+    sha256: String,
+}
+
+impl ResourceEntry {
+    /// Its path in the bundle: relative, `/`-separated. A stylesheet asks for it with
+    /// `document()` by its URI, relative to the stylesheet's own.
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// The SHA-256 of the file, lower-case hexadecimal.
+    #[must_use]
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+}
+
 /// A rule set, as described by the manifest of its bundle: its name and version, the
-/// XML schema to validate against first, and the stylesheets to run, in order, with
-/// their checksums.
+/// XML schema to validate against first, the stylesheets to run, in order, and the
+/// resources they read, with their checksums.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuleSet {
     name: String,
@@ -92,6 +117,7 @@ pub struct RuleSet {
     version: String,
     schema: Option<SchemaId>,
     stylesheets: Vec<StylesheetEntry>,
+    resources: Vec<ResourceEntry>,
 }
 
 impl RuleSet {
@@ -101,7 +127,8 @@ impl RuleSet {
     ///
     /// [`Error::Bundle`] naming the line: a syntax outside the accepted TOML subset, an
     /// unknown or repeated key, a missing key, a value that is not valid for its key, an
-    /// unknown schema, a format other than [`MANIFEST_FORMAT`].
+    /// unknown schema, a format other than 1 and [`MANIFEST_FORMAT`], a `[[resource]]`
+    /// in format 1, a path given twice.
     pub fn parse(manifest: &str) -> Result<Self, Error> {
         let tables = parse_tables(manifest)?;
         let mut tables = tables.into_iter();
@@ -111,11 +138,11 @@ impl RuleSet {
         let mut top = Table::new(top);
         let format_line = top.line_of("format");
         top.allow(&["format", "name", "title", "version", "schema"])?;
-        match top.take("format") {
-            Some(Value::Integer(f)) if f == u64::from(MANIFEST_FORMAT) => {}
+        let format = match top.take("format") {
+            Some(Value::Integer(f)) if (1..=u64::from(MANIFEST_FORMAT)).contains(&f) => f,
             Some(Value::Integer(f)) => {
                 return Err(Error::bundle(format!(
-                    "{MANIFEST_FILE}:{format_line}: format {f}: only format {MANIFEST_FORMAT} is supported"
+                    "{MANIFEST_FILE}:{format_line}: format {f}: only formats 1 and {MANIFEST_FORMAT} are supported"
                 )));
             }
             Some(Value::String(_)) => {
@@ -128,7 +155,7 @@ impl RuleSet {
                     "{MANIFEST_FILE}: the `format` key is missing (format = {MANIFEST_FORMAT})"
                 )));
             }
-        }
+        };
         let name = top.required_string("name")?;
         check_name(&name).map_err(|m| top.error("name", &m))?;
         let title = top.required_string("title")?;
@@ -146,8 +173,15 @@ impl RuleSet {
         top.finish()?;
 
         let mut stylesheets: Vec<StylesheetEntry> = Vec::new();
+        let mut resources: Vec<ResourceEntry> = Vec::new();
         for raw in tables {
+            let kind = raw.kind;
             let mut table = Table::new(raw);
+            if kind == TableKind::Resource {
+                let resource = resource(table, format, &stylesheets, &resources)?;
+                resources.push(resource);
+                continue;
+            }
             table.allow(&["name", "version", "path", "sha256"])?;
             let entry_name = table.required_string("name")?;
             check_name(&entry_name).map_err(|m| table.error("name", &m))?;
@@ -163,14 +197,10 @@ impl RuleSet {
             };
             let path = table.required_string("path")?;
             check_path(&path).map_err(|m| table.error("path", &m))?;
-            let sha256 = table.required_string("sha256")?;
-            if sha256.len() != 64
-                || !sha256
-                    .bytes()
-                    .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-            {
-                return Err(table.error("sha256", "must be 64 lower-case hexadecimal digits"));
+            if resources.iter().any(|r| r.path == path) {
+                return Err(table.error("path", &format!("{path:?} twice in the bundle")));
             }
+            let sha256 = table.sha256()?;
             table.finish()?;
             stylesheets.push(StylesheetEntry {
                 name: entry_name,
@@ -190,6 +220,7 @@ impl RuleSet {
             version,
             schema,
             stylesheets,
+            resources,
         })
     }
 
@@ -232,6 +263,39 @@ impl RuleSet {
     pub fn stylesheets(&self) -> &[StylesheetEntry] {
         &self.stylesheets
     }
+
+    /// The resources the stylesheets read with `document()` (format 2), in the order of
+    /// the manifest.
+    #[must_use]
+    pub fn resources(&self) -> &[ResourceEntry] {
+        &self.resources
+    }
+}
+
+/// A `[[resource]]` table (format 2), whose path no file of the bundle has yet.
+fn resource(
+    mut table: Table,
+    format: u64,
+    stylesheets: &[StylesheetEntry],
+    resources: &[ResourceEntry],
+) -> Result<ResourceEntry, Error> {
+    if format < 2 {
+        return Err(Error::bundle(format!(
+            "{MANIFEST_FILE}:{}: [[resource]] needs format = 2",
+            table.header_line
+        )));
+    }
+    table.allow(&["path", "sha256"])?;
+    let path = table.required_string("path")?;
+    check_path(&path).map_err(|m| table.error("path", &m))?;
+    let taken =
+        resources.iter().any(|r| r.path == path) || stylesheets.iter().any(|s| s.path == path);
+    if taken {
+        return Err(table.error("path", &format!("{path:?} twice in the bundle")));
+    }
+    let sha256 = table.sha256()?;
+    table.finish()?;
+    Ok(ResourceEntry { path, sha256 })
 }
 
 fn check_name(name: &str) -> Result<(), String> {
@@ -283,19 +347,29 @@ enum Value {
     Integer(u64),
 }
 
+/// The kind of a table: the top-level one, `[[stylesheet]]` or `[[resource]]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TableKind {
+    Top,
+    Stylesheet,
+    Resource,
+}
+
 /// The keys of one table, in order, with their lines. The top-level table has header
 /// line 0.
 #[derive(Debug)]
 struct RawTable {
+    kind: TableKind,
     header_line: u32,
     entries: Vec<(String, Value, u32)>,
 }
 
 /// Reads the accepted TOML subset: comments, blank lines, `key = value` lines with a
 /// bare key and a basic string (escapes `\"` and `\\` only), a literal string or a
-/// non-negative integer, and `[[stylesheet]]` headers.
+/// non-negative integer, and `[[stylesheet]]` and `[[resource]]` headers.
 fn parse_tables(text: &str) -> Result<Vec<RawTable>, Error> {
     let mut tables = vec![RawTable {
+        kind: TableKind::Top,
         header_line: 0,
         entries: Vec::new(),
     }];
@@ -308,17 +382,27 @@ fn parse_tables(text: &str) -> Result<Vec<RawTable>, Error> {
             continue;
         }
         if let Some(rest) = content.strip_prefix('[') {
-            let header = rest.strip_prefix("[stylesheet]]").map(after_value);
+            let header = [
+                ("[stylesheet]]", TableKind::Stylesheet),
+                ("[resource]]", TableKind::Resource),
+            ]
+            .into_iter()
+            .find_map(|(h, kind)| rest.strip_prefix(h).map(|after| (after_value(after), kind)));
             match header {
-                Some(Ok(())) => {
+                Some((Ok(()), kind)) => {
                     tables.push(RawTable {
+                        kind,
                         header_line: number,
                         entries: Vec::new(),
                     });
                     continue;
                 }
-                Some(Err(m)) => return Err(fail(&m)),
-                None => return Err(fail("the only table allowed is [[stylesheet]]")),
+                Some((Err(m), _)) => return Err(fail(&m)),
+                None => {
+                    return Err(fail(
+                        "the only tables allowed are [[stylesheet]] and [[resource]]",
+                    ));
+                }
             }
         }
         let Some((key, value)) = content.split_once('=') else {
@@ -404,6 +488,7 @@ fn after_value(rest: &str) -> Result<(), String> {
 
 /// A table whose keys are taken one by one; [`Table::finish`] fails on any left.
 struct Table {
+    kind: TableKind,
     header_line: u32,
     /// Key, value (`None` once taken) and line.
     entries: Vec<(String, Option<Value>, u32)>,
@@ -412,6 +497,7 @@ struct Table {
 impl Table {
     fn new(raw: RawTable) -> Self {
         Self {
+            kind: raw.kind,
             header_line: raw.header_line,
             entries: raw
                 .entries
@@ -422,14 +508,29 @@ impl Table {
     }
 
     fn where_(&self) -> String {
-        if self.header_line == 0 {
-            MANIFEST_FILE.to_owned()
-        } else {
-            format!(
+        match self.kind {
+            TableKind::Top => MANIFEST_FILE.to_owned(),
+            TableKind::Stylesheet => format!(
                 "{MANIFEST_FILE}: [[stylesheet]] of line {}",
                 self.header_line
-            )
+            ),
+            TableKind::Resource => {
+                format!("{MANIFEST_FILE}: [[resource]] of line {}", self.header_line)
+            }
         }
+    }
+
+    /// The `sha256` key: 64 lower-case hexadecimal digits.
+    fn sha256(&mut self) -> Result<String, Error> {
+        let sha256 = self.required_string("sha256")?;
+        if sha256.len() != 64
+            || !sha256
+                .bytes()
+                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        {
+            return Err(self.error("sha256", "must be 64 lower-case hexadecimal digits"));
+        }
+        Ok(sha256)
     }
 
     /// The line of `key`, taken or not; the header's line when absent.
@@ -538,6 +639,54 @@ sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
     }
 
     #[test]
+    fn format_2_lists_resources() {
+        let zeros = "0".repeat(64);
+        let text = format!(
+            "{}[[resource]]\npath = \"codes/a.xml\"\nsha256 = \"{zeros}\"\n\n[[resource]] # b\npath = \"b.xml\"\nsha256 = \"{}\"\n",
+            GOOD.replace("format = 1", "format = 2"),
+            "1".repeat(64)
+        );
+        let rule_set = RuleSet::parse(&text).unwrap();
+        let resources: Vec<(&str, &str)> = rule_set
+            .resources()
+            .iter()
+            .map(|r| (r.path(), r.sha256()))
+            .collect();
+        assert_eq!(
+            resources,
+            [
+                ("codes/a.xml", zeros.as_str()),
+                ("b.xml", "1".repeat(64).as_str())
+            ]
+        );
+        assert_eq!(rule_set.stylesheets().len(), 2);
+        assert_eq!(RuleSet::parse(GOOD).unwrap().resources(), []);
+        for (bad, expected) in [
+            (text.replace("codes/a.xml", "../a.xml"), "`path`"),
+            (text.replace("codes/a.xml", "b.xml"), "twice in the bundle"),
+            (text.replace("codes/a.xml", "x.xsl"), "twice in the bundle"),
+            (
+                text.replace(&format!("sha256 = \"{zeros}\""), "sha256 = \"x\""),
+                "`sha256`",
+            ),
+            (
+                text.replace("path = \"b.xml\"", "name = \"b\"\npath = \"b.xml\""),
+                "unknown key `name`",
+            ),
+            (
+                text.replace("path = \"b.xml\"\n", ""),
+                "[[resource]] of line 22: the `path` key is missing",
+            ),
+        ] {
+            let message = error(&bad);
+            assert!(
+                message.contains(expected),
+                "{expected:?} not in {message:?}"
+            );
+        }
+    }
+
+    #[test]
     fn schema_is_optional() {
         let text = GOOD.replace("schema = \"ubl-2.1\"\n", "");
         assert_eq!(RuleSet::parse(&text).unwrap().schema(), None);
@@ -551,8 +700,15 @@ sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
     fn refusals_name_the_line() {
         let cases = [
             (
-                GOOD.replace("format = 1", "format = 2"),
-                "bundle.toml:2: format 2",
+                GOOD.replace("format = 1", "format = 3"),
+                "bundle.toml:2: format 3",
+            ),
+            (
+                format!(
+                    "{GOOD}[[resource]]\npath = \"r.xml\"\nsha256 = \"{}\"\n",
+                    "0".repeat(64)
+                ),
+                "bundle.toml:18: [[resource]] needs format = 2",
             ),
             (
                 GOOD.replace("format = 1", "format = \"1\""),
@@ -586,7 +742,7 @@ sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
             ),
             (
                 GOOD.replace("[[stylesheet]]  #", "[stylesheet] #"),
-                "bundle.toml:13: the only table",
+                "bundle.toml:13: the only tables allowed",
             ),
             (
                 GOOD.replace("name = \"cen-ubl\"", "name = \"cen\\nubl\""),

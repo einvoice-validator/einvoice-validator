@@ -31,7 +31,8 @@
 #     `cargo xtask manifest`), copied to source/cen-cii-examples/: the base
 #     documents of the CII mutation catalogue.
 #  4. One rule-set bundle of einvoice-validator per profile,
-#     <profile>/bundle.toml with the stylesheet and its code list next to it:
+#     <profile>/bundle.toml with the stylesheet and its code list next to it (a resource
+#     of the bundle):
 #     `einvoice-validate --bundle DIR/factur-x-1.09.2/en16931 FILE`. The
 #     manifest format cannot list the code list yet; it is named in a comment.
 #
@@ -197,10 +198,8 @@ for ((i = 0; i < ${#profiles[@]}; i += 4)); do
 # Factur-X $facturx, profile $file, built by scripts/fetch-facturx.sh from the
 # Mustang validator $mustang: the rule-set bundle manifest of einvoice-validator
 # (einvoice-validate --bundle DIR). The stylesheet reads, with document(), the
-# code list FACTUR-X_${file}_codedb.xml next to it (SHA-256
-# ${profiles[i + 3]}),
-# which format 1 of the manifest cannot list.
-format = 1
+# code list FACTUR-X_${file}_codedb.xml next to it, a resource of the bundle.
+format = 2
 name = "factur-x-$profile"
 title = "Factur-X $file"
 version = "$facturx"
@@ -209,6 +208,10 @@ version = "$facturx"
 name = "FACTUR-X_$file"
 path = "FACTUR-X_$file.xslt"
 sha256 = "${profiles[i + 2]}"
+
+[[resource]]
+path = "FACTUR-X_${file}_codedb.xml"
+sha256 = "${profiles[i + 3]}"
 EOF
 done
 

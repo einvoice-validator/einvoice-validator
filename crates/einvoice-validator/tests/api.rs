@@ -691,3 +691,135 @@ fn one_validator_on_many_threads() {
     });
     assert_eq!(sequential, parallel);
 }
+
+/// A stylesheet reading the code list `codes.xml` next to it with `document()`, then the
+/// document `other` (absent from the bundle) when the document element has `other`: one
+/// failed assert, unflagged, when the document element's `code` is not in the list.
+const CODES_STYLESHEET: &str = r#"<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:svrl="http://purl.oclc.org/dsdl/svrl">
+  <xsl:template match="/">
+    <svrl:schematron-output title="codes">
+      <svrl:active-pattern id="P" documents="{document-uri(/)}"/>
+      <svrl:fired-rule context="/*"/>
+      <svrl:fired-rule context="/*"/>
+      <xsl:if test="not(/*/@code = document('codes.xml')//code)">
+        <svrl:failed-assert id="C-1" location="/*[1]" test="@code = codes">
+          <svrl:text>[C-1] <xsl:value-of select="count(document('codes.xml')//code)"/> codes</svrl:text>
+        </svrl:failed-assert>
+      </xsl:if>
+      <xsl:if test="/*/@other"><xsl:value-of select="count(document(/*/@other)/*)"/></xsl:if>
+    </svrl:schematron-output>
+  </xsl:template>
+</xsl:stylesheet>"#;
+
+const CODES: &str = "<codes><code>A</code><code>B</code></codes>";
+
+/// A format 2 manifest with the stylesheet at `xslt/codes.xsl` and its code list.
+fn codes_manifest(codes: &[u8]) -> String {
+    format!(
+        "format = 2\nname = \"codes\"\ntitle = \"Codes\"\nversion = \"1\"\n\n[[stylesheet]]\nname = \"codes\"\npath = \"xslt/codes.xsl\"\nsha256 = \"{}\"\n\n[[resource]]\npath = \"xslt/codes.xml\"\nsha256 = \"{}\"\n",
+        sha256(CODES_STYLESHEET.as_bytes()),
+        sha256(codes)
+    )
+}
+
+fn check_codes(validator: &Validator) {
+    let report = validator.validate(b"<d code='A'/>").unwrap();
+    assert_eq!(report.findings().count(), 0);
+    assert_eq!(report.stylesheets[0].fired_rules, 2);
+    let report = validator.validate(b"<d code='Z'/>").unwrap();
+    let [finding] = report.findings().collect::<Vec<_>>()[..] else {
+        panic!("{report:?}")
+    };
+    assert_eq!(finding.text, "[C-1] 2 codes");
+    // Unflagged: the document conforms, unless the validation fails closed.
+    assert_eq!(finding.severity, Severity::Other);
+    assert_eq!(report.verdict(), Verdict::Valid);
+    let closed = validator
+        .validate_with(b"<d code='Z'/>", &ValidateOptions::new().fail_closed(true))
+        .unwrap();
+    assert_eq!(closed.findings().next().unwrap().severity, Severity::Fatal);
+    assert_eq!(closed.verdict(), Verdict::Invalid);
+    // Nothing but the bundle's resources: another file is not retrieved.
+    for other in [
+        "other.xml",
+        "/etc/hostname",
+        "../codes.xml",
+        "xslt/codes.xml",
+    ] {
+        match validator.validate(format!("<d code='A' other='{other}'/>").as_bytes()) {
+            Err(Error::Transform { code, .. }) => assert_eq!(code, "FODC0002", "{other}"),
+            other => panic!("{other:?}"),
+        }
+    }
+    // A URI that resolves to a resource, relative to the stylesheet's.
+    let report = validator
+        .validate(b"<d code='A' other='x/../codes.xml'/>")
+        .unwrap();
+    assert!(
+        report.stylesheets[0]
+            .svrl
+            .ends_with("1</svrl:schematron-output>")
+    );
+}
+
+#[test]
+fn stylesheets_read_the_resources_of_their_bundle() {
+    let manifest = codes_manifest(CODES.as_bytes());
+    let files: &[(&str, &[u8])] = &[
+        ("xslt/codes.xsl", CODES_STYLESHEET.as_bytes()),
+        ("xslt/codes.xml", CODES.as_bytes()),
+    ];
+    let validator = Validator::from_bundle(&manifest, files).unwrap();
+    assert_eq!(validator.rule_set().resources()[0].path(), "xslt/codes.xml");
+    check_codes(&validator);
+    // From a directory.
+    let dir = common::temp_dir("resources");
+    std::fs::create_dir_all(dir.join("xslt")).unwrap();
+    std::fs::write(dir.join(MANIFEST_FILE), &manifest).unwrap();
+    std::fs::write(dir.join("xslt/codes.xsl"), CODES_STYLESHEET).unwrap();
+    std::fs::write(dir.join("xslt/codes.xml"), CODES).unwrap();
+    check_codes(&Validator::from_bundle_dir(&dir).unwrap());
+    // A clone shares the rule set, on another thread.
+    let clone = validator.clone();
+    std::thread::spawn(move || check_codes(&clone))
+        .join()
+        .unwrap();
+    // A resource is checked when the bundle is loaded.
+    let changed = "<codes><code>A</code></codes>";
+    let files: &[(&str, &[u8])] = &[
+        ("xslt/codes.xsl", CODES_STYLESHEET.as_bytes()),
+        ("xslt/codes.xml", changed.as_bytes()),
+    ];
+    match Validator::from_bundle(&manifest, files) {
+        Err(Error::Checksum { path, .. }) => assert_eq!(path, "xslt/codes.xml"),
+        other => panic!("{other:?}"),
+    }
+    let files: &[(&str, &[u8])] = &[("xslt/codes.xsl", CODES_STYLESHEET.as_bytes())];
+    match Validator::from_bundle(&manifest, files) {
+        Err(Error::Bundle { message }) => assert!(message.contains("xslt/codes.xml"), "{message}"),
+        other => panic!("{other:?}"),
+    }
+    let latin1 = b"<?xml version='1.0' encoding='ISO-8859-1'?><codes/>";
+    let files: &[(&str, &[u8])] = &[
+        ("xslt/codes.xsl", CODES_STYLESHEET.as_bytes()),
+        ("xslt/codes.xml", latin1),
+    ];
+    match Validator::from_bundle(&codes_manifest(latin1), files) {
+        Err(Error::Bundle { message }) => {
+            assert!(message.contains("resource xslt/codes.xml"), "{message}");
+        }
+        other => panic!("{other:?}"),
+    }
+    // A resource deeper than the maximum depth is refused when it is read.
+    let deep = format!("{}{}", "<c>".repeat(10), "</c>".repeat(10));
+    let files: &[(&str, &[u8])] = &[
+        ("xslt/codes.xsl", CODES_STYLESHEET.as_bytes()),
+        ("xslt/codes.xml", deep.as_bytes()),
+    ];
+    let validator = Validator::from_bundle(&codes_manifest(deep.as_bytes()), files).unwrap();
+    assert!(validator.validate(b"<d code='A'/>").is_ok());
+    match validator.validate_with(b"<d code='A'/>", &ValidateOptions::new().max_depth(5)) {
+        Err(Error::Limit { .. }) => {}
+        other => panic!("{other:?}"),
+    }
+}

@@ -285,11 +285,9 @@ for entry in "${bundles[@]}"; do
         for file in "${side[@]}"; do
             base=${file##*/}
             echo "# The stylesheet ${base%_codedb.xml}.xslt reads, with document(), the code list"
-            echo "# $base next to it (SHA-256"
-            echo "# $(hash_of "$packdir/$file")),"
-            echo "# which format 1 of the manifest cannot list."
+            echo "# $base next to it, a resource of the bundle."
         done
-        echo "format = 1"
+        echo "format = 2"
         echo "name = \"fr-ctc-$name\""
         echo "title = \"$title\""
         echo "version = \"$pack\""
@@ -304,6 +302,12 @@ for entry in "${bundles[@]}"; do
             echo "name = \"$stylesheet_name\""
             echo "path = \"$stylesheet_name.xslt\""
             echo "sha256 = \"$sha256\""
+        done
+        for file in "${side[@]}"; do
+            echo
+            echo "[[resource]]"
+            echo "path = \"${file##*/}\""
+            echo "sha256 = \"$(hash_of "$packdir/$file")\""
         done
     } >"$bundle/bundle.toml"
 done

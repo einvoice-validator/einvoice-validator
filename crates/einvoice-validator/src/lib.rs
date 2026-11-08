@@ -41,8 +41,12 @@
 //!
 //! A rule set is described by a bundle: a manifest and the files it names. The
 //! manifest gives the rule set's name, title and version, the XML schema to validate
-//! against first, and the stylesheets to run, each with the SHA-256 of its file, which
-//! is checked when the bundle is loaded. [`RuleSet`] is the manifest, parsed.
+//! against first, the stylesheets to run, and the resources they read with
+//! `document()` (code lists), each with the SHA-256 of its file, which is checked when
+//! the bundle is loaded. [`RuleSet`] is the manifest, parsed. A stylesheet reads the
+//! resources by their URI relative to its own (`file:` URIs in a directory,
+//! `bundle:/<path>` in memory), and nothing else: `document()` on any other URI is the
+//! error `FODC0002`.
 //!
 //! - Built in ([`BUILTIN_RULE_SETS`], [`Validator::builtin`]), embedded unmodified, each
 //!   behind a feature of its name, on by default (the artefacts are under the EUPL-1.2):
@@ -61,7 +65,7 @@
 //! the line concerned (unknown keys included).
 //!
 //! ```toml
-//! format = 1                   # the manifest format, MANIFEST_FORMAT
+//! format = 2                   # the manifest format: 1, or MANIFEST_FORMAT for [[resource]]
 //! name = "cen-ubl"             # ASCII letters, digits, '-', '.', '_'
 //! title = "CEN EN 16931 UBL"
 //! version = "1.3.17"           # the version of the official artefacts
@@ -72,11 +76,15 @@
 //! path = "ubl/xslt/EN16931-UBL-validation.xslt"   # relative, '/'-separated, no '..'
 //! sha256 = "fc4e6cfa8596bba0c2abd19038a98960c6ee9fc1f44566787c115efd4f4aca7c"
 //! # version = "..."            # optional: when it differs from the bundle's
+//!
+//! [[resource]]                 # format 2: zero or more files read with document()
+//! path = "ubl/xslt/codes.xml"  # relative, '/'-separated, no '..'
+//! sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 //! ```
 //!
 //! Accepted syntax: comments, `key = value` lines with a bare key, values that are
 //! basic strings (escapes `\"` and `\\` only), literal strings or non-negative integers,
-//! and `[[stylesheet]]` headers.
+//! and `[[stylesheet]]` and `[[resource]]` headers.
 //!
 //! # PDF files
 //!
@@ -133,13 +141,16 @@ mod manifest;
 #[cfg(feature = "pdf")]
 pub mod pdf;
 mod report;
+mod resources;
 mod validator;
 
 pub use builtin::BUILTIN_RULE_SETS;
 pub use detect::Syntax;
 pub use error::{Error, ErrorKind};
 pub use licences::{Licence, licences};
-pub use manifest::{MANIFEST_FILE, MANIFEST_FORMAT, RuleSet, SchemaId, StylesheetEntry};
+pub use manifest::{
+    MANIFEST_FILE, MANIFEST_FORMAT, ResourceEntry, RuleSet, SchemaId, StylesheetEntry,
+};
 pub use report::{
     Finding, FindingKind, Report, RuleSetVersion, SchemaError, SchemaErrorKind, Severity,
     StylesheetFailure, StylesheetReport, Verdict,
