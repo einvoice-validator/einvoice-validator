@@ -7,7 +7,8 @@
 # scripts and their tests, the reference oracles and, when something is
 # staged, the privacy guard.
 #
-#   scripts/check.sh                # every job: fmt clippy doc test features wasm npm package deny actionlint zizmor pins guards oracle peppol facturx xrechnung fr-ctc privacy
+#   scripts/check.sh                # every job: fmt clippy doc test features wasm npm package deny actionlint zizmor pins guards oracle peppol facturx xrechnung fr-ctc rules privacy
+#   scripts/check.sh rules-online   # on demand: every fetched rule set from its publisher
 #   scripts/check.sh clippy test    # selected jobs
 #   scripts/check.sh toolchain      # only install the pinned toolchain
 #
@@ -465,6 +466,37 @@ fetched_family() {
 job_facturx() { fetched_family facturx scripts/fetch-facturx.sh; }
 job_xrechnung() { fetched_family xrechnung scripts/fetch-xrechnung.sh; }
 job_fr-ctc() { fetched_family fr-ctc scripts/fetch-fr-ctc.sh; }
+# The rule sets fetched on demand (`einvoice-validate rules`, the feature `fetch` of
+# einvoice-validator): the pins embedded in the crate are the fetch scripts' pin blocks
+# and the URLs the scripts download; the bundles `rules fetch` assembles from the
+# scripts' downloads are, byte for byte, the bundles the scripts wrote
+# (tests/rulesets.rs of einvoice-validator); the rules command works end to end against
+# a local mirror (tests/rules.rs of einvoice-cli); and every corpus of the facturx,
+# xrechnung, fr-ctc and peppol jobs, validated with `einvoice-validate --rules NAME`
+# from the cache target/rules-cache/, gives the Saxon-HE results
+# (tests/rules_equivalence.rs, a release build; the Peppol bundle is compiled there
+# with Maven, which needs Java and Maven Central). Runs after those jobs, on their
+# outputs in target/: without them the tests say SKIPPED, except in CI, where they
+# are required.
+job_rules() {
+    need_toolchain || return 1
+    local required=()
+    [ -z "${CI:-}" ] || required=(EINVOICE_RULES_REQUIRED=1)
+    env ${required[@]+"${required[@]}"} cargo test --locked --all-features -p einvoice-validator \
+        --test rulesets -- --nocapture &&
+        env ${required[@]+"${required[@]}"} cargo test --locked --release --all-features -p einvoice-cli \
+            --test rules --test rules_equivalence -- --nocapture
+}
+# On demand only (not part of a full run, it downloads): fetches every rule set from
+# its publisher, for real, into target/rules-cache/, and compares each bundle with the
+# one its fetch script wrote in target/ (run the facturx, xrechnung, fr-ctc and peppol
+# jobs first). EINVOICE_FETCH_FROM may name directories (':'-separated) holding
+# published files to use instead of downloading them.
+job_rules-online() {
+    need_toolchain || return 1
+    cargo test --locked --all-features -p einvoice-validator --test rulesets -- \
+        --ignored --nocapture
+}
 # The pre-commit guard on the index; nothing staged, nothing to check.
 job_privacy() {
     if git diff --cached --quiet; then
@@ -474,7 +506,7 @@ job_privacy() {
     scripts/privacy-guard.sh staged && echo "privacy guard: staged content clean"
 }
 
-ALL=(fmt clippy doc test features wasm npm package deny actionlint zizmor pins guards oracle peppol facturx xrechnung fr-ctc privacy)
+ALL=(fmt clippy doc test features wasm npm package deny actionlint zizmor pins guards oracle peppol facturx xrechnung fr-ctc rules privacy)
 
 jobs=("$@")
 [ ${#jobs[@]} -eq 0 ] && jobs=("${ALL[@]}")
