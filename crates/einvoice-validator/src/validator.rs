@@ -9,11 +9,10 @@ use einvoice_xslt::LoadErrorKind;
 use einvoice_xslt_exec::{
     DEFAULT_MAX_STACK, Executable, TransformError, TransformOptions, max_nesting_for_depth,
 };
-use roxmltree::ParsingOptions;
 use sha2::{Digest, Sha256};
 
 use crate::manifest::{MANIFEST_FILE, RuleSet, SchemaId, StylesheetEntry};
-use crate::report::{Report, RuleSetVersion, StylesheetFailure, StylesheetReport};
+use crate::report::{Report, RuleSetVersion, SchemaError, StylesheetFailure, StylesheetReport};
 use crate::resources::{BUNDLE_URI, Resources};
 use crate::{Error, builtin};
 
@@ -348,33 +347,7 @@ impl Validator {
         text: Cow<'_, str>,
         options: &ValidateOptions<'_>,
     ) -> Result<Report, Error> {
-        check_well_formed(&text, options.max_depth)?;
-        let schema_errors = match &self.schema {
-            None => Vec::new(),
-            Some(schema) => {
-                schema
-                    .validate(&text)
-                    .map_err(|e| match e {
-                        einvoice_xsd::DocumentError::Malformed {
-                            line,
-                            column,
-                            message,
-                        } => Error::NotXml {
-                            line,
-                            column,
-                            message,
-                        },
-                        einvoice_xsd::DocumentError::Unsupported {
-                            line,
-                            column,
-                            message,
-                        } => Error::unsupported(format!(
-                            "document, line {line}, column {column}: {message}"
-                        )),
-                    })?
-                    .errors
-            }
-        };
+        let schema_errors = check(&text, options.max_depth, self.schema.as_deref())?;
         let transform_options = TransformOptions {
             implicit_timezone: options.clock.map(|c| c.implicit_timezone()),
             current_date_time: options.clock.map(|c| c.current_date_time()),
@@ -647,58 +620,90 @@ fn declared_encoding(bytes: &[u8]) -> Option<&str> {
     value.find(quote).map(|end| &value[..end])
 }
 
-/// Checks that the text is namespace-well-formed XML without a document type
-/// declaration, as the stylesheets' parser requires, and without an element nested
-/// deeper than `max_depth`.
-fn check_well_formed(text: &str, max_depth: u32) -> Result<(), Error> {
-    let options = ParsingOptions {
-        allow_dtd: false,
-        nodes_limit: u32::MAX,
-        ..ParsingOptions::default()
+/// Reads the text once, with the streaming reader of `einvoice-xml`: checks that it is
+/// namespace-well-formed XML without a document type declaration, as the stylesheets'
+/// parser requires, and without an element nested deeper than `max_depth`, and
+/// validates it against `schema`, if any, in the same pass. The schema errors, sorted
+/// by position.
+///
+/// A well-formedness error comes first, wherever it is in the text; then an element
+/// nested too deep, the first in document order (the schema is not checked from it
+/// on); then a construct of the schema stage outside its subset.
+fn check(
+    text: &str,
+    max_depth: u32,
+    schema: Option<&einvoice_xsd::Schema>,
+) -> Result<Vec<SchemaError>, Error> {
+    let mut reader = einvoice_xml::Reader::new(text);
+    let mut validation = schema.map(|schema| schema.validation(text));
+    let mut depth = 0u32;
+    let mut too_deep = None;
+    loop {
+        let event = match reader.next_event() {
+            Ok(Some(event)) => event,
+            Ok(None) => break,
+            Err(einvoice_xml::Error::DtdDetected) => {
+                return Err(Error::unsupported(
+                    "a document type declaration (DTD): its entities and default attributes could change the document, so it is refused",
+                ));
+            }
+            Err(e) => {
+                return Err(Error::NotXml {
+                    line: e.pos().row,
+                    column: e.pos().col,
+                    message: e.to_string(),
+                });
+            }
+        };
+        match &event {
+            einvoice_xml::Event::Start(start) => {
+                depth = depth.saturating_add(1);
+                if depth > max_depth && too_deep.is_none() {
+                    let at = einvoice_xml::TextPos::at(text, start.range().start);
+                    too_deep = Some(LimitExceeded::Depth {
+                        max: max_depth,
+                        line: at.row,
+                        column: at.col,
+                    });
+                    // The rest is only checked for well-formedness.
+                    validation = None;
+                }
+            }
+            einvoice_xml::Event::End(_) => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        if let Some(validation) = &mut validation {
+            validation.event(event);
+        }
+    }
+    if let Some(limit) = too_deep {
+        return Err(Error::Limit {
+            limit,
+            message: format!("document, {limit}"),
+        });
+    }
+    let Some(validation) = validation else {
+        return Ok(Vec::new());
     };
-    match roxmltree::Document::parse_with_options(text, options) {
-        Ok(document) => check_depth(&document, max_depth),
-        Err(roxmltree::Error::DtdDetected) => Err(Error::unsupported(
-            "a document type declaration (DTD): its entities and default attributes could change the document, so it is refused",
-        )),
-        Err(e) => Err(Error::NotXml {
-            line: e.pos().row,
-            column: e.pos().col,
-            message: e.to_string(),
+    match validation.finish() {
+        Ok(report) => Ok(report.errors),
+        Err(einvoice_xsd::DocumentError::Malformed {
+            line,
+            column,
+            message,
+        }) => Err(Error::NotXml {
+            line,
+            column,
+            message,
         }),
+        Err(einvoice_xsd::DocumentError::Unsupported {
+            line,
+            column,
+            message,
+        }) => Err(Error::unsupported(format!(
+            "document, line {line}, column {column}: {message}"
+        ))),
     }
-}
-
-/// [`Error::Limit`] for the first element, in document order, nested deeper than
-/// `max_depth` (the document element is at depth 1).
-fn check_depth(document: &roxmltree::Document<'_>, max_depth: u32) -> Result<(), Error> {
-    // The elements still open, innermost last: their number is the depth of the parent
-    // of the next element.
-    let mut open: Vec<roxmltree::NodeId> = Vec::new();
-    for node in document
-        .root()
-        .descendants()
-        .filter(roxmltree::Node::is_element)
-    {
-        let parent = node.parent().map(|p| p.id());
-        while open.last().is_some_and(|&id| Some(id) != parent) {
-            open.pop();
-        }
-        if u32::try_from(open.len()).map_or(true, |depth| depth >= max_depth) {
-            let at = document.text_pos_at(node.range().start);
-            let limit = LimitExceeded::Depth {
-                max: max_depth,
-                line: at.row,
-                column: at.col,
-            };
-            return Err(Error::Limit {
-                limit,
-                message: format!("document, {limit}"),
-            });
-        }
-        open.push(node.id());
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -757,21 +762,89 @@ mod tests {
 
     #[test]
     fn well_formedness() {
-        assert!(check_well_formed("<a/>", 1).is_ok());
-        match check_well_formed("<a>\n<b></a>", DEFAULT_MAX_DEPTH) {
-            Err(Error::NotXml { line, .. }) => assert_eq!(line, 2),
+        assert!(check("<a/>", 1, None).is_ok());
+        match check("<a>\n<b></a>", DEFAULT_MAX_DEPTH, None) {
+            Err(Error::NotXml {
+                line,
+                column,
+                message,
+            }) => assert_eq!(
+                (line, column, message.as_str()),
+                (2, 4, "expected 'b' tag, not 'a' at 2:4")
+            ),
             other => panic!("{other:?}"),
         }
         assert!(matches!(
-            check_well_formed(
+            check(
                 "<!DOCTYPE a [<!ENTITY e 'x'>]><a>&e;</a>",
-                DEFAULT_MAX_DEPTH
+                DEFAULT_MAX_DEPTH,
+                None
             ),
             Err(Error::Unsupported { .. })
         ));
         assert!(matches!(
-            check_well_formed("<p:a/>", DEFAULT_MAX_DEPTH),
+            check("<p:a/>", DEFAULT_MAX_DEPTH, None),
             Err(Error::NotXml { .. })
+        ));
+    }
+
+    #[test]
+    fn one_pass_order_of_errors() {
+        let schema = einvoice_xsd::Schema::ubl_2_1().unwrap();
+        let invoice = "<Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2' \
+                       xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'>";
+        let depth = |text: &str, max| match check(text, max, Some(&schema)) {
+            Err(Error::Limit {
+                limit: LimitExceeded::Depth { line, column, .. },
+                ..
+            }) => Some((line, column)),
+            _ => None,
+        };
+        // Schema errors, in one pass with the well-formedness check.
+        let errors = check(&format!("{invoice}</Invoice>"), 3, Some(&schema)).unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].kind.as_str(), "missing-element");
+        // An element too deep: a limit, from the first one; the schema is not checked.
+        let deep = format!("{invoice}\n<a><b><c/></b></a><d><e><f/></e></d></Invoice>");
+        assert_eq!(depth(&deep, 2), Some((2, 4)));
+        assert_eq!(depth(&deep, 3), Some((2, 7)));
+        assert_eq!(depth(&deep, 4), None);
+        // A well-formedness error comes first, even after an element too deep.
+        let malformed = format!("{deep}<");
+        assert!(matches!(
+            check(&malformed, 2, Some(&schema)),
+            Err(Error::NotXml { .. })
+        ));
+        assert!(matches!(
+            check(&malformed, 2, None),
+            Err(Error::NotXml { .. })
+        ));
+        // A construct the schema stage does not support comes after the depth limit,
+        // and after any well-formedness error.
+        let unsupported = invoice.replace(
+            "<Invoice ",
+            "<Invoice xsi:type='xs:IDREF' xmlns:xs='http://www.w3.org/2001/XMLSchema' ",
+        );
+        assert!(matches!(
+            check(&format!("{unsupported}</Invoice>"), 3, Some(&schema)),
+            Err(Error::Unsupported { .. })
+        ));
+        assert!(matches!(
+            check(
+                &format!("{unsupported}<b><c/></b></Invoice>"),
+                2,
+                Some(&schema)
+            ),
+            Err(Error::Limit { .. })
+        ));
+        assert!(matches!(
+            check(&format!("{unsupported}</Invoice><"), 3, Some(&schema)),
+            Err(Error::NotXml { .. })
+        ));
+        // A document type declaration is refused, also with a schema.
+        assert!(matches!(
+            check("<!DOCTYPE Invoice><Invoice/>", 3, Some(&schema)),
+            Err(Error::Unsupported { .. })
         ));
     }
 

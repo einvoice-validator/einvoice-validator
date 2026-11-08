@@ -13,6 +13,9 @@ declaration, no element nested deeper than 256 levels or the maximum set with
 official compiled Schematron with the behaviour of Saxon-HE 12.10. The `Report` holds the
 schema errors, the findings of each stylesheet (failed asserts and successful reports with
 their id, flag, location and message), the raw SVRL and the verdict.
+The XML check and the schema are one pass of the streaming reader
+[`einvoice-xml`](https://crates.io/crates/einvoice-xml) over the document, which builds no
+tree; the only tree of the document is the one the stylesheets run on.
 
 ```toml
 [dependencies]

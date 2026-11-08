@@ -279,6 +279,86 @@ fn documents_that_are_not_xml() {
     }
 }
 
+/// Constructs that XML 1.0 or Namespaces in XML 1.0 forbid, which the `roxmltree` crate
+/// accepted (until 0.2.0 the documents were checked with it): each makes the document not
+/// well-formed, with the message of `einvoice-xml`, in a valid invoice.
+#[cfg(feature = "cen-ubl")]
+#[test]
+fn constructs_xml_forbids_are_not_xml() {
+    let case = common::case("examples/ubl-tc434-example1.xml");
+    let text = std::fs::read_to_string(case.path()).unwrap();
+    assert!(cen().validate(text.as_bytes()).unwrap().is_valid());
+    let note = "<cbc:Note>";
+    assert_eq!(text.matches(note).count(), 1);
+    let cases = [
+        // XML 1.0 section 4.1 (WFC: Legal Character): a surrogate is not a character.
+        ("<cbc:Note>&#xD800;", "the character reference at"),
+        ("<cbc:Note>&#x110000;", "the character reference at"),
+        // XML 1.0 section 2.6: targets matching [Xx][Mm][Ll] are reserved; Namespaces
+        // in XML 1.0 section 7: no colon in a processing instruction target.
+        (
+            "<?XmL x?><cbc:Note>",
+            "the processing instruction target at",
+        ),
+        (
+            "<?a:b x?><cbc:Note>",
+            "the processing instruction target at",
+        ),
+        // XML 1.0 [16]: whitespace between the target and the data.
+        (
+            "<?abc?def?><cbc:Note>",
+            "expected a whitespace between the processing instruction target",
+        ),
+        // Namespaces in XML 1.0 section 3: a prefix cannot be undeclared (in 1.0), nor
+        // the xmlns prefix declared.
+        (
+            "<cbc:Note xmlns:p=''>",
+            "is bound to an empty namespace name",
+        ),
+        (
+            "<cbc:Note xmlns:xmlns='urn:x'>",
+            "the 'xmlns' prefix is declared at",
+        ),
+        // XML 1.0 [5], Namespaces in XML 1.0 [7]: no qualified name starts with a colon.
+        ("<cbc:Note :a='1'>", "a name with an empty prefix at"),
+        // XML 1.0 section 3.1 (WFC: Unique Att Spec): the default namespace twice.
+        (
+            "<cbc:Note xmlns='urn:a' xmlns='urn:b'>",
+            "namespace declaration 'xmlns' at",
+        ),
+        // Namespaces in XML 1.0 section 3: p:xmlns is not a namespace declaration, and
+        // was taken for one.
+        (
+            "<cbc:Note xmlns:p='urn:p' p:xmlns='urn:x'>",
+            "a prefixed attribute named 'xmlns' is not supported",
+        ),
+    ];
+    for (replacement, message) in cases {
+        let document = text.replacen(note, replacement, 1);
+        let e = cen().validate(document.as_bytes()).unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::NotXml, "{replacement}: {e}");
+        assert!(e.to_string().contains(message), "{replacement}: {e}");
+        assert_eq!(
+            cen()
+                .validate_owned(document.into_bytes())
+                .unwrap_err()
+                .to_string(),
+            e.to_string()
+        );
+    }
+    // XML 1.0 [80], [81]: an encoding name starts with a letter. The validator refuses
+    // encodings other than UTF-8 before reading the document.
+    let declaration = "encoding=\"UTF-8\"";
+    assert_eq!(text.matches(declaration).count(), 1);
+    let e = cen()
+        .validate(
+            text.replacen(declaration, "encoding=\"-UTF-8\"", 1)
+                .as_bytes(),
+        )
+        .unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::Unsupported, "{e}");
+}
+
 #[cfg(feature = "cen-ubl")]
 #[test]
 fn a_byte_order_mark_is_accepted() {

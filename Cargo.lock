@@ -145,6 +145,7 @@ dependencies = [
  "einvoice-pdf",
  "einvoice-svrl",
  "einvoice-testkit",
+ "einvoice-xml",
  "einvoice-xpath-eval",
  "einvoice-xsd",
  "einvoice-xslt",

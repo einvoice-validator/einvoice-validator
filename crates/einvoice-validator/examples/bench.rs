@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // The stages on their own.
         let text = std::str::from_utf8(bytes)?;
         let start = Instant::now();
-        std::hint::black_box(roxmltree::Document::parse(text)?);
+        std::hint::black_box(einvoice_xml::check(text)?);
         parse += start.elapsed();
         let start = Instant::now();
         std::hint::black_box(schema.validate(text)?);

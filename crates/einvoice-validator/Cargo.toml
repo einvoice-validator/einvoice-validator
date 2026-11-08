@@ -32,6 +32,7 @@ pdf = ["dep:einvoice-pdf"]
 [dependencies]
 einvoice-pdf = { path = "../einvoice-pdf", version = "0.2.0", optional = true }
 einvoice-svrl = { path = "../einvoice-svrl", version = "0.2.0" }
+einvoice-xml = { path = "../einvoice-xml", version = "0.2.0" }
 einvoice-xpath-eval = { path = "../einvoice-xpath-eval", version = "0.2.0" }
 einvoice-xsd = { path = "../einvoice-xsd", version = "0.2.0" }
 einvoice-xslt = { path = "../einvoice-xslt", version = "0.2.0" }

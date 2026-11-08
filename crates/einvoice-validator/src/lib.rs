@@ -10,7 +10,9 @@
 //!    declaration ([`Error::NotXml`], [`Error::Unsupported`]), no element nested deeper
 //!    than [`ValidateOptions::max_depth`] ([`Error::Limit`]);
 //! 2. the XML schema of the rule set, if any (UBL 2.1 for the UBL rule sets), with
-//!    [`einvoice_xsd`]: every validity error, with its line and column;
+//!    [`einvoice_xsd`]: every validity error, with its line and column. The XML check and
+//!    the schema run in one pass of the streaming reader of [`einvoice_xml`] over the
+//!    text, which builds no tree;
 //! 3. every stylesheet of the rule set, with [`einvoice_xslt_exec`], which executes the
 //!    official compiled Schematron with the behaviour of the reference engine
 //!    (Saxon-HE 12.10) and writes its SVRL report.
