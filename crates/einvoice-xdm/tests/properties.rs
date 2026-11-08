@@ -1,13 +1,131 @@
-//! Property tests: exact decimal arithmetic against `num-rational`, ordering,
-//! string round trips, Saxon's division rule, and double string round trips.
+//! Property tests: exact decimal arithmetic against exact fractions ([`BigRational`]
+//! below), ordering, string round trips, Saxon's division rule, and double string
+//! round trips.
 
 use std::cmp::Ordering;
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use einvoice_xdm::{Decimal, Integer, format_double, parse_double};
 use num_bigint::BigInt;
-use num_rational::BigRational;
-use num_traits::{Signed, Zero};
+use num_integer::Integer as _;
+use num_traits::{One, Signed, Zero};
 use proptest::prelude::*;
+
+/// An exact fraction of two big integers, the reference the decimals are checked
+/// against: always in lowest terms with a positive denominator, so that equal values
+/// have equal fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BigRational {
+    numerator: BigInt,
+    denominator: BigInt,
+}
+
+impl BigRational {
+    /// `numerator / denominator`, reduced; the denominator must not be zero.
+    fn new(numerator: BigInt, denominator: BigInt) -> Self {
+        assert!(!denominator.is_zero(), "zero denominator");
+        let gcd = numerator.gcd(&denominator);
+        let (mut numerator, mut denominator) = (numerator / &gcd, denominator / &gcd);
+        if denominator.is_negative() {
+            numerator = -numerator;
+            denominator = -denominator;
+        }
+        Self {
+            numerator,
+            denominator,
+        }
+    }
+
+    fn from_integer(value: BigInt) -> Self {
+        Self {
+            numerator: value,
+            denominator: BigInt::one(),
+        }
+    }
+
+    fn abs(&self) -> Self {
+        Self {
+            numerator: self.numerator.abs(),
+            denominator: self.denominator.clone(),
+        }
+    }
+}
+
+impl Ord for BigRational {
+    /// The denominators are positive: compare the cross products.
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.numerator * &other.denominator).cmp(&(&other.numerator * &self.denominator))
+    }
+}
+
+impl PartialOrd for BigRational {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Add for BigRational {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        Self::new(
+            self.numerator * &other.denominator + other.numerator * &self.denominator,
+            self.denominator * other.denominator,
+        )
+    }
+}
+
+impl Neg for BigRational {
+    type Output = Self;
+    fn neg(self) -> Self {
+        Self {
+            numerator: -self.numerator,
+            denominator: self.denominator,
+        }
+    }
+}
+
+impl Sub for BigRational {
+    type Output = Self;
+    fn sub(self, other: Self) -> Self {
+        self + -other
+    }
+}
+
+impl Mul for BigRational {
+    type Output = Self;
+    fn mul(self, other: Self) -> Self {
+        Self::new(
+            self.numerator * other.numerator,
+            self.denominator * other.denominator,
+        )
+    }
+}
+
+impl Div for BigRational {
+    type Output = Self;
+    fn div(self, other: Self) -> Self {
+        Self::new(
+            self.numerator * other.denominator,
+            self.denominator * other.numerator,
+        )
+    }
+}
+
+#[test]
+fn rational_reference_is_exact() {
+    let r = |n: i64, d: i64| BigRational::new(BigInt::from(n), BigInt::from(d));
+    assert_eq!(r(2, -4), r(-1, 2));
+    assert_eq!(r(-2, -4).numerator, BigInt::from(1));
+    assert_eq!(r(0, -7), BigRational::from_integer(BigInt::zero()));
+    assert_eq!(r(0, -7).denominator, BigInt::one());
+    assert_eq!(r(1, 3) + r(1, 6), r(1, 2));
+    assert_eq!(r(1, 3) - r(1, 2), r(-1, 6));
+    assert_eq!(r(2, 3) * r(-9, 4), r(-3, 2));
+    assert_eq!(r(2, 3) / r(-4, 9), r(-3, 2));
+    assert_eq!(r(-5, 7).abs(), r(5, 7));
+    assert!(r(-1, 3) < r(-1, 4) && r(1, 4) < r(1, 3) && r(2, 6) == r(1, 3));
+    assert_eq!(r(7, 3).cmp(&r(14, 6)), Ordering::Equal);
+}
 
 /// `10^exponent`; the exponents of these tests are small.
 fn pow10(exponent: u64) -> BigInt {
@@ -96,8 +214,8 @@ proptest! {
         prop_assert!(q.scale() <= scale);
         let exact = rational(&a) / rational(&b);
         let unit = BigRational::new(BigInt::from(1), pow10(scale.unsigned_abs()));
-        let error = (rational(&q) - &exact).abs();
-        let half = &unit / BigInt::from(2);
+        let error = (rational(&q) - exact.clone()).abs();
+        let half = unit / BigRational::from_integer(BigInt::from(2));
         prop_assert!(error <= half);
         if error == half {
             // Ties go towards zero.

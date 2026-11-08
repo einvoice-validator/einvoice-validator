@@ -47,7 +47,7 @@ einvoice-validate --bundle target/peppol/peppol-bis-billing-ubl-3.0.22 invoice.x
 | `--max-depth N` | Refuse a document with an element nested deeper than N levels, the document element being at depth 1 (default 256, libxml2's default; at most 100000). Such a document gets no verdict: an error of kind `unsupported` naming the line and column of the first element too deep, exit status 3. The stylesheets recurse once or twice per element level; each worker thread gets 1 MiB and 4 KiB per allowed level of nesting of templates and functions (twice N, plus 64), at least 8 MiB, and the stylesheets may use all of it but 1 MiB: a larger N, or a stylesheet that recurses, ends with that error rather than a stack overflow. |
 | `-h`, `--help` | The help, then exit 0. |
 | `-V`, `--version` | The version and the built-in rule sets, then exit 0. |
-| `--licences`, `--licenses` | The licences of everything embedded in the binary, each with what it covers and its full text, then exit 0: MIT for the code, EUPL-1.2 for the CEN stylesheets of the built-in rule sets, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1 schemas. |
+| `--licences`, `--licenses` | The licences of everything embedded in the binary, each with what it covers and its full text, then exit 0: MIT for the code, EUPL-1.2 for the CEN stylesheets of the built-in rule sets, and the OASIS, UN/CEFACT and W3C terms of the UBL 2.1 schemas; then the notices of the third-party crates the binary is compiled from (`THIRD-PARTY-NOTICES`). |
 
 Options take their value as `--format json`, `--format=json`, `-f json` or `-fjson`. An option
 given twice is a usage error.
@@ -225,3 +225,12 @@ validation stylesheets, which are under the EUPL-1.2 (see `bundles/cen-ubl/` and
 schemas of the `einvoice-xsd` crate, which keep their own terms (OASIS, UN/CEFACT, W3C). The
 texts are in `LICENSES/`. `einvoice-validate --licences` prints every one of these licences in
 full.
+
+The binary is also compiled from crates of crates.io (`regex`, `num-bigint`, `roxmltree`,
+`sha2`, `miniz_oxide` and their dependencies), each used under the MIT licence, which all of
+them offer. `THIRD-PARTY-NOTICES` gives, for every one of them on any target, its version, its
+licence expression, the licence used, its authors and the text of that licence from its own
+package, copyright line included; `einvoice-validate --licences` prints it after the licences
+above. It is generated from `Cargo.lock` and the packages of those crates (`cargo run --locked
+-p einvoice-testkit --bin third-party-notices -- --write`), and a test of the crate fails when
+it is not up to date.

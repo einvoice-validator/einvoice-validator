@@ -378,6 +378,16 @@ test("the licences of what the package embeds, with the texts it ships", () => {
   }
 });
 
+test("the package ships the notices of the third-party crates of the module", () => {
+  // The committed file, generated from Cargo.lock (cargo test -p einvoice-wasm checks it).
+  const shipped = readFileSync(join(PACKAGE_DIR, "THIRD-PARTY-NOTICES"), "utf8");
+  assert.equal(shipped, read("crates/einvoice-wasm/THIRD-PARTY-NOTICES").toString("utf8"));
+  assert.ok(shipped.startsWith("Third-party notices of the npm package einvoice-validator"));
+  for (const name of ["wasm-bindgen", "js-sys", "regex", "num-bigint"]) {
+    assert.match(shipped, new RegExp(`\\n== ${name} [0-9.]+\\nLicence: MIT`), name);
+  }
+});
+
 test("require() from CommonJS gets the same API", () => {
   const require = createRequire(import.meta.url);
   const cjs = require("einvoice-validator");

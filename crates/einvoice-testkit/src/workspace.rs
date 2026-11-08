@@ -69,7 +69,7 @@ fn cargo() -> Command {
 }
 
 /// `cargo tree --locked --offline` in the workspace with `args`, one line per package.
-fn tree(args: &[&str]) -> Result<Vec<String>, String> {
+pub(crate) fn tree(args: &[&str]) -> Result<Vec<String>, String> {
     let output = cargo()
         .arg("tree")
         .arg("--manifest-path")

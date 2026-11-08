@@ -118,14 +118,21 @@ const MIT_COVERS: &str = "the code of einvoice-validate (crate einvoice-cli) and
     einvoice-xdm, einvoice-xpath, einvoice-xpath-eval, einvoice-xsd, einvoice-xslt, \
     einvoice-xslt-exec)";
 
+/// The notices of the third-party crates the binary is compiled from (crates.io), with
+/// the texts of their licences: generated from `Cargo.lock` and the packages of those
+/// crates (`einvoice_testkit::notices`; a test checks that it is up to date).
+const THIRD_PARTY_NOTICES: &str = include_str!("../THIRD-PARTY-NOTICES");
+
 /// The licence notices of everything the binary embeds, with their full texts: the
 /// code (MIT), then the other licences `einvoice_validator::licences` lists for this
-/// build (the CEN stylesheets of the built-in rule sets, the UBL 2.1 schemas).
+/// build (the CEN stylesheets of the built-in rule sets, the UBL 2.1 schemas), then the
+/// notices of the third-party crates it is compiled from.
 fn licences() -> String {
     let licences = einvoice_validator::licences();
     let mut out = format!(
         "{NAME} {VERSION}: the licences of the works embedded in this program.
-Each section names a licence, what it covers, then its full text.
+Each section names a licence, what it covers, then its full text. The notices of
+the third-party crates the program is compiled from follow them.
 "
     );
     let total = licences.len();
@@ -145,6 +152,8 @@ Each section names a licence, what it covers, then its full text.
             out.push('\n');
         }
     }
+    out.push_str("\n== Third-party crates\n\n");
+    out.push_str(THIRD_PARTY_NOTICES);
     out
 }
 
@@ -174,8 +183,8 @@ Options:
   -h, --help           Print this help.
   -V, --version        Print the version and the built-in rule sets.
       --licences       Print the licences of everything embedded in this program
-                       (its code, the CEN stylesheets, the UBL 2.1 schemas), with
-                       their full texts. Also --licenses.
+                       (its code, the CEN stylesheets, the UBL 2.1 schemas, the
+                       third-party crates), with their full texts. Also --licenses.
 
 Built-in rule sets:
 {builtins}

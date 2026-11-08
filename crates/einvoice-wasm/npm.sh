@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # The npm package einvoice-validator, built from this crate (README.md): the WebAssembly
 # module and its JavaScript bindings (wasm-bindgen, target web), optimised with wasm-opt,
-# with the entry point for Node.js, the TypeScript declarations, the README and the
-# licence texts.
+# with the entry point for Node.js, the TypeScript declarations, the README, the
+# licence texts and the notices of the third-party crates compiled into the module
+# (THIRD-PARTY-NOTICES, generated from Cargo.lock; the tests of the crate check it).
 #
 #   crates/einvoice-wasm/npm.sh tools   # install the pinned wasm-bindgen-cli and wasm-opt
 #   crates/einvoice-wasm/npm.sh build   # the package, in target/npm/einvoice-validator/
@@ -190,6 +191,13 @@ cmd_build() {
         fi
     done
     cmp LICENSE "$OUT/LICENSES/MIT.txt" || status=1
+    # The notices of the third-party crates of the module (cargo test -p einvoice-wasm
+    # checks that the file is up to date with Cargo.lock).
+    cp "$CRATE/THIRD-PARTY-NOTICES" "$OUT/THIRD-PARTY-NOTICES"
+    if [ "$(jq -r '.files | index("THIRD-PARTY-NOTICES")' "$OUT/package.json")" = null ]; then
+        echo "$OUT/package.json: THIRD-PARTY-NOTICES is not in files" >&2
+        status=1
+    fi
     [ "$status" -eq 0 ] || return 1
 
     say "size"

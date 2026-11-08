@@ -4,7 +4,10 @@
 //! einvoice-validator's default features, as published with the artefacts, and the
 //! terms of the UBL 2.1 schemas of einvoice-xsd. `einvoice-validate --licences` prints
 //! the full text of each of them, and its MIT section names exactly the workspace crates
-//! the binary is built from (`cargo tree`, default features).
+//! the binary is built from (`cargo tree`, default features). Then it prints the
+//! notices of the third-party crates it is compiled from, `THIRD-PARTY-NOTICES`, which
+//! must be what `einvoice_testkit::notices` generates from `Cargo.lock` and the
+//! packages of those crates today, with an entry and a licence text for every crate.
 
 #![cfg(test)]
 
@@ -13,6 +16,7 @@ mod common;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use einvoice_testkit::notices;
 use einvoice_testkit::workspace::{self, Crate, Features};
 
 fn crate_dir() -> PathBuf {
@@ -128,7 +132,12 @@ fn licences_option_prints_every_embedded_licence_in_full() {
             );
             rest = &after[body.len()..];
         }
-        assert_eq!(rest, "", "{flag}: trailing output");
+        // Then the third-party notices, as committed.
+        assert_eq!(
+            rest,
+            format!("\n== Third-party crates\n\n{}", third_party_notices()),
+            "{flag}: the output after the licences"
+        );
         outputs.push(r.stdout);
     }
     assert_eq!(outputs[0], outputs[1]);
@@ -168,6 +177,77 @@ fn mit_section_names_exactly_the_crates_the_binary_is_built_from() {
             "{}",
             c.name
         );
+    }
+}
+
+/// The committed notices file.
+fn third_party_notices() -> String {
+    String::from_utf8(read(&crate_dir().join("THIRD-PARTY-NOTICES"))).unwrap()
+}
+
+#[test]
+fn third_party_notices_are_up_to_date_with_cargo_lock() {
+    assert_eq!(notices::CLI.package, env!("CARGO_PKG_NAME"));
+    assert_eq!(
+        notices::path(&notices::CLI),
+        crate_dir().join("THIRD-PARTY-NOTICES")
+    );
+    if let Err(e) = notices::check(&notices::CLI) {
+        panic!("{e}");
+    }
+}
+
+#[test]
+fn every_third_party_crate_compiled_in_has_its_notice_and_licence_text() {
+    let crates = notices::third_party(&notices::CLI).unwrap();
+    let names: BTreeSet<&str> = crates.iter().map(|c| c.name.as_str()).collect();
+    // The crates of the engine, of the schemas, of the PDF reader and their own.
+    for name in [
+        "regex",
+        "num-bigint",
+        "roxmltree",
+        "sha2",
+        "miniz_oxide",
+        "memchr",
+    ] {
+        assert!(names.contains(name), "{name}: {names:?}");
+    }
+    // No crate of this project, no build dependency, no procedural macro.
+    let members = workspace::members().unwrap();
+    assert!(names.iter().all(|n| !members.iter().any(|m| m == n)));
+    assert!(!names.contains("autocfg"), "{names:?}");
+    let r = common::run(&["--licences"], None);
+    assert_eq!(r.code, 0);
+    let (_, printed) = r.stdout.split_once("\n== Third-party crates\n\n").unwrap();
+    assert!(printed.contains(&format!("\nCrates ({}):\n", crates.len())));
+    let sections: Vec<&str> = printed.split("\n== ").skip(1).collect();
+    assert_eq!(sections.len(), crates.len());
+    for (c, section) in crates.iter().zip(&sections) {
+        let heading = format!(
+            "{} {}\nLicence: {}",
+            c.name,
+            c.version,
+            c.chosen.join(" AND ")
+        );
+        assert!(section.starts_with(&heading), "{}: {section}", c.name);
+        // MIT where there is a choice, and the text of each licence chosen.
+        assert!(c.chosen.contains(&"MIT".to_owned()), "{}", c.name);
+        assert_eq!(c.texts.len(), c.chosen.len(), "{}", c.name);
+        for t in &c.texts {
+            assert!(
+                t.text.contains("Permission is hereby granted") || t.licence != "MIT",
+                "{}: {}",
+                c.name,
+                t.file
+            );
+            let block = format!("\n-- {}, from {}\n\n{}", t.licence, t.file, t.text);
+            assert!(
+                section.contains(&block),
+                "{}: no {} text",
+                c.name,
+                t.licence
+            );
+        }
     }
 }
 

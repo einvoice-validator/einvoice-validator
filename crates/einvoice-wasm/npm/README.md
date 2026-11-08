@@ -128,6 +128,9 @@ the code is MIT; the module embeds the CEN EN 16931 UBL and CII validation style
 1.3.17, unmodified, which are under the EUPL-1.2, and the OASIS UBL 2.1 schemas, which keep the terms
 stated in their headers (OASIS, UN/CEFACT, and the W3C licence of the XML Signature schema,
 which asks for its notice to be shown to users: `licences()` returns it). The texts are in
-`LICENSES/`.
+`LICENSES/`. The module is also compiled from Rust crates of crates.io, used under the MIT
+licence (and the Unicode licence v3 for the tables of `unicode-ident`): `THIRD-PARTY-NOTICES`
+gives, for each, its version, its licence, its authors and the text of that licence with its
+copyright line.
 
 Source, issues and the Rust crates: <https://github.com/einvoice-validator/einvoice-validator>.

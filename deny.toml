@@ -60,7 +60,9 @@ exceptions = [
     # on the build machine and use it, and so do the identifier checks of
     # wasm-bindgen-shared, which only those macros call. None of its code is in the
     # WebAssembly module (no unicode_ident symbol among the function names of a release
-    # build). Allowed for that crate only.
+    # build). Allowed for that crate only. Its notice is in
+    # crates/einvoice-wasm/THIRD-PARTY-NOTICES all the same, which covers the whole graph
+    # of normal dependencies of the module.
     { crate = "unicode-ident", allow = ["Unicode-3.0"] },
 ]
 

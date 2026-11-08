@@ -48,6 +48,7 @@
     "node.mjs",
     "node.d.mts",
     "LICENSES/",
+    "THIRD-PARTY-NOTICES",
     "README.md"
   ],
   "sideEffects": [
