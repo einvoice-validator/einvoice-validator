@@ -10,6 +10,10 @@ against.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-08
+
+Tested against the official rule sets: CEN EN 16931 validation artefacts 1.3.17, Peppol BIS Billing 3.0 3.0.22.
+
 ### Added
 
 - Mutation cases: a catalogue of edits of official examples (`corpus/mutations.toml`, applied by
@@ -228,4 +232,5 @@ against.
 - `cargo package --workspace` no longer fails on the path dependency of the unpublished `xtask`
   crate, which now carries the workspace version like the others (#17).
 
-[Unreleased]: https://github.com/einvoice-validator/einvoice-validator/commits/main
+[Unreleased]: https://github.com/einvoice-validator/einvoice-validator/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/einvoice-validator/einvoice-validator/releases/tag/v0.1.0

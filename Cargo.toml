@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*", "xtask"]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 # Keep in step with the channel pinned in rust-toolchain.toml.
 rust-version = "1.99"
