@@ -119,15 +119,24 @@ that recurses without end fails with `Error::Limit` instead of overflowing the s
 or whose instructions nest deeper than 64, is refused when it is loaded rather than overflowing
 the stack; the official rule sets need 32 and 9.
 
-**Peppol BIS Billing 3.0.** Its files carry no licence, so they are not part of this repository:
-`scripts/fetch-peppol.sh` (needs Java and network access the first time) downloads the pinned
-release, compiles its two stylesheets and writes, next to them, the `bundle.toml` that names
-them with their checksums. The directory is then a bundle:
+**Rule sets fetched on demand.** Factur-X (five profiles), XRechnung (UBL, CII), the French rules
+(FNFE-MPE, fourteen bundles) and Peppol BIS Billing 3.0 may not be redistributed: `einvoice-validate`
+downloads them from their publishers only when asked (`rules fetch NAME|FAMILY|--all`, or
+`--fetch`), at pinned URLs, checks every file against its pinned digest, builds their bundles in
+the cache (`EINVOICE_VALIDATOR_CACHE`, default the platform cache directory) exactly as
+`scripts/fetch-*.sh` build them, and uses them offline. Peppol is published as Schematron only;
+its bundle is compiled with ph-schematron, which needs Java. `rules list` shows sources and cache
+state.
 
 ```sh
-scripts/fetch-peppol.sh                     # into target/peppol/
-einvoice-validate --bundle target/peppol/peppol-bis-billing-ubl-3.0.22 invoice.xml
+einvoice-validate rules fetch xrechnung        # once, from KoSIT's package registry
+einvoice-validate --rules xrechnung invoice.xml
+einvoice-validate rules list
 ```
+
+Downloading uses rustls with the `ring` provider, which contains C and assembly: it is the
+`fetch` feature of `einvoice-cli` (on by default). The validation engine and the library are pure
+Rust; `cargo install einvoice-cli --no-default-features` builds a tool without network code.
 
 **Library.** A `Validator` is built once from a rule set (schemas loaded, stylesheets prepared),
 is `Send + Sync`, and validates any number of documents:

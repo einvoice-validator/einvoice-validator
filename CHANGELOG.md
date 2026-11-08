@@ -26,6 +26,15 @@ against.
 
 ### Added
 
+- Rule sets fetched on demand (#35): `einvoice-validate rules list|fetch|path|clear`, `--rules NAME`
+  for Factur-X (`factur-x-minimum` … `factur-x-extended`), XRechnung (`xrechnung-ubl`,
+  `xrechnung-cii`, alias `xrechnung`), the French rules (`fr-ctc-*`) and Peppol BIS Billing 3.0
+  (`peppol-bis-billing-ubl`, alias `peppol`), read from a cache and downloaded only with
+  `rules fetch` or `--fetch`; library `fetched_rule_sets`, `RuleSetCache`, `Validator::from_cache`,
+  `Error::NotCached`, `Error::Fetch`, and the feature `fetch` (HTTPS on rustls, retries, resumed
+  downloads, size limits, ZIP/tar/gzip readers with path checks; Peppol compiled with
+  ph-schematron through Maven). The bundles are byte for byte those of `scripts/fetch-*.sh`; with
+  them, every corpus gives the Saxon-HE results.
 - `cargo xtask bench`: the wall time, CPU time and peak memory of `einvoice-validate` and of
   Saxon-HE 12.10 on the whole corpus of each rule set (every document, mutation cases included,
   through every stylesheet) at the given thread counts, a run doing exactly Saxon-HE's work (each
@@ -153,6 +162,10 @@ against.
 
 ### Changed
 
+- The manifests written by `scripts/fetch-*.sh` have neutral comments; `fetch-peppol.sh` pins
+  the embedded CEN version (`cen=1.3.16`). `einvoice-cli` depends on rustls/ring/webpki-roots by
+  default (feature `fetch`; licences in THIRD-PARTY-NOTICES; `--no-default-features` leaves them
+  out).
 - `einvoice-validator` keeps each SVRL report compactly and reads its findings as the
   stylesheet writes it (#18), with `Executable::transform_compact`, instead of writing it to a
   string and parsing that string again with `roxmltree` (no longer a dependency of the
