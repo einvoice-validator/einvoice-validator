@@ -7,14 +7,15 @@
 #![cfg(test)]
 
 use std::cell::Cell;
+use std::fmt::Write as _;
 use std::rc::Rc;
 
 use einvoice_xdm::{AtomicValue, Integer};
 use einvoice_xpath::{NamespaceMap, QName, XS_NAMESPACE, parse_expr, parse_sequence_type};
 use einvoice_xpath_eval::{
     Argument, BindingValue, Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext,
-    Error, ErrorCode, FunctionId, Host, Item, NoHost, Node, SimpleStaticContext, TreeBuilder,
-    ValueType, VariableId, compile,
+    Error, ErrorCode, FunctionId, Host, Item, NoHost, Node, SelectionStorage, SimpleStaticContext,
+    TreeBuilder, ValueType, VariableId, compile,
 };
 
 fn namespaces() -> NamespaceMap {
@@ -497,4 +498,77 @@ fn variable_and_function_types_from_the_host() {
         .evaluate(&dc, &Context::new())
         .unwrap();
     assert_eq!(strings(&result), ["true"]);
+}
+
+#[test]
+fn nodes_selected_in_place_are_those_of_the_evaluation() {
+    let mut xml = String::from("<r a='1' b='2'>");
+    for i in 0..30 {
+        write!(xml, "<e n='{i}'>t<f/></e> ").unwrap();
+    }
+    xml.push_str("<!--c--></r>");
+    let doc = Document::parse(xml.as_str(), None).unwrap();
+    let r = doc.root().children().next().unwrap();
+    let e = r.children().next().unwrap();
+    let dc = DynamicContext::new(&NoHost, clock());
+    for node in [&doc.root(), &r, &e] {
+        let context = Context::for_item(Item::Node(node.clone()));
+        for text in [
+            "@*|*",
+            "*",
+            "@*",
+            "node()",
+            "*|@*",
+            "e|node()",
+            "..",
+            ".//f|@n",
+            "f[1]",
+            "@*|..",
+            ".",
+            "*|comment()|processing-instruction()",
+            "@*|*|text()|..",
+            "@*|*|text()|..|comment()",
+        ] {
+            let expr = plain(text);
+            let evaluated = expr.evaluate(&dc, &context).unwrap();
+            match expr
+                .select_in_place(&dc, &context, SelectionStorage::default())
+                .unwrap()
+            {
+                Some(selection) => {
+                    let selected: Vec<Item> = selection.iter().map(Item::Node).collect();
+                    assert_eq!(selection.len(), evaluated.len(), "{text}");
+                    assert_eq!(selection.is_empty(), evaluated.is_empty(), "{text}");
+                    assert!(
+                        selected
+                            .iter()
+                            .zip(&evaluated)
+                            .all(|(a, b)| a.as_node() == b.as_node()),
+                        "{text}"
+                    );
+                }
+                // Predicates, a path: not read in place.
+                None => assert!(
+                    matches!(text, ".//f|@n" | "f[1]" | "@*|*|text()|..|comment()"),
+                    "{text}"
+                ),
+            }
+        }
+    }
+    // The context item must be a node, as for the evaluation.
+    let atomic = Context::for_item(Item::Atomic(AtomicValue::Integer(Integer::from(1))));
+    assert_eq!(
+        plain("@*|*")
+            .select_in_place(&dc, &atomic, SelectionStorage::default())
+            .unwrap_err()
+            .code(),
+        plain("@*|*").evaluate(&dc, &atomic).unwrap_err().code()
+    );
+    assert_eq!(
+        plain("*")
+            .select_in_place(&dc, &Context::new(), SelectionStorage::default())
+            .unwrap_err()
+            .code(),
+        ErrorCode::Xpdy0002
+    );
 }

@@ -33,7 +33,7 @@ use einvoice_xpath::{AtomicKind, ItemType, Occurrence, QName, SequenceType};
 use einvoice_xpath_eval::{
     Argument, Clock, CompiledExpr, Context, DEFAULT_MAX_DEPTH, Document, DocumentError,
     DynamicContext, ErrorCode, FunctionId, Host, Item, LimitExceeded, Node, NodeAxis, NodeKind,
-    StackLimit, VariableId,
+    NodeSelection, SelectionStorage, StackLimit, VariableId,
 };
 use einvoice_xslt::{NamespaceBinding, NumberLevel};
 
@@ -283,6 +283,7 @@ impl Executable {
             learners: (0..self.learners).map(|_| Rc::default()).collect(),
             argument_learners: RefCell::new(HashMap::new()),
             rule_name_numbers: RefCell::new(Vec::new()),
+            selections: RefCell::new(Vec::new()),
         };
         let timezone = options.implicit_timezone.unwrap_or(0);
         let clock = match options.current_date_time {
@@ -469,6 +470,8 @@ struct Runtime<'e, 'a> {
     /// The number in [`Executable::rule_names`] of each name of the source document, by
     /// [`Node::name_id`], as looked up.
     rule_name_numbers: RefCell<Vec<NameNumber>>,
+    /// The storage of the selections of `xsl:apply-templates` done, for the next ones.
+    selections: RefCell<Vec<SelectionStorage>>,
 }
 
 /// The size of the sequence of nodes a template rule is applied to, the context size of
@@ -1133,11 +1136,53 @@ impl<'e, 'a> Runtime<'e, 'a> {
         state: &State<'_>,
         sink: &mut dyn Sink,
     ) -> Result<()> {
-        let items = self.evaluate(select, state.context).at(line)?;
         let mode = match mode {
             ModeRef::Mode(m) => *m,
             ModeRef::Current => state.mode,
         };
+        // A selection of nodes read from the tree (`@*|*`), or any value. Each step in a
+        // function of its own: the stack of a level of a recursion holds as little as
+        // it can (a debug build keeps every local of a function on its stack).
+        let Some(nodes) = self.select_in_place(line, select, state)? else {
+            return self.apply_to_value(line, select, mode, params, state, sink);
+        };
+        let params = self.with_params(params, state).at(line)?;
+        let size = Size::Known(nodes.len());
+        let mut position = 0;
+        while let Some(node) = nodes.get(position) {
+            position += 1;
+            self.apply_rule(&node, position, &size, mode, None, &params, sink)
+                .at(line)?;
+        }
+        self.selections.borrow_mut().push(nodes.into_storage());
+        Ok(())
+    }
+
+    /// The nodes `select` selects, read in place from the tree, if it can be.
+    fn select_in_place(
+        &self,
+        line: u32,
+        select: &CompiledExpr,
+        state: &State<'_>,
+    ) -> Result<Option<NodeSelection>> {
+        let storage = self.selections.borrow_mut().pop().unwrap_or_default();
+        select
+            .select_in_place(self.dc()?, state.context, storage)
+            .map_err(|e| self.xerr(e))
+            .at(line)
+    }
+
+    /// `xsl:apply-templates` to the value of `select`.
+    fn apply_to_value(
+        &self,
+        line: u32,
+        select: &'e CompiledExpr,
+        mode: usize,
+        params: &'e [WithParam],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let items = self.evaluate(select, state.context).at(line)?;
         let params = self.with_params(params, state).at(line)?;
         let size = items.len();
         for (i, item) in items.iter().enumerate() {

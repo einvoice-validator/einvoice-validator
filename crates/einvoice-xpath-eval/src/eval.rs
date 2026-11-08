@@ -753,50 +753,19 @@ impl<'a> Run<'a> {
     /// document order, and the same error for a context item that is not a node (that
     /// of the first operand). `None` for other expressions.
     fn nodes_in_place(&self, expr: &Expr, ctx: &Ctx) -> Result<Option<Vec<Item>>> {
-        let (first, second) = match expr {
-            Expr::Step(step) if simple(step) => (step, None),
-            Expr::Union { lhs, rhs, .. } => match (&**lhs, &**rhs) {
-                (Expr::Step(a), Expr::Step(b)) if simple(a) && simple(b) => (a, Some(b)),
-                _ => return Ok(None),
-            },
-            _ => return Ok(None),
+        // The nodes are in the document of the context node (any other context item is
+        // an error, or not read in place).
+        let doc = match &ctx.item {
+            Some(Item::Node(node)) => Some(node.document()),
+            _ => None,
         };
-        self.dc.check_stack()?;
-        let node = focus_node(ctx, Some(first.axis))?;
-        let doc = node.document();
-        let item = |index: u32| Item::Node(Node::new(Rc::clone(doc), index));
-        let Some(second) = second else {
-            return Ok(Some(
-                step_nodes(doc, node.index(), first).map(item).collect(),
-            ));
-        };
-        let mut left = step_nodes(doc, node.index(), first).peekable();
-        let mut right = step_nodes(doc, node.index(), second).peekable();
-        let mut nodes = Vec::new();
-        loop {
-            let next = match (left.peek(), right.peek()) {
-                (None, None) => break,
-                (Some(&l), None) => {
-                    left.next();
-                    l
-                }
-                (None, Some(&r)) => {
-                    right.next();
-                    r
-                }
-                (Some(&l), Some(&r)) => {
-                    if l <= r {
-                        left.next();
-                    }
-                    if r <= l {
-                        right.next();
-                    }
-                    l.min(r)
-                }
-            };
-            nodes.push(item(next));
-        }
-        Ok(Some(nodes))
+        let mut items = Vec::new();
+        let read = select_indices(self.dc, expr, ctx.item.as_ref(), &mut |index| {
+            if let Some(doc) = doc {
+                items.push(Item::Node(Node::new(Rc::clone(doc), index)));
+            }
+        })?;
+        Ok(read.map(|_| items))
     }
 
     /// The index of the first node of a [`simple`] step from the context node: the step
@@ -1500,6 +1469,216 @@ impl Iterator for StepNodes<'_> {
     }
 }
 
+/// The nodes of an expression read in place ([`CompiledExpr::select_in_place`]): a
+/// document and node indices in document order.
+#[derive(Debug, Clone)]
+pub struct NodeSelection {
+    doc: Rc<Document>,
+    indices: Vec<u32>,
+}
+
+impl NodeSelection {
+    /// The number of nodes.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.indices.len()
+    }
+
+    /// Whether there is no node.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.indices.is_empty()
+    }
+
+    /// The node at `position` (from 0) in document order.
+    #[must_use]
+    pub fn get(&self, position: usize) -> Option<Node> {
+        let index = *self.indices.get(position)?;
+        Some(Node::new(Rc::clone(&self.doc), index))
+    }
+
+    /// The nodes, in document order.
+    pub fn iter(&self) -> impl Iterator<Item = Node> + '_ {
+        self.indices
+            .iter()
+            .map(|&index| Node::new(Rc::clone(&self.doc), index))
+    }
+
+    /// The storage of the selection, emptied, to be given to a later selection
+    /// ([`CompiledExpr::select_in_place`]).
+    #[must_use]
+    pub fn into_storage(self) -> SelectionStorage {
+        let mut indices = self.indices;
+        indices.clear();
+        SelectionStorage(indices)
+    }
+}
+
+/// Storage for a [`NodeSelection`], reused from one selection to the next.
+#[derive(Debug, Clone, Default)]
+pub struct SelectionStorage(Vec<u32>);
+
+impl CompiledExpr {
+    /// The value of the expression when it is an axis step without predicates on an
+    /// axis read in document order, or a union of up to four (`@*|*`,
+    /// `*|comment()|processing-instruction()`), or `.` when the context item is a node:
+    /// its nodes read from the tree, without the sequences of
+    /// [`CompiledExpr::evaluate`] (which gives the same nodes, and raises the same error
+    /// for a context item that is not a node). `None` for any other expression, which is
+    /// not evaluated.
+    ///
+    /// # Errors
+    ///
+    /// The context item is absent or is not a node.
+    /// `storage` holds the nodes when they are read; given back by
+    /// [`NodeSelection::into_storage`], its memory serves many selections.
+    pub fn select_in_place(
+        &self,
+        dc: &DynamicContext<'_>,
+        context: &Context,
+        storage: SelectionStorage,
+    ) -> Result<Option<NodeSelection>> {
+        select_in_place(
+            dc,
+            &self.expr,
+            context.focus.as_ref().map(|f| &f.item),
+            storage,
+        )
+    }
+}
+
+/// [`CompiledExpr::select_in_place`] of `expr` with the context item `item`.
+fn select_in_place(
+    dc: &DynamicContext<'_>,
+    expr: &Expr,
+    item: Option<&Item>,
+    storage: SelectionStorage,
+) -> Result<Option<NodeSelection>> {
+    let mut indices = storage.0;
+    indices.clear();
+    let doc = select_indices(dc, expr, item, &mut |index| indices.push(index))?;
+    Ok(doc.map(|doc| NodeSelection { doc, indices }))
+}
+
+/// The nodes of `expr` with the context item `item` read in place from the tree, as
+/// [`CompiledExpr::select_in_place`] reads them: their indices given to `out` in document
+/// order, and their document returned. `None` (and nothing given) for another
+/// expression.
+fn select_indices(
+    dc: &DynamicContext<'_>,
+    expr: &Expr,
+    item: Option<&Item>,
+    out: &mut dyn FnMut(u32),
+) -> Result<Option<Rc<Document>>> {
+    if let Expr::ContextItem = expr {
+        // `.`: the context node; an atomic or absent context item is left to the
+        // evaluation.
+        return Ok(match item {
+            Some(Item::Node(node)) => {
+                dc.check_stack()?;
+                out(node.index());
+                Some(Rc::clone(node.document()))
+            }
+            _ => None,
+        });
+    }
+    let mut steps: [Option<&Step>; MAX_SELECTED_STEPS] = [None; MAX_SELECTED_STEPS];
+    let mut count = 0;
+    if !union_of_steps(expr, &mut steps, &mut count) {
+        return Ok(None);
+    }
+    let [Some(first), second, ..] = steps else {
+        return Ok(None);
+    };
+    dc.check_stack()?;
+    let node = focus_node_of(item, Some(first.axis))?;
+    let doc = node.document();
+    let from = node.index();
+    match (second, count) {
+        (None, _) => step_nodes(doc, from, first).for_each(out),
+        (Some(second), 2) => merge_two(
+            step_nodes(doc, from, first),
+            step_nodes(doc, from, second),
+            out,
+        ),
+        _ => {
+            // The nodes of each step, in document order, merged.
+            let mut walks = steps.map(|step| step.map(|step| step_nodes(doc, from, step)));
+            let mut heads = [None; MAX_SELECTED_STEPS];
+            for (head, walk) in heads.iter_mut().zip(walks.iter_mut()) {
+                *head = walk.as_mut().and_then(Iterator::next);
+            }
+            while let Some(next) = heads.iter().flatten().min().copied() {
+                out(next);
+                for (head, walk) in heads.iter_mut().zip(walks.iter_mut()) {
+                    if *head == Some(next) {
+                        *head = walk.as_mut().and_then(Iterator::next);
+                    }
+                }
+            }
+        }
+    }
+    Ok(Some(Rc::clone(doc)))
+}
+
+/// The indices of two walks in document order, merged without duplicates.
+fn merge_two(
+    mut left: impl Iterator<Item = u32>,
+    mut right: impl Iterator<Item = u32>,
+    out: &mut dyn FnMut(u32),
+) {
+    let (mut l, mut r) = (left.next(), right.next());
+    loop {
+        let next = match (l, r) {
+            (None, None) => break,
+            (Some(a), None) => {
+                l = left.next();
+                a
+            }
+            (None, Some(b)) => {
+                r = right.next();
+                b
+            }
+            (Some(a), Some(b)) => {
+                if a <= b {
+                    l = left.next();
+                }
+                if b <= a {
+                    r = right.next();
+                }
+                a.min(b)
+            }
+        };
+        out(next);
+    }
+}
+
+/// The most steps of a union [`select_in_place`] reads.
+const MAX_SELECTED_STEPS: usize = 4;
+
+/// Whether `expr` is a [`simple`] step or a union of them (at most
+/// [`MAX_SELECTED_STEPS`]), whose steps are put in `steps` from `count` on, left to right.
+fn union_of_steps<'e>(
+    expr: &'e Expr,
+    steps: &mut [Option<&'e Step>; MAX_SELECTED_STEPS],
+    count: &mut usize,
+) -> bool {
+    match expr {
+        Expr::Step(step) if simple(step) => match steps.get_mut(*count) {
+            Some(slot) => {
+                *slot = Some(step);
+                *count += 1;
+                true
+            }
+            None => false,
+        },
+        Expr::Union { lhs, rhs, .. } => {
+            union_of_steps(lhs, steps, count) && union_of_steps(rhs, steps, count)
+        }
+        _ => false,
+    }
+}
+
 /// The most predicates of a step [`Run::walk`] walks.
 const MAX_WALKED_PREDICATES: usize = 4;
 
@@ -1563,11 +1742,16 @@ fn context_node(ctx: &Ctx, axis: Option<NodeAxis>) -> Result<Node> {
 
 /// The context item of an axis step on `axis`, or of `/` (`None`), borrowed.
 fn focus_node(ctx: &Ctx, axis: Option<NodeAxis>) -> Result<&Node> {
+    focus_node_of(ctx.item.as_ref(), axis)
+}
+
+/// [`focus_node`] of the context item `item`.
+fn focus_node_of(item: Option<&Item>, axis: Option<NodeAxis>) -> Result<&Node> {
     let what = || match axis {
         Some(axis) => format!("the axis step {}::", axis_name(axis)),
         None => "the root expression /".to_owned(),
     };
-    match &ctx.item {
+    match item {
         None => err(
             ErrorCode::Xpdy0002,
             format!("The context item for {} is absent", what()),

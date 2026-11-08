@@ -7,7 +7,9 @@ variables and parameters, the static types Saxon gives their references (`static
 `patterns-parenthesized`), namespaces, `cast as`, nodes constructed in a sequence as the
 stylesheets compiled by SchXslt construct them (`sequences`), when Saxon evaluates variables and
 parameters (`lazy`, and the `error-learned-*`, `error-eager-*` and `error-stale-references`
-probes, where a value nothing reads raises an error), dynamic errors, and dynamic errors raised
+probes, where a value nothing reads raises an error), paths whose nodes Saxon reads unsorted and
+lazily where neither their order nor their duplicates matter (`unordered-paths`, and the
+`error-unordered-*` probes, where they matter), dynamic errors, and dynamic errors raised
 while matching a pattern (`pattern-error*`, which Saxon recovers from with a warning). Each runs on `input.xml`. Every expected result in
 `expected/` is produced by Saxon-HE, the reference engine, never written by hand (format in
 `../common/probes.rs`: the result, or the error code, the number of distinct XTDE0540
