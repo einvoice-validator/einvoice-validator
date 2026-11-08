@@ -353,7 +353,7 @@ impl<'a> Run<'a> {
             Expr::Literal(value) => once(Item::Atomic(value.clone())),
             Expr::ContextItem => once(context_item(ctx)?),
             Expr::Root => {
-                let root = context_node(ctx, "the root expression /")?.root();
+                let root = context_node(ctx, None)?.root();
                 if root.kind() != NodeKind::Document {
                     return err(
                         ErrorCode::Xpdy0050,
@@ -956,7 +956,7 @@ impl<'a> Run<'a> {
     where
         'a: 's,
     {
-        let node = context_node(ctx, &format!("the axis step {}::", axis_name(step.axis)))?;
+        let node = context_node(ctx, Some(step.axis))?;
         let doc = Rc::clone(node.document());
         let mut cursor = doc.cursor(node.index(), step.axis);
         let test = &step.test;
@@ -1177,17 +1177,22 @@ fn context_item(ctx: &Ctx) -> Result<Item> {
         .ok_or_else(|| Error::new(ErrorCode::Xpdy0002, "The context item is absent"))
 }
 
-/// The context item of an axis step or of `/`.
-fn context_node(ctx: &Ctx, what: &str) -> Result<Node> {
+/// The context item of an axis step on `axis`, or of `/` (`None`).
+fn context_node(ctx: &Ctx, axis: Option<NodeAxis>) -> Result<Node> {
+    let what = || match axis {
+        Some(axis) => format!("the axis step {}::", axis_name(axis)),
+        None => "the root expression /".to_owned(),
+    };
     match &ctx.item {
         None => err(
             ErrorCode::Xpdy0002,
-            format!("The context item for {what} is absent"),
+            format!("The context item for {} is absent", what()),
         ),
         Some(Item::Atomic(v)) => err(
             ErrorCode::Xpty0020,
             format!(
-                "The context item for {what} is not a node (it is a {})",
+                "The context item for {} is not a node (it is a {})",
+                what(),
                 v.atomic_type()
             ),
         ),

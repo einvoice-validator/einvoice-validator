@@ -1558,10 +1558,9 @@ impl<'e, 'a> Runtime<'e, 'a> {
         match node.kind() {
             NodeKind::Document | NodeKind::Element => {
                 let _nested = self.nested()?;
-                let children: Vec<Node> = node.children().collect();
-                let size = children.len();
-                for (i, child) in children.iter().enumerate() {
-                    self.apply_rule(child, i + 1, size, mode, None, params, sink)?;
+                let size = node.children().count();
+                for (i, child) in node.children().enumerate() {
+                    self.apply_rule(&child, i + 1, size, mode, None, params, sink)?;
                 }
                 Ok(())
             }

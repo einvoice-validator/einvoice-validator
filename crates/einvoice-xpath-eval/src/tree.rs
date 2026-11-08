@@ -748,6 +748,10 @@ impl Iterator for Axis {
         let index = self.cursor.next(&self.doc)?;
         Some(Node::new(Rc::clone(&self.doc), index))
     }
+
+    fn count(self) -> usize {
+        self.cursor.walk(&self.doc).count()
+    }
 }
 
 /// Builds a [`Document`] from events, in document order.
