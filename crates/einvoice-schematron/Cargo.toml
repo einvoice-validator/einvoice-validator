@@ -1,0 +1,27 @@
+[package]
+name = "einvoice-schematron"
+description = "Schematron compiled to XSLT as ph-schematron 10.3.1 writes it: the DOM of the compiled stylesheet and its XML writer, byte for byte"
+keywords = ["schematron", "xslt", "einvoice", "peppol", "en16931"]
+categories = ["parser-implementations", "encoding"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/einvoice-schematron"
+readme = "README.md"
+license.workspace = true
+# The tests, and their goldens written by ph-schematron and the ISO Schematron
+# skeleton it runs, stay in the repository: they are not in the package.
+exclude = ["tests/"]
+
+[dependencies]
+einvoice-xml = { path = "../einvoice-xml", version = "0.2.0" }
+
+[dev-dependencies]
+einvoice-xslt = { path = "../einvoice-xslt", version = "0.2.0" }
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+sha2 = "0.11.1"
+
+[lints]
+workspace = true

@@ -1,0 +1,80 @@
+case	sorted
+A	A	4
+A	Z	7
+A	_	5
+A	a:z	3
+A	b	2
+A	version	1
+A	x-	6
+A	xmlns	d
+A	xmlns:a	a
+A	xmlns:xsl	x
+case	non-ascii
+A	z	4
+A	é	3
+A	б	2
+A	ア	1
+case	replace-value
+A	a:x	3
+A	b	2
+case	replace-prefix
+A	b	2
+A	c	3
+A	z:x	4
+case	same-qname-other-namespace
+A	o	3
+A	p:x	2
+A	p:x	1
+case	many
+A	a	4
+A	b	6
+A	c	2
+A	d	9
+A	m	1
+A	n	8
+A	q	5
+A	x	3
+A	z	7
+case	normalize
+C	0	c
+T	0	xy
+E	0	i
+T	1	ab
+D	0	
+D	0	k
+T	0	12
+case	normalize-only-empty
+case	create
+create	-	xmlns	error
+create	urn:x	xmlns	error
+create	-	a	ok
+create	urn:x	p:xmlns	ok
+create	urn:x	xmlns:p	error
+create	http://www.w3.org/2000/xmlns/	xmlns	ok
+create	-	ĳ	error
+create	-	a𐀀	error
+create	http://www.w3.org/2000/xmlns/	p:a	error
+create	http://www.w3.org/XML/1998/namespace	xml:a	ok
+create	urn:x	xml:a	error
+create	urn:x	a:b:c	error
+create	-	p:a	error
+attr	-	xmlns	error
+attr	urn:x	xmlns	error
+attr	http://www.w3.org/2000/xmlns/	xmlns	ok
+attr	http://www.w3.org/2000/xmlns/	xmlns:p	ok
+attr	http://www.w3.org/2000/xmlns/	p:a	error
+attr	urn:x	xmlns:p	error
+attr	http://www.w3.org/XML/1998/namespace	xml:lang	ok
+attr	urn:x	xml:lang	error
+attr	-	ĳ	error
+attr	urn:x	p:a	ok
+attr	urn:x	p:xmlns	ok
+attr	-	p:a	error
+target	a	ok
+target	a:b	ok
+target	:a	ok
+target	xml	ok
+target	a-b	ok
+target	1a	error
+target	ĳ	error
+target	a𐀀	error

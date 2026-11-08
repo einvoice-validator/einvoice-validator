@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic: a rule whose content include.sch takes with sch:extends href. -->
+<rule xmlns="http://purl.oclc.org/dsdl/schematron" abstract="true" id="FromFile">
+  <assert id="E-1" test="a:Id">An order has an identifier (from another file).</assert>
+</rule>

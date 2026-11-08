@@ -1,0 +1,11 @@
+dom 1
+E	0	http://www.w3.org/1999/XSL/Transform	xsl:stylesheet
+A	0		version	2.0
+A	0	http://www.w3.org/2000/xmlns/	xmlns:xsl	http://www.w3.org/1999/XSL/Transform
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	a[@b = "c" or @d = '<&>']
+A	1		name	tab\tlf\ncr\rend
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	< & > ]]> " ' tab\tlf\ncr\rcrlf\r\ndelnelc1nbsp é€😀𝄞
+C	2	 comment with < & > ' " é 😀 
+P	2	pi	data with < & > ' "

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?><schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+  <ns prefix="a" uri="urn:example:a"/>
+  <let name="limit" value="100"/>
+  <!--Suppressed abstract pattern Range was here-->
+  <!--Start pattern based on abstract Range for QuantityRange--><pattern id="QuantityRange">
+    <rule context="a:Line">
+      <let name="v" value="number($field)"/>
+      <assert id="$id" test="$v &gt;= 1 and $v &lt;= $limit">a:Quantity must be between 1 and the limit.</assert>
+    </rule>
+  </pattern>
+  <!--Start pattern based on abstract Range for PriceRange--><pattern id="PriceRange">
+    <rule context="a:Line">
+      <let name="v" value="number($field)"/>
+      <assert id="$id" test="$v &gt;= 0 and $v &lt;= $limit">a:Price must be between 0 and the limit.</assert>
+    </rule>
+  </pattern>
+  <pattern id="Rules">
+    <let name="currency" value="'EUR'"/>
+    <rule abstract="true" id="HasCurrency">
+      <assert id="R-C" test="@currency = $currency">The currency is <value-of select="$currency"/>.</assert>
+    </rule>
+    <rule context="a:Price">
+      <extends rule="HasCurrency"/>
+      <assert id="R-D" test="matches(., '^[0-9]+(\.[0-9]{1,2})?$')">At most two decimals.</assert>
+    </rule>
+    <rule context="a:Total">
+      <extends rule="HasCurrency"/>
+    </rule>
+  </pattern>
+</schema>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic: a pattern included by include.sch. -->
+<pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="Included">
+  <rule context="a:Line">
+    <assert id="I-1" test="a:Id">A line has an identifier.</assert>
+  </rule>
+</pattern>

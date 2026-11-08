@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?><sch:schema xmlns:sch="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath2">
+  
+  <sch:ns prefix="a" uri="urn:example:a"/>
+  
+  <sch:pattern>
+    
+    <sch:rule context="a:Order">
+      <sch:assert test="a:Id">An order has an identifier.</sch:assert>
+      <sch:report test="a:Note">A note.</sch:report>
+    </sch:rule>
+  </sch:pattern>
+</sch:schema>

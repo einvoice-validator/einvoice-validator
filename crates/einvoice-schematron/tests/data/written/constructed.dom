@@ -1,0 +1,11 @@
+dom 1
+E	0	http://www.w3.org/1999/XSL/Transform	xsl:stylesheet
+A	0		version	2.0
+A	0	http://www.w3.org/2000/xmlns/	xmlns:made	urn:made
+A	0	http://www.w3.org/2000/xmlns/	xmlns:xsl	http://www.w3.org/1999/XSL/Transform
+T	1	ab
+C	1	a - - b - 
+E	1	urn:k	k:literal
+A	1	urn:k	k:attr	1
+A	1	http://www.w3.org/2000/xmlns/	xmlns:k	urn:k
+E	1	urn:made	made:e

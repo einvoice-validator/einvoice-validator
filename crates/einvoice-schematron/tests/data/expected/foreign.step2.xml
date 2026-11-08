@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?><schema xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:u="urn:example:utils" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" queryBinding="xslt2">
+  <ns prefix="a" uri="urn:example:a"/>
+  <ns prefix="u" uri="urn:example:utils"/>
+  <ns prefix="xsd" uri="http://www.w3.org/2001/XMLSchema"/>
+  <xsl:key match="a:Line" name="lines" use="a:Id"/>
+  <function xmlns="http://www.w3.org/1999/XSL/Transform" as="xs:decimal" name="u:twice">
+    <param as="xs:decimal" name="v"/>
+    <variable name="unused"><nothing xmlns="" attribute="1"><deeper/></nothing></variable>
+    <sequence select="$v * 2"/>
+  </function>
+  <xsl:function as="xs:string" name="u:label" xml:space="preserve">
+    <xsl:param name="s"/>
+    <xsl:variable name="tree"><x:wrap xmlns:x="urn:example:local" plain="yes" x:kind="label"><x:inner/></x:wrap></xsl:variable>
+    <xsl:variable name="empty"><nothing xmlns=""/></xsl:variable>
+    <xsl:sequence select="concat('[', $s, ']', string($tree))"/>
+  </xsl:function>
+  <xsl:function xmlns:v="urn:example:vendor" as="xs:boolean" name="u:vendor" v:note="vendor attribute">
+    <xsl:param name="x"/>
+    <xsl:sequence select="exists($x)"/>
+  </xsl:function>
+  <pattern id="F">
+    <rule context="a:Line" role="line">
+      <assert diagnostics="D1 D2" id="F-1" properties="P1" test="u:twice(xsd:decimal(a:Amount)) &gt; 0">Twice the amount is positive.</assert>
+      <report diagnostics="D2" id="F-2" test="key('lines', a:Id)[2]">Duplicate line <value-of select="u:label(a:Id)"/>.</report>
+    </rule>
+  </pattern>
+  <diagnostics>
+    <diagnostic id="D1">Amount: <value-of select="a:Amount"/></diagnostic>
+    <diagnostic id="D2" xml:lang="fr">Ligne <value-of select="a:Id"/></diagnostic>
+  </diagnostics>
+  <properties>
+    <property id="P1" role="amount">Property <value-of select="a:Amount"/></property>
+  </properties>
+</schema>

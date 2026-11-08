@@ -298,6 +298,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "einvoice-schematron"
+version = "0.2.0"
+dependencies = [
+ "einvoice-xml",
+ "einvoice-xslt",
+ "proptest",
+ "sha2",
+]
+
+[[package]]
 name = "einvoice-svrl"
 version = "0.2.0"
 dependencies = [

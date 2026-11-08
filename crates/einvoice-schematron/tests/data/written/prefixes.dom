@@ -1,0 +1,35 @@
+dom 1
+E	0	http://www.w3.org/1999/XSL/Transform	xsl:stylesheet
+A	0		version	2.0
+A	0	http://www.w3.org/2000/xmlns/	xmlns:ns0	urn:zero
+A	0	http://www.w3.org/2000/xmlns/	xmlns:svrl	urn:not-svrl
+A	0	http://www.w3.org/2000/xmlns/	xmlns:u	urn:u
+A	0	http://www.w3.org/2000/xmlns/	xmlns:xs	http://www.w3.org/2001/XMLSchema
+A	0	http://www.w3.org/2000/xmlns/	xmlns:xsd	http://www.w3.org/2001/XMLSchema
+A	0	http://www.w3.org/2000/xmlns/	xmlns:xsl	http://www.w3.org/1999/XSL/Transform
+A	0	http://www.w3.org/2000/xmlns/	xmlns:z	urn:zero
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	/
+E	2	http://www.w3.org/2001/XMLSchema	xs:element
+A	2	http://www.w3.org/2001/XMLSchema	xs:type	t
+E	2	urn:a	a:in
+A	2	urn:a	a:att	1
+A	2	urn:b	b:att	2
+A	2		plain	3
+A	2	http://www.w3.org/2000/xmlns/	xmlns:a	urn:a
+A	2	http://www.w3.org/2000/xmlns/	xmlns:b	urn:b
+E	3	urn:c	c:deep
+A	3	http://www.w3.org/2000/xmlns/	xmlns:c	urn:c
+E	4	urn:a	a:again
+E	4	urn:not-svrl	svrl:x
+E	4	urn:a	other
+A	4	http://www.w3.org/XML/1998/namespace	xml:lang	fr
+A	4	http://www.w3.org/XML/1998/namespace	xml:space	preserve
+A	4	http://www.w3.org/2000/xmlns/	xmlns	urn:a
+E	5	urn:u	u:y
+E	2	urn:zero	ns0:z
+A	2	urn:zero	ns0:k	v
+E	2	urn:d	d
+A	2	urn:d	e:attr	in the default namespace
+A	2	http://www.w3.org/2000/xmlns/	xmlns	urn:d
+A	2	http://www.w3.org/2000/xmlns/	xmlns:e	urn:d

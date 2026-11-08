@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic: XSLT declarations in the schema (functions and keys, as the Peppol rules
+     have), elements and attributes in namespaces the schema element does not declare,
+     the same namespace under two prefixes, diagnostics and properties. -->
+<schema xmlns="http://purl.oclc.org/dsdl/schematron"
+        xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+        xmlns:xs="http://www.w3.org/2001/XMLSchema"
+        xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+        xmlns:u="urn:example:utils"
+        queryBinding="xslt2">
+  <ns prefix="a" uri="urn:example:a"/>
+  <ns prefix="u" uri="urn:example:utils"/>
+  <ns prefix="xsd" uri="http://www.w3.org/2001/XMLSchema"/>
+  <xsl:key name="lines" match="a:Line" use="a:Id"/>
+  <function xmlns="http://www.w3.org/1999/XSL/Transform" name="u:twice" as="xs:decimal">
+    <param name="v" as="xs:decimal"/>
+    <variable name="unused"><nothing xmlns="" attribute="1"><deeper/></nothing></variable>
+    <sequence select="$v * 2"/>
+  </function>
+  <xsl:function name="u:label" as="xs:string" xml:space="preserve">
+    <xsl:param name="s"/>
+    <xsl:variable name="tree"><x:wrap xmlns:x="urn:example:local" x:kind="label" plain="yes"><x:inner/></x:wrap></xsl:variable>
+    <xsl:variable name="empty"><nothing xmlns=""/></xsl:variable>
+    <xsl:sequence select="concat('[', $s, ']', string($tree))"/>
+  </xsl:function>
+  <xsl:function xmlns:v="urn:example:vendor" name="u:vendor" as="xs:boolean" v:note="vendor attribute">
+    <xsl:param name="x"/>
+    <xsl:sequence select="exists($x)"/>
+  </xsl:function>
+  <pattern id="F">
+    <rule context="a:Line" role="line">
+      <assert id="F-1" test="u:twice(xsd:decimal(a:Amount)) &gt; 0" diagnostics="D1 D2" properties="P1">Twice the amount is positive.</assert>
+      <report id="F-2" test="key('lines', a:Id)[2]" diagnostics="D2">Duplicate line <value-of select="u:label(a:Id)"/>.</report>
+    </rule>
+  </pattern>
+  <diagnostics>
+    <diagnostic id="D1">Amount: <value-of select="a:Amount"/></diagnostic>
+    <diagnostic id="D2" xml:lang="fr">Ligne <value-of select="a:Id"/></diagnostic>
+  </diagnostics>
+  <properties>
+    <property id="P1" role="amount">Property <value-of select="a:Amount"/></property>
+  </properties>
+</schema>

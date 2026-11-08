@@ -1,0 +1,492 @@
+dom 1
+E	0	http://www.w3.org/1999/XSL/Transform	xsl:stylesheet
+A	0		version	2.0
+A	0	http://www.w3.org/2000/xmlns/	xmlns:a	urn:example:a
+A	0	http://www.w3.org/2000/xmlns/	xmlns:iso	http://purl.oclc.org/dsdl/schematron
+A	0	http://www.w3.org/2000/xmlns/	xmlns:saxon	http://saxon.sf.net/
+A	0	http://www.w3.org/2000/xmlns/	xmlns:schold	http://www.ascc.net/xml/schematron
+A	0	http://www.w3.org/2000/xmlns/	xmlns:u	urn:example:utils
+A	0	http://www.w3.org/2000/xmlns/	xmlns:xhtml	http://www.w3.org/1999/xhtml
+A	0	http://www.w3.org/2000/xmlns/	xmlns:xs	http://www.w3.org/2001/XMLSchema
+A	0	http://www.w3.org/2000/xmlns/	xmlns:xsd	http://www.w3.org/2001/XMLSchema
+A	0	http://www.w3.org/2000/xmlns/	xmlns:xsl	http://www.w3.org/1999/XSL/Transform
+C	1	 Created with ph-schematron version of ISO Schematron XSLTs. 
+T	1	\n
+C	1	 Implementers: please note that overriding process-prolog or process-root is \n    the preferred method for meta-stylesheets to use where possible. 
+T	1	\n
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:param
+A	1		name	archiveDirParameter
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:param
+A	1		name	archiveNameParameter
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:param
+A	1		name	fileNameParameter
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:param
+A	1		name	fileDirParameter
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:variable
+A	1		name	document-uri
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	2		select	document-uri(/)
+T	1	\n\n
+C	1	PHASES
+T	1	\n\n\n
+C	1	PROLOG
+T	1	\n
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:output
+A	1		indent	yes
+A	1		method	xml
+A	1		omit-xml-declaration	no
+A	1		standalone	yes
+A	1	http://www.w3.org/2000/xmlns/	xmlns:svrl	http://purl.oclc.org/dsdl/svrl
+T	1	\n\n
+C	1	XSD TYPES FOR XSLT2
+T	1	\n\n\n
+C	1	KEYS AND FUNCTIONS
+T	1	\n
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:key
+A	1		match	a:Line
+A	1		name	lines
+A	1		use	a:Id
+E	1	http://www.w3.org/1999/XSL/Transform	function
+A	1		as	xs:decimal
+A	1		name	u:twice
+A	1	http://www.w3.org/2000/xmlns/	xmlns	http://www.w3.org/1999/XSL/Transform
+T	2	\n    
+E	2	http://www.w3.org/1999/XSL/Transform	param
+A	2		as	xs:decimal
+A	2		name	v
+T	2	\n    
+E	2	http://www.w3.org/1999/XSL/Transform	variable
+A	2		name	unused
+E	3		nothing
+A	3		attribute	1
+A	3	http://www.w3.org/2000/xmlns/	xmlns	
+E	4		deeper
+T	2	\n    
+E	2	http://www.w3.org/1999/XSL/Transform	sequence
+A	2		select	$v * 2
+T	2	\n  
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:function
+A	1		as	xs:string
+A	1		name	u:label
+A	1	http://www.w3.org/XML/1998/namespace	xml:space	preserve
+A	1	http://www.w3.org/2000/xmlns/	xmlns	http://purl.oclc.org/dsdl/schematron
+T	2	\n    
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:param
+A	2		name	s
+T	2	\n    
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:variable
+A	2		name	tree
+E	3	urn:example:local	x:wrap
+A	3		plain	yes
+A	3	urn:example:local	x:kind	label
+A	3	http://www.w3.org/2000/xmlns/	xmlns:x	urn:example:local
+E	4	urn:example:local	x:inner
+T	2	\n    
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:variable
+A	2		name	empty
+E	3		nothing
+A	3	http://www.w3.org/2000/xmlns/	xmlns	
+T	2	\n    
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:sequence
+A	2		select	concat('[', $s, ']', string($tree))
+T	2	\n  
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:function
+A	1		as	xs:boolean
+A	1		name	u:vendor
+A	1	urn:example:vendor	v:note	vendor attribute
+A	1	http://www.w3.org/2000/xmlns/	xmlns	http://purl.oclc.org/dsdl/schematron
+A	1	http://www.w3.org/2000/xmlns/	xmlns:v	urn:example:vendor
+T	2	\n    
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:param
+A	2		name	x
+T	2	\n    
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:sequence
+A	2		select	exists($x)
+T	2	\n  
+T	1	\n\n
+C	1	DEFAULT RULES
+T	1	\n\n\n
+C	1	MODE: SCHEMATRON-SELECT-FULL-PATH
+T	1	\n
+C	1	This mode can be used to generate an ugly though full XPath for locators
+T	1	\n
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	*
+A	1		mode	schematron-select-full-path
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	2		mode	schematron-get-full-path
+A	2		select	.
+T	1	\n\n
+C	1	MODE: SCHEMATRON-FULL-PATH
+T	1	\n
+C	1	This mode can be used to generate an ugly though full XPath for locators
+T	1	\n
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	*
+A	1		mode	schematron-get-full-path
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	2		mode	schematron-get-full-path
+A	2		select	parent::*
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	/
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:choose
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:when
+A	3		test	namespace-uri()=''
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	name()
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:otherwise
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	*:
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	local-name()
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	[namespace-uri()='
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	namespace-uri()
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	']
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:variable
+A	2		name	preceding
+A	2		select	count(preceding-sibling::*[local-name()=local-name(current())                                       and namespace-uri() = namespace-uri(current())])
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	[
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	2		select	1 + $preceding
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	]
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	@*
+A	1		mode	schematron-get-full-path
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	2		mode	schematron-get-full-path
+A	2		select	parent::*
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	/
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:choose
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:when
+A	3		test	namespace-uri()=''
+T	4	@
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	name()
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:otherwise
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	@*[local-name()='
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	local-name()
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	' and namespace-uri()='
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	namespace-uri()
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	']
+T	1	\n\n
+C	1	MODE: SCHEMATRON-FULL-PATH-2
+T	1	\n
+C	1	This mode can be used to generate prefixed XPath for humans
+T	1	\n
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	node() | @*
+A	1		mode	schematron-get-full-path-2
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:for-each
+A	2		select	ancestor-or-self::*
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	4	/
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	3		select	name(.)
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	3		test	preceding-sibling::*[name(.)=name(current())]
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	[
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	count(preceding-sibling::*[name(.)=name(current())])+1
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	]
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	2		test	not(self::*)
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	/@
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	3		select	name(.)
+C	1	MODE: SCHEMATRON-FULL-PATH-3
+T	1	\n
+C	1	This mode can be used to generate prefixed XPath for humans \n\t(Top-level element has index)
+T	1	\n
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	node() | @*
+A	1		mode	schematron-get-full-path-3
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:for-each
+A	2		select	ancestor-or-self::*
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	4	/
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	3		select	name(.)
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	3		test	parent::*
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	[
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	count(preceding-sibling::*[name(.)=name(current())])+1
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	]
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	2		test	not(self::*)
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	/@
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	3		select	name(.)
+T	1	\n\n
+C	1	MODE: GENERATE-ID-FROM-PATH 
+T	1	\n
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	/
+A	1		mode	generate-id-from-path
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	text()
+A	1		mode	generate-id-from-path
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	2		mode	generate-id-from-path
+A	2		select	parent::*
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	2		select	concat('.text-', 1+count(preceding-sibling::text()), '-')
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	comment()
+A	1		mode	generate-id-from-path
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	2		mode	generate-id-from-path
+A	2		select	parent::*
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	2		select	concat('.comment-', 1+count(preceding-sibling::comment()), '-')
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	processing-instruction()
+A	1		mode	generate-id-from-path
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	2		mode	generate-id-from-path
+A	2		select	parent::*
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	2		select	concat('.processing-instruction-', 1+count(preceding-sibling::processing-instruction()), '-')
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	@*
+A	1		mode	generate-id-from-path
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	2		mode	generate-id-from-path
+A	2		select	parent::*
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	2		select	concat('.@', name())
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	*
+A	1		mode	generate-id-from-path
+A	1		priority	-0.5
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	2		mode	generate-id-from-path
+A	2		select	parent::*
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	.
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	2		select	concat('.',name(),'-',1+count(preceding-sibling::*[name()=name(current())]),'-')
+T	1	\n\n
+C	1	MODE: GENERATE-ID-2 
+T	1	\n
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	/
+A	1		mode	generate-id-2
+T	2	U
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	*
+A	1		mode	generate-id-2
+A	1		priority	2
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	U
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:number
+A	2		count	*
+A	2		level	multiple
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	node()
+A	1		mode	generate-id-2
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	U.
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:number
+A	2		count	*
+A	2		level	multiple
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	n
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:number
+A	2		count	node()
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	@*
+A	1		mode	generate-id-2
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	U.
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:number
+A	2		count	*
+A	2		level	multiple
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	_
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	2		select	string-length(local-name(.))
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	_
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	2		select	translate(name(),':','.')
+C	1	Strip characters
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	text()
+A	1		priority	-1
+T	1	\n\n
+C	1	SCHEMA SETUP
+T	1	\n
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	/
+E	2	http://purl.oclc.org/dsdl/svrl	svrl:schematron-output
+A	2		schemaVersion	
+A	2		title	
+A	2	http://www.w3.org/2000/xmlns/	xmlns:svrl	http://purl.oclc.org/dsdl/svrl
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:comment
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	$archiveDirParameter
+T	4	   \n\t\t 
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	$archiveNameParameter
+T	4	  \n\t\t 
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	$fileNameParameter
+T	4	  \n\t\t 
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	4		select	$fileDirParameter
+E	3	http://purl.oclc.org/dsdl/svrl	svrl:ns-prefix-in-attribute-values
+A	3		prefix	a
+A	3		uri	urn:example:a
+E	3	http://purl.oclc.org/dsdl/svrl	svrl:ns-prefix-in-attribute-values
+A	3		prefix	u
+A	3		uri	urn:example:utils
+E	3	http://purl.oclc.org/dsdl/svrl	svrl:ns-prefix-in-attribute-values
+A	3		prefix	xsd
+A	3		uri	http://www.w3.org/2001/XMLSchema
+E	3	http://purl.oclc.org/dsdl/svrl	svrl:active-pattern
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:attribute
+A	4		name	documents
+E	5	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	5		select	document-uri(/)
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:attribute
+A	4		name	id
+T	5	F
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:attribute
+A	4		name	name
+T	5	F
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	3		mode	M7
+A	3		select	/
+T	1	\n\n
+C	1	SCHEMATRON PATTERNS
+T	1	\n\n\n
+C	1	PATTERN F
+T	1	\n\n\n\t
+C	1	RULE 
+T	1	\n
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	a:Line
+A	1		mode	M7
+A	1		priority	1000
+E	2	http://purl.oclc.org/dsdl/svrl	svrl:fired-rule
+A	2		context	a:Line
+A	2		role	line
+A	2	http://www.w3.org/2000/xmlns/	xmlns:svrl	http://purl.oclc.org/dsdl/svrl
+T	2	\n\n\t\t
+C	2	ASSERT 
+T	2	\n
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:choose
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:when
+A	3		test	u:twice(xsd:decimal(a:Amount)) > 0
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:otherwise
+E	4	http://purl.oclc.org/dsdl/svrl	svrl:failed-assert
+A	4		test	u:twice(xsd:decimal(a:Amount)) > 0
+A	4	http://www.w3.org/2000/xmlns/	xmlns:svrl	http://purl.oclc.org/dsdl/svrl
+E	5	http://www.w3.org/1999/XSL/Transform	xsl:attribute
+A	5		name	id
+T	6	F-1
+E	5	http://www.w3.org/1999/XSL/Transform	xsl:attribute
+A	5		name	location
+E	6	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	6		mode	schematron-select-full-path
+A	6		select	.
+T	5	 
+E	5	http://purl.oclc.org/dsdl/svrl	svrl:diagnostic-reference
+A	5		diagnostic	D1
+T	6	\n
+E	6	http://purl.oclc.org/dsdl/svrl	svrl:text
+T	7	Amount: 
+E	7	http://www.w3.org/1999/XSL/Transform	xsl:text
+E	7	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	7		select	a:Amount
+E	7	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	 
+E	5	http://purl.oclc.org/dsdl/svrl	svrl:diagnostic-reference
+A	5		diagnostic	D2
+T	6	\n
+E	6	http://purl.oclc.org/dsdl/svrl	svrl:text
+E	7	http://www.w3.org/1999/XSL/Transform	xsl:attribute
+A	7		name	xml:lang
+T	8	fr
+T	7	Ligne 
+E	7	http://www.w3.org/1999/XSL/Transform	xsl:text
+E	7	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	7		select	a:Id
+E	7	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	 
+E	5	http://purl.oclc.org/dsdl/svrl	svrl:property
+A	5		id	P1
+T	6	Property 
+E	6	http://purl.oclc.org/dsdl/schematron	value-of
+A	6		select	a:Amount
+A	6	http://www.w3.org/2000/xmlns/	xmlns	http://purl.oclc.org/dsdl/schematron
+E	5	http://purl.oclc.org/dsdl/svrl	svrl:text
+T	6	Twice the amount is positive.
+T	2	\n\n\t\t
+C	2	REPORT 
+T	2	\n
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	2		test	key('lines', a:Id)[2]
+E	3	http://purl.oclc.org/dsdl/svrl	svrl:successful-report
+A	3		test	key('lines', a:Id)[2]
+A	3	http://www.w3.org/2000/xmlns/	xmlns:svrl	http://purl.oclc.org/dsdl/svrl
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:attribute
+A	4		name	id
+T	5	F-2
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:attribute
+A	4		name	location
+E	5	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	5		mode	schematron-select-full-path
+A	5		select	.
+T	4	 
+E	4	http://purl.oclc.org/dsdl/svrl	svrl:diagnostic-reference
+A	4		diagnostic	D2
+T	5	\n
+E	5	http://purl.oclc.org/dsdl/svrl	svrl:text
+E	6	http://www.w3.org/1999/XSL/Transform	xsl:attribute
+A	6		name	xml:lang
+T	7	fr
+T	6	Ligne 
+E	6	http://www.w3.org/1999/XSL/Transform	xsl:text
+E	6	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	6		select	a:Id
+E	6	http://www.w3.org/1999/XSL/Transform	xsl:text
+E	4	http://purl.oclc.org/dsdl/svrl	svrl:text
+T	5	Duplicate line 
+E	5	http://www.w3.org/1999/XSL/Transform	xsl:text
+E	5	http://www.w3.org/1999/XSL/Transform	xsl:value-of
+A	5		select	u:label(a:Id)
+E	5	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	5	.
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	2		mode	M7
+A	2		select	*|comment()|processing-instruction()
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	text()
+A	1		mode	M7
+A	1		priority	-1
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	@*|node()
+A	1		mode	M7
+A	1		priority	-2
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:apply-templates
+A	2		mode	M7
+A	2		select	*|comment()|processing-instruction()

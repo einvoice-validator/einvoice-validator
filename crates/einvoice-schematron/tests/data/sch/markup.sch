@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic: the query binding xpath2, a schema element with a prefix, comments and
+     processing instructions among the elements, and no identifiers on patterns, rules
+     and assertions. -->
+<?example data of a processing instruction?>
+<sch:schema xmlns:sch="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath2">
+  <!-- a comment in the schema -->
+  <sch:ns prefix="a" uri="urn:example:a"/>
+  <?example inside?>
+  <sch:pattern>
+    <!-- a comment in a pattern -->
+    <sch:rule context="a:Order">
+      <sch:assert test="a:Id">An order has an identifier.</sch:assert>
+      <sch:report test="a:Note">A note<!-- a comment in a message -->.</sch:report>
+    </sch:rule>
+  </sch:pattern>
+</sch:schema>

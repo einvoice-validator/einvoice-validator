@@ -1,0 +1,18 @@
+dom 1
+E	0	http://www.w3.org/1999/XSL/Transform	stylesheet
+A	0		version	2.0
+A	0	http://www.w3.org/2000/xmlns/	xmlns	http://www.w3.org/1999/XSL/Transform
+E	1	http://www.w3.org/1999/XSL/Transform	template
+A	1		match	/
+E	2	http://www.w3.org/1999/XSL/Transform	value-of
+A	2		select	1
+E	2		plain
+A	2		a	1
+E	3		inner
+E	3	urn:x	x:in
+A	3	http://www.w3.org/2000/xmlns/	xmlns:x	urn:x
+E	2	http://www.w3.org/1999/XSL/Transform	again
+E	3		plain
+E	4	urn:d	deeper
+A	4	http://www.w3.org/2000/xmlns/	xmlns	urn:d
+E	5		plain

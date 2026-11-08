@@ -1,0 +1,48 @@
+dom 1
+C	0	before the root
+P	0	before	data
+E	0	http://www.w3.org/1999/XSL/Transform	xsl:stylesheet
+A	0		version	2.0
+A	0	http://www.w3.org/2000/xmlns/	xmlns:xsl	http://www.w3.org/1999/XSL/Transform
+C	1	first child
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		match	/
+T	2	text first
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:text
+T	3	t
+T	2	text between
+C	2	comment after text
+P	2	pi	after a comment
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	2		test	1
+T	2	  
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	2		test	2
+T	2	\n
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	2		test	3
+T	3	only text
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	2		test	4
+C	3	only a comment
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	2		test	5
+P	3	only-pi	
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	2		test	6
+T	3	   
+T	2	text last
+E	1	http://www.w3.org/1999/XSL/Transform	xsl:template
+A	1		name	t
+E	2	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	2		test	1
+E	3	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	3		test	2
+E	4	http://www.w3.org/1999/XSL/Transform	xsl:if
+A	4		test	3
+T	4	tail
+C	2	
+P	2	empty	
+C	1	last child
+C	0	after the root
+P	0	after	

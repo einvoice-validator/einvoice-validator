@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="2.0"><xsl:template match="a[@b = &quot;c&quot; or @d = '&lt;&amp;&gt;']" name="tab&#9;lf&#10;cr&#13;end"><xsl:text>&lt; &amp; &gt; ]]&gt; " ' tab&#9;lf&#10;cr&#13;crlf&#13;&#10;del&#127;nel&#133;c1&#159;nbsp&#160;é€😀𝄞</xsl:text><!-- comment with < & > ' " é 😀 --><?pi data with < & > ' "?></xsl:template></xsl:stylesheet>
