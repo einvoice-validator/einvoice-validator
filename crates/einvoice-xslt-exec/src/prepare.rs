@@ -13,7 +13,8 @@ use einvoice_xpath::{
     self as ast, Avt, AvtPart, Expr, NamespaceMap, Occurrence, QName, SequenceType, parse_expr,
 };
 use einvoice_xpath_eval::{
-    Cardinality, CompiledExpr, FunctionId, StaticContext, VariableId, VariableInfo, compile,
+    BindingValue, Cardinality, CompiledExpr, FunctionId, StaticContext, ValueType, VariableId,
+    VariableInfo, compile,
 };
 use einvoice_xslt::{
     ApplyMode, GlobalKind, Instruction, Mode, NamespaceBinding, NumberLevel, Priority, Standalone,
@@ -327,12 +328,25 @@ struct Frame {
 }
 
 impl Frame {
-    fn declare(&mut self, name: QName, cardinality: Cardinality, globals: usize) -> usize {
+    fn declare(
+        &mut self,
+        name: QName,
+        cardinality: Cardinality,
+        value_type: ValueType,
+        globals: usize,
+    ) -> usize {
         let slot = self.slots;
         self.slots += 1;
         self.uses.borrow_mut().push(0);
         let id = VariableId(u32::try_from(globals + slot).unwrap_or(u32::MAX));
-        self.locals.push((name, VariableInfo { id, cardinality }));
+        self.locals.push((
+            name,
+            VariableInfo {
+                id,
+                cardinality,
+                value_type,
+            },
+        ));
         slot
     }
 }
@@ -340,7 +354,13 @@ impl Frame {
 /// The static context of an expression.
 struct Scope<'a> {
     globals: &'a [(QName, VariableInfo)],
+    /// How many globals Saxon has typed before the declaration being compiled (those
+    /// declared before it): a reference to a later one is of unknown type for the type
+    /// inference of the variables declared here.
+    typed_globals: usize,
     functions: &'a [(QName, usize)],
+    /// The declared result types of the functions.
+    function_types: &'a [ValueType],
     frame: Option<&'a Frame>,
     /// Set when the compiler asked for a namespace prefix (only `system-property()`
     /// does), which this crate cannot resolve.
@@ -361,12 +381,21 @@ impl StaticContext for Scope<'_> {
             if let Some(count) = frame.uses.borrow_mut().get_mut(slot) {
                 *count += 1;
             }
-            return Some(*info);
+            return Some(info.clone());
         }
-        self.globals
+        let (index, (_, info)) = self
+            .globals
             .iter()
-            .find(|(n, _)| n.same_expanded_name(name))
-            .map(|(_, info)| *info)
+            .enumerate()
+            .find(|(_, (n, _))| n.same_expanded_name(name))?;
+        Some(if index < self.typed_globals {
+            info.clone()
+        } else {
+            VariableInfo {
+                value_type: info.value_type.declared_later(),
+                ..info.clone()
+            }
+        })
     }
 
     fn function(&self, name: &QName, arity: usize) -> Option<FunctionId> {
@@ -374,6 +403,13 @@ impl StaticContext for Scope<'_> {
             .iter()
             .position(|(n, a)| *a == arity && n.same_expanded_name(name))
             .map(|i| FunctionId(u32::try_from(i).unwrap_or(u32::MAX)))
+    }
+
+    fn function_type(&self, id: FunctionId) -> ValueType {
+        self.function_types
+            .get(id.0 as usize)
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn xslt_functions(&self) -> bool {
@@ -447,6 +483,15 @@ fn cardinality_of(occurrence: Occurrence) -> Cardinality {
     }
 }
 
+/// What a binding's value is, for the inference of its static type.
+fn binding_value(value: &Value) -> BindingValue<'_> {
+    match value {
+        Value::Select(expr) => BindingValue::Select(expr),
+        Value::Content(_) => BindingValue::Content,
+        Value::Absent => BindingValue::Absent,
+    }
+}
+
 /// What is statically known of the number of items of a binding's value.
 fn binding_cardinality(as_type: Option<&SequenceType>, value: &Value) -> Cardinality {
     if let Some(t) = as_type {
@@ -464,7 +509,11 @@ struct Compiler<'s> {
     names: Vec<Arc<QName>>,
     errors: Vec<PrepareError>,
     globals: Vec<(QName, VariableInfo)>,
+    /// How many globals are declared before the declaration being compiled.
+    typed_globals: usize,
     functions: Vec<(QName, usize)>,
+    /// The declared result types of the functions, by identity.
+    function_types: Vec<ValueType>,
     modes: Vec<Mode>,
     /// Whether some expression compiled so far calls `document()`.
     calls_document: bool,
@@ -535,7 +584,9 @@ impl Compiler<'_> {
     fn scope<'a>(&'a self, frame: Option<&'a Frame>) -> Scope<'a> {
         Scope {
             globals: &self.globals,
+            typed_globals: self.typed_globals,
             functions: &self.functions,
+            function_types: &self.function_types,
             frame,
             asked_prefix: Cell::new(false),
         }
@@ -785,8 +836,11 @@ impl Compiler<'_> {
             Instruction::Variable(v) => {
                 let value = self.value(v.line, &v.value, v.as_type.as_ref(), frame);
                 let cardinality = binding_cardinality(v.as_type.as_ref(), &value);
+                let value_type =
+                    ValueType::local_variable(binding_value(&value), v.as_type.as_ref());
                 let lazy = matches!(&value, Value::Select(e) if !e.is_at_most_one());
-                let slot = frame.declare(v.name.clone(), cardinality, self.globals.len());
+                let slot =
+                    frame.declare(v.name.clone(), cardinality, value_type, self.globals.len());
                 Inst::Variable(Box::new(Binding {
                     line: v.line,
                     name: v.name.clone(),
@@ -919,7 +973,12 @@ impl Compiler<'_> {
                 .as_ref()
                 .map_or(Cardinality::Any, |t| cardinality_of(t.occurrence));
             let lazy = matches!(&value, Value::Select(e) if !e.is_at_most_one());
-            let slot = frame.declare(p.name.clone(), cardinality, self.globals.len());
+            let slot = frame.declare(
+                p.name.clone(),
+                cardinality,
+                ValueType::declared(p.as_type.as_ref()),
+                self.globals.len(),
+            );
             out.push(Binding {
                 line: p.line,
                 name: p.name.clone(),
@@ -934,6 +993,7 @@ impl Compiler<'_> {
     }
 
     fn template(&mut self, template: &Template) -> CompiledTemplate {
+        self.typed_globals = self.globals_before(template.line);
         let mut frame = Frame::default();
         let params = self.params(&template.params, &mut frame);
         let body = self.sequence_constructor(&template.body, &mut frame, Content::Nodes);
@@ -991,10 +1051,16 @@ impl Executable {
             names: Vec::new(),
             errors: Vec::new(),
             globals: Vec::new(),
+            typed_globals: 0,
             functions: sheet
                 .functions
                 .iter()
                 .map(|f| (f.name.clone(), f.params.len()))
+                .collect(),
+            function_types: sheet
+                .functions
+                .iter()
+                .map(|f| ValueType::declared(f.as_type.as_ref()))
                 .collect(),
             modes: modes.into_iter().collect(),
             calls_document: false,
@@ -1009,6 +1075,7 @@ impl Executable {
             .functions
             .iter()
             .map(|f| {
+                compiler.typed_globals = compiler.globals_before(f.line);
                 let mut frame = Frame::default();
                 let params = compiler.params(&f.params, &mut frame);
                 let body = compiler.sequence_constructor(&f.body, &mut frame, Content::Sequence);
@@ -1065,8 +1132,20 @@ impl Executable {
 }
 
 impl Compiler<'_> {
+    /// How many global variables and parameters are declared before `line`: Saxon types
+    /// the declarations in document order.
+    fn globals_before(&self, line: u32) -> usize {
+        self.sheet
+            .globals
+            .iter()
+            .take_while(|g| g.variable.line < line)
+            .count()
+    }
+
     /// The global variables. Their static cardinality comes from their compiled value,
-    /// which may refer to other globals: compiled again until it is stable.
+    /// which may refer to other globals: compiled again until it is stable. Their static
+    /// type is inferred in declaration order from the types of the globals declared
+    /// before them, and used from the second compilation on.
     fn globals(&mut self, sheet: &Stylesheet) -> Vec<Global> {
         self.globals = sheet
             .globals
@@ -1082,32 +1161,41 @@ impl Compiler<'_> {
                             .as_type
                             .as_ref()
                             .map_or(Cardinality::Any, |t| cardinality_of(t.occurrence)),
+                        value_type: ValueType::unknown(),
                     },
                 )
             })
             .collect();
         let errors_before = self.errors.len();
         let mut compiled: Vec<Global> = Vec::new();
-        for _ in 0..=sheet.globals.len() {
+        for pass in 0..=sheet.globals.len() + 1 {
             self.errors.truncate(errors_before);
-            compiled = sheet
-                .globals
-                .iter()
-                .map(|g| {
-                    let v = &g.variable;
-                    let mut frame = Frame::default();
-                    let value = self.value(v.line, &v.value, v.as_type.as_ref(), &mut frame);
-                    Global {
-                        name: v.name.clone(),
-                        is_param: g.kind == GlobalKind::Param,
-                        line: v.line,
-                        value,
-                        as_type: v.as_type.clone(),
-                        slots: frame.slots,
-                    }
-                })
-                .collect();
-            let mut changed = false;
+            compiled = Vec::with_capacity(sheet.globals.len());
+            for (index, g) in sheet.globals.iter().enumerate() {
+                let v = &g.variable;
+                self.typed_globals = index;
+                let mut frame = Frame::default();
+                let value = self.value(v.line, &v.value, v.as_type.as_ref(), &mut frame);
+                let value_type = if g.kind == GlobalKind::Param {
+                    ValueType::declared(v.as_type.as_ref())
+                } else {
+                    ValueType::global_variable(binding_value(&value), v.as_type.as_ref())
+                };
+                if let Some((_, info)) = self.globals.get_mut(index) {
+                    info.value_type = value_type;
+                }
+                compiled.push(Global {
+                    name: v.name.clone(),
+                    is_param: g.kind == GlobalKind::Param,
+                    line: v.line,
+                    value,
+                    as_type: v.as_type.clone(),
+                    slots: frame.slots,
+                });
+            }
+            // The types are final after the first compilation (each depends on the
+            // globals declared before it only), which saw the later ones untyped.
+            let mut changed = pass == 0;
             for (info, global) in self.globals.iter_mut().zip(&compiled) {
                 let cardinality = binding_cardinality(global.as_type.as_ref(), &global.value);
                 if info.1.cardinality != cardinality {

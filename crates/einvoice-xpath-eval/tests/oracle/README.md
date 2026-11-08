@@ -44,7 +44,11 @@ purpose (the literal predicate `[0]`); the example accepts exactly those, listed
 
 The `upcast-*` edge cases probe the static types Saxon infers for the argument of `xs:decimal`
 (an `xs:integer` one is cast with trailing zeros stripped, which changes the digits of a
-following division), including the few literals Saxon-HE folds.
+following division), including the few literals Saxon-HE folds. The `static-*` edge cases probe
+the other two decisions Saxon takes from static types: `xs:decimal` of an argument statically
+`xs:decimal` is the argument itself (an `xs:integer` value stays one), and `div` of operands
+statically `xs:decimal` (or one `xs:integer`) is a decimal division even of two integer values,
+which changes the digits of the quotient of a negative integer.
 
 Saxon refuses statically some expressions that are only dynamic errors here (its type
 inference sees them); such edge cases pass their operand through `p:any`, an identity

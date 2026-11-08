@@ -9,11 +9,12 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use einvoice_xdm::AtomicValue;
-use einvoice_xpath::{NamespaceMap, QName, XS_NAMESPACE, parse_expr};
+use einvoice_xdm::{AtomicValue, Integer};
+use einvoice_xpath::{NamespaceMap, QName, XS_NAMESPACE, parse_expr, parse_sequence_type};
 use einvoice_xpath_eval::{
-    Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext, Error, ErrorCode,
-    FunctionId, Host, Item, NoHost, Node, SimpleStaticContext, TreeBuilder, VariableId, compile,
+    BindingValue, Cardinality, Clock, CompiledExpr, Context, Document, DynamicContext, Error,
+    ErrorCode, FunctionId, Host, Item, NoHost, Node, SimpleStaticContext, TreeBuilder, ValueType,
+    VariableId, compile,
 };
 
 fn namespaces() -> NamespaceMap {
@@ -378,4 +379,112 @@ fn system_clock() {
 fn compiled_expressions_can_be_shared_between_threads() {
     fn shareable<T: Send + Sync>() {}
     shareable::<CompiledExpr>();
+}
+
+/// A host whose variable and function give the integer 300, whatever their static type
+/// says.
+struct ThreeHundred;
+
+impl Host for ThreeHundred {
+    fn variable(&self, _id: VariableId) -> Result<Rc<[Item]>, Error> {
+        Ok(Rc::from(vec![Item::Atomic(AtomicValue::from(
+            Integer::from(300),
+        ))]))
+    }
+
+    fn call_function(&self, _id: FunctionId, _args: Vec<Vec<Item>>) -> Result<Vec<Item>, Error> {
+        Ok(vec![Item::Atomic(AtomicValue::from(Integer::from(300)))])
+    }
+
+    fn document(&self, uri: &str, base: Option<&str>) -> Result<Node, Error> {
+        NoHost.document(uri, base)
+    }
+
+    fn system_property(&self, _name: &QName) -> String {
+        String::new()
+    }
+}
+
+#[test]
+fn variable_and_function_types_from_the_host() {
+    // The value the host gives is the same xs:integer 300 each time; only its static type
+    // differs, and with it what Saxon does with `xs:decimal` and `div`.
+    let ns = namespaces();
+    let decimal = parse_sequence_type("xs:decimal", &ns).unwrap();
+    let integer = parse_sequence_type("xs:integer", &ns).unwrap();
+    let run = |value_type: ValueType, text: &str| {
+        let mut context = SimpleStaticContext::new();
+        context.declare_typed_variable(QName::local("v"), Cardinality::AtMostOne, value_type);
+        let dc = DynamicContext::new(&ThreeHundred, clock());
+        strings(
+            &compiled(text, &context)
+                .unwrap()
+                .evaluate(&dc, &Context::new())
+                .unwrap(),
+        )
+        .join(" ")
+    };
+    let probe = "xs:decimal($v) instance of xs:integer, 1.1 div xs:decimal($v), ($v - 301) div 300";
+    // Unknown: cast at run time (scale 0 kept), division chosen from the values (Saxon
+    // strips a negative integer).
+    assert_eq!(
+        run(ValueType::unknown(), probe),
+        "false 0.0036666666666666667 -0.00333333333333333333"
+    );
+    // A local variable is of the type of its type-checked value, xs:decimal here: no
+    // cast, decimal division.
+    let quotient = plain("count(/a) * 1000 div 10");
+    let local = ValueType::local_variable(BindingValue::Select(&quotient), None);
+    assert_eq!(
+        run(local, probe),
+        "true 0.0036666666666666667 -0.003333333333333333"
+    );
+    // A global variable is of the type inferred before type checking: arithmetic has no
+    // type yet.
+    let global = ValueType::global_variable(BindingValue::Select(&quotient), None);
+    assert_eq!(
+        run(global, probe),
+        "false 0.0036666666666666667 -0.00333333333333333333"
+    );
+    // Declared xs:integer: the up-casting converter strips the trailing zeros.
+    assert_eq!(
+        run(
+            ValueType::declared(Some(&integer)),
+            "1.1 div xs:decimal($v)"
+        ),
+        "0.003666666666666666667"
+    );
+    // A literal select is a constant: the reference is the literal, whatever the host
+    // gives.
+    let literal = plain("1.5");
+    assert_eq!(
+        run(
+            ValueType::local_variable(BindingValue::Select(&literal), None),
+            "$v * 2"
+        ),
+        "3"
+    );
+    // A local variable declared xs:decimal with an xs:integer value: the cast is removed
+    // while the instruction is type-checked alone (the variable is then of its declared
+    // type), the division chosen once the body is (it is then an xs:integer).
+    let product = plain("count(/a) * 100");
+    let declared = ValueType::local_variable(BindingValue::Select(&product), Some(&decimal));
+    assert_eq!(
+        run(declared, probe),
+        "true 0.0036666666666666667 -0.00333333333333333333"
+    );
+    // The declared result type of a function.
+    let mut context = SimpleStaticContext::new();
+    let name = QName {
+        prefix: Some("f".to_owned()),
+        namespace: Some("urn:f".to_owned()),
+        local: "g".to_owned(),
+    };
+    context.declare_typed_function(name, 0, ValueType::declared(Some(&decimal)));
+    let dc = DynamicContext::new(&ThreeHundred, clock());
+    let result = compiled("xs:decimal(f:g()) instance of xs:integer", &context)
+        .unwrap()
+        .evaluate(&dc, &Context::new())
+        .unwrap();
+    assert_eq!(strings(&result), ["true"]);
 }

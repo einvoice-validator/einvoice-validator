@@ -9,6 +9,7 @@ use std::rc::Rc;
 use einvoice_xdm::{Date, DateTime, XPathRegex};
 use einvoice_xpath::{NamespaceMap, Namespaces, QName};
 
+use crate::compile::ValueType;
 use crate::error::{ErrorCode, Result, err};
 use crate::item::Item;
 use crate::tree::Node;
@@ -31,13 +32,16 @@ pub enum Cardinality {
 }
 
 /// A variable in scope.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct VariableInfo {
     /// Its identity at evaluation.
     pub id: VariableId,
     /// What is known of its value. It only affects the evaluation strategy (which side
     /// of a general comparison is read first), never the result.
     pub cardinality: Cardinality,
+    /// The static type Saxon-HE 12.10 gives its references, which decides some casts and
+    /// arithmetic ([`ValueType::unknown`] when nothing is known).
+    pub value_type: ValueType,
 }
 
 /// The static context of an expression (XPath 2.0 section 2.1.1), as far as the compiler
@@ -48,6 +52,14 @@ pub trait StaticContext {
 
     /// The host function of that expanded name and arity, if any.
     fn function(&self, name: &QName, arity: usize) -> Option<FunctionId>;
+
+    /// The static type of what a host function returns, once its call is type-checked:
+    /// [`ValueType::declared`] with the declared result type of an `xsl:function`. By
+    /// default, nothing is known.
+    fn function_type(&self, id: FunctionId) -> ValueType {
+        let _ = id;
+        ValueType::unknown()
+    }
 
     /// Whether the XSLT functions `current()`, `document()` and `system-property()` are
     /// available.
@@ -63,7 +75,7 @@ pub trait StaticContext {
 pub struct SimpleStaticContext {
     namespaces: NamespaceMap,
     variables: Vec<(QName, VariableInfo)>,
-    functions: Vec<(QName, usize, FunctionId)>,
+    functions: Vec<(QName, usize, FunctionId, ValueType)>,
     xslt: bool,
 }
 
@@ -88,19 +100,47 @@ impl SimpleStaticContext {
         self
     }
 
-    /// Declares a variable (a later declaration of the same name hides the earlier one)
-    /// and returns its identity: the declaration order, from 0.
+    /// Declares a variable of unknown type (a later declaration of the same name hides
+    /// the earlier one) and returns its identity: the declaration order, from 0.
     pub fn declare_variable(&mut self, name: QName, cardinality: Cardinality) -> VariableId {
+        self.declare_typed_variable(name, cardinality, ValueType::unknown())
+    }
+
+    /// Declares a variable of that static type, as [`Self::declare_variable`].
+    pub fn declare_typed_variable(
+        &mut self,
+        name: QName,
+        cardinality: Cardinality,
+        value_type: ValueType,
+    ) -> VariableId {
         let id = VariableId(u32::try_from(self.variables.len()).unwrap_or(u32::MAX));
-        self.variables
-            .push((name, VariableInfo { id, cardinality }));
+        self.variables.push((
+            name,
+            VariableInfo {
+                id,
+                cardinality,
+                value_type,
+            },
+        ));
         id
     }
 
-    /// Declares a host function and returns its identity: the declaration order, from 0.
+    /// Declares a host function whose result is of unknown type and returns its
+    /// identity: the declaration order, from 0.
     pub fn declare_function(&mut self, name: QName, arity: usize) -> FunctionId {
+        self.declare_typed_function(name, arity, ValueType::unknown())
+    }
+
+    /// Declares a host function whose result is of that static type, as
+    /// [`Self::declare_function`].
+    pub fn declare_typed_function(
+        &mut self,
+        name: QName,
+        arity: usize,
+        result: ValueType,
+    ) -> FunctionId {
         let id = FunctionId(u32::try_from(self.functions.len()).unwrap_or(u32::MAX));
-        self.functions.push((name, arity, id));
+        self.functions.push((name, arity, id, result));
         id
     }
 }
@@ -111,14 +151,21 @@ impl StaticContext for SimpleStaticContext {
             .iter()
             .rev()
             .find(|(n, _)| n.same_expanded_name(name))
-            .map(|(_, info)| *info)
+            .map(|(_, info)| info.clone())
     }
 
     fn function(&self, name: &QName, arity: usize) -> Option<FunctionId> {
         self.functions
             .iter()
-            .find(|(n, a, _)| *a == arity && n.same_expanded_name(name))
-            .map(|(_, _, id)| *id)
+            .find(|(n, a, _, _)| *a == arity && n.same_expanded_name(name))
+            .map(|(_, _, id, _)| *id)
+    }
+
+    fn function_type(&self, id: FunctionId) -> ValueType {
+        self.functions
+            .iter()
+            .find(|(_, _, i, _)| *i == id)
+            .map_or_else(ValueType::unknown, |(_, _, _, result)| result.clone())
     }
 
     fn xslt_functions(&self) -> bool {

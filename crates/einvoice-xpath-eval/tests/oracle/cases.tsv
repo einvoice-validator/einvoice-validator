@@ -620,3 +620,84 @@ upcast-91	edge.xml	/	v	1.1 div xs:decimal((300, 'a')[1] + 0)
 upcast-92	edge.xml	/	v	1.1 div xs:decimal((300, 'a')[. = 300])
 upcast-93	edge.xml	/	v	1.1 div xs:decimal(('a', 300)[last()])
 upcast-94	edge.xml	/	v	1.1 div xs:decimal((300, 'a')[string(.) = '300'][1])
+# Static typing: xs:decimal of an argument statically xs:decimal is the argument itself
+# (an integer value stays an xs:integer); `div` of operands statically xs:decimal or
+# xs:integer, not both xs:integer, is Saxon's decimal division (never an integer).
+static-01	edge.xml	/	vb	xs:decimal(count(//d:item) * 1000 div 10) instance of xs:integer
+static-02	edge.xml	/	vb	xs:decimal(if (exists(//d:item)) then count(//d:item) * 100 else 1.5) instance of xs:integer
+static-03	edge.xml	/	vb	xs:decimal((count(//d:item), 1.5)[1]) instance of xs:integer
+static-04	edge.xml	/	vb	xs:decimal((300, 2.5)[1]) instance of xs:integer
+static-05	edge.xml	/	vb	xs:decimal((300, 'a')[1]) instance of xs:integer
+static-06	edge.xml	/	vb	xs:decimal(p:any(300)) instance of xs:integer
+static-07	edge.xml	/	vb	xs:decimal(xs:decimal(count(//d:item) * 100)) instance of xs:integer
+static-08	edge.xml	/	vb	xs:decimal(abs(count(//d:item) div 1)) instance of xs:integer
+static-09	edge.xml	/	vb	xs:decimal(round(count(//d:item) div 1)) instance of xs:integer
+static-10	edge.xml	/	vb	xs:decimal(count(//d:item) div 1 + 1) instance of xs:integer
+static-11	edge.xml	/	vb	xs:decimal(-(count(//d:item) div 1)) instance of xs:integer
+static-12	edge.xml	/	vb	xs:decimal((count(//d:item) div 1)[. > 0]) instance of xs:integer
+static-13	edge.xml	/	v	for $v in (count(//d:item) div 1, 4) return xs:decimal($v) instance of xs:integer
+static-14	edge.xml	/	vb	xs:decimal(sum((count(//d:item) div 1, 1))) instance of xs:integer
+static-15	edge.xml	/	v	xs:decimal((count(//d:item) div 1, 2.5)[. > 0])
+static-16	edge.xml	/	v	xs:decimal(if (count(//d:item) = 3) then () else 1.5)
+static-17	edge.xml	/	v	1.1 div xs:decimal(count(//d:item) * 100 div 1)
+static-18	edge.xml	/	v	1.1 div xs:decimal(if (exists(//d:item)) then count(//d:item) * 100 else 1.5)
+static-19	edge.xml	/	vb	xs:decimal((count(//d:item) * 100, 'a')[1]) instance of xs:integer
+static-20	edge.xml	/	vb	xs:decimal(reverse((count(//d:item) div 1, 2.5))[2]) instance of xs:integer
+static-21	edge.xml	/	vb	xs:decimal(xs:integer(count(//d:item))) instance of xs:integer
+static-22	edge.xml	/	vb	xs:integer(count(//d:item) div 1) instance of xs:integer
+static-23	edge.xml	/	v	xs:decimal(count(//d:item) div 1) castable as xs:integer
+static-24	edge.xml	/	v	(count(//d:item) * 1000 div 3000 - 2) div 300
+static-25	edge.xml	/	vb	(count(//d:item) * 100 div 1 div 3) instance of xs:integer
+static-26	edge.xml	/	v	1.1 div (count(//d:item) * 100 div 1 div 1)
+static-27	edge.xml	/	v	(count(//d:item) div 1 - 4) div 300
+static-28	edge.xml	/	v	p:any(count(//d:item) - 4) div 300
+static-29	edge.xml	/	v	(count(//d:item) - 4) div 300
+static-30	edge.xml	/	vb	(count(//d:item) div 1 * 2) instance of xs:integer
+static-31	edge.xml	/	vb	(count(//d:item) div 1 idiv 2) instance of xs:integer
+static-32	edge.xml	/	vb	(count(//d:item) div 1 mod 2) instance of xs:integer
+static-33	edge.xml	/	vb	(count(//d:item) div 1 - 1) instance of xs:integer
+static-34	edge.xml	/	vb	(count(//d:item) * 2 div 3 * 3) instance of xs:integer
+static-35	edge.xml	/	v	count(//d:item) div 1 div 0
+static-36	edge.xml	/	v	count(//d:item) div 1 div 0e0
+static-37	edge.xml	/	v	count(//d:item) div 1 div 1.5
+static-38	edge.xml	/	v	((300, 'a')[1] * 0 - 1) div (count(//d:item) * 100 div 1)
+static-39	edge.xml	/	v	(count(//d:item) div 1 - 4) div (300, 'a')[1]
+static-40	edge.xml	/	v	(count(//d:item) div 1 - 4) div (300, 2.5)[1]
+static-41	edge.xml	/	v	(count(//d:item) div 1 - 4) div p:any(300)
+static-42	edge.xml	/	v	(if (exists(//d:item)) then -1 else 1.5) div 300
+static-43	edge.xml	/	v	(-1, 1.5)[1] div 300
+static-44	edge.xml	/	v	(-1, 1.5)[1] div (300, 'a')[1]
+static-45	edge.xml	/	v	(count(//d:item) * 0 - 1, 1.5)[1] div 300
+static-46	edge.xml	/	v	sum((count(//d:item) * 0 - 1, 1.5)[1]) div 300
+static-47	edge.xml	/	v	abs(count(//d:item) div 1 - 4) div -300
+static-48	edge.xml	/	v	(for $v in (count(//d:item) div 1 - 4) return $v) div 300
+static-49	edge.xml	/	v	(count(//d:item) div 1 - 4)[. < 0] div 300
+static-50	edge.xml	/	v	-(count(//d:item) div 1 - 2) div 300
+static-51	edge.xml	/	v	(count(//d:item) * 1000000000000 div 1) div 7
+static-52	edge.xml	/	v	(count(//d:item) * 1000000000000) div 7
+static-53	edge.xml	/	v	7 div (count(//d:item) * 1000000000000 div 1)
+static-54	edge.xml	/	v	7 div (count(//d:item) * 1000000000000)
+static-55	edge.xml	/	v	(count(//d:item) div 1 - 4) div (count(//d:item) * 100)
+static-56	edge.xml	/	v	(count(//d:item) - 4) div (count(//d:item) * 100 div 1)
+static-57	edge.xml	/	v	xs:decimal(count(//d:item) - 4) div 300
+static-58	edge.xml	/	v	(count(//d:item) div 1 - 4) div xs:decimal(300)
+static-59	edge.xml	/	v	(count(//d:item) div 1 - 4) div //d:num[1]
+static-60	edge.xml	/	v	(count(//d:item) div 1 - 4) div xs:integer(//d:num[1])
+static-61	edge.xml	/	v	(count(//d:item) div 1 - 4) div number(300)
+static-62	edge.xml	/	v	(count(//d:item) div 1 - 4) div (count(//d:item) * 100 + p:any(0))
+static-63	edge.xml	/	v	(count(//d:item) * 300 div 1 - 900) div 1 div 7
+static-64	edge.xml	/	v	sum((count(//d:item) div 1 - 4, 0)) div 300
+static-65	edge.xml	/	v	(count(//d:item) div 1 - 4, 2)[1] div 300
+static-66	edge.xml	/	v	xs:decimal(p:any(count(//d:item) div 1 - 4)) div 300
+static-67	edge.xml	/	v	xs:decimal(count(//d:item) div 1 - 4) div 300
+static-68	edge.xml	/	v	(xs:decimal((300, 2.5)[1]) - 301) div 300
+static-69	edge.xml	/	v	(xs:decimal((count(//d:item) * 0 - 1, 2.5)[1]) - 0) div 300
+static-70	edge.xml	/	v	(xs:decimal((300, 'a')[1]) - 301) div 300
+static-71	edge.xml	/	v	-(count(//d:item) * 0 + 1) div 300
+static-72	edge.xml	/	v	-(3000 div 10) div 300
+static-73	edge.xml	/	v	(-(300, 2.5)[1] + 299) div 300
+static-74	edge.xml	/	vb	xs:decimal(-(count(//d:item) * 100 div 1)) instance of xs:integer
+static-75	edge.xml	/	v	xs:decimal(-(-1, 2.5)[1]) div 300
+static-76	edge.xml	/	v	((3000 div 10, 2.5)[1] - 301) div 300
+static-77	edge.xml	/	v	(sum((300, 2.5)[1]) - 301) div 300
+static-78	edge.xml	/	v	(abs((-300, 2.5)[1]) - 301) div 300

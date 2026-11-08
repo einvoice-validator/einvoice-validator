@@ -12,7 +12,8 @@ use std::rc::Rc;
 use einvoice_xdm::{AtomicValue, Integer, ops};
 
 use crate::compile::{
-    CompareStrategy, CompiledExpr, Expr, ItemTest, PathMode, Predicate, PredicateKind, Step,
+    Calculator, CompareStrategy, CompiledExpr, Expr, ItemTest, PathMode, Predicate, PredicateKind,
+    Step,
 };
 use crate::context::{Context, DynamicContext};
 use crate::error::{Error, ErrorCode, Result, err};
@@ -311,12 +312,15 @@ impl<'a> Run<'a> {
                 Some(value) => Some(ops::negate(&value)?),
                 None => None,
             },
-            Expr::Arithmetic { op, lhs, rhs } => {
-                match operands(lhs, rhs, &format!("'{}'", arithmetic_name(*op)))? {
-                    Some((a, b)) => Some(ops::arithmetic(*op, &a, &b)?),
-                    None => None,
-                }
-            }
+            Expr::Arithmetic {
+                op,
+                lhs,
+                rhs,
+                calculator,
+            } => match operands(lhs, rhs, &format!("'{}'", arithmetic_name(*op)))? {
+                Some((a, b)) => Some(arithmetic(*op, *calculator, &a, &b)?),
+                None => None,
+            },
             Expr::ValueComparison { op, lhs, rhs } => {
                 match operands(lhs, rhs, "a value comparison")? {
                     Some((a, b)) => Some(AtomicValue::Boolean(ops::value_compare(
@@ -977,6 +981,27 @@ fn many_to_many(
                 }
             }
         }
+    }
+}
+
+/// `a op b` with the calculator chosen at compile time. Saxon's decimal division
+/// (`DecimalDivDecimal`) divides two integer values as decimals of scale 0; any other pair
+/// of values is divided as [`ops::arithmetic`] divides it, which is what that calculator
+/// does with them.
+fn arithmetic(
+    op: ops::ArithmeticOp,
+    calculator: Calculator,
+    a: &AtomicValue,
+    b: &AtomicValue,
+) -> Result<AtomicValue> {
+    match (calculator, a, b) {
+        (Calculator::DecimalDivide, AtomicValue::Integer(i), AtomicValue::Integer(j)) => {
+            Ok(AtomicValue::Decimal(
+                i.as_decimal_operand()
+                    .checked_div(&j.as_decimal_operand())?,
+            ))
+        }
+        _ => Ok(ops::arithmetic(op, a, b)?),
     }
 }
 

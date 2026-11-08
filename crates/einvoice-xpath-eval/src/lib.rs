@@ -9,7 +9,12 @@
 //!   a [`CompiledExpr`]. Unknown functions and variables are errors here, not at
 //!   evaluation. The static types Saxon infers are inferred too, where they change a
 //!   result: `xs:decimal` of an argument statically typed `xs:integer` strips its
-//!   trailing zeros, as Saxon-HE 12.10's up-casting converter does.
+//!   trailing zeros, as Saxon-HE 12.10's up-casting converter does, and returns one
+//!   statically typed `xs:decimal` unchanged (Saxon removes the cast); `div` of operands
+//!   statically typed `xs:decimal` (or one `xs:integer`) is Saxon's decimal division. The
+//!   host gives the static types of its variables and functions as [`ValueType`]s, which
+//!   infer them as Saxon does in a stylesheet from a `select` expression and an `as`
+//!   type.
 //! * [`CompiledExpr::evaluate`] and [`CompiledExpr::effective_boolean_value`] evaluate it
 //!   in a [`DynamicContext`] (the [`Host`] and the [`Clock`]: the implicit timezone and
 //!   the current date and time, given by the caller, so that the evaluator reads no clock,
@@ -54,7 +59,7 @@ mod item;
 mod library;
 pub mod tree;
 
-pub use compile::{CompiledExpr, compile};
+pub use compile::{BindingValue, CompiledExpr, ValueType, compile};
 pub use context::{
     Cardinality, Clock, Context, DynamicContext, Focus, FunctionId, Host, NoHost,
     SimpleStaticContext, StaticContext, VariableId, VariableInfo,

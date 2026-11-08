@@ -12,8 +12,12 @@
 //!
 //! It also infers the static item type of every subexpression as Saxon-HE 12.10 does
 //! (`Expression.getItemType`, with the literals it folds), as far as it decides a
-//! result: the constructor `xs:decimal` strips the trailing zeros of an argument that is
-//! statically an `xs:integer` (see [`StaticType`]).
+//! result (see [`StaticType`]): the constructor `xs:decimal` strips the trailing zeros of
+//! an argument that is statically an `xs:integer` and returns unchanged one that is
+//! statically an `xs:decimal` (an `xs:integer` value stays one); `div` of operands
+//! statically `xs:decimal` or `xs:integer`, not both `xs:integer`, is a decimal division
+//! even of two integer values ([`Calculator`]). The types of the host's variables and
+//! functions come from the static context ([`ValueType`]).
 
 use std::sync::Arc;
 
@@ -22,6 +26,7 @@ use einvoice_xpath::{self as ast, AtomicKind, KindTest, NameOrWildcard, NameTest
 
 use crate::context::{
     Cardinality, Clock, Context, DynamicContext, FunctionId, NoHost, StaticContext, VariableId,
+    VariableInfo,
 };
 use crate::error::{Error, ErrorCode, Result, err};
 use crate::functions::{self, Builtin, Returns};
@@ -64,6 +69,7 @@ pub(crate) enum Expr {
         op: ops::ArithmeticOp,
         lhs: Box<Expr>,
         rhs: Box<Expr>,
+        calculator: Calculator,
     },
     Range(Box<Expr>, Box<Expr>),
     GeneralComparison {
@@ -137,6 +143,26 @@ pub(crate) enum CallData {
     /// (`AtomicValue::upcast`), where the cast of an operand typed at run time keeps
     /// scale 0.
     Upcast,
+    /// `xs:decimal` of an argument whose static type is `xs:decimal`: Saxon-HE 12.10
+    /// removes the cast (`CastExpression.typeCheck`, the operand and the target are the
+    /// same type), so the value is returned unchanged, an `xs:integer` included.
+    Unchanged,
+}
+
+/// How an arithmetic operation computes, chosen from the static types of its operands
+/// as Saxon-HE 12.10 chooses its `Calculator`. Only the choices that can give another
+/// result than the routine chosen from the operands' values are kept apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Calculator {
+    /// From the types of the operands' values ([`ops::arithmetic`]), as Saxon's
+    /// `AnyDivAny` and the calculators that compute the same.
+    Dynamic,
+    /// `div` of operands statically `xs:decimal` or `xs:integer`, not both
+    /// `xs:integer` (`DecimalDivDecimal`): a decimal division even of two integer
+    /// values, each taken at scale 0, so never an `xs:integer` and never the scale of
+    /// an integer division (which strips a 64-bit operand Saxon does not hold as an
+    /// `int`, a negative one for instance).
+    DecimalDivide,
 }
 
 /// An axis step.
@@ -266,10 +292,11 @@ enum Class {
 }
 
 /// The static item type of a value as Saxon-HE 12.10 infers it (`getItemType`), reduced
-/// to the distinctions that can change a result. It decides one thing: whether the
-/// argument of `xs:decimal` is an `xs:integer`, which Saxon then casts with its
-/// up-casting converter (trailing zeros stripped) rather than with the converter chosen
-/// at run time (scale 0 kept). The rules are Saxon's:
+/// to the distinctions that can change a result. It decides two things: how
+/// `xs:decimal` casts its argument, with the up-casting converter (trailing zeros
+/// stripped) for an `xs:integer`, not at all for an `xs:decimal` (Saxon removes the cast),
+/// with the converter chosen at run time otherwise (scale 0 kept for an integer); and the
+/// calculator of arithmetic ([`Calculator`]). The rules are Saxon's:
 ///
 /// * literals have their type, and so have the expressions Saxon-HE folds into literals
 ///   (its optimizer option `CONSTANT_FOLDING` is off, so only a few): unary minus of a
@@ -278,8 +305,9 @@ enum Class {
 ///   that depend on the focus only (after which what contains them is type-checked
 ///   again, see [`Typing`]); function calls and `if` are not folded;
 /// * `count`, `string-length`, `position`, `last`, `string-to-codepoints`, `to`,
-///   `xs:integer` give integers; `number` doubles; `xs:decimal` decimals;
-///   `distinct-values`, host functions and the external variables anything;
+///   `xs:integer` give integers; `number` doubles; `xs:decimal` decimals, unless the cast
+///   is removed (it then has the type of its argument); `distinct-values` anything; host
+///   functions and variables the type the host gives ([`ValueType`]);
 /// * arithmetic follows Saxon's calculators: untyped operands count as doubles, any
 ///   double operand gives a double, any decimal one a decimal, two integers an integer,
 ///   except that `div` of two integers is a decimal and `idiv` always an integer; an
@@ -297,7 +325,8 @@ enum Class {
 ///
 /// The context item at the top of an expression is of unknown type (the host knows
 /// it); inside a predicate or on the right of `/` it has the type of the items it
-/// ranges over.
+/// ranges over. Saxon computes these types at several moments of the compilation of a
+/// stylesheet, which [`Typing`] keeps apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StaticType {
     /// No item: the empty sequence (Saxon's `ErrorType`), neutral in a common type.
@@ -437,6 +466,24 @@ impl StaticType {
         )
     }
 
+    /// Whether every value of this type is of type `other` (`TypeHierarchy.isSubType`):
+    /// the empty sequence is of every type, every value of the unknown type.
+    const fn is_subtype(self, other: Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::Empty, _)
+                | (_, Self::Unknown)
+                | (Self::Integer, Self::Integer | Self::Decimal)
+                | (Self::Decimal, Self::Decimal)
+                | (Self::Double, Self::Double)
+                | (Self::UntypedAtomic, Self::UntypedAtomic)
+                | (Self::OtherAtomic, Self::OtherAtomic)
+                | (Self::UntypedNodes, Self::UntypedNodes | Self::Nodes)
+                | (Self::StringNodes, Self::StringNodes | Self::Nodes)
+                | (Self::Nodes, Self::Nodes)
+        )
+    }
+
     /// The type of `-x` (`NegateExpression`: the primitive type of the operand).
     const fn negated(self) -> Self {
         match self.numeric() {
@@ -446,23 +493,48 @@ impl StaticType {
     }
 }
 
-/// The static item type of a value at the two moments Saxon-HE 12.10 computes it.
-/// `checked` is the type after type checking, when a cast chooses its converter: an
-/// argument of `xs:decimal` of type `xs:integer` gets the up-casting converter, one of
-/// type `xs:decimal` is returned unchanged, one of unknown type gets no converter (it is
-/// chosen at run time). `optimized` is the type after optimization, which folds the
-/// filters of literal sequences: an expression that contains such a filter is
-/// type-checked again, so that a cast without a converter then gets the up-casting
-/// one if its argument has become a literal integer.
+/// The static item type of a value at the moments Saxon-HE 12.10 computes it, in an XSLT
+/// stylesheet (in a plain expression, only the references to variables and host
+/// functions tell them apart).
+///
+/// * `parsed`: before type checking (`getItemType` of the parsed expression), the type
+///   from which Saxon infers the type of a variable (`SourceBinding.getInferredType`).
+///   Arithmetic has no calculator yet and is of unknown type, a reference to a range
+///   variable, to a host function or to a global variable declared later too, and the
+///   context item is of unknown type.
+/// * `first`: when an instruction's expression is type-checked on its own
+///   (`StyleElement.typeCheck`), variables being of their inferred type. A cast to
+///   `xs:decimal` of a value then statically `xs:decimal` is removed for good.
+/// * `checked`: when the body of the template or function is type-checked
+///   (`XSLTemplate.optimize`), local variables being of the type of their type-checked
+///   value (`LetExpression.typeCheck`). A cast chooses its converter here: an argument of
+///   `xs:decimal` of type `xs:integer` gets the up-casting converter, one of type
+///   `xs:decimal` is returned unchanged, one of unknown type gets no converter (it is
+///   chosen at run time); and arithmetic its calculator.
+/// * `optimized`: after optimization, which folds the filters of literal sequences and
+///   inlines the variables whose value has become a literal: an expression that contains
+///   such a literal is type-checked again, so that a cast without a converter then gets
+///   the up-casting one if its argument has become a literal integer, and arithmetic
+///   chooses its calculator again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Typing {
+pub(crate) struct Typing {
+    parsed: StaticType,
+    first: StaticType,
     checked: StaticType,
     optimized: StaticType,
+}
+
+impl Default for Typing {
+    fn default() -> Self {
+        Self::of(StaticType::Unknown)
+    }
 }
 
 impl Typing {
     const fn of(t: StaticType) -> Self {
         Self {
+            parsed: t,
+            first: t,
             checked: t,
             optimized: t,
         }
@@ -470,6 +542,8 @@ impl Typing {
 
     const fn union(self, other: Self) -> Self {
         Self {
+            parsed: self.parsed.union(other.parsed),
+            first: self.first.union(other.first),
             checked: self.checked.union(other.checked),
             optimized: self.optimized.union(other.optimized),
         }
@@ -477,6 +551,8 @@ impl Typing {
 
     fn map(self, f: impl Fn(StaticType) -> StaticType) -> Self {
         Self {
+            parsed: f(self.parsed),
+            first: f(self.first),
             checked: f(self.checked),
             optimized: f(self.optimized),
         }
@@ -484,8 +560,18 @@ impl Typing {
 
     fn zip(self, other: Self, f: impl Fn(StaticType, StaticType) -> StaticType) -> Self {
         Self {
+            parsed: f(self.parsed, other.parsed),
+            first: f(self.first, other.first),
             checked: f(self.checked, other.checked),
             optimized: f(self.optimized, other.optimized),
+        }
+    }
+
+    /// The same, of unknown type before type checking.
+    const fn unparsed(self) -> Self {
+        Self {
+            parsed: StaticType::Unknown,
+            ..self
         }
     }
 
@@ -497,6 +583,41 @@ impl Typing {
             (self.checked.atomized(), self.optimized.atomized()),
             (StaticType::Integer, _) | (StaticType::Unknown, StaticType::Integer)
         )
+    }
+
+    /// Whether Saxon removes the cast of a value of this type to `xs:decimal`
+    /// (`CastExpression.typeCheck`: same type): a decimal when an instruction's
+    /// expression is type-checked or when the body is (the cast is then gone, whatever
+    /// is found later), or of unknown type then and a decimal once optimized. This comes
+    /// before the up-casting converter: a cast removed when the value was typed
+    /// `xs:decimal` stays removed if it is typed `xs:integer` later.
+    const fn is_decimal(self) -> bool {
+        self.removes_cast_when_checked()
+            || matches!(
+                (self.checked.atomized(), self.optimized.atomized()),
+                (StaticType::Unknown, StaticType::Decimal)
+            )
+    }
+
+    /// Whether the cast to `xs:decimal` is removed by the time the body is type-checked.
+    const fn removes_cast_when_checked(self) -> bool {
+        matches!(self.first.atomized(), StaticType::Decimal)
+            || matches!(self.checked.atomized(), StaticType::Decimal)
+    }
+
+    /// The calculator Saxon chooses for `a op b` (`ArithmeticExpression.typeCheck`,
+    /// `Calculator.getCalculator`) from the primitive types of the operands, untyped
+    /// values counting as doubles. The types are those once optimized: an expression in
+    /// which the optimizer folded something is type-checked again, which chooses the
+    /// calculator again (and they are the types when type-checked otherwise).
+    fn calculator(op: ops::ArithmeticOp, a: Self, b: Self) -> Calculator {
+        use StaticType::{Decimal, Integer};
+        let (a, b) = (a.optimized.numeric(), b.optimized.numeric());
+        match (op, a, b) {
+            (ops::ArithmeticOp::Divide, Integer | Decimal, Decimal)
+            | (ops::ArithmeticOp::Divide, Decimal, Integer) => Calculator::DecimalDivide,
+            _ => Calculator::Dynamic,
+        }
     }
 }
 
@@ -532,13 +653,17 @@ impl Count {
 }
 
 /// When Saxon-HE folds an expression into a literal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Folding {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum Folding {
+    #[default]
     Never,
     /// When optimizing.
     Optimized,
     /// When type checking (and so when optimizing too).
     Checked,
+    /// When parsing: literals, unary minus of a literal, sequences of those (and so when
+    /// type checking and optimizing too).
+    Parsed,
 }
 
 impl Props {
@@ -619,14 +744,18 @@ impl Props {
         }
     }
 
+    const fn folded(self, folding: Folding) -> Self {
+        Self { folding, ..self }
+    }
+
     /// A literal once type-checked.
     const fn is_literal(&self) -> bool {
-        matches!(self.folding, Folding::Checked)
+        matches!(self.folding, Folding::Checked | Folding::Parsed)
     }
 
     /// A literal once optimized.
     const fn folds(&self) -> bool {
-        matches!(self.folding, Folding::Checked | Folding::Optimized)
+        !matches!(self.folding, Folding::Never)
     }
 
     /// Either of two values (the branches of `if`).
@@ -663,6 +792,12 @@ impl Props {
 pub struct CompiledExpr {
     pub(crate) expr: Expr,
     max_one: bool,
+    /// Its static item type, as Saxon infers it.
+    ty: Typing,
+    /// When Saxon folds it into a literal ([`Folding::Never`] when the folding fails).
+    folding: Folding,
+    /// Its value when Saxon folds it.
+    constant: Option<Arc<[AtomicValue]>>,
 }
 
 impl CompiledExpr {
@@ -670,6 +805,211 @@ impl CompiledExpr {
     #[must_use]
     pub const fn is_at_most_one(&self) -> bool {
         self.max_one
+    }
+
+    /// Whether it is `()`, which Saxon reads as no value for the type of a variable.
+    fn is_empty_sequence(&self) -> bool {
+        matches!(&self.expr, Expr::Sequence(items) if items.is_empty())
+    }
+}
+
+/// What is statically known of the value of a variable, or of the result of a host
+/// function, as Saxon-HE 12.10 infers it in a stylesheet: its item type at each moment of
+/// the compilation and, when Saxon replaces the references to the variable by a literal,
+/// its value. A reference compiled with it has that type, and is that literal (the same
+/// value as the variable's, which is then context-free).
+#[derive(Debug, Clone, Default)]
+pub struct ValueType {
+    pub(crate) ty: Typing,
+    folding: Folding,
+    constant: Option<Arc<[AtomicValue]>>,
+}
+
+/// What a variable is bound to, for [`ValueType::global_variable`] and
+/// [`ValueType::local_variable`].
+#[derive(Debug, Clone, Copy)]
+pub enum BindingValue<'a> {
+    /// The `select` expression, compiled.
+    Select(&'a CompiledExpr),
+    /// A sequence constructor: a temporary tree without `as`.
+    Content,
+    /// Neither: the empty string without `as`.
+    Absent,
+}
+
+/// The item type of a declared sequence type.
+fn declared_item_type(declared: &ast::SequenceType) -> StaticType {
+    match &declared.item {
+        ast::ItemType::Atomic(atomic) => StaticType::of_atomic(atomic_type(atomic.kind)),
+        ast::ItemType::Kind(kind) => StaticType::of_test(&kind_test(kind)),
+    }
+}
+
+/// The type of a value of type `actual` declared of type `declared`: the actual type
+/// when it is a subtype of the declared one, else the declared one
+/// (`SourceBinding.getInferredType`, and the type checking of a variable's value).
+fn narrowed(actual: StaticType, declared: Option<StaticType>) -> StaticType {
+    match declared {
+        Some(d) if !actual.is_subtype(d) => d,
+        _ => actual,
+    }
+}
+
+impl ValueType {
+    /// Nothing known: any value.
+    #[must_use]
+    pub fn unknown() -> Self {
+        Self::default()
+    }
+
+    /// The type of a parameter (of the stylesheet, of a template, of a function), or of the
+    /// result of a function: its declared type (`as`), whatever its default value, any
+    /// value without one.
+    #[must_use]
+    pub fn declared(as_type: Option<&ast::SequenceType>) -> Self {
+        Self {
+            ty: Typing::of(as_type.map_or(StaticType::Unknown, declared_item_type)),
+            ..Self::default()
+        }
+    }
+
+    /// The type of a global `xsl:variable` (not a parameter). Saxon infers it before type
+    /// checking anything (`SourceBinding.getInferredType`): the type of the parsed
+    /// `select` expression (arithmetic, a host function call and a reference to a global
+    /// declared later are then of unknown type), narrowed to the declared one, or the
+    /// declared type when the value is not a subtype of it. A literal `select` that is of
+    /// the declared type is a constant: the references are that literal.
+    #[must_use]
+    pub fn global_variable(value: BindingValue<'_>, as_type: Option<&ast::SequenceType>) -> Self {
+        let declared = as_type.map(declared_item_type);
+        let select = match value {
+            BindingValue::Select(select) => select,
+            // A temporary tree (a document node) without `as`.
+            BindingValue::Content => {
+                return Self {
+                    ty: Typing::of(declared.unwrap_or(StaticType::UntypedNodes)),
+                    ..Self::default()
+                };
+            }
+            // The empty string without `as`.
+            BindingValue::Absent => {
+                return Self {
+                    ty: Typing::of(declared.unwrap_or(StaticType::OtherAtomic)),
+                    ..Self::default()
+                };
+            }
+        };
+        let inferred = Self::inferred(select, declared);
+        if Self::constant_when_parsed(select, inferred) {
+            return Self::constant(select, inferred);
+        }
+        Self {
+            ty: Typing::of(inferred),
+            ..Self::default()
+        }
+    }
+
+    /// The type of a local `xsl:variable`. Saxon gives its references the type inferred
+    /// as for a global variable while the instructions are type-checked one by one,
+    /// then, when the body is, the type of the type-checked value (narrowed to the
+    /// declared type), if it is a subtype of the inferred one (`LetExpression.typeCheck`,
+    /// `VariableReference.refineVariableType`). The references are a literal when the
+    /// `select` is one when parsed, or once type-checked, or once optimized (the
+    /// optimizer then inlines it), if of the declared type.
+    #[must_use]
+    pub fn local_variable(value: BindingValue<'_>, as_type: Option<&ast::SequenceType>) -> Self {
+        let BindingValue::Select(select) = value else {
+            return Self::global_variable(value, as_type);
+        };
+        let declared = as_type.map(declared_item_type);
+        let inferred = Self::inferred(select, declared);
+        if Self::constant_when_parsed(select, inferred) {
+            return Self::constant(select, inferred);
+        }
+        let of_declared = |t: StaticType| declared.is_none_or(|d| t.is_subtype(d));
+        let folding = match select.folding {
+            Folding::Parsed | Folding::Checked if of_declared(select.ty.checked) => {
+                Folding::Checked
+            }
+            Folding::Optimized if of_declared(select.ty.optimized) => Folding::Optimized,
+            _ => Folding::Never,
+        };
+        let checked = narrowed(select.ty.checked, declared);
+        let refined = if checked.is_subtype(inferred) {
+            checked
+        } else {
+            inferred
+        };
+        let ty = Typing {
+            parsed: inferred,
+            first: inferred,
+            checked: refined,
+            optimized: refined,
+        };
+        match (folding, &select.constant) {
+            (Folding::Checked, Some(constant)) => Self {
+                ty: Typing {
+                    checked: select.ty.checked,
+                    optimized: select.ty.optimized,
+                    ..ty
+                },
+                folding,
+                constant: Some(Arc::clone(constant)),
+            },
+            (Folding::Optimized, Some(constant)) => Self {
+                ty: Typing {
+                    optimized: select.ty.optimized,
+                    ..ty
+                },
+                folding,
+                constant: Some(Arc::clone(constant)),
+            },
+            _ => Self {
+                ty,
+                ..Self::default()
+            },
+        }
+    }
+
+    /// The same value, referred to from a declaration that Saxon processes before this
+    /// global variable's (one earlier in the stylesheet): the reference is then of
+    /// unknown type for the inference of the type of a variable declared there.
+    #[must_use]
+    pub fn declared_later(&self) -> Self {
+        Self {
+            ty: self.ty.unparsed(),
+            ..self.clone()
+        }
+    }
+
+    /// The type Saxon infers for a variable before type checking.
+    fn inferred(select: &CompiledExpr, declared: Option<StaticType>) -> StaticType {
+        if select.is_empty_sequence() {
+            // `()`: the declared type, or any.
+            return declared.unwrap_or(StaticType::Unknown);
+        }
+        narrowed(select.ty.parsed, declared)
+    }
+
+    /// Whether the references are a literal from the start
+    /// (`SourceBinding.getConstantValue`): a literal of the inferred type.
+    fn constant_when_parsed(select: &CompiledExpr, inferred: StaticType) -> bool {
+        select.folding == Folding::Parsed
+            && select.constant.is_some()
+            && (select.is_empty_sequence() || select.ty.parsed.is_subtype(inferred))
+    }
+
+    /// References that are the literal value of `select` from the start: of the inferred
+    /// type before type checking, of the literal's type after.
+    fn constant(select: &CompiledExpr, inferred: StaticType) -> Self {
+        Self {
+            ty: Typing {
+                parsed: inferred,
+                ..Typing::of(select.ty.checked)
+            },
+            folding: Folding::Parsed,
+            constant: select.constant.clone(),
+        }
     }
 }
 
@@ -687,9 +1027,21 @@ pub fn compile(expr: &ast::Expr, context: &dyn StaticContext) -> Result<Compiled
         focus: Typing::of(StaticType::Unknown),
     };
     let (expr, props) = compiler.expr(expr)?;
+    let constant = if props.folds() {
+        folded_values(&expr).map(Arc::from)
+    } else {
+        None
+    };
     Ok(CompiledExpr {
         expr,
         max_one: props.max_one,
+        ty: props.ty,
+        folding: if constant.is_some() {
+            props.folding
+        } else {
+            Folding::Never
+        },
+        constant,
     })
 }
 
@@ -705,15 +1057,35 @@ struct Compiler<'a> {
 /// does at compile time, or `None` when the evaluation fails (Saxon then keeps the
 /// expression, and reports the error only if it is evaluated).
 fn folded_type(expr: &Expr) -> Option<StaticType> {
-    // Only the type of the value is used: `current-dateTime()` has the same at any time,
-    // so any clock does.
+    folded_items(expr).map(|items| StaticType::of_items(&items))
+}
+
+/// The value of an expression Saxon folds into a literal, evaluated as Saxon does at
+/// compile time; context-free, so the value it has at run time too.
+fn folded_items(expr: &Expr) -> Option<Vec<Item>> {
+    // Only literals, arithmetic and casts of literals, and filters of literal sequences
+    // whose predicates depend on the focus only are folded: no clock is read, any does.
     let dc = DynamicContext::new(&NoHost, Clock::from_unix_millis(0, 0).ok()?);
     let compiled = CompiledExpr {
         expr: expr.clone(),
         max_one: false,
+        ty: Typing::default(),
+        folding: Folding::Never,
+        constant: None,
     };
-    let items = compiled.evaluate(&dc, &Context::new()).ok()?;
-    Some(StaticType::of_items(&items))
+    compiled.evaluate(&dc, &Context::new()).ok()
+}
+
+/// The atomic values of an expression Saxon folds into a literal (`None` when the
+/// evaluation fails, or for a node, which no folded expression gives).
+fn folded_values(expr: &Expr) -> Option<Vec<AtomicValue>> {
+    folded_items(expr)?
+        .into_iter()
+        .map(|item| match item {
+            Item::Atomic(value) => Some(value),
+            Item::Node(_) => None,
+        })
+        .collect()
 }
 
 /// Whether an expression refers to a variable or a host function anywhere
@@ -988,7 +1360,9 @@ impl Compiler<'_> {
             ast::Expr::VarRef(name) => self.variable(name),
             ast::Expr::ContextItem => Ok((
                 Expr::ContextItem,
-                Props::unknown(true).typing(self.focus).exactly_one(true),
+                Props::unknown(true)
+                    .typing(self.focus.unparsed())
+                    .exactly_one(true),
             )),
             ast::Expr::FunctionCall { name, args } => self.call(name, args),
             ast::Expr::Sequence(items) => self.sequence(items),
@@ -1012,7 +1386,11 @@ impl Compiler<'_> {
                             }
                             ast::ItemType::Kind(kind) => StaticType::of_test(&kind_test(kind)),
                         };
-                        ty.map(|t| if t.subsumed_by(tested) { t } else { tested })
+                        // Before type checking, `FilterExpression.getItemType` gives T.
+                        Typing {
+                            parsed: tested,
+                            ..ty.map(|t| if t.subsumed_by(tested) { t } else { tested })
+                        }
                     }
                     _ => ty,
                 });
@@ -1056,12 +1434,20 @@ impl Compiler<'_> {
             ast::Expr::Path(path) => self.path(path),
             ast::Expr::Negate(operand) => {
                 let (operand, p) = self.expr(operand)?;
+                // The parser folds the negation of a literal; of anything else, it makes
+                // arithmetic (`0 - x`), of unknown type until type-checked.
+                let ty = p.ty.map(StaticType::negated);
+                let ty = if p.folding == Folding::Parsed {
+                    ty
+                } else {
+                    ty.unparsed()
+                };
                 Ok((
                     Expr::Negate(boxed(operand)),
                     Props::atomic(true, Class::Unknown)
-                        .typing(p.ty.map(StaticType::negated))
+                        .typing(ty)
                         .exactly_one(p.one())
-                        .literal(p.is_literal(), p.folds()),
+                        .folded(p.folding),
                 ))
             }
             ast::Expr::Castable { operand, target } => {
@@ -1134,8 +1520,13 @@ impl Compiler<'_> {
                     op,
                     lhs: boxed(lhs),
                     rhs: boxed(rhs),
+                    calculator: Typing::calculator(op, lp.ty, rp.ty),
                 };
-                let mut ty = lp.ty.zip(rp.ty, |a, b| StaticType::arithmetic(op, a, b));
+                // Before type checking, arithmetic has no calculator: of unknown type.
+                let mut ty = lp
+                    .ty
+                    .zip(rp.ty, |a, b| StaticType::arithmetic(op, a, b))
+                    .unparsed();
                 // Arithmetic on two literals is folded when type-checked (and, after
                 // optimization, on two operands folded by then), unless it fails.
                 let (mut literal, mut folds) = (false, false);
@@ -1147,6 +1538,7 @@ impl Compiler<'_> {
                     folds = true;
                     ty.optimized = value;
                     if literal {
+                        ty.first = value;
                         ty.checked = value;
                     }
                 }
@@ -1233,10 +1625,7 @@ impl Compiler<'_> {
             ));
         }
         match self.context.variable(name) {
-            Some(info) => Ok((
-                Expr::External(info.id),
-                Props::unknown(info.cardinality == Cardinality::AtMostOne),
-            )),
+            Some(info) => Ok(reference(&info)),
             None => err(
                 ErrorCode::Xpst0008,
                 format!("Variable ${name} has not been declared"),
@@ -1247,18 +1636,22 @@ impl Compiler<'_> {
     fn sequence(&mut self, items: &[ast::Expr]) -> Result<(Expr, Props)> {
         let mut compiled = Vec::with_capacity(items.len());
         let mut props: Option<Props> = None;
-        let mut all_literal = true;
+        let (mut all_parsed, mut all_fold) = (true, true);
         for item in items {
             let (e, p) = self.expr(item)?;
-            all_literal &= p.is_literal() && p.kinds == Kinds::Atomics;
+            let atomic = p.kinds == Kinds::Atomics;
+            all_parsed &= atomic && p.folding == Folding::Parsed;
+            all_fold &= atomic && p.folds();
             compiled.push(e);
             props = Some(props.map_or(p, |q| Props::either(q, p)));
         }
         let props = match props {
-            // `()` and a sequence of literals are literals once parsed.
+            // `()` and a sequence of literals are literals once parsed (`Block.simplify`);
+            // a sequence of values that are all literals later is merged into one when
+            // optimized (`Block.optimize`).
             None => Props::atomic(true, Class::NotNumeric)
                 .typed(StaticType::Empty)
-                .literal(true, true),
+                .folded(Folding::Parsed),
             Some(p) => Props {
                 max_one: false,
                 ordered: false,
@@ -1266,7 +1659,13 @@ impl Compiler<'_> {
                 count: Count::Other,
                 ..p
             }
-            .literal(all_literal, all_literal),
+            .folded(if all_parsed {
+                Folding::Parsed
+            } else if all_fold {
+                Folding::Optimized
+            } else {
+                Folding::Never
+            }),
         };
         Ok((Expr::Sequence(compiled), props))
     }
@@ -1314,7 +1713,7 @@ impl Compiler<'_> {
             return inner(self);
         };
         let (sequence, p) = self.expr(&first.sequence)?;
-        self.locals.push((first.variable.clone(), p.ty));
+        self.locals.push((first.variable.clone(), p.ty.unparsed()));
         let body = self.bindings(rest, inner);
         self.locals.pop();
         let (body, extra) = body?;
@@ -1337,7 +1736,7 @@ impl Compiler<'_> {
             return err(ErrorCode::Internal, "quantified expression without binding");
         };
         let (sequence, p) = self.expr(&first.sequence)?;
-        self.locals.push((first.variable.clone(), p.ty));
+        self.locals.push((first.variable.clone(), p.ty.unparsed()));
         let body = if rest.is_empty() {
             self.expr(satisfies).map(|(e, _)| e)
         } else {
@@ -1528,7 +1927,13 @@ impl Compiler<'_> {
                         .iter()
                         .map(|a| self.expr(a).map(|(e, _)| e))
                         .collect::<Result<_>>()?;
-                    Ok((Expr::HostCall { id, args }, Props::unknown(false)))
+                    // Of its declared type once type-checked (`UserFunctionCall`), of
+                    // unknown type before.
+                    let ty = self.context.function_type(id).ty.unparsed();
+                    Ok((
+                        Expr::HostCall { id, args },
+                        Props::unknown(false).typing(ty),
+                    ))
                 }
                 None => err(
                     ErrorCode::Xpst0017,
@@ -1563,11 +1968,15 @@ impl Compiler<'_> {
             Returns::Items => Props::unknown(!many),
         };
         let first = arg_props.first().copied();
-        let ty = Typing {
-            checked: call_type(builtin, first.map(|p| (p.ty.checked, p.one())))
-                .unwrap_or(props.ty.checked),
-            optimized: call_type(builtin, first.map(|p| (p.ty.optimized, p.one())))
-                .unwrap_or(props.ty.optimized),
+        let at = |moment: fn(Typing) -> StaticType| {
+            call_type(builtin, first.map(|p| (moment(p.ty), p.one())))
+                .unwrap_or_else(|| moment(props.ty))
+        };
+        let mut ty = Typing {
+            parsed: at(|t| t.parsed),
+            first: at(|t| t.first),
+            checked: at(|t| t.checked),
+            optimized: at(|t| t.optimized),
         };
         let constructor = matches!(
             builtin,
@@ -1578,8 +1987,19 @@ impl Compiler<'_> {
         } else {
             builtin.exactly_one()
         };
-        if builtin == Builtin::XsDecimal && first.is_some_and(|p| p.ty.upcasts_to_decimal()) {
-            data = CallData::Upcast;
+        if builtin == Builtin::XsDecimal
+            && let Some(arg) = first
+        {
+            if arg.ty.is_decimal() {
+                // The cast is gone: from then on, what contains it sees its argument.
+                data = CallData::Unchanged;
+                if arg.ty.removes_cast_when_checked() {
+                    ty.checked = arg.ty.checked;
+                }
+                ty.optimized = arg.ty.optimized;
+            } else if arg.ty.upcasts_to_decimal() {
+                data = CallData::Upcast;
+            }
         }
         // A cast of a literal is folded (other calls are not: no `CONSTANT_FOLDING`).
         let props = props.typing(ty).exactly_one(one).literal(
@@ -1653,6 +2073,27 @@ impl Compiler<'_> {
     }
 }
 
+/// A reference to a variable of the host: of the type the host gives, and the literal it
+/// gives when Saxon replaces the reference by one.
+fn reference(info: &VariableInfo) -> (Expr, Props) {
+    let value_type = &info.value_type;
+    if let Some(values) = &value_type.constant {
+        let expr = match &**values {
+            [one] => Expr::Literal(one.clone()),
+            many => Expr::Sequence(many.iter().cloned().map(Expr::Literal).collect()),
+        };
+        let props = Props::atomic(values.len() <= 1, Class::Unknown)
+            .typing(value_type.ty)
+            .exactly_one(values.len() == 1)
+            .folded(value_type.folding);
+        return (expr, props);
+    }
+    (
+        Expr::External(info.id),
+        Props::unknown(info.cardinality == Cardinality::AtMostOne).typing(value_type.ty),
+    )
+}
+
 fn literal_value(literal: &ast::Literal) -> Result<(Expr, Props)> {
     let (value, class) = match literal {
         ast::Literal::String(s) => (AtomicValue::String(s.clone()), Class::NotNumeric),
@@ -1670,7 +2111,7 @@ fn literal_value(literal: &ast::Literal) -> Result<(Expr, Props)> {
         Props::atomic(true, class)
             .typed(ty)
             .exactly_one(true)
-            .literal(true, true),
+            .folded(Folding::Parsed),
     ))
 }
 
@@ -1836,5 +2277,71 @@ mod tests {
         assert!(!typing("xs:decimal(('a', 300)[2])").1);
         assert_eq!(typing("(300, 'a')[1]").0.checked, StaticType::Unknown);
         assert_eq!(typing("(300, 'a')[1]").0.optimized, StaticType::Integer);
+    }
+
+    #[test]
+    fn types_before_type_checking() {
+        use StaticType::{Decimal, Integer, Unknown};
+        let parsed = |text: &str| typing(text).0.parsed;
+        // Arithmetic has no calculator before type checking; unary minus of a literal is
+        // folded by the parser.
+        assert_eq!(parsed("count(//a) * 100"), Unknown);
+        assert_eq!(typing("count(//a) * 100").0.checked, Integer);
+        assert_eq!(parsed("-count(//a)"), Unknown);
+        assert_eq!(parsed("-1"), Integer);
+        assert_eq!(parsed("count(//a)"), Integer);
+        assert_eq!(parsed("if (true()) then 300 else 1.5"), Decimal);
+        assert_eq!(parsed("for $i in (1, 2) return $i"), Unknown);
+        // `E[. instance of T]` is of type T before type checking, whatever E.
+        let filter = "(count(//a) * 100)[. instance of xs:decimal]";
+        assert_eq!(parsed(filter), Decimal);
+        assert_eq!(typing(filter).0.checked, Integer);
+    }
+
+    #[test]
+    fn decimal_casts_and_divisions() {
+        let ns = NamespaceMap::new().bind("xs", XS_NAMESPACE);
+        let context = SimpleStaticContext::new();
+        let compiled = |text: &str| {
+            let mut compiler = Compiler {
+                context: &context,
+                locals: Vec::new(),
+                focus: Typing::of(StaticType::Unknown),
+            };
+            compiler.expr(&parse_expr(text, &ns).unwrap()).unwrap()
+        };
+        let removed = |text: &str| {
+            matches!(
+                compiled(text).0,
+                Expr::Call {
+                    data: CallData::Unchanged,
+                    ..
+                }
+            )
+        };
+        assert!(removed("xs:decimal(count(//a) div 1)"));
+        assert!(removed("xs:decimal((300, 2.5)[1])"));
+        assert!(!removed("xs:decimal(count(//a))"));
+        assert!(!removed("xs:decimal(//a)"));
+        // A removed cast has the type of its argument once it is gone.
+        let (_, props) = compiled("xs:decimal((300, 2.5)[1])");
+        assert_eq!(props.ty.checked, StaticType::Decimal);
+        assert_eq!(props.ty.optimized, StaticType::Integer);
+        let calculator = |text: &str| match compiled(text).0 {
+            Expr::Arithmetic { calculator, .. } => calculator,
+            other => panic!("not arithmetic: {other:?}"),
+        };
+        assert_eq!(
+            calculator("count(//a) div 1 div 3"),
+            Calculator::DecimalDivide
+        );
+        assert_eq!(
+            calculator("3 div (count(//a) div 1)"),
+            Calculator::DecimalDivide
+        );
+        assert_eq!(calculator("count(//a) div 3"), Calculator::Dynamic);
+        assert_eq!(calculator("count(//a) div 1 * 3"), Calculator::Dynamic);
+        assert_eq!(calculator("(-1, 1.5)[1] div 300"), Calculator::Dynamic);
+        assert_eq!(calculator("//a div 1.5"), Calculator::Dynamic);
     }
 }

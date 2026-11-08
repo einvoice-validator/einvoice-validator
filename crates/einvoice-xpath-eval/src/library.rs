@@ -318,6 +318,9 @@ impl<'a> Run<'a> {
                     Some(value) if matches!(data, CallData::Upcast) => {
                         atomic(value.upcast(target)?)
                     }
+                    // An argument statically typed xs:decimal: no cast (Saxon-HE 12.10
+                    // removes it), an xs:integer value stays one.
+                    Some(value) if matches!(data, CallData::Unchanged) => atomic(value),
                     Some(value) => atomic(value.cast(target)?),
                 }
             }
