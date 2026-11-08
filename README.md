@@ -162,6 +162,18 @@ element which of the two built-in rule sets is its own (`Validator::builtin(synt
 `Validator::from_bundle_dir` loads a bundle directory such as the Peppol one; the manifest format
 is documented in the crate.
 
+## Performance
+
+[docs/benchmarks.md](docs/benchmarks.md) compares `einvoice-validate` with Saxon-HE 12.10 on the
+whole corpus of each rule set (every document, mutation cases included, through every
+stylesheet), on 1 and 8 threads: wall time, CPU time, peak memory, and the latency of one
+document in a new process. `cargo xtask bench` measures it; `--write` updates the page and
+`docs/benchmarks.json`. In short (median of 5 runs, on a loaded machine, see the page): peak
+memory is 17 to 42 times lower than Saxon-HE's; one small invoice in a new process takes about
+44 ms against 660 ms; on 8 threads the whole jobs are 2.8 to 8 times faster; on one thread they
+range from 0.9 times (XRechnung UBL, large invoices: a warmed-up JVM is faster per large
+document today) to 2.6 times (CEN CII).
+
 ## Design
 
 - **The official artefacts, unchanged.** The rule sets are published by their owners (CEN/TC 434,

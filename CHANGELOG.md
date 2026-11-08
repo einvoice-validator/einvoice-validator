@@ -26,6 +26,11 @@ against.
 
 ### Added
 
+- `cargo xtask bench`: the wall time, CPU time and peak memory of `einvoice-validate` and of
+  Saxon-HE 12.10 on the whole corpus of each rule set (every document, mutation cases included,
+  through every stylesheet) at the given thread counts, a run doing exactly Saxon-HE's work (each
+  stylesheet alone, no schema), Saxon-HE's time without the JVM start, and the latency of one
+  document. Results in `docs/benchmarks.md` and `docs/benchmarks.json`.
 - The engine runs the Factur-X 1.09.2, XRechnung 3.0.2 and French (FNFE-MPE 1.4.0.04) rule
   sets as Saxon-HE 12.10 does (#24, #26, #27, #28): on every case and mutation case of their
   corpora, every stylesheet gives the Saxon-HE result (4250, 6388 and 8483 runs), checked by
