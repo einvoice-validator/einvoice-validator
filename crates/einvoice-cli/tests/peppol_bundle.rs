@@ -14,8 +14,8 @@
 
 mod common;
 
-use common::json::{self, Value};
-use common::{Finding, join, run, workspace_root};
+use common::json::Value;
+use common::{Finding, join, workspace_root};
 
 /// The cache directory of the rule set, relative to the workspace root: the bundle.
 const BASE: &str = "target/peppol/peppol-bis-billing-ubl-3.0.22";
@@ -105,12 +105,13 @@ fn the_peppol_bundle_agrees_with_the_saxon_goldens() {
         return;
     };
     assert!(!cases.is_empty(), "empty Peppol corpus");
-    let mut args = vec!["--bundle", BASE, "--format", "json", "--jobs", "4"];
-    args.extend(cases.iter().map(|c| c.input.as_str()));
-    let r = run(&args, None);
-    assert_eq!(r.stderr, "");
-    let report = json::parse(&r.stdout).unwrap();
-    let rule_set = report.get("rule_set");
+    let inputs: Vec<&str> = cases.iter().map(|c| c.input.as_str()).collect();
+    let runs = common::run_json_batches(
+        &["--bundle", BASE, "--format", "json", "--jobs", "4"],
+        &inputs,
+    );
+    assert_eq!(runs.stderr(), "");
+    let rule_set = runs.first().get("rule_set");
     assert_eq!(rule_set.get("name").str(), Some("peppol-bis-billing-ubl"));
     // The version of the release, as the directory name gives it.
     assert_eq!(rule_set.get("version").str(), BASE.rsplit('-').next());
@@ -121,7 +122,7 @@ fn the_peppol_bundle_agrees_with_the_saxon_goldens() {
         .map(|s| s.get("name").str().unwrap())
         .collect();
     assert_eq!(names, STYLESHEETS.map(|(name, _)| name));
-    let documents = report.get("documents").array();
+    let documents = runs.documents();
     assert_eq!(documents.len(), cases.len());
     let mut problems = Vec::new();
     let (mut valid, mut invalid) = (0, 0);
@@ -149,15 +150,15 @@ fn the_peppol_bundle_agrees_with_the_saxon_goldens() {
         invalid += usize::from(status == "invalid");
     }
     eprintln!(
-        "{} documents: {valid} valid, {invalid} invalid, {} disagreements",
+        "{} documents in {} runs: {valid} valid, {invalid} invalid, {} disagreements",
         cases.len(),
+        runs.runs.len(),
         problems.len()
     );
     assert_eq!(problems, Vec::<String>::new());
     assert_eq!(valid + invalid, cases.len());
-    let summary = report.get("summary");
-    assert_eq!(summary.get("errors").number(), 0);
-    assert_eq!(r.code, i32::from(invalid > 0), "exit status");
+    assert_eq!(runs.summary("errors"), 0);
+    assert_eq!(runs.code(), i32::from(invalid > 0), "exit status");
 }
 
 #[test]
@@ -172,11 +173,12 @@ fn the_peppol_bundle_agrees_with_the_saxon_goldens_on_the_mutation_cases() {
     }
     let cases = common::mutation_cases(&format!("{BASE}/corpus"), BASE);
     assert!(!cases.is_empty());
-    let mut args = vec!["--bundle", BASE, "--format", "json", "--jobs", "4"];
-    args.extend(cases.iter().map(|c| c.input.as_str()));
-    let r = run(&args, None);
-    let report = json::parse(&r.stdout).unwrap();
-    let documents = report.get("documents").array();
+    let inputs: Vec<&str> = cases.iter().map(|c| c.input.as_str()).collect();
+    let runs = common::run_json_batches(
+        &["--bundle", BASE, "--format", "json", "--jobs", "4"],
+        &inputs,
+    );
+    let documents = runs.documents();
     assert_eq!(documents.len(), cases.len());
     let stylesheets: Vec<(&str, String)> = STYLESHEETS
         .iter()
@@ -194,8 +196,9 @@ fn the_peppol_bundle_agrees_with_the_saxon_goldens_on_the_mutation_cases() {
         ));
     }
     eprintln!(
-        "{} mutation documents, {} disagreements",
+        "{} mutation documents in {} runs, {} disagreements",
         cases.len(),
+        runs.runs.len(),
         problems.len()
     );
     for p in &problems {

@@ -460,13 +460,11 @@ fn external_bundles() {
 fn the_whole_corpus_agrees_with_the_saxon_goldens() {
     let cases = common::cases();
     assert_eq!(cases.len(), 1179);
-    let mut args = vec!["--format", "json", "--jobs", "4"];
-    args.extend(cases.iter().map(|c| c.input.as_str()));
-    let r = run(&args, None);
-    assert_eq!(r.stderr, "");
-    assert_eq!(r.code, 1);
-    let report = json::parse(&r.stdout).unwrap();
-    let documents = report.get("documents").array();
+    let inputs: Vec<&str> = cases.iter().map(|c| c.input.as_str()).collect();
+    let runs = common::run_json_batches(&["--format", "json", "--jobs", "4"], &inputs);
+    assert_eq!(runs.stderr(), "");
+    assert_eq!(runs.code(), 1);
+    let documents = runs.documents();
     assert_eq!(documents.len(), cases.len());
     let mut problems = Vec::new();
     let (mut valid, mut invalid) = (0, 0);
@@ -491,27 +489,25 @@ fn the_whole_corpus_agrees_with_the_saxon_goldens() {
         invalid += usize::from(status == "invalid");
     }
     eprintln!(
-        "{} documents: {valid} valid, {invalid} invalid, {} disagreements",
+        "{} documents in {} runs: {valid} valid, {invalid} invalid, {} disagreements",
         cases.len(),
+        runs.runs.len(),
         problems.len()
     );
     assert_eq!(problems, Vec::<String>::new());
     assert_eq!(valid + invalid, 1179);
-    let summary = report.get("summary");
-    assert_eq!(summary.get("documents").number(), 1179);
-    assert_eq!(summary.get("valid").number(), u64::try_from(valid).unwrap());
-    assert_eq!(summary.get("errors").number(), 0);
+    assert_eq!(runs.summary("documents"), 1179);
+    assert_eq!(runs.summary("valid"), u64::try_from(valid).unwrap());
+    assert_eq!(runs.summary("errors"), 0);
 }
 
 #[test]
 fn the_built_in_rule_set_agrees_with_the_saxon_goldens_on_the_mutation_cases() {
     let cases = common::mutation_cases(common::CORPUS, "");
     assert_eq!(cases.len(), 504);
-    let mut args = vec!["--format", "json", "--jobs", "4"];
-    args.extend(cases.iter().map(|c| c.input.as_str()));
-    let r = run(&args, None);
-    let report = json::parse(&r.stdout).unwrap();
-    let documents = report.get("documents").array();
+    let inputs: Vec<&str> = cases.iter().map(|c| c.input.as_str()).collect();
+    let runs = common::run_json_batches(&["--format", "json", "--jobs", "4"], &inputs);
+    let documents = runs.documents();
     assert_eq!(documents.len(), cases.len());
     let golden = format!("{}/golden", common::CORPUS);
     let mut problems = Vec::new();
@@ -523,8 +519,9 @@ fn the_built_in_rule_set_agrees_with_the_saxon_goldens_on_the_mutation_cases() {
         ));
     }
     eprintln!(
-        "{} mutation documents, {} disagreements",
+        "{} mutation documents in {} runs, {} disagreements",
         cases.len(),
+        runs.runs.len(),
         problems.len()
     );
     for p in &problems {

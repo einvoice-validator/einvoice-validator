@@ -72,6 +72,85 @@ pub(crate) fn run_env(args: &[&str], stdin: Option<&[u8]>, env: &[(&str, &str)])
     }
 }
 
+/// The longest command line, in characters, a batch of [`run_json_batches`] may build.
+/// Windows limits a command line to 32767 UTF-16 code units (`CreateProcess`); this
+/// leaves room for the quotes and separators the standard library adds.
+const COMMAND_LINE_BUDGET: usize = 30_000;
+
+/// The runs of [`run_json_batches`], each with its JSON report.
+#[derive(Debug)]
+pub(crate) struct JsonBatches {
+    pub(crate) runs: Vec<(Run, json::Value)>,
+}
+
+impl JsonBatches {
+    /// The reports' documents, in the order of the inputs.
+    pub(crate) fn documents(&self) -> Vec<&json::Value> {
+        self.runs
+            .iter()
+            .flat_map(|(_, report)| report.get("documents").array())
+            .collect()
+    }
+
+    /// The highest exit status of the runs: the one a single run on every input gives.
+    pub(crate) fn code(&self) -> i32 {
+        self.runs.iter().map(|(r, _)| r.code).max().unwrap()
+    }
+
+    /// The standard error of every run, concatenated.
+    pub(crate) fn stderr(&self) -> String {
+        self.runs.iter().map(|(r, _)| r.stderr.as_str()).collect()
+    }
+
+    /// The sum of a count of the reports' summaries.
+    pub(crate) fn summary(&self, key: &str) -> u64 {
+        self.runs
+            .iter()
+            .map(|(_, report)| report.get("summary").get(key).number())
+            .sum()
+    }
+
+    /// The report of the first run (its rule set is the same in every run).
+    pub(crate) fn first(&self) -> &json::Value {
+        &self.runs[0].1
+    }
+}
+
+/// Runs `einvoice-validate` with `args` (which must ask for `--format json`), then the
+/// `inputs`, in as many runs as it takes for each command line to stay within
+/// [`COMMAND_LINE_BUDGET`], and parses each run's report. The inputs keep their order.
+pub(crate) fn run_json_batches(args: &[&str], inputs: &[&str]) -> JsonBatches {
+    let length = |arg: &str| arg.len() + 3;
+    let fixed = length(env!("CARGO_BIN_EXE_einvoice-validate"))
+        + args.iter().map(|a| length(a)).sum::<usize>();
+    let mut batches: Vec<Vec<&str>> = vec![Vec::new()];
+    let mut used = fixed;
+    for input in inputs {
+        let last = batches.last_mut().unwrap();
+        if !last.is_empty() && used + length(input) > COMMAND_LINE_BUDGET {
+            batches.push(Vec::new());
+            used = fixed;
+        }
+        assert!(
+            fixed + length(input) <= COMMAND_LINE_BUDGET,
+            "{input}: path too long"
+        );
+        batches.last_mut().unwrap().push(input);
+        used += length(input);
+    }
+    let runs = batches
+        .into_iter()
+        .map(|batch| {
+            let mut command: Vec<&str> = args.to_vec();
+            command.extend(batch);
+            let r = run(&command, None);
+            let report = json::parse(&r.stdout).unwrap();
+            (r, report)
+        })
+        .collect();
+    JsonBatches { runs }
+}
+
 /// One case of `cases.tsv`: its id, its input (relative to the workspace root) and the
 /// ids its VEFA test expects to fail.
 #[derive(Debug, Clone)]
