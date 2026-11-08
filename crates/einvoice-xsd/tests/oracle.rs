@@ -98,6 +98,81 @@ fn xades_disagreements_concern_xades_content() {
     }
 }
 
+/// `text` with a document type declaration that declares nothing, which changes
+/// neither the document nor its lines: after the XML declaration if there is one, else
+/// at the start (after a byte order mark).
+fn with_document_type_declaration(text: &str) -> String {
+    let (bom, rest) = match text.strip_prefix('\u{FEFF}') {
+        Some(rest) => ("\u{FEFF}", rest),
+        None => ("", text),
+    };
+    let at = if rest.starts_with("<?xml") {
+        rest.find("?>").map_or(0, |i| i + 2)
+    } else {
+        0
+    };
+    format!("{bom}{}<!DOCTYPE x>{}", &rest[..at], &rest[at..])
+}
+
+/// Whether two reports are the same, but for the columns of errors on the first line,
+/// where a document type declaration was inserted.
+fn same_but_first_line_columns(a: &einvoice_xsd::Report, b: &einvoice_xsd::Report) -> bool {
+    a.errors.len() == b.errors.len()
+        && a.errors.iter().zip(&b.errors).all(|(x, y)| {
+            let mut y = y.clone();
+            if x.line == 1 && y.line == 1 {
+                y.column = x.column;
+            }
+            *x == y
+        })
+}
+
+/// A document with a document type declaration is read with `roxmltree` (the streaming
+/// reader refuses those): on every case of both suites, the report is the one of the
+/// streaming reading of the document without it. Documents that are not well-formed are
+/// so for both, possibly with other messages (the reader refuses some constructs that
+/// `roxmltree` accepts).
+#[test]
+fn documents_with_a_document_type_declaration_are_validated_alike() {
+    let (cases, _, _) = load();
+    let ubl = einvoice_xsd::Schema::ubl_2_1().unwrap();
+    let synthetic = load_synthetic();
+    let mut compared = 0;
+    let mut failures = Vec::new();
+    for (schema, cases) in [(&ubl, &cases), (&synthetic.schema, &synthetic.cases)] {
+        for case in cases.iter().filter(|c| !c.text.contains("<!DOCTYPE")) {
+            let plain = schema.validate(&case.text);
+            let declared = schema.validate(&with_document_type_declaration(&case.text));
+            let same = match (&plain, &declared) {
+                (Ok(a), Ok(b)) => same_but_first_line_columns(a, b),
+                (
+                    Err(einvoice_xsd::DocumentError::Malformed { .. }),
+                    Err(einvoice_xsd::DocumentError::Malformed { .. }),
+                ) => true,
+                (
+                    Err(einvoice_xsd::DocumentError::Unsupported {
+                        line: a,
+                        message: m,
+                        ..
+                    }),
+                    Err(einvoice_xsd::DocumentError::Unsupported {
+                        line: b,
+                        message: n,
+                        ..
+                    }),
+                ) => (a, m) == (b, n),
+                _ => false,
+            };
+            compared += 1;
+            if !same {
+                failures.push(format!("{}: {plain:?} / {declared:?}", case.id));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(compared > 1500, "{compared} cases");
+}
+
 /// The synthetic suite: its schema set loaded, its cases, what xmllint said and the
 /// documented disagreements.
 struct Synthetic {

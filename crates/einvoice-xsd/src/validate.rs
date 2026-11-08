@@ -1,8 +1,11 @@
 //! Validation of an instance document against a loaded [`Schema`].
 //!
-//! The document is walked in document order with an explicit stack (no recursion,
-//! so deeply nested input cannot overflow the call stack). Error recovery follows
-//! the model of libxml2, which makes error lists comparable with xmllint:
+//! The document is read as a stream of events ([`einvoice_xml::Reader`]): no tree is
+//! built, so that the memory used does not grow with the document, but with the depth
+//! of its elements. The validation keeps one frame per open element whose content is
+//! examined, and skips the content of the others to the end of their element. Error
+//! recovery follows the model of libxml2, which makes error lists comparable with
+//! xmllint:
 //!
 //! * a document element without a declaration, an element matched by a strict
 //!   wildcard without a declaration, and an element whose type is abstract are
@@ -10,22 +13,28 @@
 //! * within an element, the first child element that the content type does not
 //!   allow (unexpected in the content model, or any element in simple or empty
 //!   content) is reported and the remaining children of that element are not
-//!   examined; text errors before it are reported once per text node;
+//!   examined; text errors before it are reported once per text node (the text
+//!   between two pieces of markup other than character data and CDATA sections);
 //! * an `xsi:type` that cannot be used is reported and the declared type is used.
 //!
-//! The walk copies nothing out of the parsed document: element and attribute names
-//! are only spelt out in errors, the text of an element with simple content is a
-//! slice of the parsed text (copied only when comments or processing instructions
-//! split it into several text nodes), values are checked on that slice (whitespace
-//! processing builds a new string only when a check needs the processed value and
-//! it differs from a slice of the text), and the `xs:ID` values seen are slices
-//! too. Errors record the byte offset of their element; lines and columns are
-//! computed at the end, in one pass over the text.
+//! Nothing is copied out of the text but what an error spells out: the text of an
+//! element with simple content is a slice of the text (copied only when references
+//! were replaced in it or comments or processing instructions split it), values are
+//! checked on that slice (whitespace processing builds a new string only when a check
+//! needs the processed value and it differs from a slice of the text), and the
+//! `xs:ID` values seen are slices too. Errors record the byte offset of their
+//! element's start tag; lines and columns are computed at the end, in one pass over
+//! the text.
+//!
+//! The reader refuses documents with a document type declaration, whose internal
+//! subset may declare entities: [`validate`] reads those with `roxmltree` instead (the
+//! entities expanded, attribute defaults not applied), and gives the validation the
+//! same events from its tree.
 
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use roxmltree::Node;
+use einvoice_xml::{Event, StartElement};
 
 use crate::automaton::{Automaton, State, Term};
 use crate::datatypes::{self, Builtin, UNIMPLEMENTED_BUILTINS, WhiteSpace};
@@ -44,6 +53,121 @@ enum Assignment {
     Declared(ElementId),
     /// Matched by a lax wildcard without a global declaration: `xs:anyType`.
     Lax,
+}
+
+/// A value of the document: a slice of its text `'d`, or a value the parser built
+/// (references replaced, whitespace normalised), which lives only as long as the
+/// event it comes with.
+#[derive(Clone, Copy)]
+enum Value<'v, 'd> {
+    Document(&'d str),
+    Other(&'v str),
+}
+
+impl Value<'_, '_> {
+    #[expect(
+        clippy::match_same_arms,
+        reason = "the two slices have different lifetimes: one pattern cannot bind both"
+    )]
+    fn as_str(&self) -> &str {
+        match *self {
+            Self::Document(s) => s,
+            Self::Other(s) => s,
+        }
+    }
+}
+
+/// An attribute of an element (namespace declarations are not attributes).
+struct Attribute<'v, 'd> {
+    namespace: Option<&'v str>,
+    local: &'v str,
+    value: Value<'v, 'd>,
+}
+
+/// The start of an element, as the validation reads it: from the streaming reader,
+/// or from a `roxmltree` node.
+trait Start<'d> {
+    /// The namespace name, `None` (or empty) for none.
+    fn namespace(&self) -> Option<&str>;
+    /// The local name.
+    fn local(&self) -> &'d str;
+    /// The byte offset of the start tag in the text.
+    fn offset(&self) -> usize;
+    /// The value of the attribute `local` in the `xsi` namespace.
+    fn xsi(&self, local: &str) -> Option<&str>;
+    /// The namespace name bound to `prefix` (`None` for the default namespace) in the
+    /// scope of the element: as `roxmltree` resolves it, never for the `xml` and
+    /// `xmlns` prefixes, and empty or `None` when the default namespace is undeclared.
+    fn lookup_namespace(&self, prefix: Option<&str>) -> Option<&str>;
+    /// The attributes, in document order.
+    fn attributes(&self) -> impl Iterator<Item = Attribute<'_, 'd>>;
+}
+
+impl<'a> Start<'a> for StartElement<'_, 'a> {
+    fn namespace(&self) -> Option<&str> {
+        self.name().namespace
+    }
+
+    fn local(&self) -> &'a str {
+        self.name().local
+    }
+
+    fn offset(&self) -> usize {
+        self.range().start
+    }
+
+    fn xsi(&self, local: &str) -> Option<&str> {
+        self.attribute(Some(XSI), local).map(AsRef::as_ref)
+    }
+
+    fn lookup_namespace(&self, prefix: Option<&str>) -> Option<&str> {
+        match prefix {
+            Some("xml" | "xmlns") => None,
+            Some(prefix) => StartElement::lookup_namespace(self, prefix),
+            None => StartElement::lookup_namespace(self, ""),
+        }
+    }
+
+    fn attributes(&self) -> impl Iterator<Item = Attribute<'_, 'a>> {
+        StartElement::attributes(self).map(|attribute| Attribute {
+            namespace: attribute.name.namespace,
+            local: attribute.name.local,
+            value: match attribute.value {
+                Cow::Borrowed(value) => Value::Document(value),
+                Cow::Owned(value) => Value::Other(value),
+            },
+        })
+    }
+}
+
+impl<'d> Start<'d> for roxmltree::Node<'d, '_> {
+    fn namespace(&self) -> Option<&str> {
+        self.tag_name().namespace()
+    }
+
+    fn local(&self) -> &'d str {
+        self.tag_name().name()
+    }
+
+    fn offset(&self) -> usize {
+        self.range().start
+    }
+
+    fn xsi(&self, local: &str) -> Option<&str> {
+        self.attribute((XSI, local))
+    }
+
+    fn lookup_namespace(&self, prefix: Option<&str>) -> Option<&str> {
+        self.lookup_namespace_uri(prefix)
+    }
+
+    fn attributes(&self) -> impl Iterator<Item = Attribute<'_, 'd>> {
+        roxmltree::Node::attributes(self).map(|attribute| Attribute {
+            namespace: attribute.namespace(),
+            local: attribute.name(),
+            value: Value::Document(attribute.value()),
+        })
+    }
 }
 
 enum FrameContent<'s, 'd> {
@@ -66,20 +190,60 @@ enum FrameContent<'s, 'd> {
     },
 }
 
-struct Frame<'s, 'd, 'i> {
-    node: Node<'d, 'i>,
-    next: Option<Node<'d, 'i>>,
+/// An open element whose content is examined.
+struct Frame<'s, 'd> {
+    /// The byte offset of its start tag.
+    offset: usize,
+    /// Its namespace name ([`Namespaces::id`]) and local name, for its errors.
+    namespace: Option<usize>,
+    local: &'d str,
     content: FrameContent<'s, 'd>,
 }
 
-struct Validator<'s, 'd, 'i> {
+/// Up to this many distinct namespace names, one is looked up by a linear scan;
+/// beyond, through the index.
+const SCAN_LIMIT: usize = 16;
+
+/// The namespace names of the open elements, numbered, so that a frame can name its
+/// element in errors after the reader has moved on (the reader's names only live
+/// until its next event).
+#[derive(Default)]
+struct Namespaces {
+    names: Vec<Box<str>>,
+    index: HashMap<Box<str>, usize>,
+}
+
+impl Namespaces {
+    fn id(&mut self, namespace: Option<&str>) -> Option<usize> {
+        let namespace = namespace?;
+        let found = if self.names.len() <= SCAN_LIMIT {
+            self.names.iter().position(|n| **n == *namespace)
+        } else {
+            self.index.get(namespace).copied()
+        };
+        Some(found.unwrap_or_else(|| {
+            let id = self.names.len();
+            self.names.push(namespace.into());
+            self.index.insert(namespace.into(), id);
+            id
+        }))
+    }
+
+    fn name(&self, id: Option<usize>) -> Option<&str> {
+        id.and_then(|id| self.names.get(id)).map(AsRef::as_ref)
+    }
+}
+
+struct Validator<'s, 'd> {
     schema: &'s Schema,
-    doc: &'d roxmltree::Document<'i>,
+    /// The text of the document.
+    text: &'d str,
     /// Each error with the byte offset of its element; its line and column are
     /// filled in by [`positions`].
     errors: Vec<(usize, ValidationError)>,
     /// The `xs:ID` values seen, whitespace-processed.
     ids: HashSet<Cow<'d, str>>,
+    namespaces: Namespaces,
 }
 
 /// Lines and columns from byte offsets, walking forward through a text.
@@ -146,14 +310,38 @@ enum ValueProblem {
     DuplicateId(String),
 }
 
-fn element_name(node: Node<'_, '_>) -> String {
-    clark(
-        namespace_name(node.tag_name().namespace()),
-        node.tag_name().name(),
-    )
+fn element_name<'d>(element: &impl Start<'d>) -> String {
+    clark(namespace_name(element.namespace()), element.local())
 }
 
+/// The error of a text the reader refuses.
+fn malformed(e: &einvoice_xml::Error) -> DocumentError {
+    DocumentError::Malformed {
+        line: e.pos().row,
+        column: e.pos().col,
+        message: e.to_string(),
+    }
+}
+
+/// Validates the text of a document: read with the streaming reader, or, when it has
+/// a document type declaration, with `roxmltree`.
 pub(crate) fn validate(schema: &Schema, xml: &str) -> Result<Report, DocumentError> {
+    let mut reader = einvoice_xml::Reader::new(xml);
+    let mut validation = Validation::new(schema, xml);
+    loop {
+        match reader.next_event() {
+            Ok(Some(event)) => validation.event(event),
+            Ok(None) => return validation.finish(),
+            Err(einvoice_xml::Error::DtdDetected) => return validate_tree(schema, xml),
+            Err(e) => return Err(malformed(&e)),
+        }
+    }
+}
+
+/// [`validate`] on a document with a document type declaration, read with `roxmltree`
+/// (internal subset allowed for entities): the validation is given the events of its
+/// tree, in document order.
+fn validate_tree(schema: &Schema, xml: &str) -> Result<Report, DocumentError> {
     let options = roxmltree::ParsingOptions {
         allow_dtd: true,
         ..roxmltree::ParsingOptions::default()
@@ -165,44 +353,220 @@ pub(crate) fn validate(schema: &Schema, xml: &str) -> Result<Report, DocumentErr
             message: e.to_string(),
         }
     })?;
-    let mut validator = Validator {
-        schema,
-        doc: &doc,
-        errors: Vec::new(),
-        ids: HashSet::new(),
-    };
-    validator.run()?;
-    let errors = positions(xml, validator.errors);
-    Ok(Report { errors })
+    let mut walk = Walk::new(schema, xml);
+    // The elements open, innermost last: closed when the walk in document order
+    // reaches a node that is not inside them.
+    let mut open: Vec<roxmltree::NodeId> = Vec::new();
+    for node in doc.root().descendants().skip(1) {
+        let parent = node.parent().map(|p| p.id());
+        while open.last().is_some_and(|&id| Some(id) != parent) {
+            open.pop();
+            walk.end();
+        }
+        match node.node_type() {
+            roxmltree::NodeType::Element => {
+                walk.start(&node);
+                open.push(node.id());
+            }
+            roxmltree::NodeType::Text => walk.text(Cow::Borrowed(node.text().unwrap_or(""))),
+            roxmltree::NodeType::Comment | roxmltree::NodeType::PI => walk.split_text(),
+            roxmltree::NodeType::Root => {}
+        }
+    }
+    for _ in open {
+        walk.end();
+    }
+    walk.finish()
 }
 
-impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
-    fn report(&mut self, node: Node<'_, '_>, kind: ErrorKind, message: String) {
-        self.report_attribute(node, kind, None, message);
+/// A validation in progress, given the events of a document one by one, in document
+/// order, as [`einvoice_xml::Reader`] reads them: [`Schema::validation`].
+///
+/// This is what [`Schema::validate`] does, for a caller that reads the document
+/// itself, so that one pass over the text checks it for well-formedness (and for
+/// anything else the caller wants to check) and validates it. The events must be
+/// those of a reader of the text given to [`Schema::validation`], every one of them,
+/// up to the end of the document: the validation does not check well-formedness, and
+/// the positions of its errors are byte offsets of that text. An event of a document
+/// the reader then refuses, or a validation finished early, gives a report that
+/// means nothing; it never panics.
+pub struct Validation<'s, 'a> {
+    walk: Walk<'s, 'a>,
+}
+
+impl std::fmt::Debug for Validation<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Validation")
+            .field("errors", &self.walk.validator.errors.len())
+            .field("open", &self.walk.frames.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'s, 'a> Validation<'s, 'a> {
+    pub(crate) fn new(schema: &'s Schema, text: &'a str) -> Self {
+        Self {
+            walk: Walk::new(schema, text),
+        }
+    }
+
+    /// Takes the next event of the document.
+    pub fn event(&mut self, event: Event<'_, 'a>) {
+        match event {
+            Event::Start(start) => self.walk.start(&start),
+            Event::End(_) => self.walk.end(),
+            Event::Text(text) => self.walk.text(text.value),
+            Event::Comment(_) | Event::ProcessingInstruction(_) => self.walk.split_text(),
+        }
+    }
+
+    /// The report, once every event is given.
+    ///
+    /// # Errors
+    ///
+    /// [`DocumentError::Unsupported`] when the document needs a feature outside the
+    /// implemented subset (`xsi:type` naming a built-in type the schemas do not use):
+    /// the first such element in document order.
+    pub fn finish(self) -> Result<Report, DocumentError> {
+        self.walk.finish()
+    }
+}
+
+/// The state of a validation between two events.
+struct Walk<'s, 'd> {
+    validator: Validator<'s, 'd>,
+    /// The open elements whose content is examined, innermost last.
+    frames: Vec<Frame<'s, 'd>>,
+    /// The number of open elements inside one whose content is not examined, that
+    /// one included; 0 when the innermost open element's content is examined.
+    skipped: usize,
+    /// The text node being read: character data and CDATA sections not separated by
+    /// other markup make one.
+    text: Option<Cow<'d, str>>,
+    /// The first construct outside the supported subset: the rest is not examined.
+    unsupported: Option<DocumentError>,
+}
+
+impl<'s, 'd> Walk<'s, 'd> {
+    fn new(schema: &'s Schema, text: &'d str) -> Self {
+        Self {
+            validator: Validator {
+                schema,
+                text,
+                errors: Vec::new(),
+                ids: HashSet::new(),
+                namespaces: Namespaces::default(),
+            },
+            frames: Vec::new(),
+            skipped: 0,
+            text: None,
+            unsupported: None,
+        }
+    }
+
+    fn start(&mut self, element: &impl Start<'d>) {
+        self.split_text();
+        if self.unsupported.is_some() {
+            return;
+        }
+        if self.skipped > 0 {
+            self.skipped += 1;
+            return;
+        }
+        let assignment = match self.frames.last_mut() {
+            None => Assignment::Root,
+            Some(top) => {
+                let Some(assignment) = self.validator.child(top, element) else {
+                    self.skipped = 1;
+                    return;
+                };
+                assignment
+            }
+        };
+        match self.validator.start(element, assignment) {
+            Ok(Some(frame)) => self.frames.push(frame),
+            Ok(None) => self.skipped = 1,
+            Err(e) => self.unsupported = Some(e),
+        }
+    }
+
+    fn end(&mut self) {
+        self.split_text();
+        if self.unsupported.is_some() {
+            return;
+        }
+        if self.skipped > 0 {
+            self.skipped -= 1;
+        } else if let Some(frame) = self.frames.pop() {
+            self.validator.end(&frame);
+        }
+    }
+
+    fn text(&mut self, value: Cow<'d, str>) {
+        if self.unsupported.is_some() || self.skipped > 0 || self.frames.is_empty() {
+            return;
+        }
+        match &mut self.text {
+            None => self.text = Some(value),
+            Some(text) => text.to_mut().push_str(&value),
+        }
+    }
+
+    /// Ends the text node being read, if any (markup other than character data and
+    /// CDATA sections, or the end of the element).
+    fn split_text(&mut self) {
+        if let Some(text) = self.text.take()
+            && let Some(top) = self.frames.last_mut()
+        {
+            self.validator.text(top, text);
+        }
+    }
+
+    fn finish(mut self) -> Result<Report, DocumentError> {
+        self.split_text();
+        if let Some(e) = self.unsupported {
+            return Err(e);
+        }
+        Ok(Report {
+            errors: positions(self.validator.text, self.validator.errors),
+        })
+    }
+}
+
+impl<'s, 'd> Validator<'s, 'd> {
+    fn report(&mut self, offset: usize, element: String, kind: ErrorKind, message: String) {
+        self.report_attribute(offset, element, kind, None, message);
     }
 
     fn report_attribute(
         &mut self,
-        node: Node<'_, '_>,
+        offset: usize,
+        element: String,
         kind: ErrorKind,
         attribute: Option<String>,
         message: String,
     ) {
         self.errors.push((
-            node.range().start,
+            offset,
             ValidationError {
                 kind,
                 line: 0,
                 column: 0,
-                element: element_name(node),
+                element,
                 attribute,
                 message,
             },
         ));
     }
 
-    fn unsupported(&self, node: Node<'_, '_>, message: String) -> DocumentError {
-        let (line, column) = Cursor::new(self.doc.input_text()).advance(node.range().start);
+    /// The name of the element of a frame (its namespace and local name), in Clark
+    /// notation.
+    fn frame_name(&self, namespace: Option<usize>, local: &str) -> String {
+        clark(self.namespaces.name(namespace), local)
+    }
+
+    fn unsupported(&self, offset: usize, message: String) -> DocumentError {
+        let (line, column) = Cursor::new(self.text).advance(offset);
         DocumentError::Unsupported {
             line,
             column,
@@ -216,47 +580,23 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             .map_or_else(|| "an anonymous type".to_owned(), ToString::to_string)
     }
 
-    fn run(&mut self) -> Result<(), DocumentError> {
-        let root = self.doc.root_element();
-        let mut stack: Vec<Frame<'s, 'd, 'i>> = Vec::new();
-        if let Some(frame) = self.start(root, Assignment::Root)? {
-            stack.push(frame);
-        }
-        while let Some(top) = stack.last_mut() {
-            let Some(child) = top.next else {
-                if let Some(frame) = stack.pop() {
-                    self.end(frame);
-                }
-                continue;
-            };
-            top.next = child.next_sibling();
-            if child.is_text() {
-                self.text(top, child);
-            } else if child.is_element()
-                && let Some(assignment) = self.child(top, child)
-                && let Some(frame) = self.start(child, assignment)?
-            {
-                stack.push(frame);
-            }
-        }
-        Ok(())
-    }
-
     /// Starts an element: finds its type, checks `xsi:nil`, `xsi:type` and the
     /// attributes. `None` when its content is not to be examined.
     fn start(
         &mut self,
-        node: Node<'d, 'i>,
+        element: &impl Start<'d>,
         assignment: Assignment,
-    ) -> Result<Option<Frame<'s, 'd, 'i>>, DocumentError> {
+    ) -> Result<Option<Frame<'s, 'd>>, DocumentError> {
         let schema = self.schema;
-        let namespace = namespace_name(node.tag_name().namespace());
-        let local = node.tag_name().name();
+        let namespace = namespace_name(element.namespace());
+        let local = element.local();
+        let offset = element.offset();
         let declaration = match assignment {
             Assignment::Root => {
                 let Some(id) = schema.global_element(namespace, local) else {
                     self.report(
-                        node,
+                        offset,
+                        element_name(element),
                         ErrorKind::UnknownRoot,
                         "no global element declaration for the document element".to_owned(),
                     );
@@ -269,20 +609,22 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
         };
         let declared_type = declaration.map_or(ANY_TYPE, |id| schema.elements[id].type_id);
         if declaration.is_some()
-            && let Some(nil) = node.attribute((XSI, "nil"))
+            && let Some(nil) = element.xsi("nil")
         {
             let value = datatypes::normalize(nil, WhiteSpace::Collapse);
             let attribute = Some(clark(Some(XSI), "nil"));
             if Builtin::Boolean.is_valid(&value) {
                 self.report_attribute(
-                    node,
+                    offset,
+                    element_name(element),
                     ErrorKind::NotNillable,
                     attribute,
                     "xsi:nil on an element whose declaration is not nillable".to_owned(),
                 );
             } else {
                 self.report_attribute(
-                    node,
+                    offset,
+                    element_name(element),
                     ErrorKind::InvalidXsiNil,
                     attribute,
                     format!("xsi:nil {} is not a boolean", quote(nil)),
@@ -290,8 +632,8 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             }
         }
         let mut type_id = declared_type;
-        if let Some(xsi_type) = node.attribute((XSI, "type"))
-            && let Some(local_type) = self.xsi_type(node, xsi_type, declared_type)?
+        if let Some(xsi_type) = element.xsi("type")
+            && let Some(local_type) = self.xsi_type(element, xsi_type, declared_type)?
         {
             type_id = local_type;
         }
@@ -301,13 +643,14 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
         {
             let name = self.type_name(type_id);
             self.report(
-                node,
+                offset,
+                element_name(element),
                 ErrorKind::AbstractType,
                 format!("the type {name} is abstract"),
             );
             return Ok(None);
         }
-        self.attributes(node, type_id);
+        self.attributes(element, type_id);
         let constraint = declaration.and_then(|id| schema.element_constraint(id));
         let content = match &schema.types[type_id] {
             TypeDef::Simple(_) => FrameContent::Simple {
@@ -339,8 +682,9 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             },
         };
         Ok(Some(Frame {
-            node,
-            next: node.first_child(),
+            offset,
+            namespace: self.namespaces.id(namespace),
+            local,
             content,
         }))
     }
@@ -349,15 +693,17 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
     /// declared type.
     fn xsi_type(
         &mut self,
-        node: Node<'_, '_>,
+        element: &impl Start<'d>,
         value: &str,
         declared: TypeId,
     ) -> Result<Option<TypeId>, DocumentError> {
         let schema = self.schema;
+        let offset = element.offset();
         let collapsed = datatypes::normalize(value, WhiteSpace::Collapse);
         let Some((prefix, local)) = datatypes::split_qname(&collapsed) else {
             self.report_attribute(
-                node,
+                offset,
+                element_name(element),
                 ErrorKind::InvalidXsiType,
                 Some(clark(Some(XSI), "type")),
                 format!("xsi:type {} is not a QName", quote(value)),
@@ -365,9 +711,10 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             return Ok(None);
         };
         let namespace = if let Some(p) = prefix {
-            let Some(ns) = node.lookup_namespace_uri(Some(p)) else {
+            let Some(ns) = element.lookup_namespace(Some(p)) else {
                 self.report_attribute(
-                    node,
+                    offset,
+                    element_name(element),
                     ErrorKind::InvalidXsiType,
                     Some(clark(Some(XSI), "type")),
                     format!("xsi:type {}: prefix {p:?} is not declared", quote(value)),
@@ -376,17 +723,18 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             };
             Some(ns)
         } else {
-            namespace_name(node.lookup_namespace_uri(None))
+            namespace_name(element.lookup_namespace(None))
         };
         let Some(type_id) = schema.global_type(namespace, local) else {
             if namespace == Some(XS) && UNIMPLEMENTED_BUILTINS.contains(&local) {
                 let message = format!(
                     "xsi:type names the built-in type xs:{local}, which this crate does not implement"
                 );
-                return Err(self.unsupported(node, message));
+                return Err(self.unsupported(offset, message));
             }
             self.report_attribute(
-                node,
+                offset,
+                element_name(element),
                 ErrorKind::InvalidXsiType,
                 Some(clark(Some(XSI), "type")),
                 format!(
@@ -399,7 +747,8 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
         if !schema.is_derived_from(type_id, declared) {
             let (name, declared_name) = (self.type_name(type_id), self.type_name(declared));
             self.report_attribute(
-                node,
+                offset,
+                element_name(element),
                 ErrorKind::InvalidXsiType,
                 Some(clark(Some(XSI), "type")),
                 format!("xsi:type {name} is not derived from the declared type {declared_name}"),
@@ -411,12 +760,9 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
 
     /// Checks a value, before whitespace processing, against a simple type; when
     /// valid, registers `xs:ID` values. The processed value is only built when an
-    /// `enumeration` facet or the `xs:ID` registry needs it.
-    #[expect(
-        clippy::ptr_arg,
-        reason = "a value borrowed from the document (Cow::Borrowed) keeps its lifetime, so that the xs:ID registry holds a slice of the document rather than a copy"
-    )]
-    fn check_value(&mut self, type_id: TypeId, raw: &Cow<'d, str>) -> Option<ValueProblem> {
+    /// `enumeration` facet or the `xs:ID` registry needs it; a value that is a slice
+    /// of the text is registered as a slice of it.
+    fn check_value(&mut self, type_id: TypeId, raw: Value<'_, 'd>) -> Option<ValueProblem> {
         let schema = self.schema;
         let TypeDef::Simple(simple) = &schema.types[type_id] else {
             return Some(ValueProblem::Invalid(format!(
@@ -424,10 +770,10 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                 self.type_name(type_id)
             )));
         };
-        if !simple.builtin.is_valid_raw(raw) {
+        if !simple.builtin.is_valid_raw(raw.as_str()) {
             return Some(ValueProblem::Invalid(format!(
                 "{} is not a valid value of {}",
-                quote(raw),
+                quote(raw.as_str()),
                 self.type_name(type_id)
             )));
         }
@@ -437,20 +783,20 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
         }
         let white_space = simple.builtin.white_space();
         let value: Cow<'d, str> = match raw {
-            Cow::Borrowed(raw) => datatypes::normalize(raw, white_space),
-            Cow::Owned(raw) => Cow::Owned(datatypes::normalize(raw, white_space).into_owned()),
+            Value::Document(raw) => datatypes::normalize(raw, white_space),
+            Value::Other(raw) => Cow::Owned(datatypes::normalize(raw, white_space).into_owned()),
         };
         if let Some(problem) = facet_problem(&schema.types, type_id, &value) {
             return Some(ValueProblem::Invalid(format!(
                 "{} is {}",
-                quote(raw),
+                quote(raw.as_str()),
                 problem.describe(&self.type_name(type_id))
             )));
         }
         if is_id && !self.ids.insert(value) {
             return Some(ValueProblem::DuplicateId(format!(
                 "the ID {} is already used in the document",
-                quote(raw)
+                quote(raw.as_str())
             )));
         }
         None
@@ -488,17 +834,18 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             .map(|problem| problem.describe(&self.type_name(type_id)))
     }
 
-    fn attributes(&mut self, node: Node<'d, 'i>, type_id: TypeId) {
+    fn attributes(&mut self, element: &impl Start<'d>, type_id: TypeId) {
         let schema = self.schema;
+        let offset = element.offset();
         let (uses, wildcard) = match &schema.types[type_id] {
             TypeDef::Simple(_) => (&[][..], None),
             TypeDef::Complex(complex) => {
                 (&complex.attributes[..], complex.attribute_wildcard.as_ref())
             }
         };
-        for attribute in node.attributes() {
-            let namespace = namespace_name(attribute.namespace());
-            let local = attribute.name();
+        for attribute in element.attributes() {
+            let namespace = namespace_name(attribute.namespace);
+            let local = attribute.local;
             if namespace == Some(XSI)
                 && matches!(
                     local,
@@ -510,18 +857,20 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             // Spelt out only for an error.
             let name = || Some(clark(namespace, local));
             if let Some(attribute_use) = uses.iter().find(|u| u.name.matches(namespace, local)) {
-                match self.check_value(attribute_use.type_id, &Cow::Borrowed(attribute.value())) {
+                match self.check_value(attribute_use.type_id, attribute.value) {
                     None => {
+                        let value = attribute.value.as_str();
                         if let Some(fixed) = attribute_use.fixed.map(|f| schema.fixed_value(f))
-                            && !self.same_value(attribute_use.type_id, attribute.value(), fixed)
+                            && !self.same_value(attribute_use.type_id, value, fixed)
                         {
                             self.report_attribute(
-                                node,
+                                offset,
+                                element_name(element),
                                 ErrorKind::InvalidAttributeValue,
                                 name(),
                                 format!(
                                     "{} is not the fixed value {} of the attribute",
-                                    quote(attribute.value()),
+                                    quote(value),
                                     quote(fixed)
                                 ),
                             );
@@ -529,14 +878,21 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                     }
                     Some(ValueProblem::Invalid(problem)) => {
                         self.report_attribute(
-                            node,
+                            offset,
+                            element_name(element),
                             ErrorKind::InvalidAttributeValue,
                             name(),
                             problem,
                         );
                     }
                     Some(ValueProblem::DuplicateId(problem)) => {
-                        self.report_attribute(node, ErrorKind::DuplicateId, name(), problem);
+                        self.report_attribute(
+                            offset,
+                            element_name(element),
+                            ErrorKind::DuplicateId,
+                            name(),
+                            problem,
+                        );
                     }
                 }
                 continue;
@@ -547,7 +903,8 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                     // subset: lax and skip accept, strict cannot be satisfied.
                     if w.process == ProcessContents::Strict {
                         self.report_attribute(
-                            node,
+                            offset,
+                            element_name(element),
                             ErrorKind::UndeclaredAttribute,
                             name(),
                             "no global attribute declaration, required by a strict wildcard"
@@ -556,7 +913,8 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                     }
                 }
                 _ => self.report_attribute(
-                    node,
+                    offset,
+                    element_name(element),
                     ErrorKind::AttributeNotAllowed,
                     name(),
                     "the attribute is not allowed".to_owned(),
@@ -564,15 +922,16 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             }
         }
         for attribute_use in uses.iter().filter(|u| u.required) {
-            let present = node.attributes().any(|a| {
+            let present = element.attributes().any(|a| {
                 attribute_use
                     .name
-                    .matches(namespace_name(a.namespace()), a.name())
+                    .matches(namespace_name(a.namespace), a.local)
             });
             if !present {
                 let name = attribute_use.name.to_string();
                 self.report_attribute(
-                    node,
+                    offset,
+                    element_name(element),
                     ErrorKind::MissingAttribute,
                     Some(name),
                     "the required attribute is missing".to_owned(),
@@ -581,15 +940,17 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
         }
     }
 
-    fn text(&mut self, frame: &mut Frame<'s, 'd, 'i>, node: Node<'d, 'i>) {
-        let text = node.text().unwrap_or("");
-        let parent = frame.node;
+    /// A text node of the element of `frame`.
+    fn text(&mut self, frame: &mut Frame<'s, 'd>, text: Cow<'d, str>) {
+        let (offset, namespace, local) = (frame.offset, frame.namespace, frame.local);
         match &mut frame.content {
             FrameContent::Empty { stopped: false } => {
+                let element = self.frame_name(namespace, local);
                 self.report(
-                    parent,
+                    offset,
+                    element,
                     ErrorKind::ContentNotEmpty,
-                    format!("text {} in empty content", quote(text)),
+                    format!("text {} in empty content", quote(&text)),
                 );
             }
             FrameContent::Simple {
@@ -598,9 +959,9 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                 ..
             } => {
                 if value.is_empty() {
-                    *value = Cow::Borrowed(text);
+                    *value = text;
                 } else {
-                    value.to_mut().push_str(text);
+                    value.to_mut().push_str(&text);
                 }
             }
             FrameContent::Children {
@@ -608,8 +969,10 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                 stopped: false,
                 ..
             } if !text.chars().all(datatypes::is_xml_space) => {
+                let element = self.frame_name(namespace, local);
                 self.report(
-                    parent,
+                    offset,
+                    element,
                     ErrorKind::TextNotAllowed,
                     format!("text {} in element-only content", quote(text.trim())),
                 );
@@ -620,14 +983,16 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
 
     /// Matches a child element against its parent's content; `None` when the child
     /// is not to be validated (error reported, or skipped by a wildcard).
-    fn child(&mut self, frame: &mut Frame<'s, 'd, 'i>, child: Node<'_, '_>) -> Option<Assignment> {
+    fn child(&mut self, frame: &mut Frame<'s, 'd>, child: &impl Start<'d>) -> Option<Assignment> {
         let schema = self.schema;
-        let parent = frame.node;
+        let (offset, namespace, local) = (frame.offset, frame.namespace, frame.local);
         match &mut frame.content {
             FrameContent::Empty { stopped } => {
                 if !*stopped {
                     *stopped = true;
+                    let parent = self.frame_name(namespace, local);
                     self.report(
+                        offset,
                         parent,
                         ErrorKind::ContentNotEmpty,
                         format!("child element {} in empty content", element_name(child)),
@@ -638,7 +1003,9 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
             FrameContent::Simple { stopped, .. } => {
                 if !*stopped {
                     *stopped = true;
+                    let parent = self.frame_name(namespace, local);
                     self.report(
+                        offset,
                         parent,
                         ErrorKind::ElementInSimpleContent,
                         format!("child element {} in simple content", element_name(child)),
@@ -655,8 +1022,7 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                 if *stopped {
                     return None;
                 }
-                let namespace = namespace_name(child.tag_name().namespace());
-                let local = child.tag_name().name();
+                let (namespace, local) = (namespace_name(child.namespace()), child.local());
                 let Some((position, term)) =
                     automaton.step(*state, namespace, local, &schema.elements)
                 else {
@@ -667,7 +1033,12 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                     } else {
                         format!("not expected; expected: {}", expected.join(", "))
                     };
-                    self.report(child, ErrorKind::UnexpectedElement, message);
+                    self.report(
+                        child.offset(),
+                        element_name(child),
+                        ErrorKind::UnexpectedElement,
+                        message,
+                    );
                     return None;
                 };
                 *state = Some(position);
@@ -680,7 +1051,8 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                             (ProcessContents::Lax, None) => Some(Assignment::Lax),
                             (ProcessContents::Strict, None) => {
                                 self.report(
-                                    child,
+                                    child.offset(),
+                                    element_name(child),
                                     ErrorKind::UndeclaredElement,
                                     "no global element declaration, required by a strict wildcard"
                                         .to_owned(),
@@ -694,14 +1066,16 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
         }
     }
 
-    fn end(&mut self, frame: Frame<'s, 'd, 'i>) {
-        match frame.content {
+    fn end(&mut self, frame: &Frame<'s, 'd>) {
+        let element = |v: &Self| v.frame_name(frame.namespace, frame.local);
+        match &frame.content {
             FrameContent::Simple {
                 type_id,
                 text,
                 constraint,
                 stopped: false,
             } => {
+                let type_id = *type_id;
                 if let Some(constraint) = constraint
                     && text.is_empty()
                 {
@@ -709,8 +1083,10 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                     // children takes the default or fixed value, which must be
                     // valid for the actual type (an xsi:type may change it).
                     if let Some(problem) = self.constraint_problem(type_id, &constraint.value) {
+                        let element = element(self);
                         self.report(
-                            frame.node,
+                            frame.offset,
+                            element,
                             ErrorKind::InvalidValue,
                             format!(
                                 "the {} value {} of the declaration is {problem}",
@@ -721,30 +1097,38 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                     }
                     return;
                 }
-                match self.check_value(type_id, &text) {
+                let value = match text {
+                    Cow::Borrowed(text) => Value::Document(text),
+                    Cow::Owned(text) => Value::Other(text.as_str()),
+                };
+                match self.check_value(type_id, value) {
                     None => {
                         // cvc-elt.5.2.2.2.2: a fixed value is compared in the value
                         // space.
                         if let Some(constraint) = constraint
                             && constraint.kind == ConstraintKind::Fixed
-                            && !self.same_value(type_id, &text, &constraint.value)
+                            && !self.same_value(type_id, text, &constraint.value)
                         {
+                            let element = element(self);
                             self.report(
-                                frame.node,
+                                frame.offset,
+                                element,
                                 ErrorKind::InvalidValue,
                                 format!(
                                     "{} is not the fixed value {} of the declaration",
-                                    quote(&text),
+                                    quote(text),
                                     quote(&constraint.value)
                                 ),
                             );
                         }
                     }
                     Some(ValueProblem::Invalid(problem)) => {
-                        self.report(frame.node, ErrorKind::InvalidValue, problem);
+                        let element = element(self);
+                        self.report(frame.offset, element, ErrorKind::InvalidValue, problem);
                     }
                     Some(ValueProblem::DuplicateId(problem)) => {
-                        self.report(frame.node, ErrorKind::DuplicateId, problem);
+                        let element = element(self);
+                        self.report(frame.offset, element, ErrorKind::DuplicateId, problem);
                     }
                 }
             }
@@ -753,10 +1137,12 @@ impl<'s, 'd, 'i> Validator<'s, 'd, 'i> {
                 state,
                 stopped: false,
                 ..
-            } if !automaton.accepts(state) => {
-                let expected = automaton.expected(state, &self.schema.elements);
+            } if !automaton.accepts(*state) => {
+                let expected = automaton.expected(*state, &self.schema.elements);
+                let element = element(self);
                 self.report(
-                    frame.node,
+                    frame.offset,
+                    element,
                     ErrorKind::MissingElement,
                     format!("content incomplete; expected: {}", expected.join(", ")),
                 );

@@ -215,6 +215,7 @@ dependencies = [
 name = "einvoice-xsd"
 version = "0.2.0"
 dependencies = [
+ "einvoice-xml",
  "peak_alloc",
  "proptest",
  "regex",

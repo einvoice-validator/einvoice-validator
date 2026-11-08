@@ -4,7 +4,11 @@ XML Schema 1.0 validation of UBL 2.1 Invoice and CreditNote documents against th
 OASIS UBL 2.1 schemas, which it embeds, in pure Rust. It implements exactly the XML Schema
 constructs those schemas use and refuses any other when a schema set is loaded, so a schema
 it cannot handle is never half-checked. Every validity error is reported with a stable kind,
-the line and column of the element concerned, and a message.
+the line and column of the element concerned, and a message. A document is validated in one
+pass of the streaming reader [`einvoice-xml`](https://crates.io/crates/einvoice-xml), without
+building a tree: the memory used grows with the depth of the document, not its size
+(`Schema::validation` takes the reader's events from a caller that reads the document
+itself).
 
 ```rust
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -249,6 +249,204 @@ fn malformed_and_unsupported_documents() {
     assert!(message.contains("xs:double"), "{message}");
 }
 
+/// What the reading of the document as a stream of events must preserve from the tree
+/// it replaced: text nodes, CDATA sections and their errors, prefixes, the order of
+/// errors.
+#[test]
+fn documents_are_read_as_a_stream() {
+    let schema = ubl();
+    let body = |date: &str| {
+        credit_note(&MINIMAL_BODY.replace(
+            "<cbc:IssueDate>2024-01-01</cbc:IssueDate>",
+            &format!("<cbc:IssueDate>{date}</cbc:IssueDate>"),
+        ))
+    };
+    // Character data, references and CDATA sections make one value; comments and
+    // processing instructions do not split it.
+    for date in [
+        "2024-<![CDATA[01]]>-01",
+        "&#50;024-01-01",
+        "2024<!--c-->-01<?p x?>-01",
+        " 2024-01-01\n",
+    ] {
+        let report = schema.validate(&body(date)).unwrap();
+        assert!(report.is_valid(), "{date}: {:?}", report.errors);
+    }
+    let report = schema.validate(&body("2024-<![CDATA[02]]>-30")).unwrap();
+    assert_eq!(report.errors.len(), 1);
+    assert!(
+        report.errors[0]
+            .message
+            .starts_with("\"2024-02-30\" is not"),
+        "{}",
+        report.errors[0].message
+    );
+    // Text in element-only content: once per text node, a CDATA section included; an
+    // empty CDATA section is a text node too, which empty content does not allow.
+    let xml = credit_note(&format!("x<![CDATA[y]]><!--c-->z{MINIMAL_BODY}"));
+    let messages: Vec<String> = schema
+        .validate(&xml)
+        .unwrap()
+        .errors
+        .into_iter()
+        .map(|e| e.message)
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            "text \"xy\" in element-only content",
+            "text \"z\" in element-only content"
+        ]
+    );
+    let xml = credit_note(&MINIMAL_BODY.replace(
+        "<cac:AccountingSupplierParty/>",
+        "<cac:AccountingSupplierParty/><cac:AccountingCustomerParty><cac:Party/></cac:AccountingCustomerParty>",
+    ));
+    assert!(!schema.validate(&xml).unwrap().is_valid());
+    // xsi:type: the xml and xmlns prefixes are not declared prefixes, as before.
+    for prefix in ["xml", "xmlns", "q"] {
+        let xml = credit_note(&MINIMAL_BODY.replace(
+            "<cbc:ID>1</cbc:ID><cbc:IssueDate>",
+            &format!("<cbc:ID xsi:type=\"{prefix}:x\">1</cbc:ID><cbc:IssueDate>"),
+        ));
+        let report = schema.validate(&xml).unwrap();
+        assert_eq!(
+            report.errors[0].message,
+            format!("xsi:type \"{prefix}:x\": prefix \"{prefix}\" is not declared")
+        );
+    }
+    // The element a frame reports keeps its namespace when a child rebinds its prefix.
+    let xml = credit_note(&MINIMAL_BODY.replace(
+        "<cbc:ID>1</cbc:ID>",
+        "<cbc:ID>1<cbc:x xmlns:cbc=\"urn:other\"/></cbc:ID>",
+    ));
+    let report = schema.validate(&xml).unwrap();
+    assert_eq!(report.errors[0].kind, ErrorKind::ElementInSimpleContent);
+    assert_eq!(report.errors[0].element, format!("{{{CBC}}}ID"));
+    assert_eq!(
+        report.errors[0].message,
+        "child element {urn:other}x in simple content"
+    );
+    // A document is not well-formed wherever the error is: after an unsupported
+    // construct, and after the end of the validated content.
+    let unsupported = credit_note(MINIMAL_BODY).replace(
+        "<cbc:ID>1</cbc:ID><cbc:IssueDate>",
+        "<cbc:ID xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xsi:type=\"xs:double\">1</cbc:ID><cbc:IssueDate>",
+    );
+    assert!(matches!(
+        schema.validate(&format!("{unsupported}<")),
+        Err(DocumentError::Malformed { .. })
+    ));
+    assert!(matches!(
+        schema.validate(&format!("<a>{unsupported}")),
+        Err(DocumentError::Malformed { .. })
+    ));
+}
+
+/// Constructs that XML 1.0 or Namespaces in XML 1.0 forbid, which the `roxmltree` crate
+/// accepted (until 0.2.0 documents were read with it): the document is not well-formed,
+/// with the message of `einvoice-xml`.
+#[test]
+fn constructs_xml_forbids_are_malformed() {
+    let schema = ubl();
+    let valid = credit_note(MINIMAL_BODY);
+    assert!(schema.validate(&valid).unwrap().is_valid());
+    for (find, replace, message) in [
+        (
+            "<cbc:ID>1",
+            "<cbc:ID>&#xD800;1",
+            "is not a Unicode scalar value",
+        ),
+        (
+            "<cbc:ID>1",
+            "<?XmL x?><cbc:ID>1",
+            "the processing instruction target at",
+        ),
+        (
+            "<cbc:ID>1",
+            "<cbc:ID xmlns:p=''>1",
+            "bound to an empty namespace name",
+        ),
+        (
+            "<cbc:ID>1",
+            "<cbc:ID xmlns:xmlns='urn:x'>1",
+            "the 'xmlns' prefix is declared",
+        ),
+        (
+            "<cbc:ID>1",
+            "<cbc:ID :a='1'>1",
+            "a name with an empty prefix",
+        ),
+        (
+            "<cbc:ID>1",
+            "<cbc:ID xmlns:p='urn:p' p:xmlns='urn:x'>1",
+            "a prefixed attribute named 'xmlns'",
+        ),
+    ] {
+        let xml = valid.replacen(find, replace, 1);
+        let Err(DocumentError::Malformed { message: found, .. }) = schema.validate(&xml) else {
+            panic!("{replace}: not malformed");
+        };
+        assert!(found.contains(message), "{replace}: {found}");
+    }
+    let xml = format!("<?xml version=\"1.0\" encoding=\"-\"?>{valid}");
+    let Err(DocumentError::Malformed { message, .. }) = schema.validate(&xml) else {
+        panic!("not malformed");
+    };
+    assert!(message.contains("not an encoding name"), "{message}");
+}
+
+/// A document with a document type declaration, which the streaming reader refuses, is
+/// read with `roxmltree`: the entities of its internal subset are expanded.
+#[test]
+fn documents_with_a_document_type_declaration() {
+    let schema = ubl();
+    let xml = format!(
+        "<!DOCTYPE CreditNote [<!ENTITY id \"1\">]>\n{}",
+        credit_note(MINIMAL_BODY).replacen("<cbc:ID>1</cbc:ID>", "<cbc:ID>&id;</cbc:ID>", 1)
+    );
+    assert!(schema.validate(&xml).unwrap().is_valid());
+    let xml = xml.replace("2024-01-01", "2024-02-30");
+    let report = schema.validate(&xml).unwrap();
+    assert_eq!(
+        report
+            .errors
+            .iter()
+            .map(|e| (e.kind, e.line))
+            .collect::<Vec<_>>(),
+        [(ErrorKind::InvalidValue, 2)]
+    );
+    assert!(matches!(
+        schema.validate("<!DOCTYPE a [<!ENTITY e \"&f;\">]><a>&e;</a>"),
+        Err(DocumentError::Malformed { .. })
+    ));
+    // The streaming validation is not given such a document: its reader refuses it.
+    let mut reader = einvoice_xml::Reader::new(&xml);
+    assert_eq!(
+        reader.next_event().unwrap_err(),
+        einvoice_xml::Error::DtdDetected
+    );
+}
+
+/// [`Schema::validation`] given the events of a reader is [`Schema::validate`].
+#[test]
+fn a_validation_given_events() {
+    let schema = ubl();
+    for xml in [
+        credit_note(MINIMAL_BODY),
+        credit_note("<cbc:IssueDate>x</cbc:IssueDate>"),
+        "<a/>".to_owned(),
+    ] {
+        let mut validation = schema.validation(&xml);
+        assert!(format!("{validation:?}").starts_with("Validation"));
+        let mut reader = einvoice_xml::Reader::new(&xml);
+        while let Some(event) = reader.next_event().unwrap() {
+            validation.event(event);
+        }
+        assert_eq!(validation.finish(), schema.validate(&xml));
+    }
+}
+
 #[test]
 fn deep_lax_content_does_not_overflow() {
     let depth = 100_000;

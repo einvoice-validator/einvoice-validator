@@ -52,8 +52,13 @@
 //!
 //! # Validation
 //!
-//! [`Schema::validate`] parses the document (namespace-aware, internal DTD subset
-//! allowed for entities, no external resources) and returns a [`Report`] listing
+//! [`Schema::validate`] reads the document in one pass of the streaming reader of
+//! [`einvoice_xml`] (namespace-aware, no external resources), without building a tree,
+//! so that the memory it uses grows with the depth of the document rather than its size;
+//! a document with a document type declaration, which that reader refuses, is parsed
+//! with `roxmltree` instead (internal DTD subset allowed for entities).
+//! [`Schema::validation`] is the same validation for a caller that reads the document
+//! itself and gives it the reader's events. Either returns a [`Report`] listing
 //! every validity error with a stable [`ErrorKind`], the line and column of the
 //! element concerned and a message. The document element must match a global element
 //! declaration of the set. Validation follows XML Schema 1.0 Second Edition:
@@ -262,6 +267,7 @@ pub use error::{DocumentError, ErrorKind, LoadError, LoadErrorKind, Report, Vali
 pub use licences::{LICENCES, Licence};
 pub use model::{OmittedImport, Schema};
 pub use ubl::{CREDIT_NOTE_ENTRY_POINT, INVOICE_ENTRY_POINT, UBL_2_1_FILES, XADES_NAMESPACES};
+pub use validate::Validation;
 
 impl Schema {
     /// Loads a schema set from memory. `files` maps paths (relative,
@@ -294,16 +300,46 @@ impl Schema {
         )
     }
 
-    /// Validates a document.
+    /// Validates a document, in one pass of the streaming reader of the `einvoice-xml`
+    /// crate over the text (no tree is built). A document with a document type
+    /// declaration, which that reader refuses, is read with `roxmltree` instead (the
+    /// entities of its internal subset expanded, attribute defaults not applied).
     ///
     /// # Errors
     ///
     /// [`DocumentError::Malformed`] when the text is not well-formed XML with
-    /// namespaces; [`DocumentError::Unsupported`] when the document needs a feature
-    /// outside the implemented subset (`xsi:type` naming a built-in type the schemas
-    /// do not use). Validity errors are not errors: they are in the [`Report`].
+    /// namespaces, wherever the error is (it comes before the others);
+    /// [`DocumentError::Unsupported`] when the document needs a feature outside the
+    /// implemented subset (`xsi:type` naming a built-in type the schemas do not use).
+    /// Validity errors are not errors: they are in the [`Report`].
     pub fn validate(&self, xml: &str) -> Result<Report, DocumentError> {
         validate::validate(self, xml)
+    }
+
+    /// A validation of `text` to be given its events, read by the caller with an
+    /// [`einvoice_xml::Reader`] of `text`: for a caller that checks the document
+    /// otherwise in the same pass (its depth, ...). [`Schema::validate`] is this
+    /// validation given every event of the reader, the reader's errors being
+    /// [`DocumentError::Malformed`].
+    ///
+    /// ```
+    /// use einvoice_xml::Reader;
+    ///
+    /// let schema = einvoice_xsd::Schema::ubl_2_1()?;
+    /// let text = r#"<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"/>"#;
+    /// let mut validation = schema.validation(text);
+    /// let mut reader = Reader::new(text);
+    /// while let Some(event) = reader.next_event()? {
+    ///     validation.event(event);
+    /// }
+    /// let report = validation.finish()?;
+    /// assert_eq!(report, schema.validate(text)?);
+    /// assert_eq!(report.errors[0].kind.as_str(), "missing-element");
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[must_use]
+    pub fn validation<'a>(&self, text: &'a str) -> Validation<'_, 'a> {
+        Validation::new(self, text)
     }
 
     /// Validates a document given as bytes: UTF-8, with or without a byte order
