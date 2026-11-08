@@ -1,0 +1,58 @@
+{
+  "name": "einvoice-validator",
+  "version": "0.2.0",
+  "description": "Validate EN 16931 e-invoices (UBL) against the official CEN validation artefacts, in WebAssembly: no JVM, no native code. For browsers, bundlers and Node.js.",
+  "keywords": [
+    "en16931",
+    "einvoice",
+    "e-invoice",
+    "ubl",
+    "schematron",
+    "xslt",
+    "validation",
+    "webassembly"
+  ],
+  "homepage": "https://einvoice-validator.github.io/",
+  "bugs": {
+    "url": "https://github.com/einvoice-validator/einvoice-validator/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/einvoice-validator/einvoice-validator.git",
+    "directory": "crates/einvoice-wasm"
+  },
+  "license": "MIT AND EUPL-1.2 AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720",
+  "type": "module",
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./node.d.mts",
+        "default": "./node.mjs"
+      },
+      "default": {
+        "types": "./einvoice_validator.d.ts",
+        "default": "./einvoice_validator.js"
+      }
+    },
+    "./einvoice_validator_bg.wasm": "./einvoice_validator_bg.wasm",
+    "./package.json": "./package.json"
+  },
+  "main": "./node.mjs",
+  "module": "./einvoice_validator.js",
+  "types": "./einvoice_validator.d.ts",
+  "files": [
+    "einvoice_validator.js",
+    "einvoice_validator.d.ts",
+    "einvoice_validator_bg.wasm",
+    "node.mjs",
+    "node.d.mts",
+    "LICENSES/",
+    "README.md"
+  ],
+  "sideEffects": [
+    "./node.mjs"
+  ],
+  "engines": {
+    "node": ">=22"
+  }
+}
