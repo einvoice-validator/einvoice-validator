@@ -21,7 +21,7 @@ name = "einvoice-validate"
 path = "src/main.rs"
 
 [dependencies]
-einvoice-validator = { path = "../einvoice-validator", version = "0.2.0" }
+einvoice-validator = { path = "../einvoice-validator", version = "0.2.0", features = ["pdf"] }
 
 [dev-dependencies]
 einvoice-svrl = { path = "../einvoice-svrl", version = "0.2.0" }

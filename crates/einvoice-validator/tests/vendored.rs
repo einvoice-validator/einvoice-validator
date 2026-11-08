@@ -198,6 +198,9 @@ fn features() -> Vec<&'static str> {
     if cfg!(feature = "cen-cii") {
         features.push("cen-cii");
     }
+    if cfg!(feature = "pdf") {
+        features.push("pdf");
+    }
     features
 }
 

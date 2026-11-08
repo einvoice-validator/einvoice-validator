@@ -7,6 +7,7 @@ use std::fmt::Write as _;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Json {
     Null,
+    Bool(bool),
     Number(u64),
     String(String),
     Array(Vec<Self>),
@@ -31,6 +32,7 @@ impl Json {
     pub(crate) fn write(&self, level: usize, out: &mut String) {
         match self {
             Self::Null => out.push_str("null"),
+            Self::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
             Self::Number(n) => {
                 let _ = write!(out, "{n}");
             }
@@ -165,10 +167,11 @@ mod tests {
             ("c", Json::Array(Vec::new())),
             ("d", Json::Object(Vec::new())),
             ("e", Json::Object(vec![("f", Json::optional(Some("g")))])),
+            ("h", Json::Array(vec![Json::Bool(true), Json::Bool(false)])),
         ]);
         assert_eq!(
             text(&value),
-            "{\n  \"a\": 1,\n  \"b\": [\n    null,\n    2\n  ],\n  \"c\": [],\n  \"d\": {},\n  \"e\": {\n    \"f\": \"g\"\n  }\n}"
+            "{\n  \"a\": 1,\n  \"b\": [\n    null,\n    2\n  ],\n  \"c\": [],\n  \"d\": {},\n  \"e\": {\n    \"f\": \"g\"\n  },\n  \"h\": [\n    true,\n    false\n  ]\n}"
         );
     }
 }

@@ -86,6 +86,13 @@ pub enum Error {
         /// What went wrong.
         message: String,
     },
+    /// No invoice XML could be extracted from a PDF file ([`crate::pdf::extract`]): its
+    /// kind is [`ErrorKind::Unsupported`] for an encrypted file, a PDF feature outside the
+    /// subset read or a limit exceeded, and [`ErrorKind::Io`] otherwise (not a PDF, a
+    /// malformed file, no embedded file with an invoice name or several, XMP metadata
+    /// that is not well-formed): the file cannot be read as an e-invoice.
+    #[cfg(feature = "pdf")]
+    Pdf(einvoice_pdf::Error),
 }
 
 /// The kind of an [`Error`], for callers that only need to classify it (the exit code of
@@ -93,14 +100,17 @@ pub enum Error {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ErrorKind {
-    /// [`Error::Io`].
+    /// [`Error::Io`], and an `Error::Pdf` (feature `pdf`) for a PDF file no invoice can be
+    /// read from.
     Io,
     /// [`Error::Bundle`] and [`Error::Checksum`].
     Bundle,
     /// [`Error::NotXml`].
     NotXml,
     /// [`Error::Unsupported`] and [`Error::Limit`]: input refused rather than
-    /// processed differently from the reference engine, or with an unbounded stack.
+    /// processed differently from the reference engine, or with an unbounded stack; and
+    /// an `Error::Pdf` (feature `pdf`) for an encrypted PDF file, a PDF feature outside
+    /// the subset read, or a limit of the PDF reader.
     Unsupported,
     /// [`Error::Transform`].
     Transform,
@@ -141,6 +151,14 @@ impl Error {
             Self::Unsupported { .. } | Self::Limit { .. } => ErrorKind::Unsupported,
             Self::Transform { .. } => ErrorKind::Transform,
             Self::Internal { .. } => ErrorKind::Internal,
+            #[cfg(feature = "pdf")]
+            Self::Pdf(
+                einvoice_pdf::Error::Encrypted
+                | einvoice_pdf::Error::Unsupported { .. }
+                | einvoice_pdf::Error::LimitExceeded { .. },
+            ) => ErrorKind::Unsupported,
+            #[cfg(feature = "pdf")]
+            Self::Pdf(_) => ErrorKind::Io,
         }
     }
 
@@ -196,6 +214,8 @@ impl fmt::Display for Error {
                 write!(f, ": {code}: {message}")
             }
             Self::Internal { message } => write!(f, "internal error: {message}"),
+            #[cfg(feature = "pdf")]
+            Self::Pdf(error) => error.fmt(f),
         }
     }
 }
@@ -204,6 +224,8 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
+            #[cfg(feature = "pdf")]
+            Self::Pdf(error) => Some(error),
             _ => None,
         }
     }

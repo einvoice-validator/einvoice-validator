@@ -2,6 +2,7 @@
 
 use std::fmt::Write as _;
 
+use einvoice_validator::pdf::{AfRelationship, Embedded};
 use einvoice_validator::{Error, ErrorKind, Finding, Report, RuleSet, Severity, Verdict};
 
 use crate::json::Json;
@@ -10,11 +11,14 @@ use crate::json::Json;
 pub(crate) const JSON_FORMAT_VERSION: u64 = 1;
 
 /// One validated document: its name as given on the command line (`-` for standard
-/// input), the name of the rule set it was validated with, and the result.
+/// input), the name of the rule set it was validated with, for a PDF file what it says
+/// about the invoice XML it embeds (`xml.data` emptied: the XML is what was validated),
+/// and the result.
 #[derive(Debug)]
 pub(crate) struct Outcome {
     pub(crate) name: String,
     pub(crate) rule_set: String,
+    pub(crate) pdf: Option<Embedded>,
     pub(crate) result: Result<Report, Error>,
 }
 
@@ -117,7 +121,114 @@ pub(crate) fn text(outcome: &Outcome, style: Style) -> String {
         }
         Ok(report) => report_text(name, report, style, &mut out),
     }
+    if let Some(embedded) = &outcome.pdf {
+        // Second, after the line of the document.
+        let at = out.find('\n').map_or(out.len(), |i| i + 1);
+        out.insert_str(at, &pdf_line(embedded));
+    }
     out
+}
+
+/// The line on the PDF file a document was embedded in: the name of the embedded file and
+/// its `/AFRelationship`, the PDF/A identification and the Factur-X / `ZUGFeRD` / Order-X
+/// properties of the XMP metadata.
+fn pdf_line(embedded: &Embedded) -> String {
+    let xml = &embedded.xml;
+    let mut parts = vec![match &xml.relationship {
+        Some(r) => format!("AFRelationship {r}"),
+        None => "no AFRelationship".to_owned(),
+    }];
+    match &embedded.metadata {
+        None => parts.push("no XMP metadata".to_owned()),
+        Some(m) => {
+            parts.push(match (&m.pdfa_part, &m.pdfa_conformance) {
+                (Some(part), Some(conformance)) => format!("PDF/A-{part}{conformance}"),
+                (Some(part), None) => format!("PDF/A-{part}"),
+                (None, _) => "no PDF/A identification".to_owned(),
+            });
+            match &m.invoice {
+                None => parts.push("no Factur-X or ZUGFeRD properties".to_owned()),
+                Some(i) => {
+                    let property = |name: &str, value: &Option<String>| {
+                        value.as_ref().map(|v| format!("{name} {v}"))
+                    };
+                    let properties: Vec<String> = [
+                        property("document type", &i.document_type),
+                        property("file name", &i.document_file_name),
+                        property("version", &i.version),
+                        property("conformance level", &i.conformance_level),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect();
+                    parts.push(if properties.is_empty() {
+                        "no Factur-X or ZUGFeRD properties".to_owned()
+                    } else {
+                        properties.join(", ")
+                    });
+                }
+            }
+        }
+    }
+    format!(
+        "  pdf      {} embedded in a PDF {}: {}\n",
+        xml.file_name,
+        embedded.pdf_version,
+        parts.join("; ")
+    )
+}
+
+/// The `pdf` member of a document in the JSON report: `null` for an XML document, or a
+/// PDF file no invoice could be extracted from.
+fn json_pdf(pdf: Option<&Embedded>) -> Json {
+    let Some(embedded) = pdf else {
+        return Json::Null;
+    };
+    let xml = &embedded.xml;
+    let xmp = embedded.metadata.as_ref().map_or(Json::Null, |m| {
+        Json::Object(vec![
+            ("pdfa_part", Json::optional(m.pdfa_part.as_deref())),
+            (
+                "pdfa_conformance",
+                Json::optional(m.pdfa_conformance.as_deref()),
+            ),
+            (
+                "invoice",
+                m.invoice.as_ref().map_or(Json::Null, |i| {
+                    Json::Object(vec![
+                        ("namespace", Json::string(&i.namespace)),
+                        ("document_type", Json::optional(i.document_type.as_deref())),
+                        (
+                            "document_file_name",
+                            Json::optional(i.document_file_name.as_deref()),
+                        ),
+                        ("version", Json::optional(i.version.as_deref())),
+                        (
+                            "conformance_level",
+                            Json::optional(i.conformance_level.as_deref()),
+                        ),
+                    ])
+                }),
+            ),
+        ])
+    });
+    Json::Object(vec![
+        ("version", Json::string(&embedded.pdf_version)),
+        (
+            "attachment",
+            Json::Object(vec![
+                ("file_name", Json::string(&xml.file_name)),
+                (
+                    "relationship",
+                    Json::optional(xml.relationship.as_ref().map(AfRelationship::as_str)),
+                ),
+                ("in_associated_files", Json::Bool(xml.in_associated_files)),
+                ("description", Json::optional(xml.description.as_deref())),
+                ("mime_type", Json::optional(xml.mime_type.as_deref())),
+            ]),
+        ),
+        ("xmp", xmp),
+    ])
 }
 
 /// The text form of a report.
@@ -318,29 +429,29 @@ pub(crate) fn json_rule_set(rule_set: &RuleSet) -> Json {
     ])
 }
 
+/// The `error` member of a document in the JSON report.
+fn json_error(e: &Error) -> Json {
+    let (line, column) = match e {
+        Error::NotXml { line, column, .. } => (
+            Json::Number(u64::from(*line)),
+            Json::Number(u64::from(*column)),
+        ),
+        _ => (Json::Null, Json::Null),
+    };
+    Json::Object(vec![
+        ("kind", Json::string(e.kind().as_str())),
+        ("message", Json::string(error_message(e))),
+        ("line", line),
+        ("column", column),
+    ])
+}
+
 /// One document, in the JSON report.
 pub(crate) fn json(outcome: &Outcome) -> Json {
     let status = Status::of(&outcome.result);
     let (error, report) = match &outcome.result {
         Ok(report) => (Json::Null, Some(report)),
-        Err(e) => {
-            let (line, column) = match e {
-                Error::NotXml { line, column, .. } => (
-                    Json::Number(u64::from(*line)),
-                    Json::Number(u64::from(*column)),
-                ),
-                _ => (Json::Null, Json::Null),
-            };
-            (
-                Json::Object(vec![
-                    ("kind", Json::string(e.kind().as_str())),
-                    ("message", Json::string(error_message(e))),
-                    ("line", line),
-                    ("column", column),
-                ]),
-                None,
-            )
-        }
+        Err(e) => (json_error(e), None),
     };
     let count = |s: Severity| Json::count(report.map_or(0, |r| r.count(s)));
     let schema_errors: Vec<Json> = report
@@ -419,6 +530,7 @@ pub(crate) fn json(outcome: &Outcome) -> Json {
         ("findings", Json::Array(findings)),
         ("stylesheet_errors", Json::Array(stylesheet_errors)),
         ("warnings", Json::Array(warnings)),
+        ("pdf", json_pdf(outcome.pdf.as_ref())),
     ])
 }
 

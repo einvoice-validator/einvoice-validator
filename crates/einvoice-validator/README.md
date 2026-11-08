@@ -50,6 +50,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   repository's `scripts/fetch-peppol.sh` downloads the pinned release, compiles its
   stylesheets and writes the manifest.
 
+With the default feature `pdf`, the module `pdf` extracts the invoice XML a Factur-X, ZUGFeRD
+or Order-X PDF/A-3 file embeds (`pdf::extract`, with
+[`einvoice-pdf`](https://crates.io/crates/einvoice-pdf)), with its `/AFRelationship` and the
+document's XMP metadata, to be validated like any other document; a PDF no invoice can be
+read from is an `Error::Pdf`.
+
 On every case of the test corpora of CEN EN 16931 UBL and CII 1.3.17 and Peppol BIS Billing
 3.0.22, the verdicts and findings agree with Saxon-HE. The crate also builds for
 `wasm32-unknown-unknown`, where the caller gives the clock. The command-line tool is

@@ -4,7 +4,8 @@ Command-line validation of e-invoices against the official EN 16931 validation a
 with the [`einvoice-validator`](https://crates.io/crates/einvoice-validator) library: for each
 document, the XML check (UTF-8, well-formed, no document type declaration), the XML schema of
 the rule set (UBL 2.1; none for CII), then the official compiled Schematron stylesheets of the rule set,
-executed with the behaviour of Saxon-HE. It is part of
+executed with the behaviour of Saxon-HE. XML files and Factur-X / ZUGFeRD / Order-X PDF files
+(the invoice XML they embed). It is part of
 [einvoice-validator](https://github.com/einvoice-validator/einvoice-validator).
 
 ```sh
@@ -38,7 +39,7 @@ einvoice-validate --bundle target/peppol/peppol-bis-billing-ubl-3.0.22 invoice.x
 
 | Option | Meaning |
 |---|---|
-| `FILE...` | Documents to validate, in that order; `-` reads standard input (at most once). After `--`, every argument is a file. |
+| `FILE...` | Documents to validate, in that order; `-` reads standard input (at most once). After `--`, every argument is a file. A file (or standard input) that starts with `%PDF-` is a PDF: see [PDF files](#pdf-files). |
 | `-r`, `--rules NAME` | Built-in rule set: `cen-ubl`, the CEN EN 16931 UBL validation artefacts 1.3.17 with the UBL 2.1 schemas, or `cen-cii`, the CEN EN 16931 CII (UN/CEFACT D16B) validation artefacts 1.3.17, without an XML schema (the CII schemas are not embedded). Without `--rules` and `--bundle`, each document is validated with the rule set of its root element: `cen-ubl` for a UBL `Invoice` or `CreditNote` (namespaces `urn:oasis:names:specification:ubl:schema:xsd:Invoice-2` and `...:CreditNote-2`), `cen-cii` for a `CrossIndustryInvoice` in `urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100`, and `cen-ubl` for any other document, one that is not XML, or a file that cannot be read. Only the root element is read for that, before the document is validated. |
 | `-b`, `--bundle DIR` | A rule-set bundle: `DIR/bundle.toml` and the stylesheets it names (see the documentation of the `einvoice-validator` crate for the manifest format). Excludes `--rules`. |
 | `-f`, `--format FORMAT` | `text` (default), `json` or `svrl`. |
@@ -59,21 +60,46 @@ The highest code that applies to the run:
 |---|---|
 | 0 | Every document is valid: no schema error and no finding with flag `fatal`. |
 | 1 | At least one document is invalid: schema errors, fatal findings, or not well-formed XML. |
-| 2 | Usage error; a document that cannot be read; a bundle that cannot be read or is not valid (manifest, missing file, SHA-256 mismatch, stylesheet that is not SVRL-producing XSLT). |
-| 3 | A construct the engine does not support (in a document: an encoding other than UTF-8, a document type declaration; in a rule set: XSLT or XPath outside the supported subset), a document beyond a limit (an element nested deeper than `--max-depth`; a stylesheet whose templates or functions recurse beyond the nesting or the stack allowed), a dynamic error raised by a stylesheet on a document, or an internal error. |
+| 2 | Usage error; a document that cannot be read, a PDF file included (malformed, without an embedded file named as an invoice or with several, XMP metadata that is not well-formed); a bundle that cannot be read or is not valid (manifest, missing file, SHA-256 mismatch, stylesheet that is not SVRL-producing XSLT). |
+| 3 | A construct the engine does not support (in a document: an encoding other than UTF-8, a document type declaration; in a PDF file: encryption, a PDF feature outside the subset read, a limit of the PDF reader; in a rule set: XSLT or XPath outside the supported subset), a document beyond a limit (an element nested deeper than `--max-depth`; a stylesheet whose templates or functions recurse beyond the nesting or the stack allowed), a dynamic error raised by a stylesheet on a document, or an internal error. |
 
 When the rule set cannot be loaded, nothing is written to standard output; the reason goes
 to standard error and the exit status is 2 or 3. Otherwise every document is reported, even
 after one fails.
+
+## PDF files
+
+A file that starts with `%PDF-` is read as a Factur-X, ZUGFeRD or Order-X PDF/A-3 file, with
+the [`einvoice-pdf`](https://crates.io/crates/einvoice-pdf) crate: the document validated is
+the embedded file named `factur-x.xml`, `zugferd-invoice.xml`, `ZUGFeRD-invoice.xml`,
+`xrechnung.xml` or `order-x.xml`, byte for byte, exactly as if it had been given as an XML file
+(with the PDF file's URI as its document URI), and the rule set is chosen from its root element
+unless `--rules` or `--bundle` is given. The text and JSON outputs add what the PDF states
+about it: the name of the embedded file, its `/AFRelationship`, and from the XMP metadata of
+the document the PDF/A identification (`pdfaid:part`, `pdfaid:conformance`) and the Factur-X /
+ZUGFeRD / Order-X properties (`DocumentType`, `DocumentFileName`, `Version`,
+`ConformanceLevel`). These are reported, not checked: the verdict is that of the XML.
+
+```sh
+einvoice-validate invoice.pdf                       # cen-cii for a Factur-X invoice
+einvoice-validate --format json invoices/*.pdf invoices/*.xml
+```
+
+A PDF file no invoice can be read from is an error of kind `io` (exit status 2): a malformed
+file, no embedded file with one of those names or several, XMP metadata that is not
+well-formed. An encrypted file (PDF/A forbids encryption), a PDF feature outside the subset
+read on the path to the embedded files (another filter than `FlateDecode`, ...) or a limit of
+the reader exceeded is an error of kind `unsupported` (exit status 3).
 
 ## Output formats
 
 ### text
 
 For each document, a line `<file>: valid`, `<file>: invalid: <counts>` or
-`<file>: error (<kind>): <message>`, then one line per schema error, one per stylesheet
-stopped by an error, and two per finding (severity, rule id and message, then the
-location). After several documents, a summary line.
+`<file>: error (<kind>): <message>`; for a PDF file whose invoice was extracted, a line
+`pdf      <name> embedded in a PDF <version>: AFRelationship <relationship>; PDF/A-<part><conformance>; <properties>`;
+then one line per schema error, one per stylesheet stopped by an error, and two per finding
+(severity, rule id and message, then the location). After several documents, a summary line.
 The UBL and XML Schema namespaces in schema errors are written with their usual prefixes
 (`cbc:`, `cac:`, `ext:`, `ubl:`, `cn:`, `xs:`). Colours are used only when standard output is a terminal and
 `NO_COLOR` is not set to a non-empty value. The text format is meant for people; use `json`
@@ -150,7 +176,28 @@ members are always present and in the order below. The format is identified by `
       "stylesheet_errors": [           stylesheets stopped by a dynamic error
         { "stylesheet": string, "code": string, "line": number | null, "message": string }
       ],
-      "warnings": [ { "stylesheet": string, "message": string } ]
+      "warnings": [ { "stylesheet": string, "message": string } ],
+      "pdf": null | {                  a PDF file whose invoice XML was extracted
+        "version": string,             of the PDF header: "1.7"
+        "attachment": {                the embedded invoice XML
+          "file_name": string,         "factur-x.xml"
+          "relationship": string | null,   its /AFRelationship: "Data", "Alternative", ...
+          "in_associated_files": boolean,  listed in the catalog's /AF
+          "description": string | null,    /Desc
+          "mime_type": string | null       /Subtype of the stream: "text/xml"
+        },
+        "xmp": null | {                the XMP metadata of the document
+          "pdfa_part": string | null,         "3"
+          "pdfa_conformance": string | null,  "B"
+          "invoice": null | {          the Factur-X / ZUGFeRD / Order-X properties
+            "namespace": string,       "urn:factur-x:pdfa:CrossIndustryDocument:invoice:1p0#"
+            "document_type": string | null,       "INVOICE"
+            "document_file_name": string | null,  "factur-x.xml"
+            "version": string | null,             "1.0"
+            "conformance_level": string | null    "EN 16931"
+          }
+        }
+      }
     }
   ],
   "summary": { "documents": number, "valid": number, "invalid": number, "errors": number },
@@ -166,6 +213,8 @@ under Saxon-HE) is listed in `stylesheet_errors` when the document already has s
 errors: the document is `invalid` and the other stylesheets' findings are kept. Without
 schema errors, there is no verdict: `status` is `error`, `error.kind` is `transform`. `warnings` lists the recoverable
 conditions a stylesheet reported (ambiguous template rule matches), as Saxon-HE reports them.
+`pdf` is `null` for an XML document and for a PDF file no invoice could be extracted from
+(`error.kind` is then `io` or `unsupported`); it was added to version 1 as a pure addition.
 
 ## Licence
 

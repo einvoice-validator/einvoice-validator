@@ -78,6 +78,13 @@
 //! basic strings (escapes `\"` and `\\` only), literal strings or non-negative integers,
 //! and `[[stylesheet]]` headers.
 //!
+//! # PDF files
+//!
+//! With the feature `pdf` (on by default), the module `pdf` extracts the invoice XML that
+//! a Factur-X, `ZUGFeRD` or Order-X PDF/A-3 file embeds, with its `/AFRelationship` and
+//! the document's XMP metadata, in pure Rust (the crate einvoice-pdf); the XML is then
+//! validated as any other document, with the rule set [`Syntax::detect`] names for it.
+//!
 //! # WebAssembly
 //!
 //! The crate builds for `wasm32-unknown-unknown` and needs nothing from the host there:
@@ -123,6 +130,8 @@ mod detect;
 mod error;
 mod licences;
 mod manifest;
+#[cfg(feature = "pdf")]
+pub mod pdf;
 mod report;
 mod validator;
 

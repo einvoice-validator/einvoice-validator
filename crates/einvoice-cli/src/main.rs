@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 
 use einvoice_validator::{
-    BUILTIN_RULE_SETS, Error, RuleSet, Syntax, ValidateOptions, Validator, file_uri,
+    BUILTIN_RULE_SETS, Error, RuleSet, Syntax, ValidateOptions, Validator, file_uri, pdf,
 };
 
 use crate::args::{Command, Format, Input, Options, Rules, UsageError};
@@ -114,8 +114,9 @@ const MIT: &str = include_str!("../LICENSES/MIT.txt");
 
 /// What the MIT licence covers in this binary.
 const MIT_COVERS: &str = "the code of einvoice-validate (crate einvoice-cli) and of the crates \
-    of the project it is built from (einvoice-validator, einvoice-svrl, einvoice-xdm, \
-    einvoice-xpath, einvoice-xpath-eval, einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)";
+    of the project it is built from (einvoice-validator, einvoice-pdf, einvoice-svrl, \
+    einvoice-xdm, einvoice-xpath, einvoice-xpath-eval, einvoice-xsd, einvoice-xslt, \
+    einvoice-xslt-exec)";
 
 /// The licence notices of everything the binary embeds, with their full texts: the
 /// code (MIT), then the other licences `einvoice_validator::licences` lists for this
@@ -156,7 +157,9 @@ well-formedness, the XML schema, then the official compiled Schematron rules.
 Usage: {NAME} [OPTIONS] FILE...
 
 Arguments:
-  FILE...              Documents to validate; - reads standard input.
+  FILE...              Documents to validate; - reads standard input. A PDF file
+                       (Factur-X, ZUGFeRD, Order-X) is validated through the
+                       invoice XML it embeds.
 
 Options:
   -r, --rules NAME     Built-in rule set. Default: chosen for each document from
@@ -188,9 +191,11 @@ Output formats:
 Exit status (the highest that applies):
   0  every document is valid
   1  a document is invalid: schema errors, fatal findings, or not well-formed XML
-  2  usage error, or a file or bundle that cannot be read or is not valid
-  3  an unsupported construct (document or rule set), a document beyond a
-     limit (--max-depth), a stylesheet error on a document, or an internal error
+  2  usage error, or a file or bundle that cannot be read or is not valid (a
+     PDF file without one embedded invoice, or malformed)
+  3  an unsupported construct (document, PDF file or rule set), a document
+     beyond a limit (--max-depth), a stylesheet error on a document, or an
+     internal error
 ",
         default = args::DEFAULT_RULES,
         builtins = builtin_list(),
@@ -275,7 +280,7 @@ fn load(
                 let syntax = match input {
                     Input::Stdin => stdin
                         .and_then(|r| r.as_ref().ok())
-                        .and_then(|bytes| Syntax::detect(bytes)),
+                        .and_then(|bytes| detect(bytes)),
                     Input::File(path) => detect_file(path),
                 };
                 syntax.map_or(args::DEFAULT_RULES, Syntax::builtin_rule_set)
@@ -297,17 +302,29 @@ fn load(
 }
 
 /// The syntax of the document in the file at `path`, from its start (the whole file
-/// when the start is not enough); `None` when it cannot be read, as the validation then
-/// reports.
+/// when the start is not enough); for a PDF file, of the invoice XML it embeds. `None`
+/// when it cannot be read, as the validation then reports.
 fn detect_file(path: &std::path::Path) -> Option<Syntax> {
     const HEAD: u64 = 64 << 10;
     let mut head = Vec::new();
     let file = std::fs::File::open(path).ok()?;
     file.take(HEAD).read_to_end(&mut head).ok()?;
+    if pdf::is_pdf(&head) {
+        return detect(&std::fs::read(path).ok()?);
+    }
     match Syntax::detect(&head) {
         Some(syntax) => Some(syntax),
         None if head.len() as u64 == HEAD => Syntax::detect(&std::fs::read(path).ok()?),
         None => None,
+    }
+}
+
+/// The syntax of a document, or of the invoice XML a PDF file embeds.
+fn detect(bytes: &[u8]) -> Option<Syntax> {
+    if pdf::is_pdf(bytes) {
+        Syntax::detect(&pdf::extract(bytes).ok()?.xml.data)
+    } else {
+        Syntax::detect(bytes)
     }
 }
 
@@ -389,9 +406,12 @@ fn validate(
     limits: &ValidateOptions<'_>,
 ) -> Outcome {
     let rule_set = validator.rule_set().name().to_owned();
-    match input {
+    let mut pdf_info = None;
+    let (name, result) = match input {
         Input::Stdin => {
             let result = match stdin {
+                Some(Ok(bytes)) if pdf::is_pdf(bytes) => embedded_xml(bytes, &mut pdf_info)
+                    .and_then(|xml| validator.validate_owned_with(xml, limits)),
                 Some(Ok(bytes)) => validator.validate_with(bytes, limits),
                 Some(Err(e)) => Err(Error::Io {
                     path: "-".into(),
@@ -402,11 +422,7 @@ fn validate(
                     source: std::io::Error::other("standard input was not read"),
                 }),
             };
-            Outcome {
-                name: "-".to_owned(),
-                rule_set,
-                result,
-            }
+            ("-".to_owned(), result)
         }
         Input::File(path) => {
             let name = path.display().to_string();
@@ -416,18 +432,35 @@ fn validate(
                     source,
                 })
                 .and_then(|bytes| {
+                    // The document's URI: the file's, the PDF's for the XML it embeds.
                     let uri = std::path::absolute(path).ok().and_then(|p| file_uri(&p));
                     let options = uri.as_deref().map_or(*limits, |u| limits.document_uri(u));
+                    let bytes = if pdf::is_pdf(&bytes) {
+                        embedded_xml(&bytes, &mut pdf_info)?
+                    } else {
+                        bytes
+                    };
                     // The validation keeps the buffer rather than copying its text.
                     validator.validate_owned_with(bytes, &options)
                 });
-            Outcome {
-                name,
-                rule_set,
-                result,
-            }
+            (name, result)
         }
+    };
+    Outcome {
+        name,
+        rule_set,
+        pdf: pdf_info,
+        result,
     }
+}
+
+/// The invoice XML embedded in the PDF file `bytes`; what the PDF says about it goes to
+/// `info`, without the XML.
+fn embedded_xml(bytes: &[u8], info: &mut Option<pdf::Embedded>) -> Result<Vec<u8>, Error> {
+    let mut embedded = pdf::extract(bytes)?;
+    let xml = std::mem::take(&mut embedded.xml.data);
+    *info = Some(embedded);
+    Ok(xml)
 }
 
 /// Writes the results in the chosen format, document by document.

@@ -5,11 +5,20 @@ pub use einvoice_xsd::Licence;
 /// The MIT licence of the code, from `LICENSES/MIT.txt` (the repository's `LICENSE`).
 const MIT: Licence = Licence {
     id: "MIT",
-    covers: "the code of einvoice-validator and of the crates of the project it is built \
-             from (einvoice-svrl, einvoice-xdm, einvoice-xpath, einvoice-xpath-eval, \
-             einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)",
+    covers: MIT_COVERS,
     text: include_str!("../LICENSES/MIT.txt"),
 };
+
+/// What the MIT licence covers in this build: the crates of the project it is built from
+/// (einvoice-pdf with the feature `pdf`).
+#[cfg(feature = "pdf")]
+const MIT_COVERS: &str = "the code of einvoice-validator and of the crates of the project it \
+     is built from (einvoice-pdf, einvoice-svrl, einvoice-xdm, einvoice-xpath, \
+     einvoice-xpath-eval, einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)";
+#[cfg(not(feature = "pdf"))]
+const MIT_COVERS: &str = "the code of einvoice-validator and of the crates of the project it \
+     is built from (einvoice-svrl, einvoice-xdm, einvoice-xpath, einvoice-xpath-eval, \
+     einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)";
 
 /// The EUPL-1.2 of the CEN stylesheets of the built-in rule sets `cen-ubl` and `cen-cii`.
 #[cfg(any(feature = "cen-ubl", feature = "cen-cii"))]
