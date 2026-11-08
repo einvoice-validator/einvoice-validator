@@ -62,7 +62,10 @@ pub(crate) fn run_env(args: &[&str], stdin: Option<&[u8]>, env: &[(&str, &str)])
     let mut child = command.spawn().unwrap();
     if let Some(bytes) = stdin {
         let mut input = child.stdin.take().unwrap();
-        input.write_all(bytes).unwrap();
+        // A run that ends before it reads its input (a usage error) closes the pipe.
+        if let Err(e) = input.write_all(bytes) {
+            assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "{e}");
+        }
     }
     let output = child.wait_with_output().unwrap();
     Run {
