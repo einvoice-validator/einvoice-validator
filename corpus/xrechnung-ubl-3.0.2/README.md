@@ -32,7 +32,7 @@ tracked tree, then checks them:
    script.
 2. `cargo xtask xrechnung` extracts the cases into
    `target/xrechnung/xrechnung-3.0.2/corpus-ubl/` (same layout and `cases.tsv` format as
-   the committed corpora, see `../README.md`), applies `../mutations.toml` to the CEN documents `Invoice-Max_content.xml`, `CreditNote-Max_content.xml` and `ubl-tc434-example2.xml` (504 mutation cases), runs
+   the committed corpora, see `../README.md`), applies `../mutations.toml` to the CEN documents `Invoice-Max_content.xml`, `CreditNote-Max_content.xml` and `ubl-tc434-example2.xml` (508 mutation cases), runs
    Saxon-HE with both stylesheets on every case (`golden-cen/`, `golden-xrechnung/`),
    cross-checks the goldens with the expectations against `disagreements.tsv`, writes
    `acceptance.tsv` (the scenario of each case, whether the findings of each stylesheet reject

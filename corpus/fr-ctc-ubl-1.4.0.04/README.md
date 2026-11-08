@@ -27,7 +27,7 @@ tracked tree, then checks them:
    WARNING version of the French rules, `factur-x-basic-wl`, `factur-x-en16931`,
    `factur-x-extended` and `flux10`). Every pin is at the top of the script.
 2. `cargo xtask fr-ctc` extracts the cases into `target/fr-ctc/fr-ctc-1.4.0.04/corpus-ubl/` (same
-   layout and `cases.tsv` format as the committed corpora, see `../README.md`), applies the mutation catalogue `../mutations.toml` to the CEN documents `Invoice-Max_content.xml`, `CreditNote-Max_content.xml` and `ubl-tc434-example2.xml` (504 mutation cases), runs
+   layout and `cases.tsv` format as the committed corpora, see `../README.md`), applies the mutation catalogue `../mutations.toml` to the CEN documents `Invoice-Max_content.xml`, `CreditNote-Max_content.xml` and `ubl-tc434-example2.xml` (508 mutation cases), runs
    Saxon-HE with each stylesheet on every case, cross-checks the goldens with the expectations
    against `disagreements.tsv`, writes `acceptance.tsv` (whether the findings of each stylesheet reject the case as the
    reference validator reads them, see `../README.md`) and `complete.txt`.

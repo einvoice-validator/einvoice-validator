@@ -11,14 +11,14 @@ those examples.
 
 | Directory | Rule set | Cases | Mutation cases |
 |---|---|---|---|
-| `cen-en16931-ubl-1.3.17/` | CEN EN 16931 UBL, release 1.3.17 | 1179 | 504 |
+| `cen-en16931-ubl-1.3.17/` | CEN EN 16931 UBL, release 1.3.17 | 1179 | 508 |
 | `cen-en16931-cii-1.3.17/` | CEN EN 16931 UN/CEFACT CII D16B, release 1.3.17 (no XML schema: the CII schemas are not vendored) | 24 | 808 |
-| `peppol-bis-billing-ubl-3.0.22/` | Peppol BIS Billing 3.0.22, UBL: its own rules and the CEN EN 16931 rules it embeds (two stylesheets); built locally, not committed (see below) | 707 | 505 |
+| `peppol-bis-billing-ubl-3.0.22/` | Peppol BIS Billing 3.0.22, UBL: its own rules and the CEN EN 16931 rules it embeds (two stylesheets); built locally, not committed (see below) | 707 | 509 |
 | `factur-x-1.09.2/` | Factur-X 1.09.2 (ZUGFeRD 2.5.2), CII: the stylesheets of its five profiles; built locally, not committed | 42 | 808 |
-| `xrechnung-ubl-3.0.2/` | XRechnung 3.0.2, UBL: the EN 16931 and XRechnung stylesheets of the KoSIT validator configuration 2026-08-31; built locally, not committed | 1196 | 504 |
+| `xrechnung-ubl-3.0.2/` | XRechnung 3.0.2, UBL: the EN 16931 and XRechnung stylesheets of the KoSIT validator configuration 2026-08-31; built locally, not committed | 1196 | 508 |
 | `xrechnung-cii-3.0.2/` | XRechnung 3.0.2, CII: the same for CII; built locally, not committed | 686 | 808 |
 | `fr-ctc-cii-1.4.0.04/` | French e-invoicing rules (FNFE-MPE package 1.4.0.04), CII: EN 16931, EXTENDED-CTC-FR, the BR-FR rules (both versions), Factur-X BASIC WL, EN16931, EXTENDED; built locally, not committed | 53 | 808 |
-| `fr-ctc-ubl-1.4.0.04/` | The same package, UBL: EN 16931, EXTENDED-CTC-FR, the BR-FR rules (both versions); built locally, not committed | 75 | 504 |
+| `fr-ctc-ubl-1.4.0.04/` | The same package, UBL: EN 16931, EXTENDED-CTC-FR, the BR-FR rules (both versions); built locally, not committed | 75 | 508 |
 | `fr-ctc-cdar-1.4.0.04/` | The same package, life-cycle statuses (CDAR, both versions); built locally, not committed | 70 | 0 |
 
 ## Cases

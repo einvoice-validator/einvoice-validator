@@ -336,6 +336,113 @@ fn a_stylesheet_error_on_a_schema_invalid_document_exits_with_1() {
     );
 }
 
+/// The 1-based line of the only line of `text` that contains `needle`.
+fn line_of(text: &str, needle: &str) -> u64 {
+    let lines: Vec<usize> = text
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| l.contains(needle))
+        .map(|(i, _)| i + 1)
+        .collect();
+    assert_eq!(lines.len(), 1, "{needle}");
+    u64::try_from(lines[0]).unwrap()
+}
+
+/// Runs `einvoice-validate` on a document whose header has one element out of the UBL
+/// order, `element` (`cbc:<name>`): exactly one schema error, at that element's line, and
+/// no finding of the stylesheet, which, as the Saxon-HE golden shows, does not check the
+/// order of elements; `expected` begins the list of elements the schema allows there.
+fn check_misordered(relative: &str, element: &str, expected: &str) {
+    let golden = format!(
+        "{}/golden/{}.svrl.txt",
+        common::CORPUS,
+        relative
+            .strip_prefix(&format!("{}/", common::CORPUS))
+            .unwrap()
+    );
+    let golden = String::from_utf8(read(&golden)).unwrap();
+    assert_eq!(common::golden_findings(&golden), Vec::new());
+    let text = String::from_utf8(read(relative)).unwrap();
+    let line = line_of(&text, &format!("<{element}"));
+    let r = run(&[relative], None);
+    assert_eq!(r.code, 1);
+    assert_eq!(r.stderr, "");
+    let mut lines = r.stdout.lines();
+    assert_eq!(
+        lines.next(),
+        Some(format!("{relative}: invalid: 1 schema error").as_str())
+    );
+    let schema = lines.next().unwrap();
+    let prefix = format!(
+        "  schema   {line}:2: unexpected-element: element {element}: not expected; expected: {expected}, "
+    );
+    assert!(schema.starts_with(&prefix), "{schema}");
+    assert_eq!(lines.next(), None);
+
+    let r = run(&["-f", "json", relative], None);
+    assert_eq!(r.code, 1);
+    let report = json::parse(&r.stdout).unwrap();
+    let documents = report.get("documents").array();
+    assert_eq!(documents.len(), 1);
+    let document = &documents[0];
+    assert_eq!(document.get("status").str(), Some("invalid"));
+    let counts = document.get("counts");
+    assert_eq!(counts.get("schema_errors").number(), 1);
+    assert_eq!(counts.get("fatal").number(), 0);
+    assert_eq!(counts.get("warning").number(), 0);
+    assert_eq!(counts.get("other").number(), 0);
+    assert_eq!(counts.get("stylesheet_errors").number(), 0);
+    assert_eq!(document.get("findings").array(), []);
+    let errors = document.get("schema_errors").array();
+    assert_eq!(errors.len(), 1);
+    let error = &errors[0];
+    assert_eq!(error.get("kind").str(), Some("unexpected-element"));
+    assert_eq!(error.get("line").number(), line);
+    let name = element.strip_prefix("cbc:").unwrap();
+    assert_eq!(
+        error.get("element").str(),
+        Some(
+            format!(
+                "{{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}}{name}"
+            )
+            .as_str()
+        )
+    );
+}
+
+/// From a reported real-world mistake, on a synthetic document (a mutation of an official
+/// example): a credit note with `cbc:TaxPointDate` after `cbc:CreditNoteTypeCode` and
+/// `cbc:Note`, the order of an invoice. UBL 2.1 puts it before the type code in a credit
+/// note, so the schema rejects it, where xmllint reports the same one error; the EN 16931
+/// rules accept it. The same date and note in UBL order are valid.
+#[test]
+fn a_credit_note_with_its_tax_point_date_after_the_note_has_one_schema_error() {
+    check_misordered(
+        "corpus/cen-en16931-ubl-1.3.17/mutations/credit-notes/tax-point-date-after-note.xml",
+        "cbc:TaxPointDate",
+        "cbc:Note, cbc:DocumentCurrencyCode",
+    );
+    let control =
+        "corpus/cen-en16931-ubl-1.3.17/mutations/credit-notes/tax-point-date-before-type-code.xml";
+    let r = run(&[control], None);
+    assert_eq!((r.code, r.stdout), (0, format!("{control}: valid\n")));
+}
+
+/// The converse in an invoice: `cbc:TaxPointDate` before `cbc:InvoiceTypeCode`, the order of
+/// a credit note. UBL 2.1 puts it after the notes in an invoice; the schema then rejects
+/// the type code, which xmllint reports too, and the EN 16931 rules accept the document.
+#[test]
+fn an_invoice_with_its_tax_point_date_before_the_type_code_has_one_schema_error() {
+    check_misordered(
+        "corpus/cen-en16931-ubl-1.3.17/mutations/credit-notes/invoice-tax-point-date-before-type-code.xml",
+        "cbc:InvoiceTypeCode",
+        "cbc:DocumentCurrencyCode, cbc:TaxCurrencyCode",
+    );
+    let control = "corpus/cen-en16931-ubl-1.3.17/mutations/credit-notes/invoice-tax-point-date-after-note.xml";
+    let r = run(&[control], None);
+    assert_eq!((r.code, r.stdout), (0, format!("{control}: valid\n")));
+}
+
 #[test]
 fn an_unsupported_document_exits_with_3() {
     let r = run(
@@ -645,7 +752,7 @@ fn the_whole_corpus_agrees_with_the_saxon_goldens() {
 #[test]
 fn the_built_in_rule_set_agrees_with_the_saxon_goldens_on_the_mutation_cases() {
     let cases = common::mutation_cases(common::CORPUS, "");
-    assert_eq!(cases.len(), 504);
+    assert_eq!(cases.len(), 508);
     let inputs: Vec<&str> = cases.iter().map(|c| c.input.as_str()).collect();
     let runs = common::run_json_batches(&["--format", "json", "--jobs", "4"], &inputs);
     let documents = runs.documents();

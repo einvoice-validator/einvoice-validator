@@ -31,7 +31,7 @@ fn every_cen_mutation_case_matches_saxon() {
     let executable = common::executable(&root).unwrap();
     let corpus = common::join(&root, &format!("corpus/{}", common::RULE_SET));
     let cases = common::mutation_cases(&corpus, &root).unwrap();
-    assert_eq!(cases.len(), 504, "mutation cases");
+    assert_eq!(cases.len(), 508, "mutation cases");
     let (problems, messages) = common::check_mutations(&executable, &cases, &corpus.join("golden"));
     report("CEN", cases.len(), &problems, &messages);
     assert!(problems.is_empty(), "{} different", problems.len());

@@ -19,6 +19,9 @@ structure-two-errors-in-siblings	invoice-full	<cbc:Name>Example Supplier</cbc:Na
 structure-errors-in-two-elements	invoice-full	<cbc:ID>PO-77</cbc:ID>	<cbc:Wrong>PO-77</cbc:Wrong>
 structure-invoice-line-in-credit-note	creditnote-min	<cac:CreditNoteLine>\n    <cbc:ID>1</cbc:ID>\n  </cac:CreditNoteLine>	<cac:InvoiceLine>\n    <cbc:ID>1</cbc:ID>\n  </cac:InvoiceLine>
 structure-credit-note-line-missing-id	creditnote-min	    <cbc:ID>1</cbc:ID>\n	\e
+structure-credit-note-tax-point-date-after-note	creditnote-min	<cbc:IssueDate>2024-03-02</cbc:IssueDate>	<cbc:IssueDate>2024-03-02</cbc:IssueDate>\n  <cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>\n  <cbc:Note>Returned goods</cbc:Note>\n  <cbc:TaxPointDate>2024-03-01</cbc:TaxPointDate>
+structure-credit-note-tax-point-date-before-type-code	creditnote-min	<cbc:IssueDate>2024-03-02</cbc:IssueDate>	<cbc:IssueDate>2024-03-02</cbc:IssueDate>\n  <cbc:TaxPointDate>2024-03-01</cbc:TaxPointDate>\n  <cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>\n  <cbc:Note>Returned goods</cbc:Note>
+structure-invoice-tax-point-date-before-type-code	invoice-full	  <cbc:InvoiceTypeCode listID=	  <cbc:TaxPointDate>2024-02-29</cbc:TaxPointDate>\n  <cbc:InvoiceTypeCode listID=	  <cbc:TaxPointDate>2024-02-29</cbc:TaxPointDate>\n  <cbc:DocumentCurrencyCode	  <cbc:DocumentCurrencyCode
 structure-choice-both	invoice-full	<xades:SignaturePolicyImplied/>	<xades:SignaturePolicyImplied/>\n<xades:SignaturePolicyImplied/>
 root-wrong-namespace	creditnote-min	<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"	<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
 root-unqualified	creditnote-min	<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"	<CreditNote

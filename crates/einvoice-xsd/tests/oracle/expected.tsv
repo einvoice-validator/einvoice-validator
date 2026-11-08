@@ -1200,6 +1200,9 @@ mutation/structure-two-errors-in-siblings	invalid	172:unexpected-element
 mutation/structure-errors-in-two-elements	invalid	151:unexpected-element
 mutation/structure-invoice-line-in-credit-note	invalid	11:unexpected-element
 mutation/structure-credit-note-line-missing-id	invalid	11:missing-element
+mutation/structure-credit-note-tax-point-date-after-note	invalid	8:unexpected-element
+mutation/structure-credit-note-tax-point-date-before-type-code	valid	
+mutation/structure-invoice-tax-point-date-before-type-code	invalid	138:unexpected-element
 mutation/structure-choice-both	invalid	77:unexpected-element
 mutation/root-wrong-namespace	invalid	3:root
 mutation/root-unqualified	invalid	3:root

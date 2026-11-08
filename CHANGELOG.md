@@ -205,6 +205,14 @@ against.
   corpus run through it and check, on each case, that the observer was given what
   `einvoice-xml` reads from the text; a property test checks it, and the text, on generated
   documents with mixed content, namespaces and indentation.
+- Regression cases for a misordered header reported from real-world use, on synthetic
+  documents (mutations of the official examples): a credit note with `cbc:TaxPointDate` after
+  `cbc:CreditNoteTypeCode` and `cbc:Note` (the invoice order), an invoice with it before
+  `cbc:InvoiceTypeCode` (the credit note order), and both in UBL order as controls
+  (`corpus/mutations.toml`, 508 CEN and 509 Peppol mutation cases), with the same edits in the
+  xmllint oracle of `einvoice-xsd`. The EN 16931 and Peppol rules report nothing on any of them;
+  `einvoice-validate` reports exactly one schema error on the misordered element, as xmllint
+  does, and exits with 1 (`einvoice-cli` tests).
 
 ### Changed
 

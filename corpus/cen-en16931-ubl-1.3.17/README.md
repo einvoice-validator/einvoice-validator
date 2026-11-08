@@ -15,7 +15,7 @@ upstream licence. The rest of the repository is MIT.
 - `cases.tsv`: every upstream case: 19 example documents, 29 whole test documents and 1131
   documents extracted from the VEFA unit test sets, with the rule ids each VEFA test expects.
 - `vefa/`: the extracted documents, one per `<test>`.
-- `mutations.tsv` and `mutations/`: 504 mutation cases, modified copies of
+- `mutations.tsv` and `mutations/`: 508 mutation cases, modified copies of
   `test/testfiles/Invoice-Max_content.xml`, `test/testfiles/CreditNote-Max_content.xml` and
   `ubl/examples/ubl-tc434-example2.xml`, made by the edits of `../mutations.toml` (see
   `../README.md`). Each document is a modified version of its upstream document: the edits

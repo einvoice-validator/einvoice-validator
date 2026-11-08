@@ -2949,6 +2949,50 @@ edits = [
   ["add", '/*/cac:CreditNoteLine[1]/cbc:LineExtensionAmount', "-0.005"],
 ]
 
+[[mutation]]
+id = "credit-notes/tax-point-date-after-note"
+base = "credit-note"
+reason = "Credit note with its VAT point date (BT-7) after the type code and the note, where UBL puts it before the type code: schema error only"
+edits = [
+  ["remove-all", '/*/cbc:TaxPointDate'],
+  ["remove-all", '/*/cbc:Note'],
+  ["insert-after", '/*/cbc:CreditNoteTypeCode', "<cbc:TaxPointDate>2018-02-08</cbc:TaxPointDate>"],
+  ["insert-after", '/*/cbc:CreditNoteTypeCode', "<cbc:Note>Returned goods</cbc:Note>"],
+]
+
+[[mutation]]
+id = "credit-notes/tax-point-date-before-type-code"
+base = "credit-note"
+reason = "Control of credit-notes/tax-point-date-after-note: the same VAT point date and note in UBL order"
+edits = [
+  ["remove-all", '/*/cbc:TaxPointDate'],
+  ["remove-all", '/*/cbc:Note'],
+  ["insert-before", '/*/cbc:CreditNoteTypeCode', "<cbc:TaxPointDate>2018-02-08</cbc:TaxPointDate>"],
+  ["insert-after", '/*/cbc:CreditNoteTypeCode', "<cbc:Note>Returned goods</cbc:Note>"],
+]
+
+[[mutation]]
+id = "credit-notes/invoice-tax-point-date-before-type-code"
+base = "invoice"
+reason = "Invoice with its VAT point date (BT-7) before the type code, in credit note order, where UBL puts it after the notes: schema error only"
+edits = [
+  ["remove-all", '/*/cbc:TaxPointDate'],
+  ["remove-all", '/*/cbc:Note'],
+  ["insert-before", '/*/cbc:InvoiceTypeCode', "<cbc:TaxPointDate>2018-02-08</cbc:TaxPointDate>"],
+  ["insert-after", '/*/cbc:InvoiceTypeCode', "<cbc:Note>Delivered goods</cbc:Note>"],
+]
+
+[[mutation]]
+id = "credit-notes/invoice-tax-point-date-after-note"
+base = "invoice"
+reason = "Control of credit-notes/invoice-tax-point-date-before-type-code: the same VAT point date and note in UBL order"
+edits = [
+  ["remove-all", '/*/cbc:TaxPointDate'],
+  ["remove-all", '/*/cbc:Note'],
+  ["insert-after", '/*/cbc:InvoiceTypeCode', "<cbc:TaxPointDate>2018-02-08</cbc:TaxPointDate>"],
+  ["insert-after", '/*/cbc:InvoiceTypeCode', "<cbc:Note>Delivered goods</cbc:Note>"],
+]
+
 # ---------------------------------------------------------------------------------------
 # Namespaces: rules match expanded names, never prefixes
 
