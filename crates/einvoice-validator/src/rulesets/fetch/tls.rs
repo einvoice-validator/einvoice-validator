@@ -891,7 +891,7 @@ fn rsa_key(public_key: &[u8]) -> Result<rsa::PublicKey, InvalidSignature> {
     use rsa::pkcs1::DecodeRsaPublicKey as _;
     use rsa::traits::PublicKeyParts as _;
     let key = rsa::PublicKey::from_pkcs1_der(public_key).map_err(|_| InvalidSignature)?;
-    if key.n().bits_vartime() < MIN_RSA_BITS {
+    if key.n().bit_width_vartime() < MIN_RSA_BITS {
         return Err(InvalidSignature);
     }
     Ok(key)

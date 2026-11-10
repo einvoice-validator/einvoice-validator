@@ -29,7 +29,7 @@ Crates (70):
   const-oid 0.10.2         MIT
   cpubits 0.1.1            MIT
   cpufeatures 0.3.1        MIT
-  crypto-bigint 0.7.10     MIT
+  crypto-bigint 0.7.11     MIT
   crypto-common 0.2.2      MIT
   crypto-primes 0.7.2      MIT
   ctr 0.10.1               MIT
@@ -68,7 +68,7 @@ Crates (70):
   regex-syntax 0.8.11      MIT
   rfc6979 0.6.0            MIT
   roxmltree 0.21.2         MIT
-  rsa 0.10.0-rc.22         MIT
+  rsa 0.10.0               MIT
   rustls 0.23.46           MIT
   rustls-pki-types 1.15.1  MIT
   rustls-webpki 0.103.16   ISC
@@ -610,7 +610,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
-== crypto-bigint 0.7.10
+== crypto-bigint 0.7.11
 Licence: MIT (chosen from Apache-2.0 OR MIT)
 Authors: RustCrypto Developers
 Repository: https://github.com/RustCrypto/crypto-bigint
@@ -1910,7 +1910,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-== rsa 0.10.0-rc.22
+== rsa 0.10.0
 Licence: MIT (chosen from MIT OR Apache-2.0)
 Authors: RustCrypto Developers, dignifiedquire <dignifiedquire@gmail.com>
 Repository: https://github.com/RustCrypto/RSA

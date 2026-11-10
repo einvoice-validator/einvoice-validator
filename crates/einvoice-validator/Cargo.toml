@@ -79,10 +79,10 @@ getrandom = { version = "0.4.3", default-features = false, optional = true }
 hmac = { version = "0.13.0", default-features = false, optional = true }
 p256 = { version = "0.14.0", default-features = false, features = ["ecdh", "ecdsa"], optional = true }
 p384 = { version = "0.14.0", default-features = false, features = ["ecdh", "ecdsa"], optional = true }
-# A release candidate: the 0.10 series is the one built on the same RustCrypto releases as
-# the crates above (digest 0.11, crypto-bigint 0.7); 0.9 would duplicate them. Signature
-# verification with public keys only.
-rsa = { version = "0.10.0-rc.22", default-features = false, features = ["encoding", "pkcs1v15", "std"], optional = true }
+# The 0.10 series is the one built on the same RustCrypto releases as the crates above
+# (digest 0.11, crypto-bigint 0.7); 0.9 would duplicate them. Signature verification with
+# public keys only.
+rsa = { version = "0.10.0", default-features = false, features = ["encoding", "pkcs1v15", "std"], optional = true }
 rustls = { version = "0.23.46", default-features = false, features = ["custom-provider", "std", "tls12"], optional = true }
 webpki-roots = { version = "1.0.11", optional = true }
 
