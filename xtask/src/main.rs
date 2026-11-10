@@ -20,8 +20,9 @@
 //!                                   time, and report what passes, differs, fails or is refused
 //! cargo xtask bench [--families NAME,...] [--runs N] [--threads N,...] [--write]
 //!                   [--cli PATH] [--java JAVA] [--saxon JAR]
-//!                                   time and memory of the whole job on every corpus,
-//!                                   einvoice-validate against Saxon-HE (docs/benchmarks.md)
+//!                                   time and memory of the whole job of each rule set on its
+//!                                   corpus, einvoice-validate --rules NAME (its verdicts checked
+//!                                   against the reference) against Saxon-HE (docs/benchmarks.md)
 //! ```
 //!
 //! `manifest`, `corpus`, `oracle` and `crosscheck` work on the vendored rule
@@ -46,6 +47,7 @@ mod corpus;
 mod crosscheck;
 mod engine;
 mod fetched;
+mod json;
 mod manifest;
 mod mutation;
 mod oracle;

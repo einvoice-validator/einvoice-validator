@@ -868,6 +868,282 @@ fn stylesheet_verdict(
     Ok(if rejects { "reject" } else { "accept" })
 }
 
+/// The status `einvoice-validate` gives a document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Status {
+    Valid,
+    Invalid,
+    /// No verdict: a stylesheet stopped with a dynamic error on a document
+    /// without schema errors.
+    Error,
+}
+
+impl Status {
+    /// As `einvoice-validate --format json` writes it.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Valid => "valid",
+            Self::Invalid => "invalid",
+            Self::Error => "error",
+        }
+    }
+}
+
+/// What the reference validator of a rule set makes of one case, for a
+/// bundle that runs some of the rule set's stylesheets ([`references`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Reference {
+    /// With KoSIT scenarios: the document matches none, or several. It is
+    /// rejected and nothing runs on it.
+    pub(crate) unmatched: bool,
+    /// The verdict of the reference schema step (xmllint, the `schema` column
+    /// of [`TABLE`] for KoSIT scenarios, the `schema:<entry point>` column of
+    /// the bundle's schema otherwise): `valid`, `invalid` or `malformed`;
+    /// `None` when the corpus records none for the bundle's schema (the UBL
+    /// 2.1 and CII D16B schemas built into `einvoice-validate`, outside KoSIT
+    /// scenarios) or for a document without a scenario.
+    pub(crate) schema: Option<String>,
+    /// The verdicts of the stylesheets that run on the document (the
+    /// scenario's, else the bundle's), from the goldens: `accept`, `reject`
+    /// or `error` (Saxon-HE stopped).
+    pub(crate) stylesheets: Vec<&'static str>,
+}
+
+impl Reference {
+    /// The status of the document when the schema step finds it valid or not
+    /// (`schema_valid`): invalid without a scenario or with schema errors
+    /// (the stylesheets of a bundle without scenarios run all the same, a
+    /// stylesheet error then not changing the status), else no verdict when a
+    /// stylesheet stopped, invalid when one rejects it, valid otherwise.
+    pub(crate) fn status(&self, schema_valid: bool) -> Status {
+        if self.unmatched || !schema_valid {
+            Status::Invalid
+        } else if self.stylesheets.contains(&"error") {
+            Status::Error
+        } else if self.stylesheets.contains(&"reject") {
+            Status::Invalid
+        } else {
+            Status::Valid
+        }
+    }
+}
+
+/// The verdict of a stylesheet column of [`TABLE`] as a static string.
+fn stylesheet_column(value: &str) -> Option<&'static str> {
+    match value {
+        "accept" => Some("accept"),
+        "reject" => Some("reject"),
+        "error" => Some("error"),
+        _ => None,
+    }
+}
+
+/// [`TABLE`] of a corpus: its header and its rows by case id.
+struct Table {
+    path: PathBuf,
+    header: Vec<String>,
+    rows: std::collections::HashMap<String, Vec<String>>,
+}
+
+impl Table {
+    fn read(path: &Path) -> Result<Self> {
+        let text = util::read_string(path)?;
+        let mut lines = text.lines();
+        let header: Vec<String> = lines
+            .next()
+            .unwrap_or("")
+            .split('\t')
+            .map(str::to_owned)
+            .collect();
+        let mut rows = std::collections::HashMap::new();
+        for line in lines {
+            let columns: Vec<String> = line.split('\t').map(str::to_owned).collect();
+            match columns.first() {
+                Some(id) if columns.len() == header.len() => {
+                    rows.insert(id.clone(), columns);
+                }
+                _ => {
+                    return Err(Error::new(format!("{}: bad line {line:?}", path.display())));
+                }
+            }
+        }
+        Ok(Self {
+            path: path.to_path_buf(),
+            header,
+            rows,
+        })
+    }
+
+    fn index(&self, column: &str) -> Option<usize> {
+        self.header.iter().position(|h| h == column)
+    }
+
+    /// The value of `column` (which must exist) for the case `id`.
+    fn value(&self, id: &str, column: &str) -> Result<&str> {
+        let index = self
+            .index(column)
+            .ok_or_else(|| Error::new(format!("{}: no column {column}", self.path.display())))?;
+        let row = self.rows.get(id).ok_or_else(|| {
+            Error::new(format!(
+                "{}: no case {id}: rebuild the corpus with `cargo xtask <family>`",
+                self.path.display()
+            ))
+        })?;
+        Ok(row[index].as_str())
+    }
+
+    /// The stylesheet column of `stylesheet` for the case `id`.
+    fn verdict(&self, id: &str, stylesheet: &Stylesheet) -> Result<&'static str> {
+        let value = self.value(id, stylesheet.golden_dir)?;
+        stylesheet_column(value).ok_or_else(|| {
+            Error::new(format!(
+                "{}: {id}: {} {value:?}",
+                self.path.display(),
+                stylesheet.golden_dir
+            ))
+        })
+    }
+}
+
+/// What the reference validator of `rule_set` makes of each of `cases`, in
+/// order, for a bundle that runs `stylesheets` (stylesheets of the rule set)
+/// and validates against `schema` (the `schema` of its manifest: `ubl-2.1`,
+/// `cii-d16b`, or the entry point of a schema of its own). For a fetched rule
+/// set, from [`TABLE`], which `cargo xtask <family>` writes from the goldens
+/// and xmllint: with KoSIT scenarios, the scenario of each document (whose
+/// stylesheets must be the bundle's), its `schema` verdict and the columns of
+/// the scenario's stylesheets, checked against the table's `verdict`;
+/// otherwise the columns of the bundle's stylesheets and, when the table has
+/// one, the `schema:<entry point>` column of the bundle's schema. For a
+/// vendored rule set (no table), the stylesheet verdicts of the goldens, as
+/// the table would have them, and no schema verdict.
+pub(crate) fn references(
+    root: &Path,
+    rule_set: &RuleSet,
+    cases: &[Case],
+    stylesheets: &[&Stylesheet],
+    schema: Option<&str>,
+) -> Result<Vec<Reference>> {
+    let base = rule_set.base(root);
+    if rule_set.vendored_dir().is_some() {
+        return cases
+            .iter()
+            .map(|case| {
+                Ok(Reference {
+                    unmatched: false,
+                    schema: None,
+                    stylesheets: stylesheets
+                        .iter()
+                        .map(|s| stylesheet_verdict(&base, rule_set, s, case, false, None))
+                        .collect::<Result<_>>()?,
+                })
+            })
+            .collect();
+    }
+    let table = Table::read(&util::join(&base, &rule_set.corpus_dir()).join(TABLE))?;
+    let kosit = match rule_set.acceptance.as_ref().map(|a| &a.profiles) {
+        Some(Profiles::KositScenarios { file, .. }) => Some((*file, scenarios(&base, file)?)),
+        _ => None,
+    };
+    let schema_column = schema
+        .map(|s| format!("schema:{s}"))
+        .filter(|c| table.index(c).is_some());
+    let mut out = Vec::with_capacity(cases.len());
+    for case in cases {
+        let id = case.id.as_str();
+        out.push(match &kosit {
+            Some((file, scenarios)) => {
+                kosit_reference(&table, id, rule_set, file, scenarios, stylesheets)?
+            }
+            None => Reference {
+                unmatched: false,
+                schema: match &schema_column {
+                    Some(column) => Some(table.value(id, column)?.to_owned()),
+                    None => None,
+                },
+                stylesheets: stylesheets
+                    .iter()
+                    .map(|s| table.verdict(id, s))
+                    .collect::<Result<_>>()?,
+            },
+        });
+    }
+    Ok(out)
+}
+
+/// [`references`] of the case `id` for a bundle that runs `stylesheets`,
+/// with the KoSIT scenarios of the configuration `file`.
+fn kosit_reference(
+    table: &Table,
+    id: &str,
+    rule_set: &RuleSet,
+    file: &str,
+    scenarios: &[Scenario],
+    stylesheets: &[&Stylesheet],
+) -> Result<Reference> {
+    let name = table.value(id, "scenario")?;
+    let verdict = table.value(id, "verdict")?;
+    if name == "-" || name.starts_with("several: ") {
+        if verdict != "reject" {
+            return Err(Error::new(format!(
+                "{}: {id}: no scenario, verdict {verdict:?}",
+                table.path.display()
+            )));
+        }
+        return Ok(Reference {
+            unmatched: true,
+            schema: None,
+            stylesheets: Vec::new(),
+        });
+    }
+    let scenario = scenarios.iter().find(|s| s.name == name).ok_or_else(|| {
+        Error::new(format!(
+            "{}: {id}: scenario {name:?} is not one of {file}",
+            table.path.display()
+        ))
+    })?;
+    let runs = stylesheets_of(rule_set, scenario, file)?;
+    if let Some(missing) = runs
+        .iter()
+        .find(|s| !stylesheets.iter().any(|b| b.name == s.name))
+    {
+        return Err(Error::new(format!(
+            "scenario {name:?} runs {}, which the bundle does not",
+            missing.name
+        )));
+    }
+    let reference = Reference {
+        unmatched: false,
+        schema: Some(table.value(id, "schema")?.to_owned()),
+        stylesheets: runs
+            .iter()
+            .map(|s| table.verdict(id, s))
+            .collect::<Result<_>>()?,
+    };
+    // The table's verdict is the configuration's, on xmllint's schema
+    // verdict.
+    let expected = reference.status(reference.schema.as_deref() == Some("valid"));
+    let table_status = match verdict {
+        "accept" => Status::Valid,
+        "reject" => Status::Invalid,
+        "error" => Status::Error,
+        other => {
+            return Err(Error::new(format!(
+                "{}: {id}: verdict {other:?}",
+                table.path.display()
+            )));
+        }
+    };
+    if expected != table_status {
+        return Err(Error::new(format!(
+            "{}: {id}: verdict {verdict:?}, its columns give {}",
+            table.path.display(),
+            expected.as_str()
+        )));
+    }
+    Ok(reference)
+}
+
 /// Checks that the bundle the fetch script wrote for a rule set with KoSIT
 /// scenarios has the scenarios of the configuration: its `[[scenario]]`
 /// tables, after its stylesheets, are those of the scenarios of the
@@ -1349,8 +1625,8 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        Match, Selected, check_bundle, identify, kosit_level, parse, parse_match, run, scenarios,
-        write_table,
+        Match, Reference, Selected, Status, check_bundle, identify, kosit_level, parse,
+        parse_match, references, run, scenarios, write_table,
     };
     use crate::corpus::Case;
     use crate::crosscheck::Disagreement;
@@ -1657,6 +1933,84 @@ mod tests {
     /// The table of a corpus with KoSIT scenarios: the levels of the scenario
     /// each document matches, stylesheet by stylesheet, the verdict of the
     /// schema of that scenario, and the verdict of the configuration.
+    /// What a bundle of both stylesheets of [`TABLE_SET`] makes of every
+    /// case: the scenario's stylesheets, its schema verdict, the table's
+    /// verdict on it; a bundle without a stylesheet of a scenario is refused.
+    #[test]
+    fn references_follow_the_scenarios() {
+        let root = std::env::temp_dir().join(format!("xtask-references-{}", std::process::id()));
+        let base = root.join("base");
+        write_fixture(&base);
+        write_table(&root, &TABLE_SET, &FakeSchema::default()).unwrap();
+        let all = crate::corpus::read_all(&root, &TABLE_SET).unwrap();
+        let both: Vec<&Stylesheet> = TABLE_SET.stylesheets.iter().collect();
+        let found = references(&root, &TABLE_SET, &all, &both, Some("ubl-2.1")).unwrap();
+        let only_a = references(&root, &TABLE_SET, &all, &both[..1], Some("ubl-2.1"));
+        util::remove_dir(&root).unwrap();
+        assert_eq!(
+            only_a.unwrap_err().to_string(),
+            "scenario \"One\" runs B, which the bundle does not"
+        );
+        let statuses: Vec<(&str, Option<&str>, Vec<&str>, &str)> = all
+            .iter()
+            .zip(&found)
+            .map(|(case, r)| {
+                let valid = r.schema.as_deref() == Some("valid");
+                (
+                    case.id.as_str(),
+                    r.schema.as_deref(),
+                    r.stylesheets.clone(),
+                    r.status(valid).as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            statuses,
+            [
+                (
+                    "docs/one.xml",
+                    Some("valid"),
+                    vec!["accept", "reject"],
+                    "invalid"
+                ),
+                ("docs/padded.xml", None, vec![], "invalid"),
+                ("docs/other.xml", None, vec![], "invalid"),
+                ("docs/plain.xml", Some("valid"), vec!["accept"], "valid"),
+                ("docs/split.xml", None, vec![], "invalid"),
+                ("docs/both.xml", None, vec![], "invalid"),
+                (
+                    "docs/stops.xml",
+                    Some("valid"),
+                    vec!["accept", "error"],
+                    "error"
+                ),
+                (
+                    "docs/invalid.xml",
+                    Some("invalid"),
+                    vec!["accept", "accept"],
+                    "invalid"
+                ),
+                (
+                    "docs/invalid-stops.xml",
+                    Some("invalid"),
+                    vec!["accept", "error"],
+                    "invalid"
+                ),
+                (
+                    "docs/unreadable.xml",
+                    Some("malformed"),
+                    vec!["accept"],
+                    "invalid"
+                ),
+                ("docs/invalid-other.xml", None, vec![], "invalid"),
+            ]
+        );
+        // A schema step that finds invalid-stops.xml valid: B stops on it.
+        assert_eq!(found[8].status(true), Status::Error);
+        assert!(found[1].unmatched && !found[0].unmatched);
+        assert_eq!(found[1].status(true), Status::Invalid);
+    }
+
     #[test]
     fn the_table_follows_the_scenarios() {
         let root = std::env::temp_dir().join(format!("xtask-table-{}", std::process::id()));
@@ -1759,6 +2113,71 @@ mod tests {
             parsed[1].schema,
             "resources/ubl/2.1/xsd/maindoc/UBL-CreditNote-2.1.xsd"
         );
+    }
+
+    /// The status of a document: invalid without a scenario or with schema
+    /// errors, then no verdict when a stylesheet stopped, invalid when one
+    /// rejects it, valid otherwise.
+    #[test]
+    fn reference_statuses() {
+        let reference = |unmatched, stylesheets: &[&'static str]| Reference {
+            unmatched,
+            schema: None,
+            stylesheets: stylesheets.to_vec(),
+        };
+        for (r, schema_valid, expected) in [
+            (reference(false, &[]), true, Status::Valid),
+            (reference(false, &["accept", "accept"]), true, Status::Valid),
+            (
+                reference(false, &["accept", "reject"]),
+                true,
+                Status::Invalid,
+            ),
+            (reference(false, &["reject", "error"]), true, Status::Error),
+            (
+                reference(false, &["reject", "error"]),
+                false,
+                Status::Invalid,
+            ),
+            (reference(false, &["accept"]), false, Status::Invalid),
+            (reference(true, &[]), true, Status::Invalid),
+        ] {
+            assert_eq!(r.status(schema_valid), expected, "{r:?} {schema_valid}");
+        }
+        assert_eq!(
+            [Status::Valid, Status::Invalid, Status::Error].map(Status::as_str),
+            ["valid", "invalid", "error"]
+        );
+    }
+
+    /// The references of every complete corpus, for a bundle of all the
+    /// stylesheets of its rule set: the KoSIT verdicts of the table agree
+    /// with its columns, and the vendored corpora read their goldens.
+    #[test]
+    fn references_of_the_corpora() {
+        let root = util::repo_root();
+        for rule_set in crate::ruleset::ALL {
+            if rule_set.vendored_dir().is_none() && !crate::fetched::stamp(&root, rule_set).exists()
+            {
+                println!("SKIPPED: no complete cache of {}", rule_set.name);
+                continue;
+            }
+            let cases = crate::corpus::read_all(&root, rule_set).unwrap();
+            let all: Vec<&Stylesheet> = rule_set.stylesheets.iter().collect();
+            let found = references(&root, rule_set, &cases, &all, None)
+                .unwrap_or_else(|e| panic!("{}: {e}", rule_set.name));
+            assert_eq!(found.len(), cases.len(), "{}", rule_set.name);
+            for reference in &found {
+                assert!(
+                    reference
+                        .stylesheets
+                        .iter()
+                        .all(|v| ["accept", "reject", "error"].contains(v)),
+                    "{}: {reference:?}",
+                    rule_set.name
+                );
+            }
+        }
     }
 
     /// The schema of stylesheet A of [`LISTED_SET`].

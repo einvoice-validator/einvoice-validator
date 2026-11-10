@@ -288,16 +288,17 @@ pub(crate) fn as_f64(n: u64) -> f64 {
 /// The tools measured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Tool {
-    /// `einvoice-validate`, as it validates: the XML check, the XML schema of
-    /// the rule set (UBL 2.1 for UBL), then the stylesheets.
+    /// `einvoice-validate --rules NAME`, as its users run it: the XML check,
+    /// the scenario of the document (XRechnung), the XML schema of the rule
+    /// set, then its stylesheets, with its verdict rules.
     Engine,
     /// `einvoice-validate` doing exactly the work of Saxon-HE: one process
-    /// per stylesheet, with a bundle of that stylesheet alone and no XML
-    /// schema, so that every stylesheet runs on every document (in one
-    /// process, a stylesheet that stops on a document without schema errors
-    /// ends its validation: the stylesheets after it do not run). Measured
-    /// when it differs from [`Tool::Engine`]: a UBL rule set, or several
-    /// stylesheets.
+    /// per stylesheet, with a bundle of that stylesheet alone, no XML schema
+    /// and no scenarios, so that every stylesheet runs on every document (in
+    /// one process, a stylesheet that stops on a document without schema
+    /// errors ends its validation: the stylesheets after it do not run).
+    /// Measured when it differs from [`Tool::Engine`]: a rule set with an XML
+    /// schema, scenarios or several stylesheets.
     EngineSameWork,
     /// Saxon-HE, one JVM per stylesheet.
     Saxon,
@@ -385,9 +386,9 @@ pub(crate) struct TargetRun {
     pub(crate) title: &'static str,
     pub(crate) documents: usize,
     pub(crate) stylesheets: usize,
-    /// The XML schema `einvoice-validate` validates with, if any (`ubl-2.1`,
-    /// `cii-d16b`).
-    pub(crate) schema: Option<&'static str>,
+    /// The XML schema of the bundle, as its manifest names it (`ubl-2.1`,
+    /// `cii-d16b`, or the entry point of a schema of its own), if any.
+    pub(crate) schema: Option<String>,
     /// The `--max-depth` given to `einvoice-validate`, when a document is
     /// deeper than its default.
     pub(crate) max_depth: Option<usize>,
@@ -509,8 +510,8 @@ fn opt_ratio(saxon: Option<Duration>, ours: Option<Duration>) -> String {
 }
 
 /// The cell of [`Tool::EngineSameWork`] when it is not measured: the rule
-/// set has one stylesheet and no schema, and [`Tool::Engine`] does the work
-/// of Saxon-HE.
+/// set has one stylesheet, no schema and no scenarios, and [`Tool::Engine`]
+/// does the work of Saxon-HE.
 const SAME_RUN: &str = "(same run)";
 
 fn threads_title(threads: usize) -> String {
@@ -1001,7 +1002,7 @@ pub(crate) fn json(report: &Report) -> String {
                 ("title", Json::str(t.title)),
                 ("documents", Json::count(t.documents)),
                 ("stylesheets", Json::count(t.stylesheets)),
-                ("schema", Json::str(t.schema.unwrap_or("none"))),
+                ("schema", Json::str(t.schema.as_deref().unwrap_or("none"))),
                 ("max_depth", t.max_depth.map_or(Json::Null, Json::count)),
                 (
                     "results",
@@ -1335,7 +1336,7 @@ mod tests {
                     title: "CEN UBL",
                     documents: 100,
                     stylesheets: 1,
-                    schema: Some("ubl-2.1"),
+                    schema: Some("ubl-2.1".to_owned()),
                     max_depth: Some(1024),
                     runs: vec![
                         run(Tool::Engine, 1, &[500, 400, 600], 20 * 1024, summary),
@@ -1354,7 +1355,7 @@ mod tests {
                     title: "CEN CII",
                     documents: 50,
                     stylesheets: 2,
-                    schema: Some("cii-d16b"),
+                    schema: Some("cii-d16b".to_owned()),
                     max_depth: None,
                     runs: vec![
                         run(Tool::Engine, 1, &[100, 100, 100], 10 * 1024, summary),

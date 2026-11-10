@@ -62,6 +62,18 @@ against.
 - `rsa` 0.10.0 and `crypto-bigint` 0.7.11 in the TLS stack of `rules fetch` (#20).
 - The privacy scans read `PRIVATE_TERMS` from the deployment environment `privacy`;
   `privacy.yml` can be run by hand; `main` requires the `ci-ok` check (#11).
+- `cargo xtask bench` measures each rule set as `einvoice-validate --rules NAME` runs it
+  (#41): one job per built-in or fetched rule set (each Factur-X profile, each rule set of the
+  French package), read from the cache `rules fetch` fills, with its scenario selection, XML
+  schema and verdict rules. Its verdicts are checked, document by document and on every run,
+  against the acceptance table of the corpus (the Saxon-HE goldens for the built-in rule
+  sets, xmllint's verdict on the rule set's schema where the table has it), and a run fails on
+  any difference. Before, the bench wrote bundles of its own: the Factur-X and French jobs ran
+  the stylesheets without the XML schema step, the five Factur-X profiles in one bundle that
+  read only `fatal` flags (802 valid documents where `factur-x-en16931` finds 181). Saxon-HE
+  runs the stylesheets of each rule set, the stylesheet step of the reference validators only:
+  `docs/benchmarks.md` states what each command measures. Its results predate this change.
+
 ### Added
 
 - Documents in UTF-16 (either byte order, with a byte order mark, or without one when the
