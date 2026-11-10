@@ -245,6 +245,35 @@ stylesheets the engine refuses to load (`<corpus>/engine-status.txt` in the cach
 deeper than the default maximum depth runs with `--max-depth 1024`. It reports; it does not
 check.
 
+## The encoding table of einvoice-xml: one reference environment
+
+`crates/einvoice-xml/tests/encoding/expected.tsv` records what Saxon-HE 12.10 and xmllint
+make of each encoding probe of that crate. The encoding names each accepts depend on its
+environment (the converters libxml2 is built with and their tables, the JDK), so the table is
+recorded in one reference environment, the runner of the `oracle` workflow, which its header
+names: libxml2 2.9.14 built with iconv and ICU, on Ubuntu 24.04, and Java 21. The
+`encoding-oracle` example of `einvoice-xml` checks every result there, and refuses `--write`
+anywhere else. `scripts/encoding-oracle-refenv.sh` runs it in that environment on any machine
+with podman or docker (`$CONTAINER_ENGINE`, else podman, else docker), passing its arguments
+on:
+
+```sh
+scripts/encoding-oracle-refenv.sh            # check the table: every result of both references
+scripts/encoding-oracle-refenv.sh --write    # rewrite it
+```
+
+It builds, once, an image of `ubuntu:24.04` pinned by digest (platform linux/amd64, that of
+the runner) with libxml2, ICU, OpenJDK 21 and the linker pinned by version, installed from the
+Ubuntu archive at a pinned snapshot date (snapshot.ubuntu.com, where those versions stay
+installable), and rustup (checksum verified) with the toolchain of `rust-toolchain.toml`. The
+example is built inside the container, against its C library (a binary built on the host may
+need a newer glibc than Ubuntu 24.04's, and is not a Linux binary on macOS). The repository is
+mounted read-write at its own path, the container runs as the calling user, and Cargo's
+registry cache and builds go to `target/refenv/`. Saxon-HE is fetched on the host by
+`scripts/fetch-saxon.sh`. The `encoding-oracle` example of `einvoice-validator` records no
+results: it compares each reference with itself on the corpora in UTF-8 and re-encoded, in
+encodings libxml2 reads without ICU, and runs in any environment.
+
 ## Commands
 
 ```sh
@@ -260,6 +289,7 @@ scripts/check.sh facturx        # scripts/fetch-facturx.sh, cargo xtask facturx,
 scripts/check.sh xrechnung      # scripts/fetch-xrechnung.sh, cargo xtask xrechnung, the equivalence test (needs Java)
 scripts/check.sh fr-ctc         # scripts/fetch-fr-ctc.sh, cargo xtask fr-ctc, the equivalence test (needs Java)
 cargo xtask engine-status FAMILY  # the engine on the corpora of a family: what passes, differs, fails
+scripts/encoding-oracle-refenv.sh [--write]  # the encoding oracle of einvoice-xml in its reference environment (podman or docker)
 ```
 
 `--write` regenerates instead of checking (`manifest`, `corpus`, `oracle`); these four commands

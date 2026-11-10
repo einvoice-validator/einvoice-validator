@@ -31,6 +31,11 @@
 //! environment, not as failures; the results of the other reference must still be the
 //! recorded ones. In CI (`$CI` set), the environment must be the reference one, and
 //! `--write` refuses to rewrite the table in any other.
+//!
+//! `scripts/encoding-oracle-refenv.sh` runs this example in the reference environment
+//! on any machine with podman or docker: in a container built from pinned inputs
+//! (Ubuntu 24.04 by digest, its libxml2, ICU and `OpenJDK` 21 packages by version), the
+//! example built there; its arguments are passed on (`--write` to rewrite the table).
 
 #[path = "../tests/encoding/probes.rs"]
 mod probes;
@@ -60,6 +65,8 @@ const SAXON_JARS: [(&str, &str); 3] = [
     ),
 ];
 const SAXON_DEFAULT: &str = "target/oracle/saxon/Saxon-HE-12.10.jar";
+/// The script that runs this example in the reference environment, in a container.
+const REFENV: &str = "scripts/encoding-oracle-refenv.sh";
 
 /// For each URI of the index, `<case ok="true" cp="code points"/>` or `<case ok="false"/>`.
 const STYLESHEET: &str = r#"<xsl:stylesheet version="3.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
@@ -113,7 +120,8 @@ fn run() -> Result<(), String> {
         if ci || write {
             return Err(format!(
                 "{} is recorded in the reference environment (xmllint: {REFERENCE_XMLLINT}; \
-                 Saxon-HE 12.10: {REFERENCE_JAVA}), {}",
+                 Saxon-HE 12.10: {REFERENCE_JAVA}), {}; {REFENV} runs this example there, \
+                 in a container, on any machine with podman or docker",
                 probes::EXPECTED,
                 if write {
                     "and only rewritten in it"
@@ -205,8 +213,8 @@ fn check(
     };
     if ids(rows) != ids(recorded) {
         return Err(format!(
-            "{} probes, {} recorded results, not for the same probes (run with --write in \
-             the reference environment)",
+            "{} probes, {} recorded results, not for the same probes (run {REFENV} \
+             --write: this example with --write in the reference environment)",
             rows.len(),
             recorded.len()
         ));
@@ -244,8 +252,8 @@ fn check(
     }
     if !failures.is_empty() {
         return Err(format!(
-            "differs from the reference parsers (run with --write in the reference \
-             environment):\n{}",
+            "differs from the reference parsers (run {REFENV} --write: this example with \
+             --write in the reference environment):\n{}",
             failures.join("\n")
         ));
     }

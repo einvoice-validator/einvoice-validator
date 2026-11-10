@@ -808,6 +808,20 @@ file = "Cargo.toml"
 pattern = 'rust-version = "(?<v>[^"]+)"'
 compare = "prefix"
 
+# Installs that toolchain in the container of scripts/encoding-oracle-refenv.sh (which
+# also records the SHA-256 of rustup-init: update the two together).
+[[upstream]]
+name = "rustup"
+severity = "info"
+pinned = "1.29.3"
+source = "listing"
+url = "https://static.rust-lang.org/rustup/release-stable.toml"
+version-pattern = 'version = .(?<v>[0-9]+\.[0-9]+\.[0-9]+).'
+
+[[upstream.pin]]
+file = "scripts/encoding-oracle-refenv.sh"
+pattern = 'rustup=(?<v>[0-9]+(?:\.[0-9]+)+)'
+
 # Runs the wasm examples in CI (.github/workflows/ci.yml, scripts/check.sh wasm).
 [[upstream]]
 name = "wasmtime"

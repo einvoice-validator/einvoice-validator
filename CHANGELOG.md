@@ -111,6 +111,14 @@ against.
 
 ### Added
 
+- `scripts/encoding-oracle-refenv.sh` runs the `encoding-oracle` example of `einvoice-xml`
+  in its reference environment on any machine with podman or docker (#43), so that
+  `tests/encoding/expected.tsv` can be checked in full and rewritten (`--write`) outside CI:
+  a container of `ubuntu:24.04` pinned by digest (linux/amd64), with libxml2 2.9.14, ICU 74,
+  OpenJDK 21 and the linker pinned by version from a dated snapshot of the Ubuntu archive,
+  and rustup (checksum verified) with the pinned toolchain; the example is built in the
+  container, the repository mounted at its own path, as the calling user. The example names
+  the script when it refuses to run or rewrite the table outside that environment.
 - Documents in UTF-16 (either byte order, with a byte order mark, or without one when the
   document starts with `<?`), US-ASCII, ISO-8859-1, ISO-8859-15 and windows-1252 are decoded
   as xmllint and Saxon-HE read them (#6): `einvoice_xml::decode`, `decode_owned` and
