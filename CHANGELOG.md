@@ -10,6 +10,24 @@ against.
 
 ## [Unreleased]
 
+### Fixed
+
+- `scripts/check.sh test` fetches every package first: the licence tests of `einvoice-cli`
+  failed on macOS and Windows (#11).
+### Changed
+
+- `scripts/fetch-peppol.sh` runs ph-schematron with Apache Maven 3.10.0 (compiled stylesheets
+  unchanged; retry options under the Maven Resolver 2 names) (#20).
+- `rsa` 0.10.0 and `crypto-bigint` 0.7.11 in the TLS stack of `rules fetch` (#20).
+- The privacy scans read `PRIVATE_TERMS` from the deployment environment `privacy`;
+  `privacy.yml` can be run by hand; `main` requires the `ci-ok` check (#11).
+### Added
+
+- `scripts/privacy-guard.sh` `tree` and `history` report terms of several words split across
+  lines or whitespace inside files, like `staged` (#15).
+- `upstream.toml` pins the vendored UBL 2.1 and UN/CEFACT CII D16B schemas of `einvoice-xsd`;
+  `scripts/freshness.sh` source `unlisted` for upstreams without a version list a script can
+  read (#7).
 ## [0.3.0] - 2026-11-10
 
 Tested against the official rule sets: CEN EN 16931 validation artefacts 1.3.17, Peppol BIS Billing 3.0.22, Factur-X 1.09.2, XRechnung 3.0.2, French e-invoicing rules (FNFE-MPE) 1.4.0.04.
