@@ -14,8 +14,9 @@ package's own README is [`npm/README.md`](npm/README.md).
   and the Node.js entry point (`node.mjs`, which instantiates the module synchronously).
 - `js-tests/`: the Node.js tests (`node:test`: the API, and every case of the CEN UBL and CII corpora
   against the Saxon-HE goldens), the TypeScript declarations check, and the browser test
-  (the same corpora in headless Chrome and Firefox, served from 127.0.0.1, and the largest
-  `maxDepth` on the main thread and in a Web Worker).
+  (the same corpora in headless Chrome and Firefox, served from 127.0.0.1, and documents 256
+  and 400 levels deep, a rule reporting on every level, on the main thread and in a Web
+  Worker).
 - `npm.sh`: builds, tests and packs the package.
 
 ```sh

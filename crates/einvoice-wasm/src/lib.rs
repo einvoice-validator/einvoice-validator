@@ -32,8 +32,10 @@
 //! the library's [`WASM_MAX_DEPTH`](einvoice_validator::WASM_MAX_DEPTH), a bound set by
 //! the native stacks of JavaScript engines) is refused with an error of kind
 //! `unsupported` whose `limit` is `depth`. The stylesheets use at most 256 KiB of the
-//! module's stack ([`WASM_MAX_STACK`](einvoice_validator::WASM_MAX_STACK)): a document
-//! that needs more fails with the `limit` `stack`, before the stack of the JavaScript
+//! module's stack ([`WASM_MAX_STACK`](einvoice_validator::WASM_MAX_STACK)), whatever the
+//! depth of the document (their template invocations are kept on the heap): every
+//! document within `maxDepth` gets a report; a stylesheet whose functions recurse deeper
+//! than that stack fails with the `limit` `stack`, before the stack of the JavaScript
 //! engine runs out.
 //!
 //! With `failClosed: true`, every finding that would otherwise be of severity `other` (a

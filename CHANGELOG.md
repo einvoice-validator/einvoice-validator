@@ -10,6 +10,44 @@ against.
 
 ## [Unreleased]
 
+### Fixed
+
+- On WebAssembly, every document within the maximum depth gets a report (#39); a level of
+  recursion through the templates no longer takes call stack (it took 0.6 to 2.1 KiB after #38). A document on
+  whose every nesting level a rule fires and reports stopped, from 244 levels on, with the
+  stack error (`Error::Limit`, `LimitExceeded::Stack`) in Chrome, Firefox and Node.js, and
+  overflowed the 512 KiB native stack of wasmtime; natively, with the same 256 KiB
+  `max_stack`, a release build stopped before 100 levels. The XSLT executor of
+  `einvoice-xslt-exec` no longer recurses on the call stack through the templates: the
+  instructions of a sequence constructor, and what they start (the template rules applied to
+  the nodes `xsl:apply-templates` selects, the built-in rules, `xsl:next-match`,
+  `xsl:call-template` and its tail calls, `xsl:for-each`, the content of elements, of
+  variables and of text instructions), are tasks of stacks kept on the heap, run in a loop;
+  an `xsl:apply-templates` that ends a template body takes its place, and a content whose
+  instructions start no task runs in place. The call stack a transformation uses no longer
+  grows with the depth of the document: `tests/limits.rs` checks that it is the same, to
+  the byte, for 256 and 4096 levels of named templates, template rules and built-in rules,
+  and for the CEN stylesheet on documents 128 and 256 deep, a rule reporting on every level
+  included (about 25 KiB in a release build on x86-64 Linux, 65 KiB in a debug build,
+  whatever the depth). Stylesheet functions and the values computed when first read still
+  run on the call stack, inside the evaluation of an expression, bounded by `max_stack`;
+  template invocations are bounded by `max_nesting` (a few hundred bytes of heap each), so
+  that a recursion through named templates that `max_stack` used to stop now runs until
+  `max_nesting`. Documents 256 and 400 (`WASM_MAX_DEPTH`) levels deep, a rule reporting on
+  every nested element, now give a report with a finding per level in Chrome (main thread
+  and Web Worker) and Node.js with the npm package, and in wasmtime with the
+  `wasm-validate` example: 400 levels in 108 to 113 ms per document in Chrome, 116 to 120 ms
+  in Node.js (the report alone holds 7 MB of locations, quadratic in the depth). Natively,
+  with the WebAssembly limits, the stylesheets of Peppol BIS Billing, XRechnung, Factur-X
+  and the French rules report on 400 levels too. Same reports, byte for byte, on every
+  equivalence suite. Peak heap per document (the task stacks): the worst document of the
+  CEN UBL corpus 3271 KiB instead of 3268, of the Peppol corpus 452 KiB instead of 447; on
+  the deep documents above, 1 to 4 % more. Time per document on WebAssembly, the CEN
+  corpora: unchanged within 2 % (1.16 and 0.97 ms in Node.js, 1.07 and 0.91 ms in Chrome).
+  Native time, `einvoice-validate` on the five jobs of `cargo xtask bench --families
+  cen,peppol,xrechnung` on one thread, the two builds alternating: the whole job 1.1 %
+  longer than before (CPU time 0.8 %; per job from 0 to 3.1 %, CEN CII the most).
+
 ## [0.4.0] - 2026-11-10
 
 Tested against the official rule sets: CEN EN 16931 validation artefacts 1.3.17, Peppol BIS Billing 3.0.22, Factur-X 1.09.2, XRechnung 3.0.2, French e-invoicing rules (FNFE-MPE) 1.4.0.04.

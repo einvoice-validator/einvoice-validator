@@ -2,9 +2,11 @@
 //! [`MAX_NESTING`] deep holding expressions [`MAX_DEPTH`] deep are prepared and run on a
 //! thread with the default stack of a spawned thread, 2 MiB, in the build being tested
 //! (debug for `cargo test`); deep expressions evaluated inside a deep recursion end with
-//! the stack limit of the transformation (the limit on tail calls in a row, for a tail
-//! recursion), never a stack overflow; random nestings
-//! around the limits are loaded exactly up to them, and never abort the process.
+//! the stack limit of the transformation for a recursion through functions, which runs
+//! on the call stack, with the nesting limit for a recursion through templates, which
+//! does not (the limit on tail calls in a row, for a tail recursion), never a stack
+//! overflow; random nestings around the limits are loaded exactly up to them, and never
+//! abort the process.
 
 // Integration tests are only ever built with `cfg(test)`; saying so lets clippy apply its
 // test exemptions (unwrap, expect, panic) to the helpers outside `#[test]` functions too.
@@ -122,16 +124,15 @@ fn a_stylesheet_at_both_limits_is_prepared_and_run() {
     });
 }
 
-/// A recursion that evaluates a deep expression at each level ends with the stack
-/// limit, whether the limit is found by an invocation or by the evaluation of the
-/// expression: here the 128 KiB left on the thread above the limit are less than the
-/// evaluation of the expression needs in a debug build. The call is not the last
-/// instruction of the template: not a tail call, which would run in place.
+/// A recursion through a function that evaluates a deep expression at each level ends
+/// with the stack limit, whether the limit is found by an invocation or by the
+/// evaluation of the expression: here the 128 KiB left on the thread above the limit are
+/// less than the evaluation of the expression needs in a debug build.
 #[test]
-fn deep_expressions_in_a_deep_recursion_end_with_the_stack_limit() {
+fn deep_expressions_in_a_deep_function_recursion_end_with_the_stack_limit() {
     for (name, expr) in expressions() {
         let xslt = format!(
-            r#"{HEAD}<xsl:template match='/'><r><xsl:call-template name='t'/></r></xsl:template><xsl:template name='t'><xsl:value-of select="{expr}"/><xsl:call-template name='t'/><xsl:sequence select="()"/></xsl:template></xsl:stylesheet>"#
+            r#"{HEAD}<xsl:function name='f:t' xmlns:f='urn:f'><xsl:param name='c'/><xsl:for-each select="$c"><xsl:value-of select="{expr}"/></xsl:for-each><xsl:sequence select="f:t($c)"/></xsl:function><xsl:template match='/' xmlns:f='urn:f'><r><xsl:sequence select="f:t(.)"/></r></xsl:template></xsl:stylesheet>"#
         );
         let executable = Executable::new(&load(&xslt).unwrap()).unwrap();
         let outcome = on_a_default_stack(move || {
@@ -151,6 +152,38 @@ fn deep_expressions_in_a_deep_recursion_end_with_the_stack_limit() {
             Some(LimitExceeded::Stack {
                 max: u32::try_from(STACK - (128 << 10)).unwrap()
             }),
+            "{name}"
+        );
+    }
+}
+
+/// The same recursion through a named template (the call is not the last instruction of
+/// the template: not a tail call, which would run in place) runs on the heap, not on the
+/// call stack: the deep expressions are evaluated at each of 4096 levels on the 2 MiB
+/// stack, and the recursion ends with the nesting limit.
+#[test]
+fn deep_expressions_in_a_deep_template_recursion_end_with_the_nesting_limit() {
+    const LEVELS: u32 = 4096;
+    for (name, expr) in expressions() {
+        let xslt = format!(
+            r#"{HEAD}<xsl:template match='/'><r><xsl:call-template name='t'/></r></xsl:template><xsl:template name='t'><xsl:value-of select="{expr}"/><xsl:call-template name='t'/><xsl:sequence select="()"/></xsl:template></xsl:stylesheet>"#
+        );
+        let executable = Executable::new(&load(&xslt).unwrap()).unwrap();
+        let outcome = on_a_default_stack(move || {
+            let options = TransformOptions {
+                max_nesting: LEVELS,
+                max_stack: u32::try_from(STACK - (128 << 10)).unwrap(),
+                ..TransformOptions::default()
+            };
+            executable
+                .transform_with(source(), None, &options)
+                .map(|t| t.output)
+        });
+        let error = outcome.unwrap_err();
+        assert_eq!(error.code(), "LIMIT", "{name}: {error}");
+        assert_eq!(
+            error.limit(),
+            Some(LimitExceeded::Nesting { max: LEVELS }),
             "{name}"
         );
     }

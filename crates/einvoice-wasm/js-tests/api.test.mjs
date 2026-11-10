@@ -395,10 +395,14 @@ test("the option maxDepth bounds the depth of the document, at most 400", () => 
   assert.equal(e.limit, "depth");
 });
 
+/** The rule that fires on every nested element of `reporting(ruleSet, depth)`. */
+const REPORTING_RULE = { "cen-ubl": "UBL-DT-01", "cen-cii": "CII-DT-101" };
+
 /**
  * A document `depth` deep on whose every nested element a rule of the built-in rule set
- * fires and reports, which needs the most stack per level: UBL amounts with three
- * fraction digits (UBL-DT-01), CII identifiers with a scheme name (CII-DT-101).
+ * fires and reports, whose location the stylesheet writes with a template applied to
+ * each ancestor in turn: UBL amounts with three fraction digits (UBL-DT-01), CII
+ * identifiers with a scheme name (CII-DT-101).
  */
 function reporting(ruleSet, depth) {
   const n = depth - 1;
@@ -412,25 +416,22 @@ function reporting(ruleSet, depth) {
   return new TextEncoder().encode(text);
 }
 
-test("at the largest maxDepth, the module's stack limit ends a validation before the engine's stack", () => {
+test("a rule reporting on every level: a report, up to the largest maxDepth", () => {
   for (const ruleSet of ["cen-ubl", "cen-cii"]) {
     const v = new Validator(ruleSet);
     try {
-      // 200 levels, each reported: a report, a finding per level.
-      const report = v.validate(reporting(ruleSet, 200), { now: 0 });
-      assert.equal(report.status, "invalid", ruleSet);
-      assert.ok(report.findings.length >= 199, `${ruleSet}: ${report.findings.length}`);
-      // 400 levels, each reported: a report, or the module's stack limit (256 KiB),
-      // never the stack overflow of the JavaScript engine.
-      try {
-        assert.equal(v.validate(reporting(ruleSet, MAX_DEPTH), { now: 0, maxDepth: MAX_DEPTH }).status, "invalid");
-      } catch (e) {
-        assert.equal(e.name, "EinvoiceValidatorError", `${ruleSet}: ${e}`);
-        assert.equal(e.kind, "unsupported");
-        assert.equal(e.limit, "stack");
-        assert.equal(e.max, 256 * 1024);
+      // The default maximum depth, 256, and the largest, 400: a report with a finding on
+      // every nested level, never a limit nor the stack overflow of the JavaScript engine.
+      for (const depth of [200, 256, MAX_DEPTH]) {
+        const started = performance.now();
+        const report = v.validate(reporting(ruleSet, depth), { now: 0, maxDepth: depth });
+        const ms = performance.now() - started;
+        const found = report.findings.filter((f) => f.id === REPORTING_RULE[ruleSet]).length;
+        assert.equal(report.status, "invalid", `${ruleSet} ${depth}`);
+        assert.equal(found, depth - 1, `${ruleSet} ${depth}`);
+        console.log(`${ruleSet}, ${depth} levels each reported: ${found} findings, ${ms.toFixed(0)} ms`);
       }
-      // The module is still whole: the next validations give their reports.
+      // The module is whole: the next validations give their reports.
       assert.equal(v.validate(reporting(ruleSet, 10), { now: 0 }).status, "invalid");
       assert.equal(validator.validate(read(EXAMPLE)).status, "valid");
     } finally {

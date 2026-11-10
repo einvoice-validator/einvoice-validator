@@ -16,7 +16,7 @@ mod common;
 
 use einvoice_validator::{
     DEFAULT_MAX_DEPTH, DEFAULT_MAX_STACK, Error, ErrorKind, LimitExceeded, Report, Severity,
-    ValidateOptions, Validator, Verdict,
+    ValidateOptions, Validator, Verdict, WASM_MAX_DEPTH, WASM_MAX_STACK,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -276,6 +276,56 @@ fn the_stack_is_configurable() {
             ),
             "{message}"
         );
+    });
+}
+
+/// A rule that fires and reports on every element level (issue #39), whose location the
+/// stylesheet writes with a template applied to each ancestor in turn: UBL amounts with
+/// three fraction digits (UBL-DT-01), CII identifiers with a scheme name (CII-DT-101), as
+/// deep as the default maximum depth and as [`WASM_MAX_DEPTH`], validated with the stack
+/// WebAssembly allows ([`WASM_MAX_STACK`], 256 KiB): a report with a finding on every
+/// level, the template invocations of the stylesheets taking no call stack.
+#[test]
+fn a_rule_reporting_on_every_level_within_the_stack_of_webassembly() {
+    on_a_default_stack(|| {
+        let shapes = [
+            (
+                Validator::cen_ubl().unwrap(),
+                r#"<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">"#,
+                "<Amount>",
+                "1.123",
+                "</Amount>",
+                "</Invoice>",
+                "UBL-DT-01",
+            ),
+            (
+                Validator::cen_cii().unwrap(),
+                r#"<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100" xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100">"#,
+                r#"<ram:ID schemeName="s">"#,
+                "x",
+                "</ram:ID>",
+                "</rsm:CrossIndustryInvoice>",
+                "CII-DT-101",
+            ),
+        ];
+        for (validator, open, start, content, end, close, id) in shapes {
+            for depth in [DEFAULT_MAX_DEPTH, WASM_MAX_DEPTH] {
+                let n = usize::try_from(depth).unwrap() - 1;
+                let text = format!("{open}{}{content}{}{close}", start.repeat(n), end.repeat(n));
+                let options = ValidateOptions::new()
+                    .max_depth(depth)
+                    .max_stack(WASM_MAX_STACK);
+                let report = validator
+                    .validate_owned_with(text.into_bytes(), &options)
+                    .unwrap_or_else(|e| panic!("{id}, {depth} deep: {e}"));
+                assert_eq!(report.verdict(), Verdict::Invalid, "{id}, {depth} deep");
+                let found = report
+                    .findings()
+                    .filter(|f| f.id.as_deref() == Some(id))
+                    .count();
+                assert_eq!(found, n, "{id}, {depth} deep");
+            }
+        }
     });
 }
 

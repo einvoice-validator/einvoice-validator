@@ -30,9 +30,10 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The stack of each worker thread, for documents at most `max_depth` deep: at least as
 /// large as a main thread's on Linux (8 MiB), and else 1 MiB plus 4 KiB per level of the
 /// nesting of templates and functions the library allows the stylesheets for that depth
-/// ([`einvoice_validator::max_nesting_for_depth`]). The official stylesheets need less
-/// than 3 KiB per level, debug builds included; a stylesheet that needs more per level
-/// is stopped by the stack it may use ([`max_stack`]) rather than overflowing it.
+/// ([`einvoice_validator::max_nesting_for_depth`]). Template invocations take no call
+/// stack (the library keeps them on the heap): the room is for stylesheets whose
+/// functions recurse, which use the call stack; a stylesheet that needs more is stopped
+/// by the stack it may use ([`max_stack`]) rather than overflowing it.
 fn stack_size(max_depth: u32) -> usize {
     const MIB: usize = 1 << 20;
     let nesting =

@@ -87,10 +87,18 @@ async function run() {
   }
   validator.free();
 
-  // The largest maximum depth, on the main thread and in a Web Worker (whose stack is
-  // smaller in Chrome): a report, never the engine's stack overflow.
-  for (const result of deepest()) check(`main thread: ${result.name}`, result.ok, result.detail);
-  for (const result of await inWorker()) check(`worker: ${result.name}`, result.ok, result.detail);
+  // The default and the largest maximum depth, on the main thread and in a Web Worker
+  // (whose stack is smaller in Chrome): a report, never a limit nor the engine's stack
+  // overflow.
+  for (const [where, results] of [
+    ["main thread", deepest()],
+    ["worker", await inWorker()],
+  ]) {
+    for (const result of results) {
+      check(`${where}: ${result.name}`, result.ok, result.detail);
+      log.push(`${where}: ${result.name}: ${result.detail}`);
+    }
+  }
 
   await progress(`API checks done, ${failures.length} failures`);
   const deep = [];
@@ -99,11 +107,13 @@ async function run() {
 }
 
 /**
- * Documents `MAX_DEPTH` deep, validated with that maximum by each built-in rule set:
- * elements on which no rule fires (a report), then elements on each of which a rule fires
- * and reports, which need the most stack per level (a report, or the module's stack limit,
- * 256 KiB, never the stack overflow of the JavaScript engine); then the module must still
- * validate a document.
+ * Documents 256 levels deep (the default maximum depth) and `MAX_DEPTH` deep (the
+ * largest), validated with that maximum by each built-in rule set: elements on which no
+ * rule fires, then elements on each of which a rule fires and reports (UBL-DT-01 on
+ * amounts, CII-DT-101 on identifiers with a scheme name), whose location the stylesheet
+ * writes with a template applied to each ancestor in turn: a report, with a finding on
+ * every nested level, never a limit nor the stack overflow of the JavaScript engine;
+ * then the module must still validate a document. Each with the time of the validation.
  */
 function deepest() {
   const UBL = '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">';
@@ -111,29 +121,44 @@ function deepest() {
     '<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100" ' +
     'xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100">';
   const shapes = [
-    ["cen-ubl", "quiet", UBL, "<a>", "", "</a>", "</Invoice>"],
-    ["cen-cii", "quiet", CII, '<x:a xmlns:x="urn:x">', "", "</x:a>", "</rsm:CrossIndustryInvoice>"],
-    // UBL-DT-01 on every amount, CII-DT-101 on every identifier.
-    ["cen-ubl", "reporting", UBL, "<Amount>", "1.123", "</Amount>", "</Invoice>"],
-    ["cen-cii", "reporting", CII, '<ram:ID schemeName="s">', "x", "</ram:ID>", "</rsm:CrossIndustryInvoice>"],
+    ["cen-ubl", "quiet", UBL, "<a>", "", "</a>", "</Invoice>", null],
+    ["cen-cii", "quiet", CII, '<x:a xmlns:x="urn:x">', "", "</x:a>", "</rsm:CrossIndustryInvoice>", null],
+    ["cen-ubl", "reporting", UBL, "<Amount>", "1.123", "</Amount>", "</Invoice>", "UBL-DT-01"],
+    [
+      "cen-cii",
+      "reporting",
+      CII,
+      '<ram:ID schemeName="s">',
+      "x",
+      "</ram:ID>",
+      "</rsm:CrossIndustryInvoice>",
+      "CII-DT-101",
+    ],
   ];
   const out = [];
-  for (const [ruleSet, kind, open, start, content, end, close] of shapes) {
+  for (const [ruleSet, kind, open, start, content, end, close, id] of shapes) {
     const validator = new Validator(ruleSet);
-    const text = open + start.repeat(MAX_DEPTH - 1) + content + end.repeat(MAX_DEPTH - 1) + close;
-    const name = `${ruleSet} ${MAX_DEPTH} deep, ${kind}`;
-    try {
-      const report = validator.validate(new TextEncoder().encode(text), { maxDepth: MAX_DEPTH, now: 0 });
-      out.push({ name, ok: report.status === "invalid", detail: report.status });
-    } catch (e) {
-      const typed = kind === "reporting" && e.name === "EinvoiceValidatorError" && e.limit === "stack";
-      out.push({ name, ok: typed, detail: `${e.name}: ${e.message}` });
+    for (const depth of [256, MAX_DEPTH]) {
+      const text = open + start.repeat(depth - 1) + content + end.repeat(depth - 1) + close;
+      const name = `${ruleSet} ${depth} deep, ${kind}`;
+      try {
+        const started = performance.now();
+        const report = validator.validate(new TextEncoder().encode(text), { maxDepth: depth, now: 0 });
+        const ms = performance.now() - started;
+        const found = id === null ? 0 : report.findings.filter((f) => f.id === id).length;
+        const ok = report.status === "invalid" && (id === null || found === depth - 1);
+        const findings = id === null ? "" : `, ${found} ${id} findings`;
+        out.push({ name, ok, detail: `${report.status}${findings}, ${ms.toFixed(0)} ms` });
+      } catch (e) {
+        out.push({ name, ok: false, detail: `${e.name}: ${e.message}` });
+      }
     }
+    const name = `${ruleSet}, ${kind}: then a document`;
     try {
       const after = validator.validate(new TextEncoder().encode(open + close), { now: 0 });
-      out.push({ name: `${name}: then a document`, ok: after.status === "invalid", detail: after.status });
+      out.push({ name, ok: after.status === "invalid", detail: after.status });
     } catch (e) {
-      out.push({ name: `${name}: then a document`, ok: false, detail: `${e.name}: ${e.message}` });
+      out.push({ name, ok: false, detail: `${e.name}: ${e.message}` });
     }
     validator.free();
   }

@@ -1,10 +1,11 @@
 //! The limits that keep a transformation within a bounded call stack (issue #29): the
 //! maximum element depth of the documents ([`TransformOptions::max_depth`]) and the
 //! maximum nesting of template and function invocations
-//! ([`TransformOptions::max_nesting`]). Every test runs on a thread with the default
-//! stack of a spawned thread, 2 MiB, in the build being tested (debug for `cargo test`):
-//! what is accepted must run there, what is beyond a limit must be a `LIMIT` error, never
-//! a stack overflow, which would abort the test binary.
+//! ([`TransformOptions::max_nesting`]); and the call stack of a recursion through the
+//! templates, which does not grow with it (issue #39). Every test runs on a thread with
+//! the default stack of a spawned thread, 2 MiB, in the build being tested (debug for
+//! `cargo test`): what is accepted must run there, what is beyond a limit must be a
+//! `LIMIT` error, never a stack overflow, which would abort the test binary.
 
 // Integration tests are only ever built with `cfg(test)`; saying so lets clippy apply its
 // test exemptions (unwrap, expect, panic) to the helpers outside `#[test]` functions too.
@@ -289,8 +290,8 @@ fn bounded_recursion_and_the_configurable_limits() {
     );
     on_a_default_stack(move || {
         // The template rule, then 551 named templates (n = 550 down to 0), or 41
-        // functions: a function level, through the XPath evaluator, needs about ten times
-        // the stack of a template level.
+        // functions: a function level, through the XPath evaluator, uses the call stack,
+        // a template level none.
         let run = |e: &Executable, n: u32, options: &TransformOptions<'_>| {
             e.transform_with(format!("<n>{n}</n>").as_str(), None, options)
                 .map(|t| t.output)
@@ -310,18 +311,19 @@ fn bounded_recursion_and_the_configurable_limits() {
             );
         }
         // The function's argument is computed lazily, inside its body, as Saxon computes
-        // it: one evaluation inside another.
+        // it: one evaluation inside another, on the call stack. The named templates run
+        // as tasks, on the heap: the stack does not bound them.
         let stack = TransformOptions {
             max_stack: 64 << 10,
             ..TransformOptions::default()
         };
         assert_eq!(run(&function, 0, &stack).unwrap(), r("0"));
-        for e in [&template, &function] {
-            assert_eq!(
-                limit(run(e, 200, &stack)),
-                LimitExceeded::Stack { max: 64 << 10 }
-            );
-        }
+        assert_eq!(
+            limit(run(&function, 200, &stack)),
+            LimitExceeded::Stack { max: 64 << 10 }
+        );
+        assert_eq!(run(&template, 200, &stack).unwrap(), r("20100"));
+        assert_eq!(run(&template, 550, &stack).unwrap(), r("151525"));
         // Tail calls need neither nesting nor stack, and are counted.
         assert_eq!(run(&tail, 60_000, &defaults).unwrap(), r("1800030000"));
         assert_eq!(run(&tail, 200, &nesting).unwrap(), r("20100"));
@@ -368,16 +370,18 @@ fn least_stack(executable: &Executable, input: &str) -> u32 {
     high
 }
 
-/// The stack a level of recursion through the templates needs, in the build being tested
-/// (debug for `cargo test`), on every platform the tests run on: less than 3 KiB, and 512
-/// levels (the nesting of the Peppol stylesheets on a document [`DEFAULT_MAX_DEPTH`]
-/// deep) within [`DEFAULT_MAX_STACK`]. A level is measured as the difference of the stack
-/// used at two depths, divided by the levels between them: a named template calling
-/// itself (not as a tail call), template rules applied to the children
-/// (`xsl:apply-templates` in a template rule, as the ISO Schematron skeleton writes
-/// them), the built-in rules, and the CEN stylesheet, one level per element level.
+/// A recursion through the templates does not use the call stack (issue #39): the stack
+/// a transformation uses, as the limit measures it, is the same (to the 16 bytes of
+/// [`least_stack`]) at two depths of recursion, in the build being tested (debug for
+/// `cargo test`), on every platform the tests run on: a named template calling itself
+/// (not as a tail call), template rules applied to the children (`xsl:apply-templates`
+/// in a template rule, as the ISO Schematron skeleton writes them), the built-in rules,
+/// 256 and 4096 levels; the CEN stylesheet on a document 128 and [`DEFAULT_MAX_DEPTH`]
+/// deep, no rule firing on the nested elements, and with a rule firing and reporting on
+/// every one of them (UBL-DT-01 on amounts with three fraction digits), whose location
+/// the ISO Schematron skeleton writes with a template applied to each ancestor in turn.
 #[test]
-fn the_stack_of_a_level_of_recursion() {
+fn the_stack_does_not_grow_with_the_recursion() {
     on_a_default_stack(|| {
         let named = prepare(
             r#"<xsl:template match="/"><r><xsl:call-template name="down"><xsl:with-param name="n" select="xs:integer(/n)"/></xsl:call-template></r></xsl:template>
@@ -392,22 +396,32 @@ fn the_stack_of_a_level_of_recursion() {
         let number = |n: usize| format!("<n>{n}</n>");
         let elements = |n: usize| nested(n, "");
         let invoice = |n: usize| deep_invoice(n, n).0;
-        // The stack of a level, from `deepest` levels and half as many.
-        let level = |executable: &Executable, input: &dyn Fn(usize) -> String, deepest: u32| {
-            let half = deepest / 2;
-            let low = least_stack(executable, &input(half as usize));
-            let high = least_stack(executable, &input(deepest as usize));
-            (high - low) / half
+        let amounts = |n: usize| {
+            format!(
+                r#"<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">{}1.123{}</Invoice>"#,
+                "<Amount>".repeat(n - 1),
+                "</Amount>".repeat(n - 1)
+            )
         };
-        let levels = [
-            ("named template", level(&named, &number, 512)),
-            ("template rule", level(&rules, &elements, 512)),
-            ("built-in rule", level(&built_in, &elements, 512)),
-            ("CEN stylesheet", level(&cen, &invoice, DEFAULT_MAX_DEPTH)),
+        let stack =
+            |executable: &Executable, input: &dyn Fn(usize) -> String, depths: [usize; 2]| {
+                depths.map(|depth| least_stack(executable, &input(depth)))
+            };
+        let measured = [
+            ("named template", stack(&named, &number, [256, 4096])),
+            ("template rule", stack(&rules, &elements, [256, 4096])),
+            ("built-in rule", stack(&built_in, &elements, [256, 4096])),
+            ("CEN stylesheet", stack(&cen, &invoice, [128, 256])),
+            (
+                "CEN stylesheet, reporting",
+                stack(&cen, &amounts, [128, 256]),
+            ),
         ];
         assert!(
-            levels.iter().all(|&(_, bytes)| bytes < 3 << 10),
-            "{levels:?}"
+            measured
+                .iter()
+                .all(|&(_, [shallow, deep])| deep <= shallow + 16),
+            "{measured:?}"
         );
     });
 }

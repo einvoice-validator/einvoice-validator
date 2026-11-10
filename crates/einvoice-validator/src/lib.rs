@@ -255,28 +255,30 @@
 //!
 //! # Limits
 //!
-//! The stylesheets walk the document with template rules applied one element level
-//! inside another, so the stack a validation needs grows with the depth of the document.
 //! A document with an element nested deeper than [`ValidateOptions::max_depth`]
-//! ([`DEFAULT_MAX_DEPTH`], 256, libxml2's default) is therefore refused before its schema
-//! is checked, with [`Error::Limit`] and the line and column of that element, rather
-//! than overflowing the stack of the thread, which would abort the process. At the
-//! default maximum, a validation with the built-in rule sets or the Peppol bundle runs on
-//! a thread with the default 2 MiB stack of a spawned thread, debug builds included. The
-//! template and function invocations of the stylesheets are bounded too: in nesting
-//! ([`max_nesting_for_depth`] of the maximum depth) and in the stack they use
-//! ([`ValidateOptions::max_stack`], [`DEFAULT_MAX_STACK`]), so that a stylesheet that
-//! recurses without end fails with [`Error::Limit`] as well.
+//! ([`DEFAULT_MAX_DEPTH`], 256, libxml2's default) is refused before its schema is
+//! checked, with [`Error::Limit`] and the line and column of that element. The
+//! stylesheets walk the document with template rules applied one element level inside
+//! another, and write the location of each finding with a template applied to each
+//! ancestor in turn; these invocations are kept on the heap, not on the call stack, so
+//! that the stack a validation uses does not grow with the depth of the document: a
+//! validation with the built-in rule sets or the Peppol bundle runs on a thread with the
+//! default 2 MiB stack of a spawned thread, debug builds included, at the default maximum
+//! as on a flat document. The template and function invocations of the stylesheets are
+//! bounded too: in nesting ([`max_nesting_for_depth`] of the maximum depth) and in the
+//! stack their functions and expressions use ([`ValidateOptions::max_stack`],
+//! [`DEFAULT_MAX_STACK`]), so that a stylesheet that recurses without end fails with
+//! [`Error::Limit`] as well.
 //!
 //! On WebAssembly, the engine running the module has a native stack of its own, which
 //! the module cannot measure and which runs out before the module's stack in some
 //! JavaScript engines, leaving the module unusable. There, the stack the stylesheets may
 //! use is 256 KiB, and at most [`WASM_MAX_STACK`], the same; the maximum depth is at
 //! most [`WASM_MAX_DEPTH`], 400: a validation asking for more fails with
-//! [`Error::OptionOutOfRange`]. Within 256 KiB, the stylesheets validate a document up
-//! to 487 levels deep when no rule fires on its deepest elements, and up to 243 when a
-//! rule reports on every level (measured with the official stylesheets); deeper, the
-//! validation fails with [`Error::Limit`].
+//! [`Error::OptionOutOfRange`]. Every document within the maximum depth gets a report
+//! there, a rule reporting on every level of it included: up to 400 levels with the
+//! official stylesheets, measured in Chrome (main thread and Web Worker), Node.js and
+//! wasmtime.
 
 mod builtin;
 mod detect;
@@ -323,8 +325,10 @@ pub use einvoice_xpath_eval::{DEFAULT_MAX_DEPTH, LimitExceeded};
 
 /// The nesting of template and function invocations the stylesheets are allowed on a
 /// document at most `max_depth` deep ([`ValidateOptions::max_depth`]): twice the depth,
-/// plus 64. Each level needs less than 3 KiB of stack (debug builds included), which is
-/// what a caller raising the maximum depth must give the validating thread.
+/// plus 64. A level of template rules, built-in rules and named templates takes a few
+/// hundred bytes of memory and no call stack: a larger maximum depth needs no larger
+/// stack. A level of stylesheet function takes call stack, bounded by
+/// [`ValidateOptions::max_stack`].
 pub use einvoice_xslt_exec::max_nesting_for_depth;
 
 /// The default stack the stylesheets may use ([`ValidateOptions::max_stack`]).

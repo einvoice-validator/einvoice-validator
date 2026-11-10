@@ -48,8 +48,8 @@ impl std::error::Error for PrepareErrors {}
 /// A dynamic error that ended a transformation.
 ///
 /// Its contents are boxed: a `Result` of the executor is then a pointer wide, which keeps
-/// small the frames of the functions every level of recursion through the templates goes
-/// through.
+/// small the frames of the functions every level of a recursion through stylesheet
+/// functions goes through, on the call stack.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransformError(Box<Inner>);
 

@@ -11,7 +11,8 @@ Constructs whose result would differ from Saxon-HE's are refused when a styleshe
 prepared. A document nested deeper than 256 elements (`TransformOptions::max_depth`), and
 template or function invocations nested beyond a maximum nesting or stack (the expressions
 they evaluate included), end the transformation with a `LIMIT` error rather than overflowing
-the stack.
+the stack. Template invocations are kept on the heap, not on the call stack: the stack a
+transformation uses does not grow with the depth of the document.
 
 It also runs the three stylesheets of the ISO Schematron skeleton that ph-schematron runs
 to compile Schematron, with the same results as Saxon-HE (used by

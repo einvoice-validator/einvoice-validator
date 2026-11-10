@@ -74,13 +74,13 @@ impl<'a> ValidateOptions<'a> {
     /// [`Error::Limit`] before its schema is checked. Default: [`DEFAULT_MAX_DEPTH`]
     /// (256, libxml2's default).
     ///
-    /// The stylesheets apply their template rules one element level inside another, so
-    /// their stack use grows with the depth: with the default, a validation runs on a
-    /// thread with the default 2 MiB stack, debug builds included. The nesting of
-    /// template and function invocations the stylesheets are allowed grows with the
-    /// maximum ([`max_nesting_for_depth`](crate::max_nesting_for_depth)), and so does the
-    /// stack they need: a larger maximum depth needs a larger
-    /// [`ValidateOptions::max_stack`], and a thread with that much stack.
+    /// The stylesheets apply their template rules one element level inside another, on
+    /// the heap, not on the call stack: the stack a validation uses does not grow with
+    /// the depth, and a validation runs on a thread with the default 2 MiB stack, debug
+    /// builds included. The nesting of template and function invocations the stylesheets
+    /// are allowed grows with the maximum
+    /// ([`max_nesting_for_depth`](crate::max_nesting_for_depth)), and so does the memory
+    /// they may take, a few hundred bytes per level.
     ///
     /// On WebAssembly, at most [`WASM_MAX_DEPTH`]: a validation asking for more fails with
     /// [`Error::OptionOutOfRange`].
@@ -90,13 +90,14 @@ impl<'a> ValidateOptions<'a> {
         self
     }
 
-    /// The most stack, in bytes, the stylesheets' template and function invocations may
-    /// use, measured from the start of each stylesheet: beyond it, the validation fails
-    /// with [`Error::Limit`] ([`LimitExceeded::Stack`]) instead of overflowing the
-    /// stack, which would abort the process. Default: [`DEFAULT_MAX_STACK`] (1.5 MiB), for
-    /// the default 2 MiB stack of a spawned thread. The thread that validates must have
-    /// this much stack and at least 512 KiB more, for its caller and the deepest
-    /// invocation.
+    /// The most call stack, in bytes, the stylesheets may use, measured from the start of
+    /// each stylesheet: beyond it, the validation fails with [`Error::Limit`]
+    /// ([`LimitExceeded::Stack`]) instead of overflowing the stack, which would abort the
+    /// process. What uses it is the evaluation of their expressions and what that calls:
+    /// stylesheet functions, values computed when first read; their template invocations
+    /// do not. Default: [`DEFAULT_MAX_STACK`] (1.5 MiB), for the default 2 MiB stack of a
+    /// spawned thread. The thread that validates must have this much stack and at least
+    /// 512 KiB more, for its caller and the deepest invocation.
     ///
     /// On WebAssembly, the default is 256 KiB, and so is the most allowed,
     /// [`WASM_MAX_STACK`]: a validation asking for more fails with
@@ -135,16 +136,17 @@ impl<'a> ValidateOptions<'a> {
 /// ([`ValidateOptions::max_stack`]). When the native stack runs out first, the engine
 /// throws (a `RangeError` in V8, an `InternalError` in Firefox) and leaves the module's
 /// memory inconsistent, so that every later call fails. What keeps the native stack from
-/// running out is [`WASM_MAX_STACK`]; this maximum bounds the depth, and the nesting of
-/// template and function invocations that comes with it
-/// ([`max_nesting_for_depth`](crate::max_nesting_for_depth): 864), to what that stack
-/// serves. Measured with the npm package (opt-level 3, `wasm-opt -O3`) and 256 KiB of
-/// stack, on documents nested inside a UBL or a CII invoice: the stylesheets of the
-/// built-in rule sets (and of Peppol BIS Billing 3.0.22) validate a document up to 487
-/// levels deep when no rule fires on the nested elements, and up to 243 levels deep when
-/// a rule fires and reports on every one of them; deeper, the validation fails with
-/// [`Error::Limit`] ([`LimitExceeded::Stack`]), the same in Chrome and Firefox (main
-/// thread and Web Worker) and in Node.js. 400 keeps a margin below 487.
+/// running out is [`WASM_MAX_STACK`]. The stylesheets' template invocations take no call
+/// stack (they are kept on the heap), so that every document within this maximum depth
+/// gets a report: measured with the npm package (opt-level 3, `wasm-opt -O3`) in Chrome
+/// (main thread and Web Worker) and Node.js, and with the `wasm-validate` example in
+/// wasmtime, the stylesheets of the built-in rule sets validate documents 256 and 400
+/// levels deep, nested inside a UBL or a CII invoice, a rule firing and reporting on
+/// every nested element, with the default 256 KiB of stack; natively, with the same
+/// limits, the stylesheets of Peppol BIS Billing 3.0.22, XRechnung 3.0.2, Factur-X and
+/// the French rules do too. The nesting of template and function invocations that comes
+/// with this maximum ([`max_nesting_for_depth`](crate::max_nesting_for_depth): 864) takes
+/// a few hundred bytes of memory per level.
 pub const WASM_MAX_DEPTH: u32 = 400;
 
 /// The largest [`ValidateOptions::max_stack`] on WebAssembly, and its default there

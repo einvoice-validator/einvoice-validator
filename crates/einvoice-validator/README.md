@@ -89,7 +89,8 @@ On every case of the test corpora of CEN EN 16931 UBL and CII 1.3.17 and Peppol 
 `wasm32-unknown-unknown`, where the caller gives the clock, and where the maximum depth and
 the stack the stylesheets may use are capped (`WASM_MAX_DEPTH`, 400, and `WASM_MAX_STACK`, 256
 KiB, measured against the native stacks of Chrome, Firefox and Node.js; asking for more is
-`Error::OptionOutOfRange`). The command-line tool is
+`Error::OptionOutOfRange`); every document within the maximum depth gets a report there, as
+the stylesheets' template invocations take no call stack. The command-line tool is
 [`einvoice-cli`](https://crates.io/crates/einvoice-cli) (`einvoice-validate`).
 
 This crate is part of [einvoice-validator](https://github.com/einvoice-validator/einvoice-validator). Documentation:

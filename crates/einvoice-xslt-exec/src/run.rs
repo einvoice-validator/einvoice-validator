@@ -5,7 +5,9 @@
 //! built-in rules of XSLT 2.0 section 6.6. A dynamic error while matching a pattern is
 //! recovered as Saxon recovers it: a warning, and the rule does not match. Variables live in frames, one per template,
 //! function or global variable invocation; the XPath evaluator reads them through the
-//! [`Host`] interface, and calls stylesheet functions through it too.
+//! [`Host`] interface, and calls stylesheet functions through it too. Sequence
+//! constructors, and the templates they invoke, run on a stack of tasks kept on the heap
+//! (the `machine` module).
 //!
 //! Evaluation order follows Saxon-HE 12.10 where it is observable (which dynamic errors
 //! are raised): global variables are evaluated when first referenced; a local variable
@@ -22,11 +24,12 @@
 //! Arguments of stylesheet functions are evaluated before the call (Saxon evaluates them
 //! lazily too).
 
+mod machine;
+
 use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
-use std::sync::Arc;
 
 use einvoice_xdm::{AtomicType, AtomicValue, DateTime};
 use einvoice_xpath::{AtomicKind, ItemType, Occurrence, QName, SequenceType};
@@ -41,14 +44,13 @@ use crate::error::{LIMIT, Result, TransformError, err};
 use crate::output::{CompactBuilder, CompactTransformation, ResultObserver};
 use crate::pattern::{self, Matcher};
 use crate::prepare::{
-    AvtItem, Binding, CompiledApplyTemplates, CompiledAvt, CompiledCallTemplate, CompiledChoose,
-    CompiledElement, CompiledForEach, CompiledFunction, CompiledNextMatch, CompiledTemplate,
-    CountPattern, Eval, Executable, Inst, ModeRef, Plan, Value, WithParam, kind_index,
+    AvtItem, Binding, CompiledAvt, CompiledChoose, CompiledElement, CompiledFunction,
+    CompiledTemplate, CountPattern, Eval, Executable, Inst, Plan, Value, WithParam, kind_index,
     rule_name_number,
 };
 use crate::sink::{
-    Compact, SequenceSink, Serialization, Sink, Target, TextSink, TreeSink, WholeText, XmlWriter,
-    attribute_name, copy_node, element_name, serialize,
+    Compact, SequenceSink, Serialization, Sink, Target, TreeSink, WholeText, XmlWriter, copy_node,
+    element_name,
 };
 
 /// Fetches the documents that `document()` asks for, by absolute URI. The engine never
@@ -81,8 +83,9 @@ pub const DEFAULT_MAX_TAIL_CALLS: u32 = 1 << 16;
 /// template that recurses over its ancestors (mode `schematron-get-full-path`), which
 /// nests as deep again. The 64 levels above are for the few invocations around them
 /// (the root template, the next rule in a chain) and for stylesheets that recurse
-/// otherwise. On a document [`DEFAULT_MAX_DEPTH`] deep, this nesting fits in the 2 MiB
-/// stack a thread is given by default, in a debug build too.
+/// otherwise. Template rules, built-in rules and named templates are invoked on the heap,
+/// not on the call stack: this nesting needs no more call stack than a flat document,
+/// and a few hundred bytes of memory per level.
 #[must_use]
 pub const fn max_nesting_for_depth(max_depth: u32) -> u32 {
     max_depth.saturating_mul(2).saturating_add(64)
@@ -107,16 +110,19 @@ pub struct TransformOptions<'r> {
     pub max_depth: u32,
     /// The maximum nesting of template rules, built-in template rules, named templates
     /// and stylesheet functions invoked one inside another: beyond it, the transformation
-    /// ends with a `LIMIT` error ([`TransformError::limit`]) instead of overflowing the
-    /// stack. Default: [`DEFAULT_MAX_NESTING`]. A larger value needs a larger stack.
+    /// ends with a `LIMIT` error ([`TransformError::limit`]) rather than recurse without
+    /// end. Default: [`DEFAULT_MAX_NESTING`]. Template rules, built-in rules and named
+    /// templates are invoked on the heap, a few hundred bytes each, not on the call stack:
+    /// a larger value needs more memory, not a larger stack. Stylesheet functions run on
+    /// the call stack, bounded by `max_stack` too.
     pub max_nesting: u32,
-    /// The most stack, in bytes, the invocations in progress and the expressions they
-    /// evaluate may use, measured from the start of the transformation: beyond it, the
-    /// transformation ends with a `LIMIT` error ([`LimitExceeded::Stack`]) instead of
-    /// overflowing the stack. It bounds what the nesting alone cannot, the stack of each
-    /// level, which depends on the stylesheet: a function calling itself from a nested
-    /// expression needs much more than a template rule applied to a child. The thread
-    /// must have this much stack and some more, for its caller and for the deepest level.
+    /// The most call stack, in bytes, the transformation may use, measured from its
+    /// start: beyond it, the transformation ends with a `LIMIT` error
+    /// ([`LimitExceeded::Stack`]) instead of overflowing the stack. What uses the call
+    /// stack is the evaluation of an expression, and what it calls back: a stylesheet
+    /// function, a value computed when first read (a variable or parameter), each inside
+    /// the one that calls it; a recursion through the templates does not. The thread must
+    /// have this much stack and some more, for its caller and for the deepest level.
     /// Default: [`DEFAULT_MAX_STACK`].
     pub max_stack: u32,
     /// The most tail calls in a row (`xsl:call-template` at the end of a template, run in
@@ -127,27 +133,24 @@ pub struct TransformOptions<'r> {
 }
 
 /// The default of [`TransformOptions::max_stack`]: 1.5 MiB, for a thread with the
-/// default 2 MiB stack of a spawned thread; 256 KiB on WebAssembly. With it, the official
-/// stylesheets run on a document [`DEFAULT_MAX_DEPTH`] deep, in a debug build too, and
-/// the 512 KiB left are more than the caller and one level of invocation need.
+/// default 2 MiB stack of a spawned thread; 256 KiB on WebAssembly. The 512 KiB left are
+/// more than the caller and the deepest level need.
 ///
-/// A level of recursion through the templates (a named template, a template rule
-/// applied to a child, a built-in rule) needs less than 3 KiB of stack, in a debug build
-/// too, on Linux, macOS and Windows (`tests/limits.rs` checks it): the default holds the
-/// 512 levels the Peppol stylesheets nest on a document [`DEFAULT_MAX_DEPTH`] deep (two
-/// per element level), and more than 550 levels of named templates. Measured on x86-64
-/// Linux, a debug build needs 1.2 KiB per named template, 2.1 KiB per template rule; a
-/// release build 0.6 and 1.3 KiB. A level of stylesheet function, evaluated through the
-/// XPath evaluator, needs several times more: a recursion through functions may end at
-/// the stack limit before the nesting limit.
+/// A recursion through the templates (a named template, a template rule applied to a
+/// child, a built-in rule) uses no call stack: the stack a transformation uses is the
+/// same, to the byte, for 256 and 4096 levels of such a recursion, and for the CEN
+/// stylesheet on a document 128 and [`DEFAULT_MAX_DEPTH`] deep, a rule reporting on every
+/// level included (`tests/limits.rs` checks it on every platform the tests run on). The
+/// official stylesheets use about 25 KiB of it in a release build on x86-64 Linux, 65
+/// KiB in a debug build, whatever the depth of the document. A level of stylesheet
+/// function, evaluated through the XPath evaluator, uses the call stack: a recursion
+/// through functions may end at the stack limit before the nesting limit.
 ///
 /// On WebAssembly, the stack measured is the program's stack in linear memory (1 MiB),
 /// but what runs out first is the stack of the engine running the code, which the
 /// program cannot measure: 512 KiB by default in wasmtime. A recursion stopped at 256 KiB
 /// of the former uses at most 380 KB of the latter (measured on the `wasm-validate`
-/// example of `einvoice-validator`, a function calling itself without end), and the
-/// official stylesheets need less than half of it on a document [`DEFAULT_MAX_DEPTH`]
-/// deep.
+/// example of `einvoice-validator`, a function calling itself without end).
 #[cfg(not(target_family = "wasm"))]
 pub const DEFAULT_MAX_STACK: u32 = 3 << 19;
 
@@ -401,6 +404,7 @@ impl Executable {
             argument_learners: RefCell::new(HashMap::new()),
             rule_name_numbers: RefCell::new(Vec::new()),
             selections: RefCell::new(Vec::new()),
+            machines: RefCell::new(Vec::new()),
         };
         let timezone = options.implicit_timezone.unwrap_or(0);
         let clock = match options.current_date_time {
@@ -411,7 +415,7 @@ impl Executable {
             .with_stack_limit(runtime.stack)
             .with_regex_cache(&self.regexes);
         runtime.dc.set(Some(&dc));
-        runtime.apply_rule(root, 1, &Size::Known(1), self.default_mode, None, &[], sink)?;
+        runtime.apply_to_root(root, self.default_mode, sink)?;
         let warnings = runtime.warnings.take();
         let messages = runtime.messages.take();
         Ok((warnings, messages))
@@ -494,6 +498,14 @@ struct ArgumentThunk<'e> {
     report: Option<Rc<Learner>>,
 }
 
+/// When a binding is computed, this time ([`Runtime::deferral`]).
+enum Deferral {
+    /// Where it is bound.
+    Now,
+    /// When first read; the learner to tell when its value is computed, if any.
+    Later(Option<Rc<Learner>>),
+}
+
 /// The counters of Saxon's `LearningEvaluator` for one binding ([`Eval::Learning`]).
 #[derive(Debug, Default)]
 struct Learner {
@@ -572,13 +584,6 @@ struct State<'c> {
 
 type Params<'e> = Vec<(&'e QName, Slot<'e>)>;
 
-/// An `xsl:call-template` in tail position, its parameters bound: the template to run in
-/// place of the one whose body it ends.
-struct TailCall<'e> {
-    template: usize,
-    params: Params<'e>,
-}
-
 struct Runtime<'e, 'a> {
     exe: &'e Executable,
     source_root: Node,
@@ -615,31 +620,9 @@ struct Runtime<'e, 'a> {
     rule_name_numbers: RefCell<Vec<NameNumber>>,
     /// The storage of the selections of `xsl:apply-templates` done, for the next ones.
     selections: RefCell<Vec<SelectionStorage>>,
-}
-
-/// The size of the sequence of nodes a template rule is applied to, the context size of
-/// the rule: known, or that of the children of a node, counted when first needed (the
-/// built-in rule applies the rules to the children, and most children of a document
-/// walked by a compiled Schematron get a rule with an empty body or the built-in rule).
-enum Size<'n> {
-    Known(usize),
-    ChildrenOf(&'n Node, Cell<Option<usize>>),
-}
-
-impl Size<'_> {
-    fn get(&self) -> usize {
-        match self {
-            Self::Known(size) => *size,
-            Self::ChildrenOf(parent, counted) => {
-                if let Some(size) = counted.get() {
-                    return size;
-                }
-                let size = parent.children().count();
-                counted.set(Some(size));
-                size
-            }
-        }
-    }
+    /// The task stacks of the runs of sequence constructors done, for the next ones (see
+    /// the `machine` module).
+    machines: RefCell<Vec<machine::Machine<'e>>>,
 }
 
 /// The number of a name of the source document in [`Executable::rule_names`].
@@ -673,9 +656,7 @@ impl<T> At<T> for Result<T> {
 }
 
 /// The context of a template rule applied to `node`, at `position` in a sequence of
-/// `size` nodes. Out of [`Runtime::apply_rule`], whose stack use is part of every level
-/// of recursion through the template rules.
-#[inline(never)]
+/// `size` nodes.
 fn node_context(node: &Node, position: usize, size: usize) -> Context {
     Context::at(Item::Node(node.clone()), position, size)
 }
@@ -863,22 +844,44 @@ impl<'e, 'a> Runtime<'e, 'a> {
         e.into()
     }
 
-    /// Counts one more invocation in progress, until the guard returned is dropped: a
-    /// `LIMIT` error beyond `options.max_nesting`, or when the invocations in progress
-    /// use more than `options.max_stack` bytes of stack. Every recursion of a
-    /// transformation goes through an invocation (a template rule applied to a child, a
-    /// named template or a function calling itself), so this bounds the depth of the
-    /// call stack.
+    /// Counts one more invocation on the call stack (a stylesheet function), until the
+    /// guard returned is dropped: a `LIMIT` error beyond `options.max_nesting`, or when
+    /// the call stack used is beyond `options.max_stack` bytes. A recursion through
+    /// functions, and through the values computed when first read, runs on the call
+    /// stack, inside the evaluation of an expression: the stack bound keeps it from
+    /// overflowing.
     fn nested(&self) -> Result<Nested<'_>> {
-        let depth = self.nesting.get();
-        if depth >= self.options.max_nesting {
+        self.check_nesting()?;
+        self.check_stack()?;
+        self.nesting.set(self.nesting.get() + 1);
+        Ok(Nested(&self.nesting))
+    }
+
+    /// Counts one more invocation run as a task of a machine (a template rule, a
+    /// built-in rule, a named template), until [`Runtime::leave`]: a `LIMIT` error beyond
+    /// `options.max_nesting`. Such invocations are kept on the heap, not on the call
+    /// stack (see the `machine` module): the nesting bounds their number, and the memory
+    /// they take.
+    fn enter(&self) -> Result<()> {
+        self.check_nesting()?;
+        self.nesting.set(self.nesting.get() + 1);
+        Ok(())
+    }
+
+    /// A `LIMIT` error when the invocations in progress are `options.max_nesting`
+    /// already.
+    fn check_nesting(&self) -> Result<()> {
+        if self.nesting.get() >= self.options.max_nesting {
             return Err(TransformError::limit_exceeded(LimitExceeded::Nesting {
                 max: self.options.max_nesting,
             }));
         }
-        self.check_stack()?;
-        self.nesting.set(depth + 1);
-        Ok(Nested(&self.nesting))
+        Ok(())
+    }
+
+    /// The end of an invocation counted by [`Runtime::enter`].
+    fn leave(&self) {
+        self.nesting.set(self.nesting.get().saturating_sub(1));
     }
 
     /// A `LIMIT` error when the invocations in progress use more than `options.max_stack`
@@ -1145,21 +1148,41 @@ impl<'e, 'a> Runtime<'e, 'a> {
         state: &State<'_>,
         code: &'static str,
     ) -> Result<Slot<'e>> {
-        let report = match eval {
-            Eval::Eager => None,
-            Eval::Lazy => Some(None),
+        match self.deferral(eval) {
+            Deferral::Now => Ok(Slot::Value(self.value(value, as_type, state, code)?)),
+            Deferral::Later(report) => Ok(self.thunk(value, as_type, state, code, report)),
+        }
+    }
+
+    /// When a binding evaluated as `eval` is computed this time. Counts the evaluation
+    /// for a binding evaluated as Saxon learns.
+    fn deferral(&self, eval: Eval) -> Deferral {
+        match eval {
+            Eval::Eager => Deferral::Now,
+            Eval::Lazy => Deferral::Later(None),
             Eval::Learning {
                 learner,
                 every_counts,
-            } => self
-                .learners
-                .get(learner)
-                .and_then(|l| l.evaluation(every_counts).map(|r| r.then(|| Rc::clone(l)))),
-        };
-        let Some(report) = report else {
-            return Ok(Slot::Value(self.value(value, as_type, state, code)?));
-        };
-        Ok(Slot::Lazy(Rc::new(Thunk {
+            } => match self.learners.get(learner) {
+                Some(l) => match l.evaluation(every_counts) {
+                    None => Deferral::Now,
+                    Some(report) => Deferral::Later(report.then(|| Rc::clone(l))),
+                },
+                None => Deferral::Now,
+            },
+        }
+    }
+
+    /// The slot of a binding computed when first read, in `state` and the current frame.
+    fn thunk(
+        &self,
+        value: &'e Value,
+        as_type: Option<&'e SequenceType>,
+        state: &State<'_>,
+        code: &'static str,
+        report: Option<Rc<Learner>>,
+    ) -> Slot<'e> {
+        Slot::Lazy(Rc::new(Thunk {
             value,
             as_type,
             code,
@@ -1170,7 +1193,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
             memo: OnceCell::new(),
             report,
             hold: RefCell::new(None),
-        })))
+        }))
     }
 
     fn with_params(&self, params: &'e [WithParam], state: &State<'_>) -> Result<Params<'e>> {
@@ -1188,164 +1211,6 @@ impl<'e, 'a> Runtime<'e, 'a> {
             .collect()
     }
 
-    /// Runs a sequence constructor. An `xsl:choose` (or `xsl:if`) that is its last
-    /// instruction runs its branch in place, in the same loop: a template whose body is
-    /// a choice (most templates that recurse) needs no stack frame for it.
-    fn exec(&self, body: &'e [Inst], state: &State<'_>, sink: &mut dyn Sink) -> Result<()> {
-        let mut body = body;
-        while let Some((inst, rest)) = body.split_first() {
-            if rest.is_empty()
-                && let Inst::Choose(choose) = inst
-            {
-                body = self.branch(choose, state)?;
-            } else {
-                self.instruction(inst, state, sink)?;
-                body = rest;
-            }
-        }
-        Ok(())
-    }
-
-    /// Runs one instruction. Each instruction has a function of its own: this one is on
-    /// the path of every recursion through the templates (`xsl:apply-templates` in a
-    /// template rule, ...), whose stack use per level of the document must stay small,
-    /// so that it holds none of their locals, and dispatches only the instructions that
-    /// hold others or invoke templates, each passed whole (its parts in a struct of their
-    /// own, one binding per arm); [`Runtime::other_instruction`] the rest.
-    fn instruction(&self, inst: &'e Inst, state: &State<'_>, sink: &mut dyn Sink) -> Result<()> {
-        match inst {
-            Inst::ApplyTemplates(apply) => self.apply_templates(apply, state, sink),
-            Inst::NextMatch(next) => self.next_match(next, state, sink),
-            Inst::CallTemplate(call) => self.call_template(call, state, sink),
-            Inst::Choose(choose) => self.choose(choose, state, sink),
-            Inst::ForEach(for_each) => self.for_each(for_each, state, sink),
-            Inst::Element(element) => self.element(element, state, sink),
-            _ => self.other_instruction(inst, state, sink),
-        }
-    }
-
-    /// The instructions [`Runtime::instruction`] does not dispatch itself.
-    #[inline(never)]
-    fn other_instruction(
-        &self,
-        inst: &'e Inst,
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        match inst {
-            Inst::Variable(binding) => self.variable_instruction(binding, state),
-            Inst::Sequence { line, select } => self.sequence(*line, select, state, sink),
-            Inst::ValueOf {
-                line,
-                select,
-                separator,
-                body,
-            } => self.value_of(
-                *line,
-                select.as_deref(),
-                separator.as_ref(),
-                body,
-                state,
-                sink,
-            ),
-            Inst::Attribute {
-                line,
-                name,
-                namespace,
-                namespaces,
-                select,
-                body,
-            } => self.attribute(
-                *line,
-                (name, namespace.as_ref()),
-                namespaces,
-                select.as_deref(),
-                body,
-                state,
-                sink,
-            ),
-            Inst::CopyOf { line, select } => self.copy_of(*line, select, state, sink),
-            Inst::Copy { line, body } => self.copy(*line, body, state, sink),
-            Inst::ComputedElement {
-                line,
-                name,
-                namespace,
-                namespaces,
-                body,
-            } => self.computed_element(
-                *line,
-                name,
-                namespace.as_ref(),
-                namespaces,
-                body,
-                state,
-                sink,
-            ),
-            Inst::Namespace {
-                line,
-                name,
-                select,
-                body,
-            } => self.namespace(*line, name, select.as_deref(), body, state, sink),
-            Inst::ProcessingInstruction {
-                line,
-                name,
-                select,
-                body,
-            } => self.processing_instruction(*line, name, select.as_deref(), body, state, sink),
-            Inst::Message {
-                line,
-                terminate,
-                body,
-            } => self.message(*line, terminate.as_ref(), body, state),
-            Inst::Comment { line, body } => self.comment(*line, body, state, sink),
-            Inst::Text(text) => sink.text(text),
-            Inst::Number { line, level, count } => {
-                self.number_instruction(*line, *level, count.as_ref(), state, sink)
-            }
-            Inst::ApplyTemplates(_)
-            | Inst::NextMatch(_)
-            | Inst::CallTemplate(_)
-            | Inst::Choose(_)
-            | Inst::ForEach(_)
-            | Inst::Element(_) => self.instruction(inst, state, sink),
-        }
-    }
-
-    fn apply_templates(
-        &self,
-        apply: &'e CompiledApplyTemplates,
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let CompiledApplyTemplates {
-            line,
-            ref select,
-            mode,
-            ref params,
-        } = *apply;
-        let mode = match mode {
-            ModeRef::Mode(m) => m,
-            ModeRef::Current => state.mode,
-        };
-        // A selection of nodes read from the tree (`@*|*`), or any value. Each step in a
-        // function of its own: the stack of a level of a recursion holds as little as
-        // it can (a debug build keeps every local of a function on its stack).
-        let Some(nodes) = self.select_in_place(line, select, state)? else {
-            return self.apply_to_value(line, select, mode, params, state, sink);
-        };
-        let params = self.with_params(params, state).at(line)?;
-        let size = Size::Known(nodes.len());
-        let mut position = 0;
-        while let Some(node) = nodes.get(position) {
-            position += 1;
-            self.apply_rule(&node, position, &size, mode, None, &params, sink)
-                .at(line)?;
-        }
-        self.selections.borrow_mut().push(nodes.into_storage());
-        Ok(())
-    }
-
     /// The nodes `select` selects, read in place from the tree, if it can be.
     fn select_in_place(
         &self,
@@ -1360,92 +1225,8 @@ impl<'e, 'a> Runtime<'e, 'a> {
             .at(line)
     }
 
-    /// `xsl:apply-templates` to the value of `select`.
-    fn apply_to_value(
-        &self,
-        line: u32,
-        select: &'e CompiledExpr,
-        mode: usize,
-        params: &'e [WithParam],
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let items = self.evaluate(select, state.context).at(line)?;
-        let params = self.with_params(params, state).at(line)?;
-        let size = items.len();
-        for (i, item) in items.iter().enumerate() {
-            match item {
-                Item::Node(node) => self
-                    .apply_rule(node, i + 1, &Size::Known(size), mode, None, &params, sink)
-                    .at(line)?,
-                // As Saxon, an XSLT 3.0 processor: no pattern of the subset matches an
-                // atomic value, whose built-in rule writes it as text.
-                Item::Atomic(_) => sink.text(&item.string_value()).at(line)?,
-            }
-        }
-        Ok(())
-    }
-
-    fn next_match(
-        &self,
-        next: &'e CompiledNextMatch,
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let CompiledNextMatch { line, ref params } = *next;
-        let Some(rank) = state.rule else {
-            return err("XTDE0560", "xsl:next-match without a current template rule").at(line);
-        };
-        let Some(focus) = &state.context.focus else {
-            return err("XTDE0560", "xsl:next-match without a context item").at(line);
-        };
-        let Item::Node(node) = &focus.item else {
-            return err("XTDE0560", "xsl:next-match on an atomic value").at(line);
-        };
-        let params = self.with_params(params, state).at(line)?;
-        self.apply_rule(
-            node,
-            focus.position,
-            &Size::Known(focus.size),
-            state.mode,
-            Some(rank),
-            &params,
-            sink,
-        )
-        .at(line)
-    }
-
-    fn call_template(
-        &self,
-        call: &'e CompiledCallTemplate,
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let params = self.with_params(&call.params, state).at(call.line)?;
-        self.invoke(
-            call.template,
-            state.context,
-            state.mode,
-            state.rule,
-            &params,
-            sink,
-        )
-        .at(call.line)
-    }
-
-    fn choose(
-        &self,
-        choose: &'e CompiledChoose,
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let branch = self.branch(choose, state)?;
-        self.exec(branch, state, sink)
-    }
-
     /// The branch of an `xsl:choose` to run: that of the first `xsl:when` whose test is
-    /// true, or the `xsl:otherwise`. Out of [`Runtime::exec`] and [`Runtime::choose`],
-    /// whose stack use is part of every level of recursion through the templates.
+    /// true, or the `xsl:otherwise`.
     #[inline(never)]
     fn branch(&self, choose: &'e CompiledChoose, state: &State<'_>) -> Result<&'e [Inst]> {
         for when in &choose.whens {
@@ -1454,31 +1235,6 @@ impl<'e, 'a> Runtime<'e, 'a> {
             }
         }
         Ok(&choose.otherwise)
-    }
-
-    fn for_each(
-        &self,
-        for_each: &'e CompiledForEach,
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let CompiledForEach {
-            line,
-            ref select,
-            ref body,
-        } = *for_each;
-        let items = self.evaluate(select, state.context).at(line)?;
-        let size = items.len();
-        for (i, item) in items.into_iter().enumerate() {
-            let context = Context::at(item, i + 1, size);
-            let inner = State {
-                context: &context,
-                mode: state.mode,
-                rule: None,
-            };
-            self.exec(body, &inner, sink)?;
-        }
-        Ok(())
     }
 
     #[inline(never)]
@@ -1496,71 +1252,6 @@ impl<'e, 'a> Runtime<'e, 'a> {
     }
 
     #[inline(never)]
-    fn value_of(
-        &self,
-        line: u32,
-        select: Option<&'e CompiledExpr>,
-        separator: Option<&'e CompiledAvt>,
-        body: &'e [Inst],
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let separator = match separator {
-            Some(avt) => Some(self.avt(avt, state).at(line)?),
-            None => None,
-        };
-        let mut parts = TextSink::new();
-        let text = if let Some(expr) = select {
-            for item in self.evaluate(expr, state.context).at(line)? {
-                parts.item(&item)?;
-            }
-            parts.finish(separator.as_deref().unwrap_or(" "))
-        } else {
-            self.exec(body, state, &mut parts)?;
-            parts.finish(separator.as_deref().unwrap_or(""))
-        };
-        sink.text(&text).at(line)
-    }
-
-    #[inline(never)]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the parts of the instruction, its dynamic context and its sink"
-    )]
-    fn attribute(
-        &self,
-        line: u32,
-        (name, namespace): (&'e CompiledAvt, Option<&'e CompiledAvt>),
-        namespaces: &[NamespaceBinding],
-        select: Option<&'e CompiledExpr>,
-        body: &'e [Inst],
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let name = self.avt(name, state).at(line)?;
-        let namespace = match namespace {
-            Some(avt) => Some(self.avt(avt, state).at(line)?),
-            None => None,
-        };
-        let name = attribute_name(&name, namespace.as_deref(), namespaces).at(line)?;
-        let value = self.simple_content(select, body, state).at(line)?;
-        sink.attribute(&name, &value).at(line)
-    }
-
-    #[inline(never)]
-    fn comment(
-        &self,
-        line: u32,
-        body: &'e [Inst],
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let mut parts = TextSink::new();
-        self.exec(body, state, &mut parts)?;
-        sink.comment(&comment_text(&parts.finish(""))).at(line)
-    }
-
-    #[inline(never)]
     fn number_instruction(
         &self,
         line: u32,
@@ -1573,20 +1264,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
         sink.text(&text).at(line)
     }
 
-    fn element(
-        &self,
-        element: &'e CompiledElement,
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        self.start_element(element, state, sink)?;
-        self.exec(&element.body, state, sink)?;
-        sink.end_element().at(element.line)
-    }
-
     /// The start tag of a literal result element: its name, namespaces and attributes.
-    /// Out of [`Runtime::element`], whose stack use is part of every level of recursion
-    /// through the templates.
     #[inline(never)]
     fn start_element(
         &self,
@@ -1616,42 +1294,6 @@ impl<'e, 'a> Runtime<'e, 'a> {
         sink.attribute(name, &value).at(line)
     }
 
-    /// `xsl:copy`: a copy of the context item, the body evaluated for a document node or
-    /// an element only, which keeps its namespace nodes.
-    #[inline(never)]
-    fn copy(
-        &self,
-        line: u32,
-        body: &'e [Inst],
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let Some(focus) = &state.context.focus else {
-            return err("XTTE0945", "xsl:copy without a context item").at(line);
-        };
-        let Item::Node(node) = &focus.item else {
-            return sink.item(&focus.item).at(line);
-        };
-        match node.kind() {
-            NodeKind::Document => {
-                sink.start_document().at(line)?;
-                self.exec(body, state, sink)?;
-                sink.end_document().at(line)
-            }
-            NodeKind::Element => {
-                let Some(name) = node.name() else {
-                    return err("INTERNAL", "element without name");
-                };
-                let namespaces: Arc<[NamespaceBinding]> = node.namespaces_in_scope().into();
-                sink.start_copied_element(name, &namespaces).at(line)?;
-                self.exec(body, state, sink)?;
-                sink.end_element().at(line)
-            }
-            // Of the other kinds, a copy of the node alone: the body is not evaluated.
-            _ => copy_node(sink, node).at(line),
-        }
-    }
-
     /// `xsl:copy-of`: deep copies of the nodes selected, the atomic values as they are.
     #[inline(never)]
     fn copy_of(
@@ -1670,30 +1312,6 @@ impl<'e, 'a> Runtime<'e, 'a> {
         Ok(())
     }
 
-    /// `xsl:element`: an element named by the computed name, in the namespace it names,
-    /// without namespace nodes of its own: the binding its name needs is added when its
-    /// start tag is complete (namespace fixup, after those of `xsl:namespace`).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the parts of the instruction, its dynamic context and its sink"
-    )]
-    #[inline(never)]
-    fn computed_element(
-        &self,
-        line: u32,
-        name: &'e CompiledAvt,
-        namespace: Option<&'e CompiledAvt>,
-        namespaces: &[NamespaceBinding],
-        body: &'e [Inst],
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let name = self.element_name(line, name, namespace, namespaces, state)?;
-        sink.start_element(&name, &Arc::from(Vec::new())).at(line)?;
-        self.exec(body, state, sink)?;
-        sink.end_element().at(line)
-    }
-
     /// The name of `xsl:element`.
     #[inline(never)]
     fn element_name(
@@ -1710,159 +1328,6 @@ impl<'e, 'a> Runtime<'e, 'a> {
             None => None,
         };
         element_name(&text, namespace.as_deref(), namespaces).at(line)
-    }
-
-    /// `xsl:namespace`: a namespace node on the element being constructed (XSLT 2.0
-    /// section 11.7).
-    #[inline(never)]
-    fn namespace(
-        &self,
-        line: u32,
-        name: &'e CompiledAvt,
-        select: Option<&'e CompiledExpr>,
-        body: &'e [Inst],
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let prefix = self.avt(name, state).at(line)?;
-        let prefix = prefix.trim_matches(einvoice_xpath::is_xml_whitespace);
-        let uri = self.simple_content(select, body, state).at(line)?;
-        if !(prefix.is_empty() || einvoice_xpath::is_ncname(prefix)) || prefix == "xmlns" {
-            return err(
-                "XTDE0920",
-                format!("invalid namespace prefix {prefix:?} in xsl:namespace"),
-            )
-            .at(line);
-        }
-        let xml = einvoice_xpath::XML_NAMESPACE;
-        if (prefix == "xml") != (uri == xml) {
-            return err(
-                "XTDE0925",
-                "the xml prefix and the XML namespace are bound to each other only",
-            )
-            .at(line);
-        }
-        if uri.is_empty() {
-            return err("XTDE0930", "xsl:namespace with an empty namespace URI").at(line);
-        }
-        if prefix == "xml" {
-            return Ok(());
-        }
-        sink.namespace((!prefix.is_empty()).then_some(prefix), &uri)
-            .at(line)
-    }
-
-    /// `xsl:processing-instruction` (XSLT 2.0 section 11.6): the target, an `NCName` other
-    /// than `xml` in any case; the value without leading whitespace, `?>` written `? >`.
-    #[inline(never)]
-    fn processing_instruction(
-        &self,
-        line: u32,
-        name: &'e CompiledAvt,
-        select: Option<&'e CompiledExpr>,
-        body: &'e [Inst],
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let target = self.avt(name, state).at(line)?;
-        let target = target.trim_matches(einvoice_xpath::is_xml_whitespace);
-        if !einvoice_xpath::is_ncname(target) || target.eq_ignore_ascii_case("xml") {
-            return err(
-                "XTDE0890",
-                format!("invalid processing instruction name {target:?}"),
-            )
-            .at(line);
-        }
-        let value = self.simple_content(select, body, state).at(line)?;
-        let value = value
-            .trim_start_matches(einvoice_xpath::is_xml_whitespace)
-            .replace("?>", "? >");
-        sink.processing_instruction(target, &value).at(line)
-    }
-
-    /// `xsl:message`: its content, a document node, written as Saxon writes messages
-    /// (see [`Transformation::messages`]); with `terminate` `yes`, the transformation ends
-    /// with the error `XTMM9000`.
-    #[inline(never)]
-    fn message(
-        &self,
-        line: u32,
-        terminate: Option<&'e CompiledAvt>,
-        body: &'e [Inst],
-        state: &State<'_>,
-    ) -> Result<()> {
-        let terminate = match terminate {
-            None => false,
-            Some(avt) => {
-                let value = self.avt(avt, state).at(line)?;
-                match value.trim_matches(einvoice_xpath::is_xml_whitespace) {
-                    "yes" | "true" | "1" => true,
-                    "no" | "false" | "0" => false,
-                    other => {
-                        return err(
-                            "XTDE0030",
-                            format!("invalid value {other:?} of xsl:message/@terminate"),
-                        )
-                        .at(line);
-                    }
-                }
-            }
-        };
-        let mut content = TreeSink::new();
-        self.exec(body, state, &mut content)?;
-        let document = content.finish()?;
-        let root = document.root();
-        let text = if root.children().next().is_some() {
-            let settings = Serialization {
-                indent: false,
-                omit_xml_declaration: true,
-                standalone: None,
-            };
-            let text = serialize(&root, settings, true).at(line)?;
-            self.messages.borrow_mut().push(text.clone());
-            text
-        } else {
-            String::new()
-        };
-        if terminate {
-            return err("XTMM9000", text).at(line);
-        }
-        Ok(())
-    }
-
-    fn variable_instruction(&self, binding: &'e Binding, state: &State<'_>) -> Result<()> {
-        if !binding.used {
-            return Ok(());
-        }
-        let slot = self
-            .bind(
-                &binding.value,
-                binding.as_type.as_ref(),
-                binding.eval,
-                state,
-                "XTTE0570",
-            )
-            .at(binding.line)?;
-        self.set_slot(binding.slot, slot).at(binding.line)
-    }
-
-    /// The value of `xsl:attribute`: `select` joined with spaces, or the content.
-    fn simple_content(
-        &self,
-        select: Option<&'e CompiledExpr>,
-        body: &'e [Inst],
-        state: &State<'_>,
-    ) -> Result<String> {
-        let mut parts = TextSink::new();
-        if let Some(expr) = select {
-            for item in self.evaluate(expr, state.context)? {
-                parts.item(&item)?;
-            }
-            Ok(parts.finish(" "))
-        } else {
-            self.exec(body, state, &mut parts)?;
-            Ok(parts.finish(""))
-        }
     }
 
     fn avt(&self, avt: &'e CompiledAvt, state: &State<'_>) -> Result<String> {
@@ -1886,42 +1351,15 @@ impl<'e, 'a> Runtime<'e, 'a> {
         Ok(out)
     }
 
-    /// Finds the best rule for `node` in `mode` (ranked after `after`, for
-    /// `xsl:next-match`) and runs it, or the built-in rule.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the focus, the mode, the rule and the parameters of the invocation"
-    )]
-    fn apply_rule(
-        &self,
-        node: &Node,
-        position: usize,
-        size: &Size<'_>,
-        mode: usize,
-        after: Option<u32>,
-        params: &[(&'e QName, Slot<'e>)],
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let Some(rank) = self.find_rule(mode, node, after)? else {
-            return self.builtin(node, mode, params, sink);
-        };
-        let Some(index) = self.rule_template(mode, rank)? else {
-            return Ok(());
-        };
-        let context = node_context(node, position, size.get());
-        self.invoke(index, &context, mode, Some(rank), params, sink)
-    }
-
     /// The template of the rule of rank `rank` in `mode`, to invoke; `None` when it has
     /// nothing to bind or run, its invocation counted only, as [`Runtime::invoke`] counts
-    /// it. Out of [`Runtime::apply_rule`], whose stack use is part of every level of
-    /// recursion through the template rules.
-    #[inline(never)]
+    /// it.
     fn rule_template(&self, mode: usize, rank: u32) -> Result<Option<usize>> {
         let index = self.exe.modes[mode].rules[rank as usize].template;
         let template = &self.exe.templates[index];
         if template.body.is_empty() && template.params.is_empty() {
-            let _nested = self.nested().at(template.line)?;
+            self.enter().at(template.line)?;
+            self.leave();
             return Ok(None);
         }
         Ok(Some(index))
@@ -2135,83 +1573,19 @@ impl<'e, 'a> Runtime<'e, 'a> {
         ));
     }
 
-    /// The built-in template rule for `node`. For a document node or an element, it
-    /// applies the template rules to the children, one level of recursion counted as an
-    /// invocation ([`Runtime::nested`]).
-    fn builtin(
-        &self,
-        node: &Node,
-        mode: usize,
-        params: &[(&'e QName, Slot<'e>)],
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        match node.kind() {
-            NodeKind::Document | NodeKind::Element => {
-                let _nested = self.nested()?;
-                // The children are counted only if a template rule applied to one runs.
-                let size = Size::ChildrenOf(node, Cell::new(None));
-                for (i, child) in node.children().enumerate() {
-                    self.apply_rule(&child, i + 1, &size, mode, None, params, sink)?;
-                }
-                Ok(())
-            }
-            NodeKind::Text | NodeKind::Attribute => sink.text(&node.string_value()),
-            NodeKind::Comment | NodeKind::ProcessingInstruction => Ok(()),
-        }
-    }
-
-    /// Runs a template: its parameters bound from `params` or their default values,
-    /// then its body. Counted as an invocation ([`Runtime::nested`]).
-    ///
-    /// An `xsl:call-template` in tail position of the body (its last instruction, or the
-    /// last of the branch of an `xsl:choose` or `xsl:if` that is) runs as Saxon runs it,
-    /// in the same invocation rather than one more inside it (Saxon's tail calls): a
-    /// template that recurses so, over each character of a string for instance, needs no
-    /// stack in proportion to its recursion. The frame of an invocation replaced is kept
-    /// by the parameters it passes that are not computed yet, until they are
-    /// ([`Runtime::exec_tail`]). At most `max_tail_calls` in a row.
-    fn invoke(
-        &self,
-        index: usize,
-        context: &Context,
-        mode: usize,
-        rule: Option<u32>,
-        params: &[(&'e QName, Slot<'e>)],
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let template = &self.exe.templates[index];
-        if template.tail_calls {
-            return self.invoke_with_tail_calls(index, context, mode, rule, params, sink);
-        }
-        let _nested = self.nested().at(template.line)?;
-        // The frame pushed and popped here, not by `in_frame`: a closure and a generic
-        // function would be two more stack frames in each level of the recursion.
-        let framed = self.push_frame(template.slots);
-        let state = State {
-            context,
-            mode,
-            rule,
-        };
-        let mut result = self.bind_params(template, params, &state);
-        if result.is_ok() {
-            result = self.exec(&template.body, &state, sink);
-        }
-        if framed {
-            self.pop_frame();
-        }
-        result.at(template.line)
-    }
-
-    /// Pushes a new frame of `slots` slots, if `slots` is not 0: whether it did. Out of
-    /// [`Runtime::invoke`], whose stack use is part of every level of recursion through
-    /// the templates.
-    #[inline(never)]
+    /// Pushes a new frame of `slots` slots, if `slots` is not 0: whether it did.
     fn push_frame(&self, slots: usize) -> bool {
         if slots == 0 {
             return false;
         }
-        self.frames.borrow_mut().push(Frame::new(slots));
+        self.push_new_frame(slots);
         true
+    }
+
+    /// Pushes a new frame of `slots` slots.
+    #[inline(never)]
+    fn push_new_frame(&self, slots: usize) {
+        self.frames.borrow_mut().push(Frame::new(slots));
     }
 
     /// Pops the frame [`Runtime::push_frame`] pushed.
@@ -2220,101 +1594,8 @@ impl<'e, 'a> Runtime<'e, 'a> {
         self.frames.borrow_mut().pop();
     }
 
-    /// [`Runtime::invoke`] of a template with an `xsl:call-template` in tail position
-    /// (see [`CompiledTemplate::tail_calls`](crate::prepare::CompiledTemplate)): the
-    /// templates it calls so run in a loop, in place of the one that calls them. Out of
-    /// [`Runtime::invoke`], whose stack use is part of every level of recursion through
-    /// the templates.
-    #[inline(never)]
-    fn invoke_with_tail_calls(
-        &self,
-        index: usize,
-        context: &Context,
-        mode: usize,
-        rule: Option<u32>,
-        params: &[(&'e QName, Slot<'e>)],
-        sink: &mut dyn Sink,
-    ) -> Result<()> {
-        let _nested = self.nested().at(self.exe.templates[index].line)?;
-        let state = State {
-            context,
-            mode,
-            rule,
-        };
-        let mut current = index;
-        let mut passed: Option<Params<'e>> = None;
-        let mut tail_calls = 0_u32;
-        loop {
-            let template = &self.exe.templates[current];
-            let frame = (template.slots > 0).then(|| Frame::new(template.slots));
-            let params = passed.as_deref().unwrap_or(params);
-            let tail = self
-                .in_frame(frame, || {
-                    self.bind_params(template, params, &state)?;
-                    self.exec_tail(&template.body, &state, sink)
-                })
-                .at(template.line)?;
-            let Some(tail) = tail else {
-                return Ok(());
-            };
-            tail_calls += 1;
-            if tail_calls > self.options.max_tail_calls {
-                return Err(TransformError::limit_exceeded(LimitExceeded::TailCalls {
-                    max: self.options.max_tail_calls,
-                })
-                .at(template.line));
-            }
-            current = tail.template;
-            passed = Some(tail.params);
-        }
-    }
-
-    /// Runs a sequence constructor in tail position of a template body: its
-    /// `xsl:call-template` in tail position, if any, is not run but returned, its
-    /// parameters bound, for [`Runtime::invoke`] to run in place of the template.
-    fn exec_tail(
-        &self,
-        body: &'e [Inst],
-        state: &State<'_>,
-        sink: &mut dyn Sink,
-    ) -> Result<Option<Box<TailCall<'e>>>> {
-        let Some((last, rest)) = body.split_last() else {
-            return Ok(None);
-        };
-        self.exec(rest, state, sink)?;
-        match last {
-            Inst::CallTemplate(CompiledCallTemplate {
-                line,
-                template,
-                params,
-            }) => {
-                let params = self.with_params(params, state).at(*line)?;
-                // The values not computed yet read this frame, which ends now.
-                let frame = self.top_frame();
-                for (_, slot) in &params {
-                    if let Slot::Lazy(thunk) = slot {
-                        thunk.hold.borrow_mut().clone_from(&frame);
-                    }
-                }
-                Ok(Some(Box::new(TailCall {
-                    template: *template,
-                    params,
-                })))
-            }
-            Inst::Choose(choose) => {
-                let branch = self.branch(choose, state)?;
-                self.exec_tail(branch, state, sink)
-            }
-            other => {
-                self.instruction(other, state, sink)?;
-                Ok(None)
-            }
-        }
-    }
-
     /// Binds the parameters of a template being invoked, in its frame: from `params`, or
-    /// their default values. Out of [`Runtime::invoke`], whose stack use is part of every
-    /// level of recursion through the templates.
+    /// their default values.
     #[inline(never)]
     fn bind_params(
         &self,
