@@ -76,8 +76,10 @@ keep the main thread free.
   milliseconds from the Unix epoch, by default `Date.now()` when the validation starts),
   `timezoneMinutes` (the implicit timezone, in minutes east of UTC, by default 0),
   `maxDepth` (the maximum element depth of the document, the document element at depth 1: 1
-  to 400, by default 256; the stylesheets recurse once or twice per level on the JavaScript
-  engine's stack, and a Web Worker in Chrome runs out of stack at about 600 levels) and
+  to 400, by default 256; the stylesheets recurse once or twice per level within 256 KiB of
+  the module's stack, which keeps the JavaScript engine's own stack, smallest in a Chrome Web
+  Worker, from running out: a document that needs more is refused with the `limit` `stack`,
+  beyond about 240 levels when a rule reports on every level, 480 otherwise) and
   `failClosed` (a boolean, by default `false`: when `true`, every finding that would
   otherwise be of severity `other`, a flag other than `fatal` and `warning` or none, is
   `fatal`). Other members are refused.

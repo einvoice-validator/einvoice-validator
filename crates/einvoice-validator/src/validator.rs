@@ -81,6 +81,9 @@ impl<'a> ValidateOptions<'a> {
     /// maximum ([`max_nesting_for_depth`](crate::max_nesting_for_depth)), and so does the
     /// stack they need: a larger maximum depth needs a larger
     /// [`ValidateOptions::max_stack`], and a thread with that much stack.
+    ///
+    /// On WebAssembly, at most [`WASM_MAX_DEPTH`]: a validation asking for more fails with
+    /// [`Error::OptionOutOfRange`].
     #[must_use]
     pub const fn max_depth(mut self, max_depth: u32) -> Self {
         self.max_depth = max_depth;
@@ -94,6 +97,10 @@ impl<'a> ValidateOptions<'a> {
     /// the default 2 MiB stack of a spawned thread. The thread that validates must have
     /// this much stack and at least 512 KiB more, for its caller and the deepest
     /// invocation.
+    ///
+    /// On WebAssembly, the default is 256 KiB, and so is the most allowed,
+    /// [`WASM_MAX_STACK`]: a validation asking for more fails with
+    /// [`Error::OptionOutOfRange`].
     #[must_use]
     pub const fn max_stack(mut self, bytes: u32) -> Self {
         self.max_stack = bytes;
@@ -118,6 +125,85 @@ impl<'a> ValidateOptions<'a> {
     pub const fn document_uri(mut self, uri: &'a str) -> Self {
         self.document_uri = Some(uri);
         self
+    }
+}
+
+/// The largest [`ValidateOptions::max_depth`] on WebAssembly: 400.
+///
+/// A WebAssembly engine runs the module's functions on a native stack of its own, beside
+/// the module's stack in linear memory, which is the only one the library measures
+/// ([`ValidateOptions::max_stack`]). When the native stack runs out first, the engine
+/// throws (a `RangeError` in V8, an `InternalError` in Firefox) and leaves the module's
+/// memory inconsistent, so that every later call fails. What keeps the native stack from
+/// running out is [`WASM_MAX_STACK`]; this maximum bounds the depth, and the nesting of
+/// template and function invocations that comes with it
+/// ([`max_nesting_for_depth`](crate::max_nesting_for_depth): 864), to what that stack
+/// serves. Measured with the npm package (opt-level 3, `wasm-opt -O3`) and 256 KiB of
+/// stack, on documents nested inside a UBL or a CII invoice: the stylesheets of the
+/// built-in rule sets (and of Peppol BIS Billing 3.0.22) validate a document up to 487
+/// levels deep when no rule fires on the nested elements, and up to 243 levels deep when
+/// a rule fires and reports on every one of them; deeper, the validation fails with
+/// [`Error::Limit`] ([`LimitExceeded::Stack`]), the same in Chrome and Firefox (main
+/// thread and Web Worker) and in Node.js. 400 keeps a margin below 487.
+pub const WASM_MAX_DEPTH: u32 = 400;
+
+/// The largest [`ValidateOptions::max_stack`] on WebAssembly, and its default there
+/// ([`DEFAULT_MAX_STACK`]): 256 KiB.
+///
+/// The native stack of a JavaScript engine can run out before the module's stack in
+/// linear memory reaches [`ValidateOptions::max_stack`] (see [`WASM_MAX_DEPTH`]).
+/// Measured with the npm package, the largest `max_stack`, in KiB, with which a
+/// recursion still ends with [`Error::Limit`] ([`LimitExceeded::Stack`]) rather than with
+/// the engine's stack overflow, for the stylesheets of the built-in rule sets and of
+/// Peppol BIS Billing 3.0.22 on a document 8192 levels deep / a named template calling
+/// itself (not as a tail call) / a template rule applying itself / a function calling
+/// itself:
+///
+/// | Engine | Official | Named template | Template rule | Function |
+/// |---|---|---|---|---|
+/// | Chrome 154, Web Worker | 320 | 342 | 348 | 543 |
+/// | Chrome 154, main thread | 522 | 512 | 545 | 863 |
+/// | Firefox 153, Web Worker | 630 | 674 | 689 | 1021 |
+/// | Firefox 153, main thread | 1021 | 1021 | 1021 | 1021 |
+/// | Node.js 22 | 640 | 679 | 685 | 1021 |
+///
+/// (1021 KiB is the module's own stack, 1 MiB, running out.) 256 KiB keeps a margin of a
+/// fifth below the smallest, a Chrome Web Worker.
+pub const WASM_MAX_STACK: u32 = 256 << 10;
+
+/// What [`ValidateOptions`] may ask for on this target: the largest maximum depth and the
+/// largest stack, or `None` for no bound.
+#[cfg(target_family = "wasm")]
+const CAPS: Option<(u32, u32)> = Some((WASM_MAX_DEPTH, WASM_MAX_STACK));
+#[cfg(not(target_family = "wasm"))]
+const CAPS: Option<(u32, u32)> = None;
+
+// The defaults are within the caps.
+#[cfg(target_family = "wasm")]
+const _: () = assert!(DEFAULT_MAX_STACK <= WASM_MAX_STACK && DEFAULT_MAX_DEPTH <= WASM_MAX_DEPTH);
+
+impl ValidateOptions<'_> {
+    /// [`Error::OptionOutOfRange`] when the options ask for more than `caps` (the largest
+    /// maximum depth and the largest stack) allow.
+    const fn check(&self, caps: Option<(u32, u32)>) -> Result<(), Error> {
+        let Some((max_depth, max_stack)) = caps else {
+            return Ok(());
+        };
+        if self.max_depth > max_depth {
+            return Err(Error::OptionOutOfRange {
+                option: "max_depth",
+                value: self.max_depth,
+                max: max_depth,
+            });
+        }
+        if self.max_stack > max_stack {
+            return Err(Error::OptionOutOfRange {
+                option: "max_stack",
+                value: self.max_stack,
+                max: max_stack,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -359,6 +445,7 @@ impl Validator {
         document: Vec<u8>,
         options: &ValidateOptions<'_>,
     ) -> Result<Report, Error> {
+        options.check(CAPS)?;
         self.validate_text(Cow::Owned(decode_owned(document)?), options)
     }
 
@@ -387,14 +474,17 @@ impl Validator {
     ///
     /// [`Error::NotXml`] when the document is not well-formed XML (or not UTF-8);
     /// [`Error::Unsupported`] for another encoding, a document type declaration, or a
-    /// construct the engine refuses; [`Error::Transform`] when a stylesheet raises a
-    /// dynamic error on the document; [`Error::Bundle`] when a stylesheet's result is
-    /// not an SVRL report; [`Error::Internal`] for a bug.
+    /// construct the engine refuses; [`Error::Limit`] for a document beyond a limit;
+    /// [`Error::OptionOutOfRange`] for options beyond what the target allows (on
+    /// WebAssembly); [`Error::Transform`] when a stylesheet raises a dynamic error on
+    /// the document; [`Error::Bundle`] when a stylesheet's result is not an SVRL report;
+    /// [`Error::Internal`] for a bug.
     pub fn validate_with(
         &self,
         document: &[u8],
         options: &ValidateOptions<'_>,
     ) -> Result<Report, Error> {
+        options.check(CAPS)?;
         self.validate_text(Cow::Borrowed(decode(document)?), options)
     }
 
@@ -1176,6 +1266,57 @@ mod tests {
             (root(UBL_INVOICE, "Order"), vec![])
         );
         assert_eq!(identify("<a/>"), (root("", "a"), vec![]));
+    }
+
+    /// The caps of WebAssembly, checked on every target.
+    #[test]
+    fn options_within_the_caps_of_webassembly() {
+        let caps = Some((WASM_MAX_DEPTH, WASM_MAX_STACK));
+        let within = ValidateOptions::new()
+            .max_depth(WASM_MAX_DEPTH)
+            .max_stack(WASM_MAX_STACK);
+        assert!(within.check(caps).is_ok());
+        assert!(
+            ValidateOptions::new()
+                .max_stack(WASM_MAX_STACK)
+                .check(caps)
+                .is_ok()
+        );
+        let error = within
+            .max_depth(WASM_MAX_DEPTH + 1)
+            .check(caps)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::OptionOutOfRange {
+                option: "max_depth",
+                value: 401,
+                max: 400
+            }
+        ));
+        assert_eq!(error.kind(), crate::ErrorKind::Unsupported);
+        assert_eq!(
+            error.to_string(),
+            "option max_depth is 401, more than 400, the most this target allows"
+        );
+        let error = within
+            .max_stack(WASM_MAX_STACK + 1)
+            .check(caps)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::OptionOutOfRange {
+                option: "max_stack",
+                value: 262_145,
+                max: 262_144
+            }
+        ));
+        // Without caps (the other targets), anything goes.
+        let anything = ValidateOptions::new()
+            .max_depth(u32::MAX)
+            .max_stack(u32::MAX);
+        assert!(anything.check(None).is_ok());
+        assert_eq!(CAPS, None);
     }
 
     #[test]

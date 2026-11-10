@@ -265,6 +265,16 @@
 //! ([`max_nesting_for_depth`] of the maximum depth) and in the stack they use
 //! ([`ValidateOptions::max_stack`], [`DEFAULT_MAX_STACK`]), so that a stylesheet that
 //! recurses without end fails with [`Error::Limit`] as well.
+//!
+//! On WebAssembly, the engine running the module has a native stack of its own, which
+//! the module cannot measure and which runs out before the module's stack in some
+//! JavaScript engines, leaving the module unusable. There, the stack the stylesheets may
+//! use is 256 KiB, and at most [`WASM_MAX_STACK`], the same; the maximum depth is at
+//! most [`WASM_MAX_DEPTH`], 400: a validation asking for more fails with
+//! [`Error::OptionOutOfRange`]. Within 256 KiB, the stylesheets validate a document up
+//! to 487 levels deep when no rule fires on its deepest elements, and up to 243 when a
+//! rule reports on every level (measured with the official stylesheets); deeper, the
+//! validation fails with [`Error::Limit`].
 
 mod builtin;
 mod detect;
@@ -291,7 +301,7 @@ pub use report::{
     Finding, FindingKind, NoScenario, Report, RuleSetVersion, SchemaError, SchemaErrorKind,
     Severity, StylesheetFailure, StylesheetReport, Verdict,
 };
-pub use validator::{ValidateOptions, Validator, file_uri};
+pub use validator::{ValidateOptions, Validator, WASM_MAX_DEPTH, WASM_MAX_STACK, file_uri};
 
 #[cfg(not(target_family = "wasm"))]
 pub use rulesets::{

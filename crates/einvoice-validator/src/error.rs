@@ -69,6 +69,23 @@ pub enum Error {
         /// line of its instruction.
         message: String,
     },
+    /// An option of the validation beyond what this target allows: on WebAssembly, a
+    /// [`ValidateOptions::max_depth`] above [`WASM_MAX_DEPTH`] or a
+    /// [`ValidateOptions::max_stack`] above [`WASM_MAX_STACK`], for which the native stack
+    /// of the JavaScript engines has no room. Never on other targets.
+    ///
+    /// [`ValidateOptions::max_depth`]: crate::ValidateOptions::max_depth
+    /// [`ValidateOptions::max_stack`]: crate::ValidateOptions::max_stack
+    /// [`WASM_MAX_DEPTH`]: crate::WASM_MAX_DEPTH
+    /// [`WASM_MAX_STACK`]: crate::WASM_MAX_STACK
+    OptionOutOfRange {
+        /// The option: `max_depth` or `max_stack`.
+        option: &'static str,
+        /// The value asked for.
+        value: u32,
+        /// The largest value allowed.
+        max: u32,
+    },
     /// A stylesheet of the rule set raised a dynamic error on the document (the
     /// reference engine fails on it as well).
     Transform {
@@ -123,8 +140,9 @@ pub enum ErrorKind {
     Bundle,
     /// [`Error::NotXml`].
     NotXml,
-    /// [`Error::Unsupported`] and [`Error::Limit`]: input refused rather than
-    /// processed differently from the reference engine, or with an unbounded stack; and
+    /// [`Error::Unsupported`], [`Error::Limit`] and [`Error::OptionOutOfRange`]: input
+    /// refused rather than processed differently from the reference engine, or with an
+    /// unbounded stack, and options beyond what the target allows; and
     /// an `Error::Pdf` (feature `pdf`) for an encrypted PDF file, a PDF feature outside
     /// the subset read, or a limit of the PDF reader.
     Unsupported,
@@ -166,7 +184,9 @@ impl Error {
                 ErrorKind::Bundle
             }
             Self::NotXml { .. } => ErrorKind::NotXml,
-            Self::Unsupported { .. } | Self::Limit { .. } => ErrorKind::Unsupported,
+            Self::Unsupported { .. } | Self::Limit { .. } | Self::OptionOutOfRange { .. } => {
+                ErrorKind::Unsupported
+            }
             Self::Transform { .. } => ErrorKind::Transform,
             Self::Internal { .. } => ErrorKind::Internal,
             #[cfg(feature = "pdf")]
@@ -219,6 +239,10 @@ impl fmt::Display for Error {
             } => write!(f, "{line}:{column}: not well-formed XML: {message}"),
             Self::Unsupported { message } => write!(f, "unsupported: {message}"),
             Self::Limit { message, .. } => write!(f, "limit exceeded: {message}"),
+            Self::OptionOutOfRange { option, value, max } => write!(
+                f,
+                "option {option} is {value}, more than {max}, the most this target allows"
+            ),
             Self::Transform {
                 stylesheet,
                 code,

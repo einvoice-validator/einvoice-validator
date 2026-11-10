@@ -29,9 +29,11 @@ export interface ValidateOptions {
    * The maximum element depth of the document, the document element being at depth 1: a
    * whole number from 1 to 400, by default 256 (libxml2's default). A document with an
    * element nested deeper is refused with an `EinvoiceValidatorError` of kind
-   * `unsupported` and `limit` `"depth"`. The stylesheets recurse once or twice per level
-   * on the JavaScript engine's native stack, whose size the module cannot know: 400 keeps
-   * a margin below the smallest measured (a Web Worker in Chrome, about 600 levels).
+   * `unsupported` and `limit` `"depth"`. The stylesheets recurse once or twice per level,
+   * within 256 KiB of the module's stack, which keeps the JavaScript engine's own stack
+   * from running out (a Web Worker in Chrome has the smallest): a document that needs more
+   * is refused with the `limit` `"stack"` (beyond about 240 levels when a rule reports on
+   * every level, 480 otherwise).
    */
   maxDepth?: number | null;
   /**

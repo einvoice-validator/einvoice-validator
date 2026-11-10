@@ -29,9 +29,12 @@
 //!
 //! A document with an element nested deeper than `maxDepth` (by default 256, the
 //! library's [`DEFAULT_MAX_DEPTH`](einvoice_validator::DEFAULT_MAX_DEPTH); at most 400,
-//! a bound set by the native stacks of JavaScript engines, which the module cannot
-//! measure: Chrome's Web Workers overflow on about 600 levels) is refused with an error
-//! of kind `unsupported` whose `limit` is `depth`.
+//! the library's [`WASM_MAX_DEPTH`](einvoice_validator::WASM_MAX_DEPTH), a bound set by
+//! the native stacks of JavaScript engines) is refused with an error of kind
+//! `unsupported` whose `limit` is `depth`. The stylesheets use at most 256 KiB of the
+//! module's stack ([`WASM_MAX_STACK`](einvoice_validator::WASM_MAX_STACK)): a document
+//! that needs more fails with the `limit` `stack`, before the stack of the JavaScript
+//! engine runs out.
 //!
 //! With `failClosed: true`, every finding that would otherwise be of severity `other` (a
 //! flag other than `fatal` and `warning`, or none, that the rule set gives no severity of
@@ -248,18 +251,11 @@ const OPTION_NAMES: [&str; 5] = [
 /// The extreme value of a JavaScript `Date`, in milliseconds from the Unix epoch.
 const MAX_DATE_MILLIS: f64 = 8.64e15;
 
-/// The largest `maxDepth`. The stylesheets recurse once or twice per element level, and
-/// a WebAssembly engine runs the module's functions on its own native stack, beside the
-/// module's stack in linear memory, which is the only one the library measures
-/// ([`ValidateOptions::max_stack`]). Some engines' native stack ends first. Measured
-/// with the built-in rule sets on documents nested that deep (the package as built by
-/// `npm.sh`): in V8, a Chrome Web Worker overflows beyond 600 levels (a `RangeError`,
-/// after which the module's memory is no longer consistent), Chrome's main thread beyond
-/// 1200 and Node.js beyond 1300; Firefox reaches the library's stack limit beyond 1400,
-/// as it should. 400 keeps a margin of half of itself below the smallest, and bounds the
-/// nesting of template and function invocations for any document
-/// ([`max_nesting_for_depth`](einvoice_validator::max_nesting_for_depth): 864).
-const MAX_DEPTH: u32 = 400;
+/// The largest `maxDepth`: the library's maximum on WebAssembly, where a larger one fails
+/// with [`Error::OptionOutOfRange`] (see [`WASM_MAX_DEPTH`](einvoice_validator::WASM_MAX_DEPTH)
+/// for the measurements behind it). Taken on every target, so that the native tests
+/// check the same bound as the package.
+const MAX_DEPTH: u32 = einvoice_validator::WASM_MAX_DEPTH;
 
 impl Options {
     /// Reads `{ documentUri?, now?, timezoneMinutes?, maxDepth?, failClosed? }`

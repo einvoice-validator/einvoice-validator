@@ -5,9 +5,11 @@
 //! schema errors), then once without a clock, which fails where there is no system
 //! clock, then the valid one with elements nested inside it up to the maximum depth
 //! (valid: WebAssembly's 1 MiB stack is enough) and one level deeper (refused with
-//! `Error::Limit`), then a stylesheet whose function recurses without end (a `LIMIT`
-//! error, not a stack overflow), and returns 0 when every result is the expected one,
-//! else the number of the first wrong check.
+//! `Error::Limit`), then with a maximum depth and a stack beyond the caps of WebAssembly
+//! (refused there with `Error::OptionOutOfRange`, valid elsewhere), then a stylesheet
+//! whose function recurses without end (a `LIMIT` error, not a stack overflow), and
+//! returns 0 when every result is the expected one, else the number of the first wrong
+//! check.
 //!
 //! ```text
 //! cargo run -p einvoice-validator --example wasm-validate; echo $?
@@ -19,7 +21,7 @@ use std::process::ExitCode;
 
 use einvoice_validator::{
     Clock, DEFAULT_MAX_DEPTH, Error, FindingKind, LimitExceeded, Severity, ValidateOptions,
-    Validator, Verdict,
+    Validator, Verdict, WASM_MAX_DEPTH, WASM_MAX_STACK,
 };
 
 /// A valid invoice: an official example.
@@ -104,6 +106,9 @@ fn run() -> u8 {
     ) {
         return 11;
     }
+    if !beyond_the_caps(&validator, &options) {
+        return 14;
+    }
     // A function calling itself without end: the stack it may use runs out first.
     let recursive = r#"<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:f="urn:f">
 <xsl:function name="f:r" as="xs:integer"><xsl:param name="n" as="xs:integer"/><xsl:sequence select="if ($n lt 0) then 0 else 1 + f:r($n + 1)"/></xsl:function>
@@ -129,6 +134,23 @@ fn run() -> u8 {
         return 13;
     }
     0
+}
+
+/// Options beyond the caps of WebAssembly: refused there, accepted elsewhere.
+fn beyond_the_caps(validator: &Validator, options: &ValidateOptions<'_>) -> bool {
+    [
+        (options.max_depth(WASM_MAX_DEPTH + 1), "max_depth"),
+        (options.max_stack(WASM_MAX_STACK + 1), "max_stack"),
+    ]
+    .iter()
+    .all(|(beyond, option)| {
+        let result = validator.validate_with(VALID, beyond);
+        if cfg!(target_family = "wasm") {
+            matches!(result, Err(Error::OptionOutOfRange { option: o, .. }) if o == *option)
+        } else {
+            result.is_ok_and(|r| r.verdict() == Verdict::Valid)
+        }
+    })
 }
 
 /// The valid invoice `depth` deep: elements of another namespace nested inside

@@ -98,27 +98,42 @@ async function run() {
   check("only the known deep cases needed a larger maximum depth", JSON.stringify(deep) === JSON.stringify(DEEP_CASES), JSON.stringify(deep));
 }
 
-/** Documents `MAX_DEPTH` deep, validated with that maximum by each built-in rule set. */
+/**
+ * Documents `MAX_DEPTH` deep, validated with that maximum by each built-in rule set:
+ * elements on which no rule fires (a report), then elements on each of which a rule fires
+ * and reports, which need the most stack per level (a report, or the module's stack limit,
+ * 256 KiB, never the stack overflow of the JavaScript engine); then the module must still
+ * validate a document.
+ */
 function deepest() {
+  const UBL = '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">';
+  const CII =
+    '<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100" ' +
+    'xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100">';
   const shapes = [
-    ["cen-ubl", '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">', "<a>", "</a>", "</Invoice>"],
-    [
-      "cen-cii",
-      '<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100">',
-      '<x:a xmlns:x="urn:x">',
-      "</x:a>",
-      "</rsm:CrossIndustryInvoice>",
-    ],
+    ["cen-ubl", "quiet", UBL, "<a>", "", "</a>", "</Invoice>"],
+    ["cen-cii", "quiet", CII, '<x:a xmlns:x="urn:x">', "", "</x:a>", "</rsm:CrossIndustryInvoice>"],
+    // UBL-DT-01 on every amount, CII-DT-101 on every identifier.
+    ["cen-ubl", "reporting", UBL, "<Amount>", "1.123", "</Amount>", "</Invoice>"],
+    ["cen-cii", "reporting", CII, '<ram:ID schemeName="s">', "x", "</ram:ID>", "</rsm:CrossIndustryInvoice>"],
   ];
   const out = [];
-  for (const [ruleSet, open, start, end, close] of shapes) {
+  for (const [ruleSet, kind, open, start, content, end, close] of shapes) {
     const validator = new Validator(ruleSet);
-    const text = open + start.repeat(MAX_DEPTH - 1) + end.repeat(MAX_DEPTH - 1) + close;
+    const text = open + start.repeat(MAX_DEPTH - 1) + content + end.repeat(MAX_DEPTH - 1) + close;
+    const name = `${ruleSet} ${MAX_DEPTH} deep, ${kind}`;
     try {
       const report = validator.validate(new TextEncoder().encode(text), { maxDepth: MAX_DEPTH, now: 0 });
-      out.push({ name: `${ruleSet} ${MAX_DEPTH} deep`, ok: report.status === "invalid", detail: report.status });
+      out.push({ name, ok: report.status === "invalid", detail: report.status });
     } catch (e) {
-      out.push({ name: `${ruleSet} ${MAX_DEPTH} deep`, ok: false, detail: `${e.name}: ${e.message}` });
+      const typed = kind === "reporting" && e.name === "EinvoiceValidatorError" && e.limit === "stack";
+      out.push({ name, ok: typed, detail: `${e.name}: ${e.message}` });
+    }
+    try {
+      const after = validator.validate(new TextEncoder().encode(open + close), { now: 0 });
+      out.push({ name: `${name}: then a document`, ok: after.status === "invalid", detail: after.status });
+    } catch (e) {
+      out.push({ name: `${name}: then a document`, ok: false, detail: `${e.name}: ${e.message}` });
     }
     validator.free();
   }
