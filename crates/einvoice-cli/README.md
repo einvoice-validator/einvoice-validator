@@ -315,8 +315,8 @@ schemas of the `einvoice-xsd` crate, which keep their own terms (OASIS, UN/CEFAC
 texts are in `LICENSES/`. `einvoice-validate --licences` prints every one of these licences in
 full.
 
-The binary is also compiled from crates of crates.io (`regex`, `num-bigint`, `roxmltree`,
-`sha2`, `miniz_oxide` and their dependencies), each used under the MIT licence, which all of
+The binary is also compiled from crates of crates.io (`regex`, `roxmltree`, `sha2`,
+`miniz_oxide` and their dependencies), each used under the MIT licence, which all of
 them offer. `THIRD-PARTY-NOTICES` gives, for every one of them on any target, its version, its
 licence expression, the licence used, its authors and the text of that licence from its own
 package, copyright line included; `einvoice-validate --licences` prints it after the licences

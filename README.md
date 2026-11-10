@@ -242,6 +242,7 @@ flowchart LR
     xslt["Official compiled XSLT<br/>(artefacts/)"] --> loader["einvoice-xslt<br/>loader"]
     loader -->|XPath text| parser["einvoice-xpath<br/>parser"]
     parser --> eval["einvoice-xpath-eval<br/>evaluator"]
+    bigint["einvoice-bigint<br/>big integers"] --> xdm
     xdm["einvoice-xdm<br/>atomic values"] --> eval
     eval --> exec["einvoice-xslt-exec<br/>XSLT executor + SVRL"]
     invoice["Invoice XML"] --> exec
@@ -254,6 +255,7 @@ flowchart LR
 
 | Crate | Role |
 |---|---|
+| [`einvoice-bigint`](crates/einvoice-bigint) | Arbitrary-precision signed integers in safe Rust, without dependencies and without assembly, behind the `xs:integer` and `xs:decimal` values of `einvoice-xdm`; no division panics (a zero divisor gives `None`). |
 | [`einvoice-xdm`](crates/einvoice-xdm) | Atomic values of the XPath 2.0 data model: exact `xs:decimal` and `xs:integer`, `xs:double`, dates, casts, arithmetic, comparisons and XSD regular expressions, with the behaviour of Saxon-HE 12.10. |
 | [`einvoice-xpath`](crates/einvoice-xpath) | Parser and syntax tree for the XPath 2.0 subset, XSLT match patterns, sequence types and attribute value templates. |
 | [`einvoice-xpath-eval`](crates/einvoice-xpath-eval) | Node model and evaluator of the XPath 2.0 subset, with the behaviour of Saxon-HE 12.10; unknown functions and variables are refused when an expression is compiled. |

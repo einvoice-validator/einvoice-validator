@@ -376,9 +376,7 @@ dependencies = [
 name = "einvoice-xdm"
 version = "0.2.0"
 dependencies = [
- "num-bigint",
- "num-integer",
- "num-traits",
+ "einvoice-bigint",
  "proptest",
  "regex",
  "roxmltree",

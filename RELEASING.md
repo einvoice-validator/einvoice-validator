@@ -120,10 +120,11 @@ that depend on it (dev-dependencies included). It uploads them in this order, wh
 one at a time (`cargo publish --locked -p NAME`):
 `einvoice-bigint`, `einvoice-pdf`, `einvoice-svrl`, `einvoice-xml`, `einvoice-xpath`,
 `einvoice-xdm`, `einvoice-xsd`, `einvoice-xslt`, `einvoice-schematron`, `einvoice-xpath-eval`,
-`einvoice-xslt-exec`, `einvoice-validator`, `einvoice-cli`. `einvoice-pdf` must be published
-before `einvoice-validator`, which depends on it (feature `pdf`); `einvoice-bigint` and
-`einvoice-xml` depend on no other crate of the workspace. A published version cannot be
-replaced: a mistake is fixed by the next patch version (and the faulty version yanked).
+`einvoice-xslt-exec`, `einvoice-validator`, `einvoice-cli`. `einvoice-bigint` must be published
+before `einvoice-xdm`, which depends on it; `einvoice-pdf` before `einvoice-validator`, which
+depends on it (feature `pdf`); `einvoice-bigint` and `einvoice-xml` depend on no other crate of
+the workspace. A published version cannot be replaced: a mistake is fixed by the next patch
+version (and the faulty version yanked).
 
 ## Publishing on npm
 

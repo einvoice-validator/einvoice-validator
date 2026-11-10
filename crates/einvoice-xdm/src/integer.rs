@@ -12,8 +12,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use num_bigint::BigInt;
-use num_traits::{Signed, ToPrimitive, Zero};
+use einvoice_bigint::BigInt;
 
 use crate::decimal::Decimal;
 use crate::error::{ErrorCode, Result, err};
@@ -75,11 +74,7 @@ impl Integer {
     /// -1, 0 or 1.
     #[must_use]
     pub fn signum(&self) -> i32 {
-        match self.value.sign() {
-            num_bigint::Sign::Minus => -1,
-            num_bigint::Sign::NoSign => 0,
-            num_bigint::Sign::Plus => 1,
-        }
+        self.value.signum()
     }
 
     /// Parses the lexical form of `xs:integer` the way Saxon does
@@ -172,14 +167,8 @@ impl Integer {
     /// The nearest double, ties to even.
     #[must_use]
     pub fn to_f64(&self) -> f64 {
-        if let Some(small) = self.value.to_i64() {
-            #[expect(
-                clippy::cast_precision_loss,
-                reason = "Java's (double) long conversion, round to nearest even"
-            )]
-            return small as f64;
-        }
-        self.value.to_string().parse::<f64>().unwrap_or(f64::NAN)
+        // Correctly rounded, like Java's (double) long conversion and BigInteger.doubleValue.
+        self.value.to_f64()
     }
 
     /// The conversion to `xs:decimal` when the integer's type is only known at run
@@ -268,10 +257,10 @@ impl Integer {
     ///
     /// `FOAR0001` when `other` is zero.
     pub fn idiv(&self, other: &Self) -> Result<Self> {
-        if other.value.is_zero() {
+        let Some(quotient) = self.value.checked_div(&other.value) else {
             return err(ErrorCode::Foar0001, "Integer division by zero");
-        }
-        Ok(Self::from_bigint(&self.value / &other.value))
+        };
+        Ok(Self::from_bigint(quotient))
     }
 
     /// `mod`: the remainder of the truncated division, with the sign of `self`.
@@ -280,10 +269,10 @@ impl Integer {
     ///
     /// `FOAR0001` when `other` is zero.
     pub fn rem(&self, other: &Self) -> Result<Self> {
-        if other.value.is_zero() {
+        let Some(remainder) = self.value.checked_rem(&other.value) else {
             return err(ErrorCode::Foar0001, "Integer modulo zero");
-        }
-        Ok(Self::from_bigint(&self.value % &other.value))
+        };
+        Ok(Self::from_bigint(remainder))
     }
 
     /// Negation. A big value stays big; the 64-bit form normalises.
@@ -327,7 +316,8 @@ fn java_big_integer(text: &str) -> Option<BigInt> {
     let mut value = BigInt::zero();
     for c in digits.chars() {
         let d = java_decimal_digit(c)?;
-        value = value * 10_u8 + d;
+        value *= 10_u8;
+        value += d;
     }
     Some(if negative { -value } else { value })
 }

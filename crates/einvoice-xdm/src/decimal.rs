@@ -14,12 +14,11 @@
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroU64;
 
-use num_bigint::{BigInt, Sign};
-use num_integer::Integer as _;
-use num_traits::{Signed, ToPrimitive, Zero};
+use einvoice_bigint::BigInt;
 
-use crate::error::{ErrorCode, Result, err};
+use crate::error::{ErrorCode, Result, XdmError, err};
 
 /// The minimum number of fractional digits of a decimal division (Saxon's
 /// `BigDecimalValue.DIVIDE_PRECISION`).
@@ -45,11 +44,12 @@ pub(crate) enum Rounding {
     Ceiling,
 }
 
+/// Ten, the divisor of the trailing zeros.
+pub(crate) const TEN: NonZeroU64 = NonZeroU64::MIN.saturating_add(9);
+
 pub(crate) fn pow10(exponent: u64) -> BigInt {
-    num_traits::pow(
-        BigInt::from(10_u8),
-        usize::try_from(exponent).unwrap_or(usize::MAX),
-    )
+    // 10^(2^32) could not be allocated: the saturation changes nothing.
+    BigInt::from(10_u8).pow(u32::try_from(exponent).unwrap_or(u32::MAX))
 }
 
 /// `value × 10^exponent` for `exponent >= 0`.
@@ -73,9 +73,8 @@ impl Decimal {
         }
         let mut unscaled = unscaled;
         let mut scale = scale;
-        let ten = BigInt::from(10_u8);
         loop {
-            let (quotient, remainder) = unscaled.div_rem(&ten);
+            let (quotient, remainder) = unscaled.div_rem_u64(TEN);
             if !remainder.is_zero() {
                 break;
             }
@@ -109,11 +108,7 @@ impl Decimal {
     /// -1, 0 or 1.
     #[must_use]
     pub fn signum(&self) -> i32 {
-        match self.unscaled.sign() {
-            Sign::Minus => -1,
-            Sign::NoSign => 0,
-            Sign::Plus => 1,
-        }
+        self.unscaled.signum()
     }
 
     /// Whether the value is zero.
@@ -205,8 +200,7 @@ impl Decimal {
         let unscaled = if exponent >= 0 {
             BigInt::from(mantissa) << exponent.unsigned_abs()
         } else {
-            BigInt::from(mantissa)
-                * num_traits::pow(BigInt::from(5_u8), exponent.unsigned_abs() as usize)
+            BigInt::from(mantissa) * BigInt::from(5_u8).pow(exponent.unsigned_abs())
         };
         let unscaled = if value.is_sign_negative() {
             -unscaled
@@ -237,8 +231,10 @@ impl Decimal {
         if self.scale <= 0 {
             scale_up(&self.unscaled, -self.scale)
         } else {
-            // BigInt division truncates towards zero.
-            &self.unscaled / pow10(self.scale.unsigned_abs())
+            // The truncated division; a power of ten is never zero.
+            self.unscaled
+                .checked_div(&pow10(self.scale.unsigned_abs()))
+                .unwrap_or_default()
         }
     }
 
@@ -286,6 +282,7 @@ impl Decimal {
             return err(ErrorCode::Foar0001, "Decimal divide by zero");
         }
         let scale = DIVIDE_PRECISION.max(self.scale - other.scale + DIVIDE_PRECISION);
+        // other is not zero, so neither is the denominator below.
         // self / other × 10^scale = a × 10^(scale - sa + sb) / b
         let exponent = scale - self.scale + other.scale;
         let (numerator, denominator) = if exponent >= 0 {
@@ -293,7 +290,8 @@ impl Decimal {
         } else {
             (self.unscaled.clone(), scale_up(&other.unscaled, -exponent))
         };
-        let quotient = round_quotient(&numerator, &denominator, Rounding::HalfDown);
+        let quotient = round_quotient(&numerator, &denominator, Rounding::HalfDown)
+            .ok_or_else(|| XdmError::new(ErrorCode::Foar0001, "Decimal divide by zero"))?;
         Ok(Self::stripped(quotient, scale))
     }
 
@@ -304,11 +302,11 @@ impl Decimal {
     ///
     /// `FOAR0001` when `other` is zero.
     pub fn checked_rem(&self, other: &Self) -> Result<Self> {
-        if other.is_zero() {
-            return err(ErrorCode::Foar0001, "Decimal modulo zero");
-        }
         let (a, b, scale) = self.aligned(other);
-        Ok(Self::stripped(a % b, scale))
+        let Some(remainder) = a.checked_rem(&b) else {
+            return err(ErrorCode::Foar0001, "Decimal modulo zero");
+        };
+        Ok(Self::stripped(remainder, scale))
     }
 
     /// The quotient truncated towards zero (`BigDecimal.divideToIntegralValue`).
@@ -317,11 +315,9 @@ impl Decimal {
     ///
     /// `FOAR0001` when `other` is zero.
     pub fn checked_div_trunc(&self, other: &Self) -> Result<BigInt> {
-        if other.is_zero() {
-            return err(ErrorCode::Foar0001, "Integer division by zero");
-        }
         let (a, b, _) = self.aligned(other);
-        Ok(a / b)
+        a.checked_div(&b)
+            .ok_or_else(|| XdmError::new(ErrorCode::Foar0001, "Integer division by zero"))
     }
 
     /// Negation, stripped.
@@ -372,7 +368,9 @@ impl Decimal {
             return Self::stripped(scale_up(&self.unscaled, scale - self.scale), scale);
         }
         let divisor = pow10((self.scale - scale).unsigned_abs());
-        Self::stripped(round_quotient(&self.unscaled, &divisor, mode), scale)
+        // A power of ten is never zero.
+        let quotient = round_quotient(&self.unscaled, &divisor, mode).unwrap_or_default();
+        Self::stripped(quotient, scale)
     }
 
     /// Whether the value has no fractional part.
@@ -381,18 +379,21 @@ impl Decimal {
         if self.scale <= 0 {
             return true;
         }
-        (&self.unscaled % pow10(self.scale.unsigned_abs())).is_zero()
+        self.unscaled
+            .checked_rem(&pow10(self.scale.unsigned_abs()))
+            .is_some_and(|r| r.is_zero())
     }
 }
 
-/// `numerator / denominator` rounded to an integer with the given mode.
-fn round_quotient(numerator: &BigInt, denominator: &BigInt, mode: Rounding) -> BigInt {
-    // BigInt division truncates towards zero; the remainder has the sign of the numerator.
-    let (quotient, remainder) = numerator.div_rem(denominator);
+/// `numerator / denominator` rounded to an integer with the given mode; `None` when the
+/// denominator is zero.
+fn round_quotient(numerator: &BigInt, denominator: &BigInt, mode: Rounding) -> Option<BigInt> {
+    // The division truncates towards zero; the remainder has the sign of the numerator.
+    let (quotient, remainder) = numerator.checked_div_rem(denominator)?;
     if remainder.is_zero() {
-        return quotient;
+        return Some(quotient);
     }
-    let negative = (numerator.sign() == Sign::Minus) != (denominator.sign() == Sign::Minus);
+    let negative = numerator.is_negative() != denominator.is_negative();
     let away = if negative {
         &quotient - 1_u8
     } else {
@@ -406,7 +407,7 @@ fn round_quotient(numerator: &BigInt, denominator: &BigInt, mode: Rounding) -> B
         Rounding::Floor => negative,
         Rounding::Ceiling => !negative,
     };
-    if round_away { away } else { quotient }
+    Some(if round_away { away } else { quotient })
 }
 
 /// A finite double as `mantissa × 2^exponent`, the mantissa non-negative.
@@ -464,13 +465,14 @@ impl fmt::Display for Decimal {
     /// The XPath string value (Saxon's `BigDecimalValue.decimalToString`): no
     /// exponent, the digits of the representation, `0` for zero.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let negative = self.unscaled.sign() == Sign::Minus;
-        let digits = self.unscaled.magnitude().to_string();
+        let negative = self.unscaled.is_negative();
+        let text = self.unscaled.to_string();
+        let digits = text.strip_prefix('-').unwrap_or(&text);
         if self.scale == 0 {
             if negative {
                 f.write_str("-")?;
             }
-            return f.write_str(&digits);
+            return f.write_str(digits);
         }
         if digits == "0" {
             return f.write_str("0");
@@ -479,7 +481,7 @@ impl fmt::Display for Decimal {
             f.write_str("-")?;
         }
         if self.scale < 0 {
-            f.write_str(&digits)?;
+            f.write_str(digits)?;
             for _ in 0..self.scale.unsigned_abs() {
                 f.write_str("0")?;
             }
@@ -492,7 +494,7 @@ impl fmt::Display for Decimal {
             for _ in len..scale {
                 f.write_str("0")?;
             }
-            f.write_str(&digits)
+            f.write_str(digits)
         } else {
             let (integer, fraction) = digits.split_at(len - scale);
             write!(f, "{integer}.{fraction}")
@@ -507,8 +509,10 @@ impl From<i64> for Decimal {
     }
 }
 
-impl ToPrimitive for Decimal {
-    fn to_i64(&self) -> Option<i64> {
+impl Decimal {
+    /// The value as an `i64`, when it is whole and fits.
+    #[must_use]
+    pub fn to_i64(&self) -> Option<i64> {
         if self.is_whole() {
             self.trunc_to_bigint().to_i64()
         } else {
@@ -516,16 +520,14 @@ impl ToPrimitive for Decimal {
         }
     }
 
-    fn to_u64(&self) -> Option<u64> {
+    /// The value as a `u64`, when it is whole and fits.
+    #[must_use]
+    pub fn to_u64(&self) -> Option<u64> {
         if self.is_whole() {
             self.trunc_to_bigint().to_u64()
         } else {
             None
         }
-    }
-
-    fn to_f64(&self) -> Option<f64> {
-        Some(Self::to_f64(self))
     }
 }
 

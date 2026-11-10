@@ -38,8 +38,8 @@ the code is MIT; the module embeds the CEN EN 16931 stylesheets of the built-in 
 `cen-ubl` and `cen-cii` (EUPL-1.2, the features of those names, on by default) and the OASIS
 UBL 2.1 schemas (their own terms). The package ships the texts in `LICENSES/`, copied from
 `einvoice-validator`, and `THIRD-PARTY-NOTICES`: the notices of the crates of crates.io
-compiled into the module (`wasm-bindgen`, `js-sys`, `regex`, `num-bigint`, `roxmltree` and
-their dependencies, on `wasm32-unknown-unknown`), each with the text of the licences it is
+compiled into the module (`wasm-bindgen`, `js-sys`, `regex`, `roxmltree` and their
+dependencies, on `wasm32-unknown-unknown`), each with the text of the licences it is
 used under: MIT, and the Unicode licence v3 too for `unicode-ident`. The file is generated from `Cargo.lock` and the packages of those crates
 (`cargo run --locked -p einvoice-testkit --bin third-party-notices -- --write`);
 `tests/notices.rs` fails when it is not up to date.

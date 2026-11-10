@@ -152,9 +152,9 @@ const MIT: &str = include_str!("../LICENSES/MIT.txt");
 
 /// What the MIT licence covers in this binary.
 const MIT_COVERS: &str = "the code of einvoice-validate (crate einvoice-cli) and of the crates \
-    of the project it is built from (einvoice-validator, einvoice-pdf, einvoice-svrl, \
-    einvoice-xdm, einvoice-xml, einvoice-xpath, einvoice-xpath-eval, einvoice-xsd, \
-    einvoice-xslt, einvoice-xslt-exec)";
+    of the project it is built from (einvoice-validator, einvoice-bigint, einvoice-pdf, \
+    einvoice-svrl, einvoice-xdm, einvoice-xml, einvoice-xpath, einvoice-xpath-eval, \
+    einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)";
 
 /// The notices of the third-party crates the binary is compiled from (crates.io), with
 /// the texts of their licences: generated from `Cargo.lock` and the packages of those

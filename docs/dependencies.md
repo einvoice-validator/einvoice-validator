@@ -55,7 +55,7 @@ build machine and are not part of the module).
 | `aes` | CLI, library | AES block cipher (RustCrypto) | AES-NI (x86) and ARMv8 AES intrinsics, chosen at run time; constant-time software fallback |
 | `aes-gcm` | CLI, library | AES-GCM (RustCrypto) | none |
 | `aho-corasick` | CLI, library, wasm | multi-pattern search, for regex | SIMD prefilters (SSE2, AVX2, NEON, simd128), unchecked indexing in the automata |
-| `autocfg` | CLI, library, wasm | build-time probes of rustc (build dependency of num-traits) | none |
+| `autocfg` | CLI, library | build-time probes of rustc (build dependency of num-traits) | none |
 | `base16ct` | CLI, library | constant-time hexadecimal (RustCrypto) | `from_utf8_unchecked` on the ASCII it writes |
 | `base64ct` | CLI, library | constant-time Base64 (RustCrypto, PEM) | `from_utf8_unchecked` on the ASCII it writes |
 | `block-buffer` | CLI, library, wasm | block buffering of the hashes (RustCrypto) | casts between blocks and byte arrays of the same layout |
@@ -90,9 +90,7 @@ build machine and are not part of the module).
 | `libc` | CLI, library | bindings to the C library that std links anyway (no C compiled) | FFI declarations |
 | `memchr` | CLI, library, wasm | byte search (XML parser, regex) | SIMD search (SSE2, AVX2, NEON, simd128) and raw pointers |
 | `miniz_oxide` | CLI, library | Deflate decompression (PDF, ZIP, gzip) | none (`forbid(unsafe_code)`) |
-| `num-bigint` | CLI, library, wasm | big integers of the XPath engine (`xs:integer`) | `from_utf8_unchecked` on digit strings, raw slices; inline assembly (see below) |
-| `num-integer` | CLI, library, wasm | integer traits (num-bigint) | none |
-| `num-traits` | CLI, library, wasm | numeric traits | `to_int_unchecked` after a range check |
+| `num-traits` | CLI, library | numeric traits (crypto-bigint) | `to_int_unchecked` after a range check |
 | `once_cell` | CLI, library | lazy values (rustls) | the cells themselves (atomics, `UnsafeCell`) |
 | `p256` | CLI, library | NIST P-256: ECDHE and ECDSA (RustCrypto) | none |
 | `p384` | CLI, library | NIST P-384: ECDHE and ECDSA (RustCrypto) | none |
@@ -161,6 +159,5 @@ assembly); the column "Compiled" says on which targets the code is part of a bui
 | `cmov` | `src/backends/x86.rs`, `src/backends/aarch64.rs`, `src/backends/soft.rs` | x86 and x86-64 (`cmov`), aarch64 (`csel`); `soft.rs` only on arm, riscv32 and riscv64 | Constant-time conditional moves, which a compiler could otherwise turn into branches. Used by the RustCrypto crates of the feature `fetch` (through `ctutils`). Not in the WebAssembly module. |
 | `cpufeatures` | `src/loongarch64.rs` | loongarch64 only | Reads the CPU configuration. |
 | `getrandom` | `src/backends/linux_raw.rs`, `src/backends/rndr.rs` | only with `--cfg getrandom_backend="linux_raw"` or `"rndr"`, never set here | Raw Linux system calls; the aarch64 `RNDR` instruction. |
-| `num-bigint` | `src/biguint/division.rs` | x86 and x86-64 | One `div` instruction (a division of a double word by a word) in the division of big integers, part of the XPath engine's `xs:integer` arithmetic. Not in the WebAssembly module. |
 | `sha2` | `src/sha256/loongarch64_asm.rs`, `src/sha512/loongarch64_asm.rs`, `src/sha256/riscv_zknh/unroll.rs`, `src/sha512/riscv_zknh/unroll.rs` | loongarch64; riscv with `--cfg sha2_backend="riscv-zknh"` | SHA-2 rounds; on x86-64 and aarch64 `sha2` uses intrinsics and portable Rust, no assembly. |
 | `zeroize` | `src/barrier.rs` | aarch64, arm, x86, x86-64 and the other targets where `asm!` is stable | An empty assembly block (`"# {}"`, an assembler comment: no instruction) taking a pointer to wiped memory, so that the compiler keeps the writes that wipe it. Used by rustls and the RustCrypto crates of the feature `fetch`. Not in the WebAssembly module. |

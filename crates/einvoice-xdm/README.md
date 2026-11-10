@@ -5,7 +5,9 @@ Atomic values of the XPath 2.0 data model, as the official EN 16931 and Peppol B
 arbitrary-precision `xs:decimal` and `xs:integer` (with Saxon's division precision and
 string forms), `xs:double` parsing and formatting, dates, casts, arithmetic, comparisons,
 and the XSD regular expressions of `fn:matches`, `fn:replace` and `fn:tokenize`. Behaviour
-of the reference engine that is not reproduced is refused rather than approximated.
+of the reference engine that is not reproduced is refused rather than approximated. The big
+integers are those of [`einvoice-bigint`](https://crates.io/crates/einvoice-bigint), in safe
+Rust without assembly.
 
 ```rust
 use einvoice_xdm::{AtomicType, AtomicValue, ops};

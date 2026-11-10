@@ -400,7 +400,7 @@ test("the package ships the notices of the third-party crates of the module", ()
   const shipped = readFileSync(join(PACKAGE_DIR, "THIRD-PARTY-NOTICES"), "utf8");
   assert.equal(shipped, read("crates/einvoice-wasm/THIRD-PARTY-NOTICES").toString("utf8"));
   assert.ok(shipped.startsWith("Third-party notices of the npm package einvoice-validator"));
-  for (const name of ["wasm-bindgen", "js-sys", "regex", "num-bigint"]) {
+  for (const name of ["wasm-bindgen", "js-sys", "regex", "roxmltree"]) {
     assert.match(shipped, new RegExp(`\\n== ${name} [0-9.]+\\nLicence: MIT`), name);
   }
 });

@@ -10,11 +10,9 @@
 
 use std::cmp::Ordering;
 
-use num_bigint::{BigInt, BigUint};
-use num_integer::Integer as _;
-use num_traits::{One, Zero};
+use einvoice_bigint::BigInt;
 
-use crate::decimal::decompose;
+use crate::decimal::{TEN, decompose};
 use crate::error::{ErrorCode, Result};
 
 /// XML whitespace as trimmed by Saxon's `Whitespace.trimWhitespace`.
@@ -263,22 +261,21 @@ fn free_format_digits(value: f64) -> (Vec<u8>, i64) {
     let shift = i64::from(exponent);
     let (mut remainder, mut denominator, mut m_minus) = if shift >= 0 {
         (
-            BigUint::from(significand) << shift.unsigned_abs(),
-            BigUint::one(),
-            BigUint::one() << shift.unsigned_abs(),
+            BigInt::from(significand) << shift.unsigned_abs(),
+            BigInt::ONE,
+            BigInt::ONE << shift.unsigned_abs(),
         )
     } else {
         (
-            BigUint::from(significand),
-            BigUint::one() << shift.unsigned_abs(),
-            BigUint::one(),
+            BigInt::from(significand),
+            BigInt::ONE << shift.unsigned_abs(),
+            BigInt::ONE,
         )
     };
     let mut m_plus = m_minus.clone();
-    let ten = BigUint::from(10_u8);
-    let nine = BigUint::from(9_u8);
+    let ten = BigInt::from(10_u8);
     let mut position = 0_i64;
-    while remainder < (&denominator + &nine) / &ten {
+    while remainder < (&denominator + 9_u8).div_rem_u64(TEN).0 {
         position -= 1;
         remainder *= &ten;
         m_minus *= &ten;
@@ -292,7 +289,8 @@ fn free_format_digits(value: f64) -> (Vec<u8>, i64) {
     let mut digits = Vec::with_capacity(20);
     loop {
         let r10 = &remainder * &ten;
-        let (quotient, rest) = r10.div_rem(&denominator);
+        // The denominator is a positive power of two times a power of ten.
+        let (quotient, rest) = r10.checked_div_rem(&denominator).unwrap_or_default();
         remainder = rest;
         m_minus *= &ten;
         m_plus *= &ten;
@@ -341,10 +339,13 @@ pub(crate) fn java_shortest(value: f64) -> (Vec<u8>, i64) {
         }
     }
     // Strip trailing zeros of the chosen significand.
-    let ten = BigInt::from(10_u8);
     let mut exponent = t_found;
-    while !best.is_zero() && (&best % &ten).is_zero() {
-        best /= &ten;
+    while !best.is_zero() {
+        let (quotient, remainder) = best.div_rem_u64(TEN);
+        if !remainder.is_zero() {
+            break;
+        }
+        best = quotient;
         exponent += 1;
     }
     let text = best.to_string();
@@ -354,10 +355,13 @@ pub(crate) fn java_shortest(value: f64) -> (Vec<u8>, i64) {
 }
 
 fn digit_count(value: &BigInt) -> usize {
-    let ten = BigInt::from(10_u8);
     let mut v = value.clone();
-    while !v.is_zero() && (&v % &ten).is_zero() {
-        v /= &ten;
+    while !v.is_zero() {
+        let (quotient, remainder) = v.div_rem_u64(TEN);
+        if !remainder.is_zero() {
+            break;
+        }
+        v = quotient;
     }
     v.to_string().len()
 }
@@ -410,21 +414,23 @@ impl RoundingInterval {
     fn candidates(&self, t: i64) -> Option<(BigInt, BigInt)> {
         let (ln, ld) = self.ratio(&self.lower, t);
         let (un, ud) = self.ratio(&self.upper, t);
-        let mut low = ln.div_ceil(&ld);
+        // The denominators are positive: a power of two times a power of ten.
+        let mut low = ln.checked_div_ceil(&ld).unwrap_or_default();
         if !self.inclusive && &low * &ld == ln {
             low += 1_u8;
         }
-        let mut high = un.div_floor(&ud);
+        let mut high = un.checked_div_floor(&ud).unwrap_or_default();
         if !self.inclusive && &high * &ud == un {
             high -= 1_u8;
         }
-        (low <= high && high > BigInt::zero()).then_some((low, high))
+        (low <= high && high.is_positive()).then_some((low, high))
     }
 
     /// The candidate in `[low, high]` closest to the value, ties to even.
     fn closest(&self, t: i64, low: &BigInt, high: &BigInt) -> BigInt {
         let (vn, vd) = self.ratio(&self.value, t);
-        let floor = vn.div_floor(&vd);
+        // vd is positive: a power of two times a power of ten.
+        let floor = vn.checked_div_floor(&vd).unwrap_or_default();
         let ceil = &floor + 1_u8;
         // Compare (v - floor) with (ceil - v), i.e. 2v with floor + ceil.
         let twice = &vn * 2_u8;

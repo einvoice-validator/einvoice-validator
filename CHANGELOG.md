@@ -222,6 +222,17 @@ against.
 
 ### Changed
 
+- `einvoice-xdm` computes `xs:integer` and `xs:decimal` with `einvoice-bigint` instead of
+  `num-bigint`, `num-integer` and `num-traits`. `num-bigint` and `num-integer` are no longer
+  compiled into the binary, the library or the WebAssembly module, nor the inline assembly of
+  `num-bigint` (a `div` instruction on x86 and x86-64); `num-traits` remains only as a dependency
+  of `crypto-bigint` (feature `fetch`), and the WebAssembly module has none of them. The results
+  are unchanged: the Saxon-HE oracle of `einvoice-xdm` and every equivalence suite give the same
+  output, byte for byte. API changes of `einvoice-xdm`: `Decimal::from_parts`, `stripped`,
+  `unscaled`, `trunc_to_bigint`, `checked_div_trunc` and `Integer::from_bigint`, `big`, `value`
+  take or return an `einvoice_bigint::BigInt`; `Decimal` no longer implements
+  `num_traits::ToPrimitive`, and `Decimal::to_i64` and `Decimal::to_u64` are inherent methods
+  (`Decimal::to_f64` already was).
 - The engine is faster on every rule set: whole job of `einvoice-validate` on each corpus (every
   document, mutation cases included, through every stylesheet), one thread, before and after on
   the same machine, alternating: CEN UBL 2.18 to 1.34 s, CEN CII 0.756 to 0.569 s, Peppol 2.29

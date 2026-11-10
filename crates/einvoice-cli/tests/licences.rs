@@ -204,7 +204,6 @@ fn every_third_party_crate_compiled_in_has_its_notice_and_licence_text() {
     // The crates of the engine, of the schemas, of the PDF reader and their own.
     for name in [
         "regex",
-        "num-bigint",
         "roxmltree",
         "sha2",
         "miniz_oxide",

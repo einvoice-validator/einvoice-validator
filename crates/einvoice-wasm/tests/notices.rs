@@ -32,7 +32,7 @@ fn every_third_party_crate_compiled_in_has_its_notice_and_licence_text() {
     let names: BTreeSet<&str> = crates.iter().map(|c| c.name.as_str()).collect();
     // The bindings and the engine; not the PDF reader (no feature pdf), not the macros
     // that run on the build machine.
-    for name in ["wasm-bindgen", "js-sys", "regex", "num-bigint", "roxmltree"] {
+    for name in ["wasm-bindgen", "js-sys", "regex", "roxmltree"] {
         assert!(names.contains(name), "{name}: {names:?}");
     }
     for name in [

@@ -194,9 +194,9 @@ pub(crate) fn svrl(result: Result<Report, Error>) -> Result<Json, Error> {
 /// What the MIT licence covers in the package (the text is that of the library crates,
 /// which `einvoice_validator::licences` gives for their code).
 const MIT_COVERS: &str = "the code of the npm package einvoice-validator (crate einvoice-wasm) \
-    and of the crates of the project it is built from (einvoice-validator, einvoice-svrl, \
-    einvoice-xdm, einvoice-xml, einvoice-xpath, einvoice-xpath-eval, einvoice-xsd, \
-    einvoice-xslt, einvoice-xslt-exec)";
+    and of the crates of the project it is built from (einvoice-validator, einvoice-bigint, \
+    einvoice-svrl, einvoice-xdm, einvoice-xml, einvoice-xpath, einvoice-xpath-eval, \
+    einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)";
 
 /// The licences of what the package embeds, with their texts: those of
 /// `einvoice_validator::licences`, the MIT licence covering this crate's code too.

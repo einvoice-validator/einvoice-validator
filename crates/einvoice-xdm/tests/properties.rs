@@ -2,13 +2,13 @@
 //! below), ordering, string round trips, Saxon's division rule, and double string
 //! round trips.
 
+#![cfg(test)]
+
 use std::cmp::Ordering;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
+use einvoice_bigint::BigInt;
 use einvoice_xdm::{Decimal, Integer, format_double, parse_double};
-use num_bigint::BigInt;
-use num_integer::Integer as _;
-use num_traits::{One, Signed, Zero};
 use proptest::prelude::*;
 
 /// An exact fraction of two big integers, the reference the decimals are checked
@@ -25,7 +25,8 @@ impl BigRational {
     fn new(numerator: BigInt, denominator: BigInt) -> Self {
         assert!(!denominator.is_zero(), "zero denominator");
         let gcd = numerator.gcd(&denominator);
-        let (mut numerator, mut denominator) = (numerator / &gcd, denominator / &gcd);
+        let reduce = |value: BigInt| value.checked_div(&gcd).unwrap();
+        let (mut numerator, mut denominator) = (reduce(numerator), reduce(denominator));
         if denominator.is_negative() {
             numerator = -numerator;
             denominator = -denominator;
@@ -166,7 +167,7 @@ proptest! {
     fn results_are_stripped(a in decimal(), b in decimal()) {
         for r in [a.add(&b), a.sub(&b), a.mul(&b)] {
             let ten = BigInt::from(10);
-            prop_assert!(r.is_zero() || !(r.unscaled() % &ten).is_zero());
+            prop_assert!(r.is_zero() || !r.unscaled().checked_rem(&ten).unwrap().is_zero());
             prop_assert!(!r.is_zero() || r.scale() == 0);
         }
     }
