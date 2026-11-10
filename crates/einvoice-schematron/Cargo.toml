@@ -1,6 +1,6 @@
 [package]
 name = "einvoice-schematron"
-description = "Schematron compiled to XSLT as ph-schematron 10.3.1 writes it: the DOM of the compiled stylesheet and its XML writer, byte for byte"
+description = "Schematron compiled to XSLT as ph-schematron 10.3.1 writes it, byte for byte, in pure Rust: the ISO Schematron skeleton run by this project's XSLT engine, the DOM of the compiled stylesheet and its XML writer"
 keywords = ["schematron", "xslt", "einvoice", "peppol", "en16931"]
 categories = ["parser-implementations", "encoding"]
 version.workspace = true
@@ -17,11 +17,14 @@ exclude = ["tests/"]
 
 [dependencies]
 einvoice-xml = { path = "../einvoice-xml", version = "0.2.0" }
+einvoice-xpath = { path = "../einvoice-xpath", version = "0.2.0" }
+einvoice-xpath-eval = { path = "../einvoice-xpath-eval", version = "0.2.0" }
+einvoice-xslt = { path = "../einvoice-xslt", version = "0.2.0" }
+einvoice-xslt-exec = { path = "../einvoice-xslt-exec", version = "0.2.0" }
+sha2 = "0.11.1"
 
 [dev-dependencies]
-einvoice-xslt = { path = "../einvoice-xslt", version = "0.2.0" }
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
-sha2 = "0.11.1"
 
 [lints]
 workspace = true

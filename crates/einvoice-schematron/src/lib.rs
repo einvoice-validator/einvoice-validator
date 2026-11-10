@@ -1,6 +1,7 @@
 //! Schematron compiled to XSLT exactly as ph-schematron 10.3.1 writes it, with the ISO
-//! Schematron skeleton (`ph-schematron-maven-plugin:convert`, engine `iso-schematron`):
-//! the last two stages of that compiler, which are not XSLT.
+//! Schematron skeleton (`ph-schematron-maven-plugin:convert`, engine `iso-schematron`),
+//! in pure Rust: the three XSLT steps of that compiler run by this project's engine, and
+//! the last two stages, which are not XSLT.
 //!
 //! # The pipeline of ph-schematron
 //!
@@ -32,11 +33,18 @@
 //!
 //! # What this crate does
 //!
+//! [`Skeleton`] runs the three steps, on this project's XSLT engine (`einvoice-xslt`,
+//! `einvoice-xslt-exec`), from the skeleton's files as ph-schematron-isosch 10.3.1
+//! packages them (the caller gives them, checked by SHA-256: [`SKELETON_FILES`]), and
+//! passes the result of each step to the next as ph-schematron does (see [`pipeline`]):
+//! [`Skeleton::compile`] gives the compiled stylesheet, byte for byte the one
+//! ph-schematron-maven-plugin writes, without Java.
+//!
 //! [`Document::from_result`] builds the DOM document of step 3 from its result tree
 //! written as XML, as Saxon's `DOMWriter` builds it (see [`build`](mod@crate::build) and
 //! [`dom`]); [`write_stylesheet`] writes it as `Schematron2XSLTMojo` does, byte for byte
-//! (see [`write`](mod@crate::write)). [`compile_result`] does both. The three XSLT steps
-//! run elsewhere: their result tree, written as XML, is the input.
+//! (see [`write`](mod@crate::write)). [`compile_result`] does both, from a result tree
+//! that ran elsewhere.
 //!
 //! ```
 //! let result = r#"<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="2.0"><!--A-->
@@ -58,11 +66,13 @@
 
 pub mod build;
 pub mod dom;
+pub mod pipeline;
 pub mod write;
 
 mod tables;
 
 pub use dom::{Attribute, Document, Element, Node};
+pub use pipeline::{Compilation, SKELETON_DIR, SKELETON_FILES, Skeleton, Sources};
 
 /// The deepest element nesting accepted, the document element at depth 1: deeper, the
 /// result tree is refused ([`Error::Xml`] with a depth limit) and a document is not
@@ -92,6 +102,19 @@ pub enum Error {
     PiEndMarker(String),
     /// The document has elements nested deeper than [`MAX_DEPTH`].
     TooDeep,
+    /// The Schematron file is not well-formed XML, or has a document type declaration.
+    Schematron(String),
+    /// A step of the skeleton (1, 2 or 3) raised a dynamic error, `xsl:message` with
+    /// `terminate="yes"` included (`XTMM9000`).
+    Step {
+        /// The step.
+        step: u8,
+        /// The error.
+        error: einvoice_xslt_exec::TransformError,
+    },
+    /// A file of the ISO Schematron skeleton is missing or is not ph-schematron's, or the
+    /// skeleton does not load or prepare (a bug of this project).
+    Skeleton(String),
 }
 
 impl std::fmt::Display for Error {
@@ -102,6 +125,11 @@ impl std::fmt::Display for Error {
             Self::NestedComment(c) => write!(f, "comment containing <!-- or -->: {c:?}"),
             Self::PiEndMarker(t) => write!(f, "processing instruction {t:?} containing ?>"),
             Self::TooDeep => write!(f, "elements nested deeper than {MAX_DEPTH}"),
+            Self::Schematron(message) => write!(f, "the Schematron file: {message}"),
+            Self::Step { step, error } => {
+                write!(f, "step {step} of the ISO Schematron skeleton: {error}")
+            }
+            Self::Skeleton(message) => write!(f, "the ISO Schematron skeleton: {message}"),
         }
     }
 }
@@ -110,6 +138,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Xml(e) => Some(e),
+            Self::Step { error, .. } => Some(error),
             _ => None,
         }
     }

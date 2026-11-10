@@ -16,19 +16,24 @@
   constructs); `written/` holds, for each, the DOM document (`NAME.dom`) and what the
   writer writes (`NAME.xslt`), or the code of the `DOMException` (`NAME.error`), and
   the result of `NAME.xsl` as Saxon serializes it (`NAME.result.xml`).
+- `skeleton/`: the four stylesheets of the ISO Schematron skeleton that ph-schematron
+  10.3.1 runs, unmodified, as packaged in the jar of ph-schematron-isosch 10.3.1
+  (`external/schematron/20100710-xslt2/`; SHA-256 in `SKELETON_FILES`), with the
+  `LICENSE` (Apache License 2.0) and `NOTICE` of ph-schematron: the skeleton the tests
+  and examples run in Rust.
 - `xml10-chars.txt`: the characters the XML writer of ph-commons 12.5.3 and the JDK's DOM
   take for invalid.
 - `xerces-cases.txt` and `xerces-expected.txt`: operations on the JDK's DOM and their
   outcome.
 
-Everything but `sch/`, `write/` and `xerces-cases.txt` is written by the `ph-schematron-oracle`
+Everything but `sch/`, `skeleton/`, `write/` and `xerces-cases.txt` is written by the `ph-schematron-oracle`
 example (`cargo run -p einvoice-schematron --example ph-schematron-oracle -- --write`),
 which runs ph-schematron-maven-plugin 10.3.1 and ph-schematron's own pipeline on the
 JVM; without `--write` it checks these files.
 
-The compiled stylesheets and the intermediate results contain text of the stylesheets
-that produced them: the ISO Schematron skeleton of 2010, under the MIT licence (its
-notice: "Copyright (c) 2004-2010 Rick Jellife and Academia Sinica Computing Centre,
-Taiwan", with the permission notice of the MIT licence, `LICENSES/MIT.txt` of the crate
-for its text), as packaged in ph-schematron, under the Apache License 2.0. These files
-are test data of the repository and are not part of the published crate.
+The skeleton is, and the compiled stylesheets and intermediate results contain text of,
+the ISO Schematron skeleton of 2010, under the MIT licence (its notice: "Copyright (c)
+2004-2010 Rick Jellife and Academia Sinica Computing Centre, Taiwan", with the permission
+notice of the MIT licence, `LICENSES/MIT.txt` of the crate for its text), as packaged in
+ph-schematron, under the Apache License 2.0. These files are test data of the repository
+and are not part of the published crate.

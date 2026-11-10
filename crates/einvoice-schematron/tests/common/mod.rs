@@ -146,3 +146,16 @@ pub(crate) fn first_difference(expected: &str, actual: &str) -> String {
         show(&a)
     )
 }
+
+/// The stylesheets of the ISO Schematron skeleton (`tests/data/skeleton/`), by name.
+pub(crate) fn skeleton_files() -> Vec<(String, String)> {
+    einvoice_schematron::SKELETON_FILES
+        .iter()
+        .map(|(name, _)| {
+            (
+                (*name).to_owned(),
+                read(&data().join("skeleton").join(name)),
+            )
+        })
+        .collect()
+}

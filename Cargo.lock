@@ -312,7 +312,10 @@ name = "einvoice-schematron"
 version = "0.2.0"
 dependencies = [
  "einvoice-xml",
+ "einvoice-xpath",
+ "einvoice-xpath-eval",
  "einvoice-xslt",
+ "einvoice-xslt-exec",
  "proptest",
  "sha2",
 ]
