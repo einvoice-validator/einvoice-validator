@@ -75,7 +75,11 @@ job_clippy() { need_toolchain && cargo clippy --workspace --all-targets --all-fe
 job_doc() { need_toolchain && cargo doc --workspace --no-deps --all-features --locked; }
 # Unit and integration tests, then the doctests (--all-targets leaves them out).
 job_test() {
+    # Some tests read every package of Cargo.lock offline (cargo metadata and
+    # cargo tree on all targets: the licence and supply-chain checks); a
+    # build only downloads the host's: fetch them all first.
     need_toolchain &&
+        cargo fetch --locked &&
         cargo test --workspace --all-targets --all-features --locked &&
         cargo test --workspace --doc --all-features --locked
 }
