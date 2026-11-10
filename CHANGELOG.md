@@ -16,6 +16,29 @@ against.
   failed on macOS and Windows (#11).
 ### Changed
 
+- **Breaking** (#37): the Factur-X bundles (MINIMUM, BASIC WL, BASIC, EN 16931, EXTENDED) and
+  the bundles of the French package validate a document against the XML schema their reference
+  validator runs before the stylesheet, as the UBL bundles already did: the Factur-X schema of
+  the profile, as the Mustang validator selects it; UN/CEFACT CII D22B (uncoupled) for CII,
+  CDAR D22B for the life-cycle statuses and the Factur-X schema of each profile the package
+  ships, as the FNFE-MPE package documents it (e-reporting, Flux 10, has no schema step). A
+  document invalid for that schema is invalid, and a stylesheet stopped by a dynamic error on
+  it gives an invalid report. Documents that were valid only because the schema step was
+  missing are now invalid, as the reference validators find them: on the corpora, for instance,
+  `factur-x-en16931` goes from 343 valid, 462 invalid and 45 stopped by an error to 181, 668
+  and 1, `fr-ctc-cii-en16931` from 22, 775 and 64 to 22, 820 and 19; the CDAR and UBL bundles
+  are unchanged. The schemas are fetched with the rule sets (`scripts/fetch-facturx.sh`,
+  `scripts/fetch-fr-ctc.sh`, `rules fetch`; every document pinned by its SHA-256) and not
+  redistributed: fetch the Factur-X and French rule sets again (`rules fetch factur-x fr-ctc`).
+  The schema step agrees with xmllint on every document of the corpora but the two mutation
+  cases with 400-digit amounts, beyond libxml2's 24 digits, which the Java validators accept
+  as this crate does (`crates/einvoice-cli/tests/schema-disagreements.tsv`).
+- **Breaking**: `SchemaId` is no longer `Copy`; `RuleSet::schema` returns `Option<&SchemaId>`
+  and `SchemaId::as_str` takes `&self` (#37).
+- `cargo xtask facturx` and `fr-ctc` write a column `schema:<entry point>` per XML schema in
+  `acceptance.tsv` (xmllint, `--huge`, on every case) and check that the examples accepted are
+  valid for the schemas of their profile; `scripts/check.sh facturx` and `fr-ctc` need
+  xmllint, as `xrechnung` does (#37).
 - `scripts/fetch-peppol.sh` runs ph-schematron with Apache Maven 3.10.0 (compiled stylesheets
   unchanged; retry options under the Maven Resolver 2 names) (#20).
 - `rsa` 0.10.0 and `crypto-bigint` 0.7.11 in the TLS stack of `rules fetch` (#20).
@@ -23,6 +46,13 @@ against.
   `privacy.yml` can be run by hand; `main` requires the `ci-ok` check (#11).
 ### Added
 
+- Rule-set bundles with an XML schema of their own (#37): `[[schema-document]]` tables (path
+  and SHA-256) list the documents of the schema, and `schema` names the path of its entry
+  point (`SchemaId::Bundle`, `RuleSet::schema_documents`, `SchemaDocumentEntry`). The
+  documents are checked against their SHA-256 and loaded with `einvoice-xsd` when the bundle
+  is loaded (a construct outside its subset is `Error::Unsupported`, a schema that does not
+  load `Error::Bundle`); the cache checks them too. In the JSON output of `einvoice-validate`,
+  `rule_set.schema` is then that path.
 - `scripts/privacy-guard.sh` `tree` and `history` report terms of several words split across
   lines or whitespace inside files, like `staged` (#15).
 - `upstream.toml` pins the vendored UBL 2.1 and UN/CEFACT CII D16B schemas of `einvoice-xsd`;

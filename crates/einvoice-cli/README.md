@@ -206,7 +206,8 @@ members are always present and in the order below. The format is identified by `
     "name": string,                    "cen-ubl"
     "title": string,                   "CEN EN 16931 UBL"
     "version": string,                 "1.3.17"
-    "schema": string | null,           "ubl-2.1"
+    "schema": string | null,           "ubl-2.1", "cii-d16b", or the path in the bundle of the
+                                       entry point of a schema of its own: "xsd/main.xsd"
     "unchecked_schema": string | null, an XML schema the reference validator also checks
                                        and this rule set does not: "UN/CEFACT CII D16B (...)"
     "stylesheets": [

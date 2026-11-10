@@ -11,20 +11,20 @@ artefacts, in pure Rust: no JVM, no C library, no FFI.
 
 ## Status
 
-**Version 0.2.0, released on 2026-11-08** ([release notes](https://github.com/einvoice-validator/einvoice-validator/releases/tag/v0.2.0)):
+**Version 0.3.0, released on 2026-11-10** ([release notes](https://github.com/einvoice-validator/einvoice-validator/releases/tag/v0.3.0)):
 the library is the crate [`einvoice-validator`](https://crates.io/crates/einvoice-validator)
 (API documentation on [docs.rs](https://docs.rs/einvoice-validator)), the command-line tool
 `einvoice-validate` the crate [`einvoice-cli`](https://crates.io/crates/einvoice-cli) (see
-[Usage](#usage)); all nine crates of the workspace are published on crates.io at 0.2.0. Before
+[Usage](#usage)); the thirteen publishable crates of the workspace are on crates.io at 0.3.0. Before
 1.0.0, a minor version may break the public API ([RELEASING.md](RELEASING.md)). The library and the tool validate UBL 2.1 invoices and credit
 notes (the XML, the UBL 2.1 schema, then the official stylesheets of the rule set) and, since
 0.2.0, UN/CEFACT CII D16B invoices (the XML, the UN/CEFACT CII D16B schema, then the official
 stylesheet). The CEN EN 16931 UBL and CII 1.3.17 rule sets are built in, and the
-tool picks one from each document's root element; Peppol BIS Billing 3.0.22 (its own rules and
-the CEN rules it embeds) is used as a bundle built locally, since its files may not be
-redistributed. Factur-X 1.09.2, XRechnung 3.0.2 and the French e-invoicing rules (FNFE-MPE
-package 1.4.0.04) are used the same way, as bundles built locally (their stylesheets, and the
-code lists the Factur-X ones read with `document()`). On every case of the test corpora of these
+tool picks one from each document's root element. Peppol BIS Billing 3.0.22 (its own rules and
+the CEN rules it embeds), Factur-X 1.09.2, XRechnung 3.0.2 and the French e-invoicing rules
+(FNFE-MPE package 1.4.0.04) may not be redistributed: `einvoice-validate rules fetch NAME`
+downloads them from their publishers and assembles their bundles locally (see
+[Usage](#usage)). On every case of the test corpora of these
 rule sets, the engine produces the same SVRL report as Saxon-HE (see the table below).
 
 | Part | State |
@@ -43,12 +43,12 @@ rule sets, the engine produces the same SVRL report as Saxon-HE (see the table b
 | Test corpus of CEN EN 16931 CII 1.3.17 (24 cases: the 15 examples and the 9 VEFA tests of the release, and 808 mutation cases of our own, [`corpus/mutations-cii.toml`](corpus/mutations-cii.toml)) with the Saxon-HE results; 785 of the 810 assert ids of the stylesheet fail in some case, the 25 others cannot ([`corpus/cen-en16931-cii-1.3.17/README.md`](corpus/cen-en16931-cii-1.3.17/README.md)) | done ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
 | Same results as Saxon-HE on the whole CII corpus; built-in rule set `cen-cii` and detection of the syntax from the root element in `einvoice-validate` | done: 24 / 24 cases and 808 / 808 mutation cases identical, from the engine, the library and the tool ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
 | `einvoice-xsd`: UN/CEFACT CII D16B XML Schema validation against the official schemas (uncoupled code lists, UNECE's files vendored unmodified), run first by `cen-cii`; compared with xmllint on the 24 cases and 808 mutation cases of the CEN CII corpus, every corpus case agrees, the 4 mutation cases that differ are listed with their cause; locally, the same on the CII corpora of XRechnung, Factur-X and the French rules. CII D22B is not embedded: its schemas carry no licence notice | done ([#32](https://github.com/einvoice-validator/einvoice-validator/issues/32)) |
-| WebAssembly build | done on `main`, not yet published: the library runs on `wasm32-unknown-unknown`, with the current date and time given by the caller (CI validates two corpus documents with the built-in rule set under wasmtime); the npm package `einvoice-validator` (crate `einvoice-wasm`, JavaScript and TypeScript bindings, for Node.js 22, browsers and bundlers, with `cen-ubl` and `cen-cii`) gives the Saxon-HE findings on all 2515 CEN UBL and CII cases under Node.js and in headless Chrome and Firefox ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
-| Factur-X / ZUGFeRD / Order-X PDF files | done on `main`: `einvoice-pdf` extracts the embedded invoice XML and the XMP metadata in pure Rust; `einvoice-validate` and the library (feature `pdf`) validate a PDF through the XML it embeds ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
-| Streaming XML parser (`einvoice-xml`) | done on `main`: checked against `roxmltree` on every XML file of the repository and on 133231 damaged documents, and against Saxon-HE; the validator reads each document with it, in one pass for the XML check and the XML schema, and builds the stylesheets' input tree from it; the SVRL report is kept compactly and its findings are read as the stylesheet writes it, without parsing it again: on an invoice of 5000 lines the peak heap of a validation drops from 9.5 to 2.1 times the document, the input tree alone being 1.9 times ([#18](https://github.com/einvoice-validator/einvoice-validator/issues/18)) |
-| Factur-X 1.09.2 (ZUGFeRD 2.5.2): the stylesheets of the five profiles, 42 cases and 808 mutation cases with the Saxon-HE results; the 27 published examples are accepted by their profile | done on `main`: the corpus is built locally; the engine gives the Saxon-HE result on all 850 cases with each of the five stylesheets (4250 runs), the code lists read with `document()` from the bundle ([#24](https://github.com/einvoice-validator/einvoice-validator/issues/24), [#26](https://github.com/einvoice-validator/einvoice-validator/issues/26)) |
-| XRechnung 3.0.2 (KoSIT validator configuration 2026-08-31, XRechnung Schematron 2.6.0), UBL and CII: 1882 cases (the test suite, 1733 mutants of the Schematron's own unit tests, each with its expectation) and 1312 mutation cases with the Saxon-HE results; the expectations and the test suite agree with Saxon-HE | done on `main`: the corpora are built locally; the engine runs the stylesheets compiled by SchXslt and gives the Saxon-HE result on all 3194 cases with both stylesheets of each syntax (6388 runs), `svrl:metadata` included ([#24](https://github.com/einvoice-validator/einvoice-validator/issues/24), [#27](https://github.com/einvoice-validator/einvoice-validator/issues/27), [#30](https://github.com/einvoice-validator/einvoice-validator/issues/30)) |
-| French e-invoicing rules (FNFE-MPE package 1.4.0.04): CII, UBL, EXTENDED-CTC-FR, Factur-X, life-cycle statuses (CDAR); 198 cases and 1312 mutation cases with the Saxon-HE results; the 135 published examples are accepted | done on `main`: the corpora are built locally; the engine gives the Saxon-HE result on all 1510 cases with each of their stylesheets (8483 runs) ([#24](https://github.com/einvoice-validator/einvoice-validator/issues/24), [#28](https://github.com/einvoice-validator/einvoice-validator/issues/28)) |
+| WebAssembly build | done; the npm package is built and tested, not yet published: the library runs on `wasm32-unknown-unknown`, with the current date and time given by the caller (CI validates two corpus documents with the built-in rule set under wasmtime); the npm package `einvoice-validator` (crate `einvoice-wasm`, JavaScript and TypeScript bindings, for Node.js 22, browsers and bundlers, with `cen-ubl` and `cen-cii`) gives the Saxon-HE findings on all 2515 CEN UBL and CII cases under Node.js and in headless Chrome and Firefox ([#9](https://github.com/einvoice-validator/einvoice-validator/issues/9)) |
+| Factur-X / ZUGFeRD / Order-X PDF files | done: `einvoice-pdf` extracts the embedded invoice XML and the XMP metadata in pure Rust; `einvoice-validate` and the library (feature `pdf`) validate a PDF through the XML it embeds ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
+| Streaming XML parser (`einvoice-xml`) | done: checked against `roxmltree` on every XML file of the repository and on 133231 damaged documents, and against Saxon-HE; the validator reads each document with it, in one pass for the XML check and the XML schema, and builds the stylesheets' input tree from it; the SVRL report is kept compactly and its findings are read as the stylesheet writes it, without parsing it again: on an invoice of 5000 lines the peak heap of a validation drops from 9.5 to 2.1 times the document, the input tree alone being 1.9 times ([#18](https://github.com/einvoice-validator/einvoice-validator/issues/18)) |
+| Factur-X 1.09.2 (ZUGFeRD 2.5.2): the stylesheets of the five profiles, 42 cases and 808 mutation cases with the Saxon-HE results; the 27 published examples are accepted by their profile | done: the corpus is built locally; the engine gives the Saxon-HE result on all 850 cases with each of the five stylesheets (4250 runs), the code lists read with `document()` from the bundle ([#24](https://github.com/einvoice-validator/einvoice-validator/issues/24), [#26](https://github.com/einvoice-validator/einvoice-validator/issues/26)) |
+| XRechnung 3.0.2 (KoSIT validator configuration 2026-08-31, XRechnung Schematron 2.6.0), UBL and CII: 1882 cases (the test suite, 1733 mutants of the Schematron's own unit tests, each with its expectation) and 1316 mutation cases with the Saxon-HE results; the expectations and the test suite agree with Saxon-HE | done: the corpora are built locally; the engine runs the stylesheets compiled by SchXslt and gives the Saxon-HE result on all 3198 cases with both stylesheets of each syntax (6396 runs), `svrl:metadata` included ([#24](https://github.com/einvoice-validator/einvoice-validator/issues/24), [#27](https://github.com/einvoice-validator/einvoice-validator/issues/27), [#30](https://github.com/einvoice-validator/einvoice-validator/issues/30)) |
+| French e-invoicing rules (FNFE-MPE package 1.4.0.04): CII, UBL, EXTENDED-CTC-FR, Factur-X, life-cycle statuses (CDAR); 198 cases and 1316 mutation cases with the Saxon-HE results; the 135 published examples are accepted | done: the corpora are built locally; the engine gives the Saxon-HE result on all 1514 cases with each of their stylesheets (8499 runs) ([#24](https://github.com/einvoice-validator/einvoice-validator/issues/24), [#28](https://github.com/einvoice-validator/einvoice-validator/issues/28)) |
 
 Every open item is tracked in the [issues](https://github.com/einvoice-validator/einvoice-validator/issues);
 changes are listed in [CHANGELOG.md](CHANGELOG.md).
@@ -144,11 +144,19 @@ Mustang validator reads it, and so is an XRechnung one, as the KoSIT validator r
 XRechnung bundles run the scenarios of the KoSIT configuration as the KoSIT validator does: the
 `match` expression of each is evaluated on the document, the one that matches names the
 stylesheets that run (the CEN rules alone, or the CEN and XRechnung rules) and gives some rule
-ids levels of their own (`customLevel`), and a document that matches no scenario is rejected. On
-every document of the test corpora, the verdict of each bundle is the one the reference
-validator's reading of the Saxon-HE reports gives, the XML schema of the scenario included (UBL
-2.1, or UN/CEFACT CII D16B for CII). `--fail-closed` makes every other finding without a known
-severity fatal.
+ids levels of their own (`customLevel`), and a document that matches no scenario is rejected.
+Each bundle first validates the document against the XML schema its reference validator runs:
+UBL 2.1 for UBL; for XRechnung the schema of the scenario (UBL 2.1, or UN/CEFACT CII D16B for
+CII); for Factur-X the schema of the profile, as the Mustang validator selects it; for the French
+CII, CDAR and Factur-X bundles UN/CEFACT CII D22B (uncoupled), CDAR D22B or the Factur-X schema
+of the profile, as the FNFE-MPE package documents it (e-reporting, Flux 10, has none). Those
+schemas are fetched with the rule sets, every document pinned by its SHA-256, and not
+redistributed (new after 0.3.0: in 0.3.0 the Factur-X and French CII and CDAR bundles ran no
+schema, #37). On every document of the test corpora, the verdict of each bundle is the one the
+reference validator's reading of the Saxon-HE reports gives, its XML schema included (as
+xmllint finds it, but for two mutation cases with 400-digit amounts, beyond libxml2's 24
+digits, which the Java validators accept). `--fail-closed` makes every other finding without a
+known severity fatal.
 
 Downloading uses rustls with a cryptography provider on the RustCrypto crates, pure Rust like
 the rest: it is the `fetch` feature of `einvoice-cli` (on by default);
@@ -159,7 +167,7 @@ is `Send + Sync`, and validates any number of documents:
 
 ```toml
 [dependencies]
-einvoice-validator = "0.1"
+einvoice-validator = "0.3"
 ```
 
 ```rust
@@ -231,9 +239,9 @@ document today) to 2.6 times (CEN CII).
 | CEN EN 16931, UBL syntax | 1.3.17 | Artefacts vendored unmodified in `artefacts/`; test corpus and Saxon-HE results in `corpus/`. Built into `einvoice-validator` as the rule set `cen-ubl` (default feature `cen-ubl`). |
 | Peppol BIS Billing 3.0, UBL syntax | 3.0.22 | Not vendored: the upstream repository publishes no licence. `scripts/fetch-peppol.sh` fetches the pinned tag and compiles its two Schematron files to XSLT (ISO skeleton of ph-schematron) into `target/peppol/`, every input and output checked against a pinned checksum, with the `bundle.toml` that makes the directory a rule-set bundle; `scripts/check.sh peppol` builds the corpus and the Saxon-HE results there. |
 | CEN EN 16931, UN/CEFACT CII D16B syntax | 1.3.17 | Artefacts vendored unmodified in `artefacts/` (the CII D16B schemas of the source archive excepted: `einvoice-xsd` vendors UNECE's own files); test corpus, mutation cases and Saxon-HE results in `corpus/`. Built into `einvoice-validator` as the rule set `cen-cii` (default feature `cen-cii`), with the UN/CEFACT CII D16B schemas. |
-| Factur-X / ZUGFeRD, CII syntax | Factur-X 1.09.2 | Not vendored: the official package is behind a registration form, and the example documents are AFNOR's (all rights reserved). `scripts/fetch-facturx.sh` takes the stylesheets of the five profiles from the Mustang validator 2.26.0 on Maven Central and the examples of XP Z12-012 and XP Z12-014 from `fnfe-mpe.org`, every input checked against a pinned checksum, with one rule-set bundle per profile; `scripts/check.sh facturx` builds the corpus and the Saxon-HE results in `target/facturx/` and runs the engine on it. |
+| Factur-X / ZUGFeRD, CII syntax | Factur-X 1.09.2 | Not vendored: the official package is behind a registration form, and the example documents are AFNOR's (all rights reserved). `scripts/fetch-facturx.sh` takes the stylesheets and the XML schemas of the five profiles from the Mustang validator 2.26.0 on Maven Central and the examples of XP Z12-012 and XP Z12-014 from `fnfe-mpe.org`, every input checked against a pinned checksum, with one rule-set bundle per profile; `scripts/check.sh facturx` builds the corpus and the Saxon-HE results in `target/facturx/` and runs the engine on it. |
 | XRechnung, UBL and CII syntaxes | XRechnung 3.0.2 | Not vendored: the XRechnung Schematron includes rules derived from Peppol BIS Billing 3.0. `scripts/fetch-xrechnung.sh` fetches KoSIT's validator configuration, test suite and Schematron unit tests (expanded by XML Mutate) from KoSIT's GitLab, every input checked against a pinned checksum, with a bundle per syntax; `scripts/check.sh xrechnung` builds the corpora in `target/xrechnung/` and runs the engine on them. |
-| French e-invoicing rules (XP Z12-012), CII, UBL and CDAR | FNFE-MPE package 1.4.0.04 | Not vendored: the licence statements of the package disagree, and the example documents are AFNOR's (all rights reserved). `scripts/fetch-fr-ctc.sh` fetches the package and the examples from `fnfe-mpe.org`, every input checked against a pinned checksum, with a bundle per profile; `scripts/check.sh fr-ctc` builds the corpora in `target/fr-ctc/` and runs the engine on them. |
+| French e-invoicing rules (XP Z12-012), CII, UBL and CDAR | FNFE-MPE package 1.4.0.04 | Not vendored: the licence statements of the package disagree, and the example documents are AFNOR's (all rights reserved). `scripts/fetch-fr-ctc.sh` fetches the package (its stylesheets and the XML schemas it documents: UN/CEFACT CII D22B, CDAR D22B, Factur-X) and the examples from `fnfe-mpe.org`, every input checked against a pinned checksum, with a bundle per profile; `scripts/check.sh fr-ctc` builds the corpora in `target/fr-ctc/` and runs the engine on them. |
 | OASIS UBL 2.1 schemas (Invoice, CreditNote) | 2.1 | Vendored unmodified in `crates/einvoice-xsd/schemas/`, except the two ETSI XAdES schemas, which are not redistributable; `einvoice-xsd` validates against them. |
 | UN/CEFACT CII D16B schemas (CrossIndustryInvoice, uncoupled code lists) | D16B | Vendored unmodified (UNECE's files, CRLF line ends included) in `crates/einvoice-xsd/schemas/uncefact-cii-d16b/`: the entry point and the three modules it imports; `einvoice-xsd` validates against them, and the rule set `cen-cii` does so first. |
 | UN/CEFACT CII D22B schemas | D22B | Not vendored: UNECE publishes them with no copyright notice or licence, so the default terms of the United Nations web sites apply, which give no right to redistribute. `einvoice-xsd` loads them from files the user has (`Schema::load`). |
