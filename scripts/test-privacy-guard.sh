@@ -201,6 +201,26 @@ expect 1 "home path as a symlink target in HEAD" in_dir "$repo" "$guard" tree
 git -C "$repo" rm -q winlink
 git -C "$repo" commit -q -m "Remove the link"
 expect 0 "clean tree after removing the link" in_dir "$repo" "$guard" tree
+printf 'about %s\n  %s here\n' "$pair_a" "$pair_b" >"$repo/split.md"
+git -C "$repo" add split.md
+git -C "$repo" commit -q -m "Add a note"
+expect 1 "two-word term split across lines in a file of HEAD" in_dir "$repo" "$guard" tree
+printf 'about %s \t %s here\n' "$pair_a" "$pair_b" >"$repo/split.md"
+git -C "$repo" commit -q -am "Edit the note"
+expect 1 "two-word term, tab and spaces, in a file of HEAD" in_dir "$repo" "$guard" tree
+printf 'binary\0%s\r\n%s\0data' "$pair_a" "$pair_b" >"$repo/split.md"
+git -C "$repo" commit -q -am "Edit the note"
+expect 1 "two-word term split across lines in a binary file of HEAD" in_dir "$repo" "$guard" tree
+git -C "$repo" mv split.md "sub/$term.md"
+git -C "$repo" commit -q -m "Move the note"
+expect 1 "split two-word term in a file named with a term (location withheld)" in_dir "$repo" "$guard" tree
+git -C "$repo" mv "sub/$term.md" split.md
+printf 'about %s\nthen %s, %s\n' "$pair_b" "$pair_a" "$pair_b" >"$repo/split.md"
+git -C "$repo" commit -q -am "Keep the words apart"
+expect 0 "the words of a two-word term apart, not as the term" in_dir "$repo" "$guard" tree
+git -C "$repo" rm -q split.md
+git -C "$repo" commit -q -m "Remove the note"
+expect 0 "clean tree after removing the split term" in_dir "$repo" "$guard" tree
 
 echo "== history"
 # The history still holds the term (an old file and an old file name).
@@ -266,6 +286,27 @@ git -C "$links" rm -q shared
 git -C "$links" commit -q -m "Remove the link"
 expect 0 "symlink with a term removed from HEAD: tree clean" in_dir "$links" "$guard" tree
 expect 1 "symlink with a term in an older commit" in_dir "$links" "$guard" history
+splits="$work/splits"
+git init -q -b main "$splits"
+printf 'clean\n' >"$splits/a.txt"
+printf 'see %s\n' "$pair_b" >"$splits/one-word.txt"
+git -C "$splits" add a.txt one-word.txt
+git -C "$splits" commit -q -m "Initial commit"
+expect 0 "one word of a two-word term alone in history" in_dir "$splits" "$guard" history
+printf 'Notes for %s\n%s.\n' "${pair_a^}" "${pair_b^^}" >"$splits/notes.md"
+git -C "$splits" add notes.md
+git -C "$splits" commit -q -m "Add notes"
+cp "$splits/notes.md" "$splits/copy.md"
+git -C "$splits" add copy.md
+git -C "$splits" commit -q -m "Copy the notes"
+git -C "$splits" rm -q notes.md copy.md
+git -C "$splits" commit -q -m "Remove the notes"
+expect 0 "split two-word term removed from HEAD: tree clean" in_dir "$splits" "$guard" tree
+expect 1 "two-word term split across lines in files of older commits" in_dir "$splits" "$guard" history
+git -C "$splits" reset -q --hard HEAD~3
+git -C "$splits" reflog expire --expire=now --all
+git -C "$splits" gc -q --prune=now
+expect 0 "clean history after rewriting" in_dir "$splits" "$guard" history
 
 echo "== pre-push hook"
 pushrepo="$work/push"

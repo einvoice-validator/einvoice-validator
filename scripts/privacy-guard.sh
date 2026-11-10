@@ -11,8 +11,9 @@
 #   3. ${XDG_CONFIG_HOME:-~/.config}/einvoice-validator/denylist
 # Blank lines and lines starting with '#' are ignored; surrounding whitespace
 # is trimmed; each line is a fixed string matched case-insensitively. A term
-# of several words also matches when its words are split across lines (in
-# commit messages, published text and staged files).
+# of several words also matches when its words are split across lines or
+# separated by other whitespace (in commit messages, published text, tag
+# messages, staged files, and the files of HEAD and of the history).
 #
 # Generic patterns (absolute home paths on Linux, macOS and Windows) are
 # public and checked as well.
@@ -195,6 +196,44 @@ prose() {
     fi
 }
 
+# split_files <label> <git grep tree-ish>...: report rev:path for every file
+# of the given trees that holds a term of several words only once its
+# whitespace runs are joined (a term on one line is reported by search). A
+# word of a term contains no whitespace, so it appears verbatim in any file
+# that holds the joined term: git grep -l on the longest word of each such
+# term lists the candidates, each distinct blob of which is then read and
+# checked in full. Without a term of several words there is nothing to do.
+split_files() {
+    local label=$1 status=0 i oid
+    shift
+    [ -s "$tmp/keywords" ] || return 0
+    git grep -l -z -aiF -f "$tmp/keywords" "$@" >"$tmp/candidates" 2>"$tmp/grep.err" || status=$?
+    [ ! -s "$tmp/grep.err" ] || die "$label: git grep could not read everything (exit $status; see git fsck)"
+    case $status in
+    0) ;;
+    1) return 0 ;;
+    *) die "$label: git grep failed (exit $status)" ;;
+    esac
+    # The blob of each rev:path, in the same order.
+    git cat-file -z --batch-check='%(objectname) %(objecttype)' <"$tmp/candidates" >"$tmp/candidate-oids"
+    local -a names oids
+    local -A seen=()
+    mapfile -d '' -t names <"$tmp/candidates"
+    mapfile -t oids <"$tmp/candidate-oids"
+    [ ${#names[@]} -eq ${#oids[@]} ] || die "$label: git cat-file did not resolve every candidate file"
+    for i in "${!names[@]}"; do
+        [[ ${oids[i]} =~ ^([0-9a-f]+)\ blob$ ]] || die "$label: a candidate file is not a readable blob (see git fsck)"
+        oid=${BASH_REMATCH[1]}
+        [ -z "${seen[$oid]:-}" ] || continue
+        seen[$oid]=1
+        git cat-file blob "$oid" >"$tmp/blob"
+        if ! has_term "$tmp/blob" && has_term_joined "$tmp/blob"; then
+            # One location per line: a newline in a path would split it.
+            printf '%s\n' "${names[i]//$'\n'/?}" | report "$label"
+        fi
+    done
+}
+
 # whole <label> <id> <file>: report <id> when the file holds a term or a home
 # path anywhere, split across lines included.
 whole() {
@@ -209,6 +248,16 @@ staged | tree | history)
     cd "$root"
     ;;
 esac
+
+# The longest word of each term of several words, for split_files.
+while read -r -a words; do
+    [ ${#words[@]} -gt 1 ] || continue
+    longest=${words[0]}
+    for word in "${words[@]}"; do
+        if [ ${#word} -gt ${#longest} ]; then longest=$word; fi
+    done
+    printf '%s\n' "$longest"
+done <"$list" >"$tmp/keywords"
 
 case "$mode" in
 text)
@@ -247,6 +296,7 @@ tree)
     git rev-parse --verify --quiet 'HEAD^{commit}' >/dev/null || die "no HEAD commit to scan"
     search "private term in file" 3 -naiF -f "$list" HEAD
     search "home path in file" 3 -naE "$generic" HEAD
+    split_files "private term split across lines in file" HEAD
     git ls-tree -r --name-only HEAD >"$tmp/names"
     lines "private term in a file name, entry of git ls-tree -r --name-only HEAD" "$tmp/names" -aiF -f "$list"
     entries HEAD "$tmp/entries"
@@ -259,6 +309,7 @@ history)
         # Every tree of every ref, refs/notes/* (git notes) included.
         search "private term in file" 3 -naiF -f "$list" "${revs[@]}"
         search "home path in file" 3 -naE "$generic" "${revs[@]}"
+        split_files "private term split across lines in file" "${revs[@]}"
         for rev in "${revs[@]}"; do
             git ls-tree -r --name-only "$rev" >"$tmp/names"
             lines "private term in a file name of $rev, entry of git ls-tree -r --name-only" "$tmp/names" -aiF -f "$list"
