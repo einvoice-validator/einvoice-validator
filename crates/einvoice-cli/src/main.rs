@@ -154,8 +154,8 @@ const MIT: &str = include_str!("../LICENSES/MIT.txt");
 /// `fetch`).
 #[cfg(feature = "fetch")]
 const MIT_COVERS: &str = "the code of einvoice-validate (crate einvoice-cli) and of the crates \
-    of the project it is built from (einvoice-validator, einvoice-pdf, einvoice-schematron, \
-    einvoice-svrl, einvoice-xdm, einvoice-xml, einvoice-xpath, einvoice-xpath-eval, \
+    of the project it is built from (einvoice-validator, einvoice-bigint, einvoice-pdf, \
+    einvoice-schematron, einvoice-svrl, einvoice-xdm, einvoice-xml, einvoice-xpath, einvoice-xpath-eval, \
     einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)";
 #[cfg(not(feature = "fetch"))]
 const MIT_COVERS: &str = "the code of einvoice-validate (crate einvoice-cli) and of the crates \
