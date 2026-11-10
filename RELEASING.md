@@ -33,6 +33,10 @@ scripts/release.sh 0.1.0                # the same, then a signed commit and a s
 git push --atomic origin main v0.1.0    # printed by the script, which never pushes
 ```
 
+The push goes to `main` directly. A repository ruleset requires the status check `ci-ok`
+(`.github/workflows/ci.yml`) on `main`, with a bypass for repository admins: they can push
+to `main` directly, as for a release; a pull request is merged once `ci-ok` passes.
+
 `scripts/release.sh` refuses to run unless:
 
 - `HEAD` is the branch `main`, identical to `origin/main` after a fetch;

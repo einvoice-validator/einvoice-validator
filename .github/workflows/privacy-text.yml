@@ -3,7 +3,9 @@ name: privacy-text
 # This repository is public. This workflow scans the text published on its
 # GitHub pages (issues, pull requests, comments, reviews, discussions,
 # releases, labels, milestones) with `scripts/privacy-guard.sh text`: the
-# private terms of the PRIVATE_TERMS secret and home paths. It runs once the
+# private terms of the PRIVATE_TERMS secret (of the deployment environment
+# `privacy`, which only its jobs receive; the Dependabot secret of the same
+# name for runs started by Dependabot) and home paths. It runs once the
 # text is published, so a failed run means: edit or delete that text now.
 # The log names neither the term nor the matching text.
 #
@@ -62,6 +64,10 @@ jobs:
     name: privacy guard (published text)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # The environment only holds the secret: no deployment is recorded.
+    environment:
+      name: privacy
+      deployment: false
     permissions:
       contents: read # the sparse checkout of the guard script
     steps:

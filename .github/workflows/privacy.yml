@@ -1,9 +1,12 @@
 name: privacy
 
 # This repository is public. The private term list is the PRIVATE_TERMS
-# repository secret (never in the tree); see scripts/privacy-guard.sh.
-# Pull requests from forks get no secrets, so the history scan only runs
-# where the secret exists: pushes, and pull requests from branches of this
+# secret of the deployment environment `privacy` (never in the tree; only
+# the jobs that run in that environment receive it; runs started by
+# Dependabot receive the Dependabot secret of the same name instead); see
+# scripts/privacy-guard.sh. Pull requests from forks get no secrets, so the
+# history scan only runs where the secret exists: pushes, manual runs (after
+# a change of the secret), and pull requests from branches of this
 # repository. The guard's own tests use a synthetic list and run everywhere.
 # Text published on GitHub (issues, comments, ...) is scanned by
 # privacy-text.yml.
@@ -18,6 +21,7 @@ on:
   push:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,9 +35,13 @@ concurrency:
 jobs:
   privacy-guard:
     name: privacy guard (whole history)
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The environment only holds the secret: no deployment is recorded.
+    environment:
+      name: privacy
+      deployment: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
