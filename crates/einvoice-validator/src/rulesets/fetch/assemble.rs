@@ -7,8 +7,9 @@ use super::archive::Zip;
 use super::check_sha256;
 use crate::Error;
 use crate::rulesets::catalogue::{
-    FACTURX_PROFILES, FR_CTC_BUNDLES, FR_CTC_PACK_DIR, FR_CTC_STYLESHEETS, FamilySpec,
-    FetchedRuleSet, Kind, XRECHNUNG_STYLESHEETS, fr_ctc_side_file,
+    FACTURX_PROFILES, FR_CTC_BUNDLES, FR_CTC_PACK_DIR, FR_CTC_SCHEMAS, FR_CTC_STYLESHEETS,
+    FamilySpec, FetchedRuleSet, FrCtcSchema, Kind, XRECHNUNG_STYLESHEETS, base_name,
+    facturx_schema_documents, fr_ctc_side_file,
 };
 
 /// The files of a release directory: path relative to it, content.
@@ -81,26 +82,34 @@ pub(crate) fn assemble(
     }
 }
 
-/// As `scripts/fetch-facturx.sh`: each profile's stylesheet and code list from the
-/// Mustang validator, the Schematron stating the pinned Factur-X version.
+/// As `scripts/fetch-facturx.sh`: each profile's stylesheet, code list and XML schema
+/// from the Mustang validator, the Schematron stating the pinned Factur-X version.
 fn facturx(archive: &Archive<'_>) -> Result<Files, Error> {
     let facturx = archive.pin("facturx")?;
     let mut files = Files::new();
-    for (dir, file, xslt_pin, codedb_pin) in FACTURX_PROFILES {
+    for profile in &FACTURX_PROFILES {
+        let (dir, file) = (profile.dir, profile.file);
         let xslt_name = format!("FACTUR-X_{file}.xslt");
         let codedb_name = format!("FACTUR-X_{file}_codedb.xml");
         let xslt = archive.read(&format!("xslt/ZF_250/{xslt_name}"))?;
         check_sha256(
             &format!("xslt/ZF_250/{xslt_name}"),
             &xslt,
-            archive.pin(xslt_pin)?,
+            archive.pin(profile.xslt)?,
         )?;
         let codedb = archive.read(&format!("xslt/ZF_250/{codedb_name}"))?;
         check_sha256(
             &format!("xslt/ZF_250/{codedb_name}"),
             &codedb,
-            archive.pin(codedb_pin)?,
+            archive.pin(profile.codedb)?,
         )?;
+        let mut schema = Vec::new();
+        for (document, pin) in facturx_schema_documents(file).iter().zip(profile.schema) {
+            let path = format!("schema/ZF_250/{file}/{document}");
+            let bytes = archive.read(&path)?;
+            check_sha256(&path, &bytes, archive.pin(pin)?)?;
+            schema.push((format!("{dir}/{document}"), bytes));
+        }
         // "Factur-X release metadata ... Version: 1.09.2 ..." (CRLF line ends, the
         // carriage returns removed as `tr -d '\r'` does).
         let sch_name = format!("schematron/ZF_250/FACTUR-X_{file}.sch");
@@ -113,6 +122,7 @@ fn facturx(archive: &Archive<'_>) -> Result<Files, Error> {
         }
         files.push((format!("{dir}/{xslt_name}"), xslt));
         files.push((format!("{dir}/{codedb_name}"), codedb));
+        files.extend(schema);
         files.push((format!("{dir}/bundle.toml"), archive.manifest(dir)?));
     }
     Ok(files)
@@ -191,7 +201,8 @@ fn compiled(name: &str) -> bool {
 }
 
 /// As `scripts/fetch-fr-ctc.sh`: the stylesheets the bundles name, every other compiled
-/// stylesheet or code list of the package one of the pinned files, byte for byte.
+/// stylesheet or code list of the package one of the pinned files, byte for byte, and
+/// the documents of the XML schemas of the bundles.
 fn fr_ctc(archive: &Archive<'_>) -> Result<Files, Error> {
     let top = archive
         .family
@@ -239,8 +250,19 @@ fn fr_ctc(archive: &Archive<'_>) -> Result<Files, Error> {
     if count == 0 {
         return Err(fetch_error("the package has no compiled stylesheet"));
     }
+    // Every document of every schema, checked (by schema name: file name, content).
+    let mut schemas = Vec::new();
+    for (name, documents) in &FR_CTC_SCHEMAS {
+        let mut read = Vec::new();
+        for (path, pin) in documents {
+            let bytes = archive.read(&format!("{prefix}{path}"))?;
+            check_sha256(path, &bytes, archive.pin(pin)?)?;
+            read.push((base_name(path), bytes));
+        }
+        schemas.push((*name, read));
+    }
     let mut files = Files::new();
-    for (dir, _, _, names) in FR_CTC_BUNDLES {
+    for (dir, schema, _, names) in FR_CTC_BUNDLES {
         for name in names {
             let (_, path, codedb, bytes) = stylesheets
                 .iter()
@@ -254,6 +276,15 @@ fn fr_ctc(archive: &Archive<'_>) -> Result<Files, Error> {
                 check_sha256(&side, &content, archive.pin(pin_name)?)?;
                 let base = side.rsplit('/').next().unwrap_or(&side);
                 files.push((format!("{dir}/{base}"), content));
+            }
+        }
+        if let FrCtcSchema::Package(name) = schema {
+            let (_, documents) = schemas
+                .iter()
+                .find(|(n, _)| *n == name)
+                .ok_or_else(|| Error::internal(format!("no schema {name}")))?;
+            for (base, bytes) in documents {
+                files.push((format!("{dir}/{base}"), bytes.clone()));
             }
         }
         files.push((format!("{dir}/bundle.toml"), archive.manifest(dir)?));

@@ -20,7 +20,10 @@
 #     Central): its jar holds xslt/ZF_250/FACTUR-X_<PROFILE>.xslt and
 #     FACTUR-X_<PROFILE>_codedb.xml, the stylesheets XMLValidator runs for each
 #     profile, with the Schematron sources (schematron/ZF_250/) and the XML
-#     schemas (schema/ZF_250/). Each stylesheet and code list must have the
+#     schemas (schema/ZF_250/<PROFILE>/FACTUR-X_<NAME>.xsd, NAME the profile
+#     without its hyphen, and the three modules it imports), which XMLValidator
+#     validates the document against before it runs the stylesheet of the
+#     profile. Each stylesheet, code list and schema document must have the
 #     SHA-256 below, and each Schematron source must state Factur-X 1.09.2:
 #     source/mustang/.
 #  2. The example documents of XP Z12-012 (annex B) and XP Z12-014 (annex B),
@@ -32,8 +35,11 @@
 #     documents of the CII mutation catalogue.
 #  4. One rule-set bundle of einvoice-validator per profile,
 #     <profile>/bundle.toml with the stylesheet and its code list next to it (a resource
-#     of the bundle), a failed assert without a flag being fatal, as the Mustang
-#     validator reads the report (unflagged-assert = "fatal"):
+#     of the bundle), and the four documents of the profile's XML schema (the
+#     schema of the bundle, validated first: a document it finds invalid is
+#     invalid, and the stylesheet runs all the same, as in XMLValidator), a
+#     failed assert without a flag being fatal, as the Mustang validator reads
+#     the report (unflagged-assert = "fatal"):
 #     `einvoice-validate --bundle DIR/factur-x-1.09.2/en16931 FILE`.
 #     `einvoice-validate rules fetch` builds the same bundles, byte for byte,
 #     from the same pins (crates/einvoice-validator/pins/, a copy of the block
@@ -65,21 +71,60 @@ en16931_xslt_sha256=d412c035cd790e0ea0de36b59f58a868f4d1a28bc2072fc2204f23dbeb28
 en16931_codedb_sha256=dd3856984b69e25d5ba6312ec7c8f68e4458064a5998bebcfe8ae66de1a21cad
 extended_xslt_sha256=cb9ba4c20d6b9830b63926b654ecc9472d67bf9c33a7cda0786faabd6f221bc7
 extended_codedb_sha256=2ab4fe294111a5703828b1dc2314280a75612be2063376f53eb863023dc48faa
+minimum_xsd_sha256=f757df8498471c5813ea44e73cfa394a6229aba7e2961d0f26c380aab4e6b81d
+minimum_xsd_qdt_sha256=7830de0041e47dd035fb482d369414422768ff215a3cf668f9fa83f720cec2cc
+minimum_xsd_ram_sha256=a038d5fb57df4fa4e6461e96aa7710c89d9baef8a44f91cac3ea4c55c018572a
+minimum_xsd_udt_sha256=06d4245cc75927b3cf016fae8162249c95167158ed2e512dc63d6e7e5c89fed3
+basic_wl_xsd_sha256=251fd17722266ea6aead1ef5c5881f97ca87cc6182abcb72fdf6acb2246725e0
+basic_wl_xsd_qdt_sha256=fd6958ad55567fbffb127b62b80d9cc76039a6f90315b81cba890646b824743f
+basic_wl_xsd_ram_sha256=91e3a2e8d7931f0c3f790df01bc4a1760dd3b1b630184cb0db128ae9bec4d2d7
+basic_wl_xsd_udt_sha256=412f67846ce8d9af2c83e55b83a9aed8d56a0939135a38a61fbe641b3dd99814
+basic_xsd_sha256=1335ce8d9311fd88d68c713c3bd441cd0fb036fe7d94c9d3267b9fb4c16733f3
+basic_xsd_qdt_sha256=fd6958ad55567fbffb127b62b80d9cc76039a6f90315b81cba890646b824743f
+basic_xsd_ram_sha256=b1695d72a47f21b73cb6b9b65f1d77cae8d311a18f20288608b5a92ffd381a32
+basic_xsd_udt_sha256=0386218417686704266ee06991ab0312d46317757a87378246593c328bc64fd6
+en16931_xsd_sha256=34e51a9b26c95ef6e09297051b9921a05279a4024e659f236ba5d5e0f5a23bec
+en16931_xsd_qdt_sha256=5a3ce756cfa8d4f2ff3165d68123cfb7fbf3c7b64664edb0de38cca64d5c413b
+en16931_xsd_ram_sha256=4a091d4339eddab30f6f5d29364ca2297607d72f03af7da2786637f08bdb3cf7
+en16931_xsd_udt_sha256=f87a1b78d2b7177955957002f8c2a7917e326038d38803f875266cc7579ea857
+extended_xsd_sha256=766afbb866c03b6936a70f8c302307d8ea1c9e43328676c942072be60094f393
+extended_xsd_qdt_sha256=fd1e3ae9d887ce4e17f7056e6f7bccee1ff54040ff41069ff85710782d0df640
+extended_xsd_ram_sha256=2d2e776f7262a7835de09bd5b14206a97680dbf3702d0d2f1670a7147d183670
+extended_xsd_udt_sha256=4600ae4633a5467e4d302b80bc91362a901be9bcdfe49584de72295428d39de3
 # --- end of pins ------------------------------------------------------------
 
 mustang_url=https://repo1.maven.org/maven2/org/mustangproject/validator/$mustang/validator-$mustang.jar
 z12_012_url=https://fnfe-mpe.org/wp-content/uploads/2026/07/FR_and_ENG_XP_Z12-012_Annexes_A_et_B_EXEMPLES_V$z12_012.zip
 z12_014_url=https://fnfe-mpe.org/wp-content/uploads/2026/07/FR_and_ENG_XP_Z12-014_CAS_USAGE_Annexes_A_et_B_EXEMPLES_V$z12_014.zip
 
-# Profile directory, Mustang file name, SHA-256 of the stylesheet and of its
-# code list.
+# Profile directory, Mustang file name (also the directory of its XML schema),
+# SHA-256 of the stylesheet and of its code list, then of the documents of its
+# XML schema (schema_documents): the entry point and the three modules it imports.
 profiles=(
     minimum MINIMUM "$minimum_xslt_sha256" "$minimum_codedb_sha256"
+    "$minimum_xsd_sha256" "$minimum_xsd_qdt_sha256" "$minimum_xsd_ram_sha256" "$minimum_xsd_udt_sha256"
     basic-wl BASIC-WL "$basic_wl_xslt_sha256" "$basic_wl_codedb_sha256"
+    "$basic_wl_xsd_sha256" "$basic_wl_xsd_qdt_sha256" "$basic_wl_xsd_ram_sha256" "$basic_wl_xsd_udt_sha256"
     basic BASIC "$basic_xslt_sha256" "$basic_codedb_sha256"
+    "$basic_xsd_sha256" "$basic_xsd_qdt_sha256" "$basic_xsd_ram_sha256" "$basic_xsd_udt_sha256"
     en16931 EN16931 "$en16931_xslt_sha256" "$en16931_codedb_sha256"
+    "$en16931_xsd_sha256" "$en16931_xsd_qdt_sha256" "$en16931_xsd_ram_sha256" "$en16931_xsd_udt_sha256"
     extended EXTENDED "$extended_xslt_sha256" "$extended_codedb_sha256"
+    "$extended_xsd_sha256" "$extended_xsd_qdt_sha256" "$extended_xsd_ram_sha256" "$extended_xsd_udt_sha256"
 )
+fields=8
+
+# schema_documents FILE: the documents of the XML schema of the profile whose
+# Mustang file name is FILE, in schema/ZF_250/FILE/: the entry point
+# FACTUR-X_<NAME>.xsd (NAME: FILE without its hyphen), then the modules it
+# imports, in the order of the pins.
+schema_documents() {
+    local name=${1//-/} module
+    echo "FACTUR-X_$name.xsd"
+    for module in QualifiedDataType ReusableAggregateBusinessInformationEntity UnqualifiedDataType; do
+        echo "FACTUR-X_${name}_urn_un_unece_uncefact_data_standard_${module}_100.xsd"
+    done
+}
 
 cd "$(git rev-parse --show-toplevel)"
 root=$PWD
@@ -165,16 +210,21 @@ fetch "$mustang_url" "$jar" "$mustang_jar_sha256"
 mkdir -p "$tmp/release/source/mustang"
 unzip -q "$jar" 'xslt/ZF_250/*' 'schematron/ZF_250/*' 'schema/ZF_250/*' -d "$tmp/release/source/mustang"
 mustang_dir=$tmp/release/source/mustang
-for ((i = 0; i < ${#profiles[@]}; i += 4)); do
+for ((i = 0; i < ${#profiles[@]}; i += fields)); do
     file=${profiles[i + 1]}
     check "$mustang_dir/xslt/ZF_250/FACTUR-X_$file.xslt" "${profiles[i + 2]}"
     check "$mustang_dir/xslt/ZF_250/FACTUR-X_${file}_codedb.xml" "${profiles[i + 3]}"
+    j=4
+    while IFS= read -r document; do
+        check "$mustang_dir/schema/ZF_250/$file/$document" "${profiles[i + j]}"
+        j=$((j + 1))
+    done < <(schema_documents "$file")
     # "Factur-X release metadata ... Version: 1.09.2 Release date: 2026-08-04"
     # (CRLF line ends; grep -c reads all its input, so that tr never gets SIGPIPE)
     [ "$(tr -d '\r' <"$mustang_dir/schematron/ZF_250/FACTUR-X_$file.sch" | grep -c "^ *Version: $facturx\$")" -gt 0 ] ||
         fail "schematron/ZF_250/FACTUR-X_$file.sch does not state Factur-X version $facturx"
 done
-say "Mustang $mustang: the stylesheets of the 5 profiles verified (Factur-X $facturx)"
+say "Mustang $mustang: the stylesheets and XML schemas of the 5 profiles verified (Factur-X $facturx)"
 
 # --- 2. the example documents -------------------------------------------------
 
@@ -191,23 +241,33 @@ cp -R "$root/artefacts/cen-en16931-cii-1.3.17/cii/examples" "$tmp/release/source
 
 # --- 4. the bundles -----------------------------------------------------------
 
-for ((i = 0; i < ${#profiles[@]}; i += 4)); do
+for ((i = 0; i < ${#profiles[@]}; i += fields)); do
     profile=${profiles[i]}
     file=${profiles[i + 1]}
     bundle=$tmp/release/$profile
     mkdir -p "$bundle"
     cp "$mustang_dir/xslt/ZF_250/FACTUR-X_$file.xslt" "$mustang_dir/xslt/ZF_250/FACTUR-X_${file}_codedb.xml" "$bundle/"
-    cat >"$bundle/bundle.toml" <<EOF
+    documents=()
+    while IFS= read -r document; do
+        documents+=("$document")
+        cp "$mustang_dir/schema/ZF_250/$file/$document" "$bundle/"
+    done < <(schema_documents "$file")
+    {
+        cat <<EOF
 # Factur-X $facturx, profile $file, from the Mustang validator $mustang: the
 # rule-set bundle manifest of einvoice-validator, as scripts/fetch-facturx.sh and
 # einvoice-validate rules fetch write it (einvoice-validate --bundle DIR). The
-# stylesheet reads, with document(), the code list FACTUR-X_${file}_codedb.xml
-# next to it, a resource of the bundle. A failed assert without a flag is fatal,
-# as the Mustang validator reads the report.
+# document is validated first against the XML schema of the profile,
+# ${documents[0]} and the modules it imports, next to it, as the Mustang
+# validator validates it: a schema error makes it invalid, and the stylesheet
+# runs all the same. The stylesheet reads, with document(), the code list
+# FACTUR-X_${file}_codedb.xml next to it, a resource of the bundle. A failed
+# assert without a flag is fatal, as the Mustang validator reads the report.
 format = 2
 name = "factur-x-$profile"
 title = "Factur-X $file"
 version = "$facturx"
+schema = "${documents[0]}"
 
 [[stylesheet]]
 name = "FACTUR-X_$file"
@@ -219,6 +279,10 @@ unflagged-assert = "fatal"
 path = "FACTUR-X_${file}_codedb.xml"
 sha256 = "${profiles[i + 3]}"
 EOF
+        for ((j = 0; j < ${#documents[@]}; j++)); do
+            printf '\n[[schema-document]]\npath = "%s"\nsha256 = "%s"\n' "${documents[j]}" "${profiles[i + 4 + j]}"
+        done
+    } >"$bundle/bundle.toml"
 done
 
 rm -rf "$release"

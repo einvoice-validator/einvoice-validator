@@ -436,6 +436,7 @@ mod tests {
                 sha256_pin: None,
                 side_files: &[],
                 generator: Generator::IsoSkeleton,
+                schema: None,
             }],
             document_dirs: &[],
             vefa_dirs: &[],
@@ -520,6 +521,7 @@ mod tests {
                     sha256_pin: None,
                     side_files: &[],
                     generator: Generator::IsoSkeleton,
+                    schema: None,
                 },
                 Stylesheet {
                     name: "T",
@@ -528,6 +530,7 @@ mod tests {
                     sha256_pin: None,
                     side_files: &[],
                     generator: Generator::IsoSkeleton,
+                    schema: None,
                 },
             ],
             document_dirs: &[],

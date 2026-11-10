@@ -240,6 +240,12 @@ fn compare_with_script(cache: &RuleSetCache, rule_set: &FetchedRuleSet) -> Vec<S
     let mut files: Vec<String> = vec![MANIFEST_FILE.to_owned()];
     files.extend(parsed.stylesheets().iter().map(|s| s.path().to_owned()));
     files.extend(parsed.resources().iter().map(|r| r.path().to_owned()));
+    files.extend(
+        parsed
+            .schema_documents()
+            .iter()
+            .map(|d| d.path().to_owned()),
+    );
     for file in &files {
         let (mut a, mut b) = (ours.clone(), theirs.clone());
         a.extend(file.split('/'));

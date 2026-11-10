@@ -68,7 +68,8 @@ pub(crate) fn pin<'a>(pins: &'a [(String, String)], script: &str, name: &str) ->
 }
 
 /// Checks that the cache holds the release the rule set names and the
-/// stylesheets and their side files with their pinned SHA-256. Returns
+/// stylesheets, their side files and the documents of their XML schemas
+/// with their pinned SHA-256. Returns
 /// `(stylesheet, sha256)`.
 pub(crate) fn check_cache(
     root: &Path,
@@ -126,6 +127,11 @@ pub(crate) fn check_cache(
         let dir = stylesheet.xslt.rsplit_once('/').map_or("", |(d, _)| d);
         for (file, file_pin) in stylesheet.side_files {
             check(&format!("{dir}/{file}"), file_pin)?;
+        }
+        if let Some(schema) = stylesheet.schema {
+            for (file, file_pin) in schema.documents {
+                check(&format!("{}/{file}", schema.dir), file_pin)?;
+            }
         }
         checked.push((stylesheet.name.to_owned(), sha256));
     }
@@ -248,6 +254,9 @@ mod tests {
                     let sha256 = pin(&pins, family.script, stylesheet.sha256_pin.unwrap()).unwrap();
                     assert_eq!(sha256.len(), 64, "{}", stylesheet.name);
                     for (_, file_pin) in stylesheet.side_files {
+                        assert_eq!(pin(&pins, family.script, file_pin).unwrap().len(), 64);
+                    }
+                    for (_, file_pin) in stylesheet.schema.map_or(&[][..], |s| s.documents) {
                         assert_eq!(pin(&pins, family.script, file_pin).unwrap().len(), 64);
                     }
                 }

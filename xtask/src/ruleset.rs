@@ -63,6 +63,40 @@ pub(crate) struct Stylesheet {
     /// directory, each with the pin of its SHA-256.
     pub(crate) side_files: &'static [(&'static str, &'static str)],
     pub(crate) generator: Generator,
+    /// For a rule set whose profiles are listed ([`Profiles::Listed`]): the
+    /// XML schema the reference validator validates a document against
+    /// before the stylesheet, which the bundle of the stylesheet (the
+    /// directory of `xslt`) validates against too.
+    pub(crate) schema: Option<&'static Schema>,
+}
+
+/// An XML schema of the fetched files: the reference of the schema step of
+/// the bundles that name it (`crate::acceptance`, run with xmllint).
+#[derive(Debug)]
+pub(crate) struct Schema {
+    /// The directory of its documents, relative to the base directory.
+    pub(crate) dir: &'static str,
+    /// Its documents, the entry point first, each with the name of the pin
+    /// of its SHA-256 in the fetch script. A bundle that validates against
+    /// it holds them under these names.
+    pub(crate) documents: &'static [(&'static str, &'static str)],
+}
+
+impl Schema {
+    /// The file name of the entry point: the `schema` of the bundles.
+    pub(crate) fn entry(&self) -> &'static str {
+        self.documents.first().map_or("", |(name, _)| name)
+    }
+
+    /// The path of the entry point, relative to the base directory.
+    pub(crate) fn entry_path(&self) -> String {
+        format!("{}/{}", self.dir, self.entry())
+    }
+
+    /// Its column in the acceptance table: `schema:` and the entry point.
+    pub(crate) fn column(&self) -> String {
+        format!("schema:{}", self.entry())
+    }
 }
 
 /// Documents that the reference pipeline of the rule set accepts: published
@@ -245,6 +279,7 @@ pub(crate) const CEN_UBL: RuleSet = RuleSet {
         sha256_pin: None,
         side_files: &[],
         generator: Generator::IsoSkeleton,
+        schema: None,
     }],
     document_dirs: &[
         ("examples", "ubl/examples"),
@@ -280,6 +315,7 @@ pub(crate) const CEN_CII: RuleSet = RuleSet {
         sha256_pin: None,
         side_files: &[],
         generator: Generator::IsoSkeleton,
+        schema: None,
     }],
     document_dirs: &[("examples", "cii/examples")],
     vefa_dirs: &["test/cii"],
@@ -315,6 +351,7 @@ pub(crate) const PEPPOL_UBL: RuleSet = RuleSet {
             sha256_pin: Some("peppol_xslt_sha256"),
             side_files: &[],
             generator: Generator::IsoSkeleton,
+            schema: None,
         },
         Stylesheet {
             name: "CEN-EN16931-UBL",
@@ -323,6 +360,7 @@ pub(crate) const PEPPOL_UBL: RuleSet = RuleSet {
             sha256_pin: Some("cen_xslt_sha256"),
             side_files: &[],
             generator: Generator::IsoSkeleton,
+            schema: None,
         },
     ],
     document_dirs: &[
@@ -385,9 +423,10 @@ const FACTURX_PROFILES: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// A Factur-X stylesheet of the Mustang validator, in the bundle of its profile.
+/// A Factur-X stylesheet of the Mustang validator, in the bundle of its
+/// profile, with the XML schema of the profile.
 macro_rules! facturx {
-    ($name:literal, $dir:literal, $pin:literal, $codedb:literal, $codedb_pin:literal) => {
+    ($name:literal, $dir:literal, $pin:literal, $codedb:literal, $codedb_pin:literal, $schema:expr) => {
         Stylesheet {
             name: $name,
             xslt: concat!($dir, "/", $name, ".xslt"),
@@ -395,9 +434,55 @@ macro_rules! facturx {
             sha256_pin: Some($pin),
             side_files: &[($codedb, $codedb_pin)],
             generator: Generator::IsoSkeleton,
+            schema: Some($schema),
         }
     };
 }
+
+/// The XML schema of a Factur-X profile in the Mustang validator
+/// (`schema/ZF_250/<PROFILE>/`), which `XMLValidator` validates a document
+/// of the profile against before the stylesheet: the entry point
+/// `FACTUR-X_<NAME>.xsd` and the three modules it imports.
+macro_rules! mustang_schema {
+    ($profile:literal, $name:literal, $pin:literal) => {
+        Schema {
+            dir: concat!("source/mustang/schema/ZF_250/", $profile),
+            documents: &[
+                (concat!("FACTUR-X_", $name, ".xsd"), concat!($pin, "_xsd_sha256")),
+                (
+                    concat!(
+                        "FACTUR-X_",
+                        $name,
+                        "_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd"
+                    ),
+                    concat!($pin, "_xsd_qdt_sha256"),
+                ),
+                (
+                    concat!(
+                        "FACTUR-X_",
+                        $name,
+                        "_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd"
+                    ),
+                    concat!($pin, "_xsd_ram_sha256"),
+                ),
+                (
+                    concat!(
+                        "FACTUR-X_",
+                        $name,
+                        "_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd"
+                    ),
+                    concat!($pin, "_xsd_udt_sha256"),
+                ),
+            ],
+        }
+    };
+}
+
+const MUSTANG_MINIMUM: Schema = mustang_schema!("MINIMUM", "MINIMUM", "minimum");
+const MUSTANG_BASIC_WL: Schema = mustang_schema!("BASIC-WL", "BASICWL", "basic_wl");
+const MUSTANG_BASIC: Schema = mustang_schema!("BASIC", "BASIC", "basic");
+const MUSTANG_EN16931: Schema = mustang_schema!("EN16931", "EN16931", "en16931");
+const MUSTANG_EXTENDED: Schema = mustang_schema!("EXTENDED", "EXTENDED", "extended");
 
 /// Factur-X 1.09.2 (ZUGFeRD 2.5.2), CII: the stylesheets of its five profiles
 /// as the Mustang validator 2.26.0 runs them, fetched by
@@ -415,35 +500,40 @@ pub(crate) const FACTURX: RuleSet = RuleSet {
             "minimum",
             "minimum_xslt_sha256",
             "FACTUR-X_MINIMUM_codedb.xml",
-            "minimum_codedb_sha256"
+            "minimum_codedb_sha256",
+            &MUSTANG_MINIMUM
         ),
         facturx!(
             "FACTUR-X_BASIC-WL",
             "basic-wl",
             "basic_wl_xslt_sha256",
             "FACTUR-X_BASIC-WL_codedb.xml",
-            "basic_wl_codedb_sha256"
+            "basic_wl_codedb_sha256",
+            &MUSTANG_BASIC_WL
         ),
         facturx!(
             "FACTUR-X_BASIC",
             "basic",
             "basic_xslt_sha256",
             "FACTUR-X_BASIC_codedb.xml",
-            "basic_codedb_sha256"
+            "basic_codedb_sha256",
+            &MUSTANG_BASIC
         ),
         facturx!(
             "FACTUR-X_EN16931",
             "en16931",
             "en16931_xslt_sha256",
             "FACTUR-X_EN16931_codedb.xml",
-            "en16931_codedb_sha256"
+            "en16931_codedb_sha256",
+            &MUSTANG_EN16931
         ),
         facturx!(
             "FACTUR-X_EXTENDED",
             "extended",
             "extended_xslt_sha256",
             "FACTUR-X_EXTENDED_codedb.xml",
-            "extended_codedb_sha256"
+            "extended_codedb_sha256",
+            &MUSTANG_EXTENDED
         ),
     ],
     document_dirs: &[
@@ -505,6 +595,7 @@ macro_rules! kosit {
             sha256_pin: Some($pin),
             side_files: &[],
             generator: Generator::SchXslt,
+            schema: None,
         }
     };
 }
@@ -597,9 +688,11 @@ pub(crate) const XRECHNUNG_CII: RuleSet = RuleSet {
 };
 
 /// A stylesheet of the FNFE-MPE package, in the bundle `$dir` of
-/// `scripts/fetch-fr-ctc.sh`.
+/// `scripts/fetch-fr-ctc.sh`, with the XML schema that bundle validates
+/// against when the stylesheet is the first of the bundle (step 1 of the
+/// package's documentation).
 macro_rules! fnfe {
-    ($name:literal, $dir:literal, $golden:literal, $pin:literal) => {
+    ($name:literal, $dir:literal, $golden:literal, $pin:literal, $schema:expr) => {
         Stylesheet {
             name: $name,
             xslt: concat!($dir, "/", $name, ".xslt"),
@@ -607,9 +700,10 @@ macro_rules! fnfe {
             sha256_pin: Some($pin),
             side_files: &[],
             generator: Generator::IsoSkeleton,
+            schema: $schema,
         }
     };
-    ($name:literal, $dir:literal, $golden:literal, $pin:literal, $codedb:literal, $codedb_pin:literal) => {
+    ($name:literal, $dir:literal, $golden:literal, $pin:literal, $codedb:literal, $codedb_pin:literal, $schema:expr) => {
         Stylesheet {
             name: $name,
             xslt: concat!($dir, "/", $name, ".xslt"),
@@ -617,9 +711,80 @@ macro_rules! fnfe {
             sha256_pin: Some($pin),
             side_files: &[($codedb, $codedb_pin)],
             generator: Generator::IsoSkeleton,
+            schema: $schema,
         }
     };
 }
+
+/// An XML schema of the FNFE-MPE package of the Cross Industry family, in
+/// `$dir` of the package: the entry point `$entry.xsd` and the three
+/// modules it imports, `$modules_urn_..._<module>_100.xsd`, with the pins
+/// `$pin_xsd_sha256`, `$pin_xsd_qdt_sha256`, ...
+macro_rules! fnfe_schema {
+    ($dir:literal, $entry:literal, $modules:literal, $pin:literal) => {
+        Schema {
+            dir: concat!("source/pack/", $dir),
+            documents: &[
+                (concat!($entry, ".xsd"), concat!($pin, "_xsd_sha256")),
+                (
+                    concat!(
+                        $modules,
+                        "_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd"
+                    ),
+                    concat!($pin, "_xsd_qdt_sha256"),
+                ),
+                (
+                    concat!(
+                        $modules,
+                        "_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd"
+                    ),
+                    concat!($pin, "_xsd_ram_sha256"),
+                ),
+                (
+                    concat!(
+                        $modules,
+                        "_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd"
+                    ),
+                    concat!($pin, "_xsd_udt_sha256"),
+                ),
+            ],
+        }
+    };
+}
+
+/// The UN/CEFACT CII D22B schema of the package (uncoupled code lists).
+const FNFE_CII_D22B: Schema = fnfe_schema!(
+    "CII/1xsd-CII_D22B_uncoupled",
+    "CrossIndustryInvoice_100pD22B",
+    "CrossIndustryInvoice_100pD22B",
+    "cii"
+);
+/// The UN/CEFACT CDAR D22B schema of the package (uncoupled code lists).
+const FNFE_CDAR_D22B: Schema = fnfe_schema!(
+    "CDAR/1xsd-CDAR_D22B_uncoupled",
+    "CrossDomainAcknowledgementAndResponse_100pD22B",
+    "CrossDomainAcknowledgementAndResponse_100pD22B",
+    "cdar"
+);
+/// The schemas of the Factur-X profiles as the package ships them.
+const FNFE_FX_BASIC_WL: Schema = fnfe_schema!(
+    "Factur-X_1.09.2.fixFR04/BASICWL/1xsd",
+    "Factur-X_BASICWL",
+    "Factur-X_1.09.2_BASICWL",
+    "fx_basic_wl"
+);
+const FNFE_FX_EN16931: Schema = fnfe_schema!(
+    "Factur-X_1.09.2.fixFR04/EN16931/1xsd",
+    "Factur-X_EN16931",
+    "Factur-X_1.09.2_EN16931",
+    "fx_en16931"
+);
+const FNFE_FX_EXTENDED: Schema = fnfe_schema!(
+    "Factur-X_1.09.2.fixFR04/EXTENDED/1xsd",
+    "Factur-X_EXTENDED",
+    "Factur-X_1.09.2_EXTENDED",
+    "fx_extended"
+);
 
 /// The French rules for CII (FNFE-MPE package 1.4.0.04): EN 16931 as the
 /// package ships it, EXTENDED-CTC-FR, the BR-FR rules and their WARNING
@@ -637,25 +802,29 @@ pub(crate) const FR_CTC_CII: RuleSet = RuleSet {
             "EN16931-CII",
             "cii-en16931",
             "golden-en16931",
-            "cii_en16931_sha256"
+            "cii_en16931_sha256",
+            Some(&FNFE_CII_D22B)
         ),
         fnfe!(
             "EXTENDED-CTC-FR-CII",
             "cii-extended-ctc-fr",
             "golden-extended-ctc-fr",
-            "cii_extended_ctc_fr_sha256"
+            "cii_extended_ctc_fr_sha256",
+            Some(&FNFE_CII_D22B)
         ),
         fnfe!(
             "BR-FR-Flux2-CII",
             "cii-en16931",
             "golden-br-fr",
-            "cii_br_fr_sha256"
+            "cii_br_fr_sha256",
+            None
         ),
         fnfe!(
             "BR-FR-Flux2-CII_WARNING",
             "cii-en16931-warning",
             "golden-br-fr-warning",
-            "cii_br_fr_warning_sha256"
+            "cii_br_fr_warning_sha256",
+            None
         ),
         fnfe!(
             "FACTUR-X_BASIC-WL",
@@ -663,7 +832,8 @@ pub(crate) const FR_CTC_CII: RuleSet = RuleSet {
             "golden-factur-x-basic-wl",
             "fx_basic_wl_sha256",
             "FACTUR-X_BASIC-WL_codedb.xml",
-            "fx_basic_wl_codedb_sha256"
+            "fx_basic_wl_codedb_sha256",
+            Some(&FNFE_FX_BASIC_WL)
         ),
         fnfe!(
             "FACTUR-X_EN16931",
@@ -671,7 +841,8 @@ pub(crate) const FR_CTC_CII: RuleSet = RuleSet {
             "golden-factur-x-en16931",
             "fx_en16931_sha256",
             "FACTUR-X_EN16931_codedb.xml",
-            "fx_en16931_codedb_sha256"
+            "fx_en16931_codedb_sha256",
+            Some(&FNFE_FX_EN16931)
         ),
         fnfe!(
             "FACTUR-X_EXTENDED",
@@ -679,7 +850,8 @@ pub(crate) const FR_CTC_CII: RuleSet = RuleSet {
             "golden-factur-x-extended",
             "fx_extended_sha256",
             "FACTUR-X_EXTENDED_codedb.xml",
-            "fx_extended_codedb_sha256"
+            "fx_extended_codedb_sha256",
+            Some(&FNFE_FX_EXTENDED)
         ),
     ],
     document_dirs: &[
@@ -749,25 +921,29 @@ pub(crate) const FR_CTC_UBL: RuleSet = RuleSet {
             "EN16931-UBL",
             "ubl-en16931",
             "golden-en16931",
-            "ubl_en16931_sha256"
+            "ubl_en16931_sha256",
+            None
         ),
         fnfe!(
             "EXTENDED-CTC-FR-UBL",
             "ubl-extended-ctc-fr",
             "golden-extended-ctc-fr",
-            "ubl_extended_ctc_fr_sha256"
+            "ubl_extended_ctc_fr_sha256",
+            None
         ),
         fnfe!(
             "BR-FR-Flux2-UBL",
             "ubl-en16931",
             "golden-br-fr",
-            "ubl_br_fr_sha256"
+            "ubl_br_fr_sha256",
+            None
         ),
         fnfe!(
             "BR-FR-Flux2-UBL_WARNING",
             "ubl-en16931-warning",
             "golden-br-fr-warning",
-            "ubl_br_fr_warning_sha256"
+            "ubl_br_fr_warning_sha256",
+            None
         ),
     ],
     document_dirs: &[
@@ -813,12 +989,19 @@ pub(crate) const FR_CTC_CDAR: RuleSet = RuleSet {
     },
     source: "source",
     stylesheets: &[
-        fnfe!("BR-FR-CDV-CDAR", "cdar", "golden", "cdar_sha256"),
+        fnfe!(
+            "BR-FR-CDV-CDAR",
+            "cdar",
+            "golden",
+            "cdar_sha256",
+            Some(&FNFE_CDAR_D22B)
+        ),
         fnfe!(
             "BR-FR-CDV-CDAR_WARNING",
             "cdar-warning",
             "golden-warning",
-            "cdar_warning_sha256"
+            "cdar_warning_sha256",
+            Some(&FNFE_CDAR_D22B)
         ),
     ],
     document_dirs: &[

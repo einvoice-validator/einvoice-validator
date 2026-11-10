@@ -12,13 +12,14 @@ use crate::{Error, Severity};
 pub const MANIFEST_FILE: &str = "bundle.toml";
 
 /// The newest manifest format this crate reads (the `format` key): format 2 adds to
-/// format 1, which is read too, the `[[resource]]` and `[[scenario]]` tables, the
-/// `unflagged-assert` key of `[[stylesheet]]` and the `unchecked-schema` key.
+/// format 1, which is read too, the `[[resource]]`, `[[schema-document]]` and
+/// `[[scenario]]` tables, the `unflagged-assert` key of `[[stylesheet]]` and the
+/// `unchecked-schema` key.
 pub const MANIFEST_FORMAT: u32 = 2;
 
 /// The XML schema a rule set validates documents against before running its
 /// stylesheets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum SchemaId {
     /// The OASIS UBL 2.1 schemas for Invoice and `CreditNote`, embedded in
@@ -27,19 +28,26 @@ pub enum SchemaId {
     /// The UN/CEFACT Cross Industry Invoice D16B schemas (uncoupled code lists),
     /// embedded in [`einvoice_xsd`].
     CiiD16b,
+    /// The XML schema documents of the bundle (format 2, `[[schema-document]]`,
+    /// [`RuleSet::schema_documents`]), loaded with [`einvoice_xsd`] from the entry point
+    /// at this path in the bundle: a schema that comes with the publisher's files rather
+    /// than with this crate (the profile schemas of Factur-X).
+    Bundle(String),
 }
 
 impl SchemaId {
-    /// The name used in manifests: `ubl-2.1` or `cii-d16b`.
+    /// The value of `schema` in manifests: `ubl-2.1`, `cii-d16b`, or the path of the
+    /// entry point of the schema documents of the bundle.
     #[must_use]
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> &str {
         match self {
             Self::Ubl21 => "ubl-2.1",
             Self::CiiD16b => "cii-d16b",
+            Self::Bundle(entry_point) => entry_point,
         }
     }
 
-    /// The schema named `name` in a manifest.
+    /// The embedded schema named `name` in a manifest (`ubl-2.1` or `cii-d16b`).
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
@@ -273,9 +281,34 @@ impl ResourceEntry {
     }
 }
 
+/// A document of the XML schema of the bundle (format 2, `[[schema-document]]`): the
+/// entry point the manifest's `schema` names, or a document it imports or includes, as
+/// the manifest describes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaDocumentEntry {
+    path: String,
+    sha256: String,
+}
+
+impl SchemaDocumentEntry {
+    /// Its path in the bundle: relative, `/`-separated. The `schemaLocation` of an
+    /// `xs:import` or `xs:include` is resolved against the path of the document that
+    /// imports or includes it.
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// The SHA-256 of the file, lower-case hexadecimal.
+    #[must_use]
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+}
+
 /// A rule set, as described by the manifest of its bundle: its name and version, the
 /// XML schema to validate against first, the stylesheets to run, in order, and the
-/// resources they read, with their checksums.
+/// resources they read and the schema documents, with their checksums.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuleSet {
     name: String,
@@ -285,6 +318,7 @@ pub struct RuleSet {
     unchecked_schema: Option<String>,
     stylesheets: Vec<StylesheetEntry>,
     resources: Vec<ResourceEntry>,
+    schema_documents: Vec<SchemaDocumentEntry>,
     scenarios: Vec<Scenario>,
 }
 
@@ -294,10 +328,12 @@ impl RuleSet {
     /// # Errors
     ///
     /// [`Error::Bundle`] naming the line: a syntax outside the accepted TOML subset, an
-    /// unknown or repeated key, a missing key, a value that is not valid for its key, an
-    /// unknown schema, a format other than 1 and [`MANIFEST_FORMAT`], a `[[resource]]`,
-    /// a `[[scenario]]`, an `unflagged-assert` or an `unchecked-schema` in format 1, a
-    /// path given twice, a scenario named twice, with a `match` expression that is not
+    /// unknown or repeated key, a missing key, a value that is not valid for its key, a
+    /// `schema` that is neither an embedded schema nor the path of a
+    /// `[[schema-document]]`, schema documents without a `schema` naming one of them, a
+    /// format other than 1 and [`MANIFEST_FORMAT`], a `[[resource]]`, a
+    /// `[[schema-document]]`, a `[[scenario]]`, an `unflagged-assert` or an
+    /// `unchecked-schema` in format 1, a path given twice, a scenario named twice, with a `match` expression that is not
     /// XPath or uses a prefix it does not bind, naming a stylesheet the rule set does not
     /// have (or one twice), with a `match` expression in some scenarios and not in others;
     /// a scenario without one for a root element other than a UBL `Invoice` or
@@ -346,15 +382,10 @@ impl RuleSet {
         }
         let version = top.required_string("version")?;
         check_version(&version).map_err(|m| top.error("version", &m))?;
-        let schema = match top.optional_string("schema")? {
-            None => None,
-            Some(s) => Some(SchemaId::from_name(&s).ok_or_else(|| {
-                top.error(
-                    "schema",
-                    &format!("unknown schema {s:?} (known: ubl-2.1, cii-d16b)"),
-                )
-            })?),
-        };
+        // An embedded schema, or the path of a [[schema-document]]: resolved once the
+        // tables are read.
+        let schema_line = top.line_of("schema");
+        let schema_name = top.optional_string("schema")?;
         let unchecked_schema = match top.optional_string("unchecked-schema")? {
             None => None,
             Some(_) if format < 2 => {
@@ -367,43 +398,33 @@ impl RuleSet {
         };
         top.finish()?;
 
-        let mut stylesheets: Vec<StylesheetEntry> = Vec::new();
-        let mut resources: Vec<ResourceEntry> = Vec::new();
-        let mut scenarios: Vec<Scenario> = Vec::new();
-        // The line of each scenario's header.
-        let mut scenario_lines: Vec<u32> = Vec::new();
-        for raw in tables {
-            let kind = raw.kind;
-            let table = Table::new(raw);
-            if kind == TableKind::Resource {
-                let resource = resource(table, format, &stylesheets, &resources)?;
-                resources.push(resource);
-                continue;
-            }
-            if kind == TableKind::Scenario {
-                scenario_lines.push(table.header_line);
-                let scenario = scenario(table, format, &scenarios)?;
-                scenarios.push(scenario);
-                continue;
-            }
-            let entry = stylesheet(table, format, &version, &stylesheets, &resources)?;
-            stylesheets.push(entry);
-        }
-        if stylesheets.is_empty() {
+        let tables = Tables::read(tables, format, &version)?;
+        if tables.stylesheets.is_empty() {
             return Err(Error::bundle(format!(
                 "{MANIFEST_FILE}: no [[stylesheet]]: a rule set runs at least one"
             )));
         }
-        check_scenarios(&scenarios, &scenario_lines, &stylesheets)?;
+        let schema = resolve_schema(
+            schema_name,
+            schema_line,
+            &tables.schema_documents,
+            tables.schema_document_line,
+        )?;
+        check_scenarios(
+            &tables.scenarios,
+            &tables.scenario_lines,
+            &tables.stylesheets,
+        )?;
         Ok(Self {
             name,
             title,
             version,
             schema,
             unchecked_schema,
-            stylesheets,
-            resources,
-            scenarios,
+            stylesheets: tables.stylesheets,
+            resources: tables.resources,
+            schema_documents: tables.schema_documents,
+            scenarios: tables.scenarios,
         })
     }
 
@@ -437,8 +458,16 @@ impl RuleSet {
 
     /// The XML schema documents are validated against first, if any.
     #[must_use]
-    pub const fn schema(&self) -> Option<SchemaId> {
-        self.schema
+    pub const fn schema(&self) -> Option<&SchemaId> {
+        self.schema.as_ref()
+    }
+
+    /// The documents of the XML schema of the bundle (format 2), in the order of the
+    /// manifest: those of [`SchemaId::Bundle`]; empty for a rule set with an embedded
+    /// schema or none.
+    #[must_use]
+    pub fn schema_documents(&self) -> &[SchemaDocumentEntry] {
+        &self.schema_documents
     }
 
     /// The XML schema that the reference validator of the rule set also validates
@@ -482,14 +511,106 @@ impl RuleSet {
     }
 }
 
+/// The tables of a manifest after the top-level one, read.
+struct Tables {
+    stylesheets: Vec<StylesheetEntry>,
+    resources: Vec<ResourceEntry>,
+    schema_documents: Vec<SchemaDocumentEntry>,
+    scenarios: Vec<Scenario>,
+    /// The line of each scenario's header.
+    scenario_lines: Vec<u32>,
+    /// The line of the header of the first schema document.
+    schema_document_line: Option<u32>,
+}
+
+impl Tables {
+    /// Reads the tables `raw` of a manifest of format `format` whose bundle version is
+    /// `version`: each path of the bundle once.
+    fn read(
+        raw: impl Iterator<Item = RawTable>,
+        format: u64,
+        version: &str,
+    ) -> Result<Self, Error> {
+        let mut tables = Self {
+            stylesheets: Vec::new(),
+            resources: Vec::new(),
+            schema_documents: Vec::new(),
+            scenarios: Vec::new(),
+            scenario_lines: Vec::new(),
+            schema_document_line: None,
+        };
+        // The paths of the files of the bundle named so far.
+        let mut paths: Vec<String> = Vec::new();
+        for raw in raw {
+            let kind = raw.kind;
+            let table = Table::new(raw);
+            match kind {
+                TableKind::Resource => {
+                    let resource = resource(table, format, &paths)?;
+                    paths.push(resource.path.clone());
+                    tables.resources.push(resource);
+                }
+                TableKind::SchemaDocument => {
+                    tables.schema_document_line.get_or_insert(table.header_line);
+                    let document = schema_document(table, format, &paths)?;
+                    paths.push(document.path.clone());
+                    tables.schema_documents.push(document);
+                }
+                TableKind::Scenario => {
+                    tables.scenario_lines.push(table.header_line);
+                    let scenario = scenario(table, format, &tables.scenarios)?;
+                    tables.scenarios.push(scenario);
+                }
+                TableKind::Stylesheet | TableKind::Top => {
+                    let entry = stylesheet(table, format, version, &tables.stylesheets, &paths)?;
+                    paths.push(entry.path.clone());
+                    tables.stylesheets.push(entry);
+                }
+            }
+        }
+        Ok(tables)
+    }
+}
+
+/// The schema `name` of a manifest (`schema`, at `line`): an embedded one, or the path
+/// of one of the schema documents of the bundle, its entry point. Schema documents
+/// (the first at `documents_line`) need the latter.
+fn resolve_schema(
+    name: Option<String>,
+    line: u32,
+    documents: &[SchemaDocumentEntry],
+    documents_line: Option<u32>,
+) -> Result<Option<SchemaId>, Error> {
+    let schema = match name {
+        None => None,
+        Some(s) => match SchemaId::from_name(&s) {
+            Some(id) => Some(id),
+            None if documents.iter().any(|d| d.path == s) => Some(SchemaId::Bundle(s)),
+            None => {
+                return Err(Error::bundle(format!(
+                    "{MANIFEST_FILE}:{line}: `schema`: unknown schema {s:?} (known: ubl-2.1, cii-d16b, or the path of a [[schema-document]] of the bundle, its entry point)"
+                )));
+            }
+        },
+    };
+    if let Some(documents_line) = documents_line
+        && !matches!(schema, Some(SchemaId::Bundle(_)))
+    {
+        return Err(Error::bundle(format!(
+            "{MANIFEST_FILE}: [[schema-document]] of line {documents_line}: the schema documents of a bundle need `schema`, the path of their entry point"
+        )));
+    }
+    Ok(schema)
+}
+
 /// A `[[stylesheet]]` table, whose name no stylesheet has yet and whose path no file of
-/// the bundle has yet; `version` is the bundle's.
+/// the bundle has yet (`paths`); `version` is the bundle's.
 fn stylesheet(
     mut table: Table,
     format: u64,
     version: &str,
     stylesheets: &[StylesheetEntry],
-    resources: &[ResourceEntry],
+    paths: &[String],
 ) -> Result<StylesheetEntry, Error> {
     table.allow(&["name", "version", "path", "sha256", "unflagged-assert"])?;
     let name = table.required_string("name")?;
@@ -506,7 +627,7 @@ fn stylesheet(
     };
     let path = table.required_string("path")?;
     check_path(&path).map_err(|m| table.error("path", &m))?;
-    if resources.iter().any(|r| r.path == path) {
+    if paths.contains(&path) {
         return Err(table.error("path", &format!("{path:?} twice in the bundle")));
     }
     let sha256 = table.sha256()?;
@@ -760,30 +881,47 @@ fn check_scenarios(
     Ok(())
 }
 
-/// A `[[resource]]` table (format 2), whose path no file of the bundle has yet.
-fn resource(
+/// A `[[resource]]` table (format 2), whose path no file of the bundle has yet
+/// (`paths`).
+fn resource(table: Table, format: u64, paths: &[String]) -> Result<ResourceEntry, Error> {
+    let (path, sha256) = bundle_file(table, format, "[[resource]]", paths)?;
+    Ok(ResourceEntry { path, sha256 })
+}
+
+/// A `[[schema-document]]` table (format 2), whose path no file of the bundle has yet
+/// (`paths`).
+fn schema_document(
+    table: Table,
+    format: u64,
+    paths: &[String],
+) -> Result<SchemaDocumentEntry, Error> {
+    let (path, sha256) = bundle_file(table, format, "[[schema-document]]", paths)?;
+    Ok(SchemaDocumentEntry { path, sha256 })
+}
+
+/// The `path` and `sha256` of a table that names a file of the bundle and nothing else
+/// (`header`, format 2), whose path no file of the bundle has yet (`paths`).
+fn bundle_file(
     mut table: Table,
     format: u64,
-    stylesheets: &[StylesheetEntry],
-    resources: &[ResourceEntry],
-) -> Result<ResourceEntry, Error> {
+    header: &str,
+    paths: &[String],
+) -> Result<(String, String), Error> {
     if format < 2 {
         return Err(Error::bundle(format!(
-            "{MANIFEST_FILE}:{}: [[resource]] needs format = 2",
+            "{MANIFEST_FILE}:{}: {header} needs format = 2",
             table.header_line
         )));
     }
     table.allow(&["path", "sha256"])?;
     let path = table.required_string("path")?;
     check_path(&path).map_err(|m| table.error("path", &m))?;
-    let taken =
-        resources.iter().any(|r| r.path == path) || stylesheets.iter().any(|s| s.path == path);
-    if taken {
+    if paths.contains(&path) {
         return Err(table.error("path", &format!("{path:?} twice in the bundle")));
     }
     let sha256 = table.sha256()?;
     table.finish()?;
-    Ok(ResourceEntry { path, sha256 })
+    Ok((path, sha256))
 }
 
 fn check_name(name: &str) -> Result<(), String> {
@@ -835,13 +973,14 @@ enum Value {
     Integer(u64),
 }
 
-/// The kind of a table: the top-level one, `[[stylesheet]]`, `[[resource]]` or
-/// `[[scenario]]`.
+/// The kind of a table: the top-level one, `[[stylesheet]]`, `[[resource]]`,
+/// `[[schema-document]]` or `[[scenario]]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TableKind {
     Top,
     Stylesheet,
     Resource,
+    SchemaDocument,
     Scenario,
 }
 
@@ -856,8 +995,8 @@ struct RawTable {
 
 /// Reads the accepted TOML subset: comments, blank lines, `key = value` lines with a
 /// bare key and a basic string (escapes `\"` and `\\` only), a literal string or a
-/// non-negative integer, and `[[stylesheet]]`, `[[resource]]` and `[[scenario]]`
-/// headers.
+/// non-negative integer, and `[[stylesheet]]`, `[[resource]]`, `[[schema-document]]`
+/// and `[[scenario]]` headers.
 fn parse_tables(text: &str) -> Result<Vec<RawTable>, Error> {
     let mut tables = vec![RawTable {
         kind: TableKind::Top,
@@ -876,6 +1015,7 @@ fn parse_tables(text: &str) -> Result<Vec<RawTable>, Error> {
             let header = [
                 ("[stylesheet]]", TableKind::Stylesheet),
                 ("[resource]]", TableKind::Resource),
+                ("[schema-document]]", TableKind::SchemaDocument),
                 ("[scenario]]", TableKind::Scenario),
             ]
             .into_iter()
@@ -892,7 +1032,7 @@ fn parse_tables(text: &str) -> Result<Vec<RawTable>, Error> {
                 Some((Err(m), _)) => return Err(fail(&m)),
                 None => {
                     return Err(fail(
-                        "the only tables allowed are [[stylesheet]], [[resource]] and [[scenario]]",
+                        "the only tables allowed are [[stylesheet]], [[resource]], [[schema-document]] and [[scenario]]",
                     ));
                 }
             }
@@ -1009,6 +1149,10 @@ impl Table {
             TableKind::Resource => {
                 format!("{MANIFEST_FILE}: [[resource]] of line {}", self.header_line)
             }
+            TableKind::SchemaDocument => format!(
+                "{MANIFEST_FILE}: [[schema-document]] of line {}",
+                self.header_line
+            ),
             TableKind::Scenario => {
                 format!("{MANIFEST_FILE}: [[scenario]] of line {}", self.header_line)
             }
@@ -1118,7 +1262,8 @@ sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
         assert_eq!(rule_set.name(), "cen-ubl");
         assert_eq!(rule_set.title(), "CEN EN 16931 UBL");
         assert_eq!(rule_set.version(), "1.3.17");
-        assert_eq!(rule_set.schema(), Some(SchemaId::Ubl21));
+        assert_eq!(rule_set.schema(), Some(&SchemaId::Ubl21));
+        assert_eq!(rule_set.schema_documents(), []);
         let s = rule_set.stylesheets();
         assert_eq!(s.len(), 2);
         assert_eq!(s[0].name(), "EN16931-UBL");
@@ -1504,12 +1649,122 @@ match = \"true()\"
     #[test]
     fn schema_names() {
         for id in [SchemaId::Ubl21, SchemaId::CiiD16b] {
-            assert_eq!(SchemaId::from_name(id.as_str()), Some(id));
+            assert_eq!(SchemaId::from_name(id.as_str()).as_ref(), Some(&id));
             let text = GOOD.replace("ubl-2.1", id.as_str());
-            assert_eq!(RuleSet::parse(&text).unwrap().schema(), Some(id));
+            assert_eq!(RuleSet::parse(&text).unwrap().schema(), Some(&id));
         }
         assert_eq!(SchemaId::CiiD16b.to_string(), "cii-d16b");
         assert_eq!(SchemaId::from_name("CII-D16B"), None);
+        // The path of a schema document is no embedded schema.
+        assert_eq!(SchemaId::from_name("x/main.xsd"), None);
+        let bundle = SchemaId::Bundle("x/main.xsd".to_owned());
+        assert_eq!(
+            (bundle.as_str(), bundle.to_string().as_str()),
+            ("x/main.xsd", "x/main.xsd")
+        );
+    }
+
+    /// [`GOOD`] in format 2 with the schema of the bundle: an entry point and a document
+    /// it imports.
+    fn with_schema_documents() -> String {
+        format!(
+            "{}\n[[schema-document]]\npath = \"xsd/main.xsd\"\nsha256 = \"{}\"\n\n[[schema-document]]  # imported\npath = \"xsd/types.xsd\"\nsha256 = \"{}\"\n",
+            GOOD.replace("format = 1", "format = 2")
+                .replace("schema = \"ubl-2.1\"", "schema = \"xsd/main.xsd\""),
+            "2".repeat(64),
+            "3".repeat(64)
+        )
+    }
+
+    #[test]
+    fn format_2_names_the_schema_documents_of_the_bundle() {
+        let text = with_schema_documents();
+        let rule_set = RuleSet::parse(&text).unwrap();
+        assert_eq!(
+            rule_set.schema(),
+            Some(&SchemaId::Bundle("xsd/main.xsd".to_owned()))
+        );
+        let documents: Vec<(&str, &str)> = rule_set
+            .schema_documents()
+            .iter()
+            .map(|d| (d.path(), d.sha256()))
+            .collect();
+        assert_eq!(
+            documents,
+            [
+                ("xsd/main.xsd", "2".repeat(64).as_str()),
+                ("xsd/types.xsd", "3".repeat(64).as_str())
+            ]
+        );
+        assert_eq!(rule_set.resources(), []);
+        // The entry point may be any of the documents; the embedded names stay embedded.
+        let types = text.replace("schema = \"xsd/main.xsd\"", "schema = \"xsd/types.xsd\"");
+        assert_eq!(
+            RuleSet::parse(&types).unwrap().schema(),
+            Some(&SchemaId::Bundle("xsd/types.xsd".to_owned()))
+        );
+        for (bad, expected) in [
+            // A schema that is neither embedded nor a schema document.
+            (
+                text.replace("schema = \"xsd/main.xsd\"", "schema = \"xsd/other.xsd\""),
+                "bundle.toml:6: `schema`: unknown schema \"xsd/other.xsd\"",
+            ),
+            // Schema documents without a schema of the bundle: unused files.
+            (
+                text.replace("schema = \"xsd/main.xsd\"\n", ""),
+                "[[schema-document]] of line 18: the schema documents of a bundle need `schema`",
+            ),
+            (
+                text.replace("schema = \"xsd/main.xsd\"", "schema = \"ubl-2.1\""),
+                "[[schema-document]] of line 19: the schema documents of a bundle need `schema`",
+            ),
+            // In format 1.
+            (
+                text.replace("format = 2", "format = 1"),
+                "bundle.toml:19: [[schema-document]] needs format = 2",
+            ),
+            // A path twice, with another document, a stylesheet or a resource.
+            (
+                text.replace("xsd/types.xsd", "xsd/main.xsd"),
+                "twice in the bundle",
+            ),
+            (
+                text.replace("xsd/types.xsd", "x.xsl"),
+                "twice in the bundle",
+            ),
+            (
+                format!(
+                    "{text}\n[[resource]]\npath = \"xsd/types.xsd\"\nsha256 = \"{}\"\n",
+                    "4".repeat(64)
+                ),
+                "twice in the bundle",
+            ),
+            (text.replace("xsd/types.xsd", "../types.xsd"), "`path`"),
+            (
+                text.replace(
+                    &format!("sha256 = \"{}\"", "3".repeat(64)),
+                    "sha256 = \"3\"",
+                ),
+                "`sha256`",
+            ),
+            (
+                text.replace(
+                    "path = \"xsd/types.xsd\"",
+                    "name = \"t\"\npath = \"xsd/types.xsd\"",
+                ),
+                "unknown key `name`",
+            ),
+            (
+                text.replace("path = \"xsd/types.xsd\"\n", ""),
+                "[[schema-document]] of line 23: the `path` key is missing",
+            ),
+        ] {
+            let message = error(&bad);
+            assert!(
+                message.contains(expected),
+                "{expected:?} not in {message:?}"
+            );
+        }
     }
 
     fn error(text: &str) -> String {

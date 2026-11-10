@@ -171,7 +171,7 @@ fn the_builtin_cii_rule_set_embeds_the_vendored_files() {
         einvoice_validator::RuleSet::builtin("cen-cii")
             .unwrap()
             .schema(),
-        Some(einvoice_validator::SchemaId::CiiD16b)
+        Some(&einvoice_validator::SchemaId::CiiD16b)
     );
 }
 

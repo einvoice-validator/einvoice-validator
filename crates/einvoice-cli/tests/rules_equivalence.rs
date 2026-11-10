@@ -11,6 +11,13 @@
 //! scenario of the KoSIT configuration the document matches overrides the levels of the
 //! rule ids it lists).
 //!
+//! The bundles whose XML schema is part of the bundle (`[[schema-document]]`: the
+//! Factur-X profiles, the CII, CDAR and Factur-X bundles of the French rules) have their
+//! schema errors exactly when xmllint, on the same schema as the fetched files hold it,
+//! does not find the document valid (the table's `schema:<entry point>`), but for the
+//! differences listed with their cause in `tests/schema-disagreements.tsv`, each of which
+//! must occur; the document is then invalid, its stylesheets run all the same.
+//!
 //! The XRechnung bundles select by scenario, as the KoSIT validator runs its
 //! configuration: the scenario each document matches (by the `match` expressions, which
 //! the bundles evaluate with the engine and xtask on its own) must be the table's, the
@@ -37,7 +44,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use common::{Golden, MutationCase, check_document, golden_of, join, run_env, workspace_root};
-use einvoice_validator::{FetchedRuleSet, RuleSet, fetched_rule_set, fetched_rule_sets};
+use einvoice_validator::{FetchedRuleSet, RuleSet, SchemaId, fetched_rule_set, fetched_rule_sets};
 
 const REQUIRED_VAR: &str = "EINVOICE_RULES_REQUIRED";
 /// The maximum depth of the run again of a document deeper than the default (as the
@@ -400,7 +407,15 @@ fn fetched_rule_sets_from_the_cache_agree_with_the_saxon_goldens() {
                 &acceptance,
             )
         } else {
-            check_documents(name, stylesheets, &goldens, &cases, &documents, &acceptance)
+            check_documents(
+                name,
+                &manifest,
+                stylesheets,
+                &goldens,
+                &cases,
+                &documents,
+                &acceptance,
+            )
         };
         eprintln!(
             "{name}: {} documents ({summary}; {deep} run again with --max-depth {RAISED_MAX_DEPTH}), {} disagreements",
@@ -473,12 +488,16 @@ fn run_documents(
 }
 
 /// Compares the documents of a bundle with the goldens of its stylesheets and with the
-/// acceptance table of the corpus. The problems, and a summary: the statuses, and the
-/// verdicts that the reference levels change (documents without schema errors that no
-/// stylesheet stopped on, invalid by the levels and valid by the fatal flags alone, or
-/// the reverse).
+/// acceptance table of the corpus; for a bundle with a schema of its own
+/// (`SchemaId::Bundle`), its schema errors with the verdict of xmllint on that schema
+/// (the table's `schema:<entry point>`), the differences being those documented in
+/// [`SCHEMA_DISAGREEMENTS`], each of which must occur. The problems, and a summary: the
+/// statuses, the documents the schema finds invalid, and the verdicts that the reference
+/// levels change (documents without schema errors that no stylesheet stopped on, invalid
+/// by the levels and valid by the fatal flags alone, or the reverse).
 fn check_documents(
     name: &str,
+    manifest: &RuleSet,
     stylesheets: &[(&str, &str)],
     goldens: &[(&str, &str)],
     cases: &[MutationCase],
@@ -488,6 +507,19 @@ fn check_documents(
     let mut found = Vec::new();
     let (mut valid, mut invalid, mut errors) = (0, 0, 0);
     let (mut raised, mut lowered) = (0, 0);
+    // The column of the table that holds the reference verdict of the bundle's schema.
+    let schema_column = match manifest.schema() {
+        Some(SchemaId::Bundle(entry)) => Some(format!("schema:{entry}")),
+        _ => None,
+    };
+    let documented = documented_schema_disagreements(name);
+    let mut schema_differences = HashSet::new();
+    let mut schema_invalid = 0;
+    if schema_column.is_none() && !documented.is_empty() {
+        found.push(format!(
+            "{SCHEMA_DISAGREEMENTS} lists cases of {name}, whose schema xmllint does not check"
+        ));
+    }
     for (case, document) in cases.iter().zip(documents) {
         assert_eq!(document.get("path").str(), Some(case.input.as_str()));
         assert_eq!(document.get("rule_set").str(), Some(name));
@@ -528,10 +560,26 @@ fn check_documents(
                 }
             }
         }
-        if !stopped && document.get("counts").get("schema_errors").number() == 0 {
+        let schema_errors = document.get("counts").get("schema_errors").number();
+        if !stopped && schema_errors == 0 {
             let reference = rejecting.contains(&true);
             raised += usize::from(reference && !flagged);
             lowered += usize::from(!reference && flagged);
+        }
+        // The schema step: errors exactly when xmllint does not find the document valid
+        // against the same schema (check_document has compared the status with the
+        // goldens and the schema errors).
+        if let Some(schema_column) = &schema_column {
+            let reference = verdict(schema_column);
+            if !matches!(reference, "valid" | "invalid" | "malformed") {
+                found.push(format!(
+                    "{}: table {schema_column} verdict {reference:?}",
+                    case.id
+                ));
+            } else if (schema_errors > 0) != (reference != "valid") {
+                schema_differences.insert(case.id.clone());
+            }
+            schema_invalid += usize::from(schema_errors > 0);
         }
         match document.get("status").str() {
             Some("valid") => valid += 1,
@@ -539,8 +587,22 @@ fn check_documents(
             _ => errors += 1,
         }
     }
+    if let Some(key) = &schema_column {
+        found.extend(undocumented_schema_differences(
+            &schema_differences,
+            &documented,
+            acceptance,
+            key,
+        ));
+    }
+    let schema = schema_column.as_ref().map_or_else(String::new, |_| {
+        format!(
+            "; the schema finds {schema_invalid} invalid, {} documented differences with xmllint",
+            schema_differences.len()
+        )
+    });
     let summary = format!(
-        "{valid} valid, {invalid} invalid, {errors} stopped by an error; the reference levels make {raised} invalid and {lowered} valid that the fatal flags alone would not"
+        "{valid} valid, {invalid} invalid, {errors} stopped by an error{schema}; the reference levels make {raised} invalid and {lowered} valid that the fatal flags alone would not"
     );
     (found, summary)
 }
@@ -596,28 +658,45 @@ fn check_selected(
             ));
         }
     }
-    for id in &schema_differences {
-        if !documented.contains(id) {
-            found.push(format!(
-                "{id}: the schema differs from xmllint (the table's schema {:?}), not in {SCHEMA_DISAGREEMENTS}",
-                acceptance
-                    .get(id)
-                    .map_or("", |table| column(table, "schema"))
-            ));
-        }
-    }
-    for id in &documented {
-        if !schema_differences.contains(id) {
-            found.push(format!(
-                "{id}: in {SCHEMA_DISAGREEMENTS}, but the schema agrees with xmllint"
-            ));
-        }
-    }
+    found.extend(undocumented_schema_differences(
+        &schema_differences,
+        &documented,
+        acceptance,
+        "schema",
+    ));
     let summary = format!(
         "{valid} valid, {invalid} invalid ({unmatched} without a scenario), {errors} stopped by an error; {} documented schema differences with xmllint",
         schema_differences.len()
     );
     (found, summary)
+}
+
+/// The problems of the cases on which the schema of a bundle differs from xmllint
+/// (`differences`; xmllint's verdict in the column `key` of the table): each must be one
+/// of `documented` ([`SCHEMA_DISAGREEMENTS`]), and each documented one must occur.
+fn undocumented_schema_differences(
+    differences: &HashSet<String>,
+    documented: &HashSet<String>,
+    acceptance: &Acceptance,
+    key: &str,
+) -> Vec<String> {
+    let mut found = Vec::new();
+    for id in differences {
+        if !documented.contains(id) {
+            found.push(format!(
+                "{id}: the schema differs from xmllint (the table's {key} {:?}), not in {SCHEMA_DISAGREEMENTS}",
+                acceptance.get(id).map_or("", |table| column(table, key))
+            ));
+        }
+    }
+    for id in documented {
+        if !differences.contains(id) {
+            found.push(format!(
+                "{id}: in {SCHEMA_DISAGREEMENTS}, but the schema agrees with xmllint"
+            ));
+        }
+    }
+    found
 }
 
 /// The column `key` of a case in the acceptance table.
@@ -767,8 +846,9 @@ fn check_matched(
     found
 }
 
-/// The XML Schema verdicts on which a bundle that selects by scenario differs from
-/// xmllint on the schema of the scenario (the table's `schema`), relative to the
+/// The XML Schema verdicts on which a bundle differs from xmllint, on the schema of the
+/// scenario for a bundle that selects by scenario (the table's `schema`), on the schema
+/// of the bundle otherwise (the table's `schema:<entry point>`), relative to the
 /// workspace root: one per line, the bundle, the case id in the acceptance table, and the
 /// cause.
 const SCHEMA_DISAGREEMENTS: &str = "crates/einvoice-cli/tests/schema-disagreements.tsv";

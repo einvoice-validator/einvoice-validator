@@ -19,6 +19,8 @@ tracked tree, then checks them:
    package `2026_09_04_FNFE_SCHEMATRONS_FR_CTC_V1.4.0.04.zip` and the annex archives of XP
    Z12-012 and XP Z12-014 (version 1.4), and checks the SHA-256 of each. Every compiled
    stylesheet and code list of the package must have one of the SHA-256 pinned in the script.
+   So must each document of the XML schemas the bundles validate against (CII D22B, CDAR
+   D22B, the schema of each Factur-X profile, as the package ships them).
    It sorts the example documents by syntax (`*_CII_Commentee.xml`, `*_UBL_Commentee.xml`,
    `*-CDV-*.xml`), copies the CEN examples that are the base documents of the mutation
    catalogues, and writes the rule-set bundles of the package's profiles

@@ -15,8 +15,8 @@ use einvoice_xslt_exec::{
 use sha2::{Digest, Sha256};
 
 use crate::manifest::{
-    CII, MANIFEST_FILE, RuleSet, Scenario, SchemaId, StylesheetEntry, UBL_CREDIT_NOTE, UBL_INVOICE,
-    namespace_map,
+    CII, MANIFEST_FILE, RuleSet, Scenario, SchemaDocumentEntry, SchemaId, StylesheetEntry,
+    UBL_CREDIT_NOTE, UBL_INVOICE, namespace_map,
 };
 use crate::report::{
     NoScenario, Report, RuleSetVersion, SchemaError, Severities, StylesheetFailure,
@@ -227,7 +227,17 @@ impl Validator {
             };
             resources.add(entry, bytes, format!("{BUNDLE_URI}{}", entry.path()))?;
         }
-        Self::with(rule_set, stylesheets, resources)
+        let mut schema_documents = Vec::with_capacity(rule_set.schema_documents().len());
+        for entry in rule_set.schema_documents() {
+            let Some(bytes) = file(entry.path()) else {
+                return Err(Error::bundle(format!(
+                    "schema document {}: file missing from the bundle",
+                    entry.path()
+                )));
+            };
+            schema_documents.push(schema_document(entry, bytes)?);
+        }
+        Self::with(rule_set, stylesheets, resources, &schema_documents)
     }
 
     /// Loads the bundle in the directory `dir`: its manifest [`MANIFEST_FILE`] and the
@@ -269,29 +279,26 @@ impl Validator {
                 })?;
             resources.add(entry, &bytes, uri)?;
         }
-        Self::with(rule_set, stylesheets, resources)
+        let mut schema_documents = Vec::with_capacity(rule_set.schema_documents().len());
+        for entry in rule_set.schema_documents() {
+            let mut path = dir.to_path_buf();
+            path.extend(entry.path().split('/'));
+            schema_documents.push(schema_document(entry, &read(&path)?)?);
+        }
+        Self::with(rule_set, stylesheets, resources, &schema_documents)
     }
 
+    /// The validator of `rule_set`, its stylesheets prepared, its resources and the
+    /// documents of its schema, if the bundle has one (path and text), read.
     fn with(
         rule_set: RuleSet,
         stylesheets: Vec<Executable>,
         resources: Resources,
+        schema_documents: &[(String, String)],
     ) -> Result<Self, Error> {
         let schema = match rule_set.schema() {
             None => None,
-            Some(id) => {
-                let loaded = match id {
-                    SchemaId::Ubl21 => einvoice_xsd::Schema::ubl_2_1(),
-                    SchemaId::CiiD16b => einvoice_xsd::Schema::cii_d16b(),
-                };
-                Some(loaded.map_err(|e| {
-                    if e.kind == einvoice_xsd::LoadErrorKind::Unsupported {
-                        Error::unsupported(format!("schema {id}: {e}"))
-                    } else {
-                        Error::internal(format!("the embedded schema {id} does not load: {e}"))
-                    }
-                })?)
-            }
+            Some(id) => Some(load_schema(id, schema_documents)?),
         };
         let selections = if rule_set.selects_by_scenario() {
             rule_set
@@ -520,7 +527,7 @@ impl Validator {
             name: self.rule_set.name().to_owned(),
             title: self.rule_set.title().to_owned(),
             version: self.rule_set.version().to_owned(),
-            schema: self.rule_set.schema(),
+            schema: self.rule_set.schema().cloned(),
             unchecked_schema: self.rule_set.unchecked_schema().map(str::to_owned),
         }
     }
@@ -643,6 +650,50 @@ fn read(path: &Path) -> Result<Vec<u8>, Error> {
     std::fs::read(path).map_err(|source| Error::Io {
         path: PathBuf::from(path),
         source,
+    })
+}
+
+/// A document of the schema of a bundle: its SHA-256 checked against the manifest's, its
+/// text decoded as a document is (UTF-8); its path in the bundle and its text.
+fn schema_document(entry: &SchemaDocumentEntry, bytes: &[u8]) -> Result<(String, String), Error> {
+    let actual = sha256_hex(bytes);
+    if actual != entry.sha256() {
+        return Err(Error::Checksum {
+            path: entry.path().to_owned(),
+            expected: entry.sha256().to_owned(),
+            actual,
+        });
+    }
+    let text = decode(bytes)
+        .map_err(|e| Error::bundle(format!("schema document {}: {e}", entry.path())))?;
+    Ok((entry.path().to_owned(), text.to_owned()))
+}
+
+/// Loads the schema `id`: an embedded one, or that of the bundle from its documents
+/// (path and text).
+fn load_schema(
+    id: &SchemaId,
+    documents: &[(String, String)],
+) -> Result<einvoice_xsd::Schema, Error> {
+    let loaded = match id {
+        SchemaId::Ubl21 => einvoice_xsd::Schema::ubl_2_1(),
+        SchemaId::CiiD16b => einvoice_xsd::Schema::cii_d16b(),
+        SchemaId::Bundle(entry_point) => {
+            let files: Vec<(&str, &str)> = documents
+                .iter()
+                .map(|(path, text)| (path.as_str(), text.as_str()))
+                .collect();
+            einvoice_xsd::Schema::load(&files, &[entry_point.as_str()])
+        }
+    };
+    loaded.map_err(|e| {
+        if e.kind == einvoice_xsd::LoadErrorKind::Unsupported {
+            Error::unsupported(format!("schema {id}: {e}"))
+        } else if matches!(id, SchemaId::Bundle(_)) {
+            Error::bundle(format!("schema {id}: {e}"))
+        } else {
+            Error::internal(format!("the embedded schema {id} does not load: {e}"))
+        }
     })
 }
 

@@ -103,7 +103,7 @@ fn the_builtin_cii_rule_set() {
         (rule_set.name(), rule_set.title(), rule_set.version()),
         ("cen-cii", "CEN EN 16931 CII", "1.3.17")
     );
-    assert_eq!(rule_set.schema(), Some(SchemaId::CiiD16b));
+    assert_eq!(rule_set.schema(), Some(&SchemaId::CiiD16b));
     let [stylesheet] = rule_set.stylesheets() else {
         panic!("one stylesheet")
     };
@@ -170,7 +170,7 @@ fn the_builtin_rule_set() {
         (rule_set.name(), rule_set.title(), rule_set.version()),
         ("cen-ubl", "CEN EN 16931 UBL", "1.3.17")
     );
-    assert_eq!(rule_set.schema(), Some(SchemaId::Ubl21));
+    assert_eq!(rule_set.schema(), Some(&SchemaId::Ubl21));
     let [stylesheet] = rule_set.stylesheets() else {
         panic!("one stylesheet")
     };
@@ -565,6 +565,135 @@ fn a_bundle_with_the_ubl_schema() {
     assert_eq!(report.count(Severity::Fatal), 0);
     assert_eq!(report.schema_errors[0].kind.as_str(), "unknown-root");
     assert_eq!(report.verdict(), Verdict::Invalid);
+}
+
+/// The schema of a bundle (`[[schema-document]]`): an entry point in a directory of the
+/// bundle, which imports a second document by a location relative to its own.
+const BUNDLE_SCHEMA_MAIN: &str = r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:t="urn:t" xmlns:u="urn:u" targetNamespace="urn:t" elementFormDefault="qualified">
+  <xs:import namespace="urn:u" schemaLocation="types.xsd"/>
+  <xs:element name="doc" type="t:DocType"/>
+  <xs:complexType name="DocType">
+    <xs:sequence><xs:element ref="u:n"/></xs:sequence>
+    <xs:attribute name="ok" type="xs:string"/>
+  </xs:complexType>
+</xs:schema>"#;
+const BUNDLE_SCHEMA_TYPES: &str = r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:u" elementFormDefault="qualified">
+  <xs:element name="n" type="xs:decimal"/>
+</xs:schema>"#;
+
+/// A format 2 manifest with one stylesheet and the schema of the bundle,
+/// `xsd/main.xsd` and `xsd/types.xsd` (whose content is `types`).
+fn manifest_with_schema(sheet: &str, types: &str) -> String {
+    format!(
+        "format = 2\nname = \"test\"\ntitle = \"Test rules\"\nversion = \"0.1\"\nschema = \"xsd/main.xsd\"\n\n[[stylesheet]]\nname = \"s\"\npath = \"s.xsl\"\nsha256 = \"{}\"\n\n[[schema-document]]\npath = \"xsd/main.xsd\"\nsha256 = \"{}\"\n\n[[schema-document]]\npath = \"xsd/types.xsd\"\nsha256 = \"{}\"\n",
+        sha256(sheet.as_bytes()),
+        sha256(BUNDLE_SCHEMA_MAIN.as_bytes()),
+        sha256(types.as_bytes())
+    )
+}
+
+#[test]
+fn a_bundle_validates_against_its_own_schema() {
+    let sheet = svrl_stylesheet("T-1", "fatal");
+    let manifest = manifest_with_schema(&sheet, BUNDLE_SCHEMA_TYPES);
+    let files: &[(&str, &[u8])] = &[
+        ("s.xsl", sheet.as_bytes()),
+        ("xsd/main.xsd", BUNDLE_SCHEMA_MAIN.as_bytes()),
+        ("xsd/types.xsd", BUNDLE_SCHEMA_TYPES.as_bytes()),
+    ];
+    let in_memory = Validator::from_bundle(&manifest, files).unwrap();
+    let from_dir =
+        Validator::from_bundle_dir(bundle_dir("bundle-schema", &manifest, files)).unwrap();
+    let bundle = SchemaId::Bundle("xsd/main.xsd".to_owned());
+    for validator in [&in_memory, &from_dir] {
+        assert_eq!(validator.rule_set().schema(), Some(&bundle));
+        let paths: Vec<&str> = validator
+            .rule_set()
+            .schema_documents()
+            .iter()
+            .map(einvoice_validator::SchemaDocumentEntry::path)
+            .collect();
+        assert_eq!(paths, ["xsd/main.xsd", "xsd/types.xsd"]);
+        // Valid for the schema and the stylesheet.
+        let report = validator
+            .validate(b"<t:doc xmlns:t='urn:t' xmlns:u='urn:u' ok='1'><u:n> 1.50 </u:n></t:doc>")
+            .unwrap();
+        assert_eq!(report.schema_errors, []);
+        assert_eq!(report.verdict(), Verdict::Valid);
+        assert_eq!(report.rule_set.schema, Some(bundle.clone()));
+        // A value of the imported type that is not a decimal: a schema error, the
+        // document invalid, and the stylesheet runs all the same.
+        let report = validator
+            .validate(b"<t:doc xmlns:t='urn:t' xmlns:u='urn:u'><u:n>x</u:n></t:doc>")
+            .unwrap();
+        let kinds: Vec<&str> = report
+            .schema_errors
+            .iter()
+            .map(|e| e.kind.as_str())
+            .collect();
+        assert_eq!(kinds, ["invalid-value"]);
+        assert_eq!(report.count(Severity::Fatal), 1);
+        assert_eq!(report.verdict(), Verdict::Invalid);
+        // A root element the schema does not declare.
+        let report = validator.validate(b"<doc ok='1'/>").unwrap();
+        assert_eq!(report.schema_errors[0].kind.as_str(), "unknown-root");
+        assert_eq!(report.verdict(), Verdict::Invalid);
+    }
+
+    // A schema document missing from the bundle.
+    let e = Validator::from_bundle(&manifest, &files[..2]).unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::Bundle);
+    assert!(
+        e.to_string()
+            .contains("schema document xsd/types.xsd: file missing from the bundle"),
+        "{e}"
+    );
+    let e = Validator::from_bundle_dir(bundle_dir("bundle-schema-missing", &manifest, &files[..2]))
+        .unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::Io, "{e}");
+    // One that is not the file the manifest names.
+    let tampered = BUNDLE_SCHEMA_TYPES.replace("xs:decimal", "xs:string");
+    let mut changed = files.to_vec();
+    changed[2] = ("xsd/types.xsd", tampered.as_bytes());
+    match Validator::from_bundle(&manifest, &changed).unwrap_err() {
+        Error::Checksum {
+            path,
+            expected,
+            actual,
+        } => {
+            assert_eq!(path, "xsd/types.xsd");
+            assert_eq!(expected, sha256(BUNDLE_SCHEMA_TYPES.as_bytes()));
+            assert_eq!(actual, sha256(tampered.as_bytes()));
+        }
+        other => panic!("{other:?}"),
+    }
+    // A schema outside the subset of einvoice-xsd is refused when the bundle loads
+    // (an anonymous simple type).
+    let anonymous = BUNDLE_SCHEMA_TYPES.replace(
+        r#"<xs:element name="n" type="xs:decimal"/>"#,
+        r#"<xs:element name="n"><xs:simpleType><xs:restriction base="xs:decimal"/></xs:simpleType></xs:element>"#,
+    );
+    let e = Validator::from_bundle(
+        &manifest_with_schema(&sheet, &anonymous),
+        &[files[0], files[1], ("xsd/types.xsd", anonymous.as_bytes())],
+    )
+    .unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::Unsupported, "{e}");
+    assert!(e.to_string().contains("schema xsd/main.xsd"), "{e}");
+    // A schema that does not load (an import of a document the bundle does not have)
+    // is a broken bundle.
+    let elsewhere = BUNDLE_SCHEMA_MAIN.replace("types.xsd", "other.xsd");
+    let manifest_elsewhere = manifest_with_schema(&sheet, BUNDLE_SCHEMA_TYPES).replace(
+        &sha256(BUNDLE_SCHEMA_MAIN.as_bytes()),
+        &sha256(elsewhere.as_bytes()),
+    );
+    let e = Validator::from_bundle(
+        &manifest_elsewhere,
+        &[files[0], ("xsd/main.xsd", elsewhere.as_bytes()), files[2]],
+    )
+    .unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::Bundle, "{e}");
+    assert!(e.to_string().contains("schema xsd/main.xsd"), "{e}");
 }
 
 #[test]

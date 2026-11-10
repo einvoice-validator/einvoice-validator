@@ -143,7 +143,13 @@ impl RuleSetCache {
             .stylesheets()
             .iter()
             .map(|s| (s.path(), s.sha256()))
-            .chain(parsed.resources().iter().map(|r| (r.path(), r.sha256())));
+            .chain(parsed.resources().iter().map(|r| (r.path(), r.sha256())))
+            .chain(
+                parsed
+                    .schema_documents()
+                    .iter()
+                    .map(|d| (d.path(), d.sha256())),
+            );
         for (path, sha256) in files {
             let mut file = dir.clone();
             file.extend(path.split('/'));

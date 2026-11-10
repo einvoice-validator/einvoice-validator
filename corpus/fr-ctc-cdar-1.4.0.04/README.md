@@ -19,6 +19,8 @@ tracked tree, then checks them:
    package `2026_09_04_FNFE_SCHEMATRONS_FR_CTC_V1.4.0.04.zip` and the annex archives of XP
    Z12-012 and XP Z12-014 (version 1.4), and checks the SHA-256 of each. Every compiled
    stylesheet and code list of the package must have one of the SHA-256 pinned in the script.
+   So must each document of the XML schemas the bundles validate against (CII D22B, CDAR
+   D22B, the schema of each Factur-X profile, as the package ships them).
    It sorts the example documents by syntax (`*_CII_Commentee.xml`, `*_UBL_Commentee.xml`,
    `*-CDV-*.xml`), copies the CEN examples that are the base documents of the mutation
    catalogues, and writes the rule-set bundles of the package's profiles
@@ -30,7 +32,7 @@ tracked tree, then checks them:
    layout and `cases.tsv` format as the committed corpora, see `../README.md`) (there is no mutation catalogue for this syntax), runs
    Saxon-HE with each stylesheet on every case, cross-checks the goldens with the expectations
    against `disagreements.tsv`, writes `acceptance.tsv` (whether the findings of each stylesheet reject the case as the
-   reference validator reads them, see `../README.md`) and `complete.txt`.
+   reference validator reads them, see `../README.md`, and the verdict of xmllint on the case against the CDAR D22B schema the package ships) and `complete.txt`.
 3. The equivalence test of the engine, `tests/fr_ctc_equivalence.rs` of `crates/einvoice-xslt-exec`
    (required by `scripts/check.sh fr-ctc`), runs every stylesheet on every case and mutation
    case: the engine gives the Saxon-HE result on all of them (the same canonical SVRL, or the

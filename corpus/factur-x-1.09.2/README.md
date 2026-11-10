@@ -22,12 +22,15 @@ then checks it:
    the two annex archives from `fnfe-mpe.org`, and checks the SHA-256 of each. It extracts the
    stylesheets of the five profiles (`xslt/ZF_250/FACTUR-X_<PROFILE>.xslt`), the code lists they
    read with `document()` (`FACTUR-X_<PROFILE>_codedb.xml`), their Schematron sources (each must
-   state Factur-X 1.09.2) and XML schemas, and checks the SHA-256 of every stylesheet and code
-   list; then the Factur-X CII documents of the annexes (`*_FX_CII_Commentee.xml`). It copies
-   the CEN CII examples of `artefacts/cen-en16931-cii-1.3.17/cii/examples/`, the base documents
-   of `../mutations-cii.toml`, and writes one rule-set bundle per profile
-   (`target/facturx/factur-x-1.09.2/<profile>/bundle.toml`, with the stylesheet and its code
-   list). Every pin is at the top of the script.
+   state Factur-X 1.09.2) and XML schemas (`schema/ZF_250/<PROFILE>/`, the entry point
+   `FACTUR-X_<NAME>.xsd` and the three modules it imports), and checks the SHA-256 of every
+   stylesheet, code list and schema document; then the Factur-X CII documents of the annexes
+   (`*_FX_CII_Commentee.xml`). It copies the CEN CII examples of
+   `artefacts/cen-en16931-cii-1.3.17/cii/examples/`, the base documents of
+   `../mutations-cii.toml`, and writes one rule-set bundle per profile
+   (`target/facturx/factur-x-1.09.2/<profile>/bundle.toml`, with the stylesheet, its code list
+   and the documents of the profile's XML schema, which the bundle validates the document
+   against first, as the Mustang validator does). Every pin is at the top of the script.
 2. `cargo xtask facturx` extracts the cases into `target/facturx/factur-x-1.09.2/corpus/` (same
    layout and `cases.tsv` format as the committed corpora, see `../README.md`), applies the
    mutation catalogue `../mutations-cii.toml` to the CEN examples `CII_example5.xml`,
@@ -36,7 +39,8 @@ then checks it:
    (`golden-minimum/`, `golden-basic-wl/`, `golden-basic/`, `golden-en16931/`,
    `golden-extended/`), cross-checks the goldens with the expectations against
    `disagreements.tsv`, writes `acceptance.tsv` (whether the findings of each stylesheet reject the case as the
-   reference validator reads them, see `../README.md`) and `complete.txt`.
+   reference validator reads them, and the verdict of xmllint on the case against the XML
+   schema of each profile, see `../README.md`) and `complete.txt`.
 3. The equivalence test of the engine, `tests/facturx_equivalence.rs` of `crates/einvoice-xslt-exec`
    (required by `scripts/check.sh facturx`), runs every stylesheet on every case and mutation
    case: the engine gives the Saxon-HE result on all of them (the same canonical SVRL, or the

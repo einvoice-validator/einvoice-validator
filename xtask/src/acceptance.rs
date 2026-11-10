@@ -5,7 +5,15 @@
 //! rejects when its level is `error`: a failed assert unless its flag is
 //! `warning` or `information` (a failed assert without a flag included, as the
 //! Mustang validator reads it), a successful report only with the flag
-//! `fatal` or `error`.
+//! `fatal` or `error`. A document is validated first against the XML schema
+//! of each stylesheet that has one ([`crate::ruleset::Schema`]: the schema of
+//! a Factur-X profile, as the Mustang validator validates against it, the
+//! CII and CDAR D22B schemas of the French package, as its documentation
+//! says), and one that a schema does not find valid is rejected, the
+//! stylesheets running all the same (`XMLValidator` of the Mustang
+//! validator records the schema error and goes on). The reference of that
+//! schema step is xmllint (libxml2), run on the fetched schema
+//! ([`crate::xmllint`]).
 //!
 //! For the XRechnung rule sets ([`Profiles::KositScenarios`]), as the KoSIT
 //! validator runs its configuration (`scenarios.xml`, the validator's
@@ -49,14 +57,17 @@
 //!   chosen by the specification identifier the document declares (BT-24):
 //!   `cbc:CustomizationID` under the root of a UBL document,
 //!   `ExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter/ID`
-//!   in CII and CDAR; with [`Profiles::KositScenarios`], by the scenario the
-//!   document matches, whose schema must find it valid too (the `schema`
-//!   column of [`TABLE`], which [`write_table`] writes first).
+//!   in CII and CDAR, and the schemas of its stylesheets must find it valid
+//!   (the `schema:<entry point>` columns of [`TABLE`]); with
+//!   [`Profiles::KositScenarios`], by the scenario the document matches,
+//!   whose schema must find it valid too (the `schema` column of [`TABLE`],
+//!   which [`write_table`] writes first).
 //! - [`write_table`]: the reference acceptance of every case of a fetched
-//!   corpus, stylesheet by stylesheet and as a whole ([`TABLE`]), which the
-//!   tests of `einvoice-validate --rules` compare the verdicts of the bundles
-//!   with; and [`check_bundle`]: the scenarios of the XRechnung bundles are the
-//!   configuration's.
+//!   corpus, stylesheet by stylesheet, schema by schema and as a whole
+//!   ([`TABLE`]), which the tests of `einvoice-validate --rules` compare the
+//!   verdicts of the bundles with; and [`check_bundle`]: the scenarios of the
+//!   XRechnung bundles are the configuration's, and the bundles of the other
+//!   rule sets validate against the schemas of their stylesheets.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -65,7 +76,7 @@ use roxmltree::{Document, Node, ParsingOptions};
 
 use crate::corpus::{self, Case};
 use crate::crosscheck::Disagreement;
-use crate::ruleset::{Profiles, RuleSet, Stylesheet};
+use crate::ruleset::{Profiles, RuleSet, Schema, Stylesheet};
 use crate::svrl;
 use crate::util::{self, Error, Result};
 use crate::xmllint::{SchemaCheck, SchemaVerdict};
@@ -181,13 +192,17 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet, cases: &[Case]) -> Result<Out
     };
     // With KoSIT scenarios, the verdict of the schema step on each case: the
     // `schema` column of the table `write_table` wrote.
+    let table = util::join(&base, &rule_set.corpus_dir()).join(TABLE);
     let schema_column = match scenarios {
-        Some(_) => Some(table_column(
-            &util::join(&base, &rule_set.corpus_dir()).join(TABLE),
-            "schema",
-        )?),
+        Some(_) => Some(table_column(&table, "schema")?),
         None => None,
     };
+    // Otherwise, the verdict of the schema of each stylesheet that has one:
+    // its `schema:<entry point>` column.
+    let mut stylesheet_schemas = Vec::new();
+    for schema in schemas_of(rule_set)? {
+        stylesheet_schemas.push((schema, table_column(&table, &schema.column())?));
+    }
     let mut outcome = Outcome::default();
     for case in cases {
         if case.expectation.is_some()
@@ -210,18 +225,16 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet, cases: &[Case]) -> Result<Out
             });
             continue;
         };
-        let mut rejected = false;
-        if let Some(column) = &schema_column {
-            let verdict = column.get(&case.id).map_or("", String::as_str);
-            if verdict != "valid" {
-                // The schema of its scenario rejects it (or the table lacks it).
-                rejected = true;
-                outcome.disagreements.push(Disagreement {
-                    case: case.id.clone(),
-                    kind: "rejected",
-                    rule: "schema".to_owned(),
-                    saxon: format!("schema {verdict:?}"),
-                });
+        let schema_rejections = schema_rejections(
+            &case.id,
+            &stylesheets,
+            &stylesheet_schemas,
+            schema_column.as_ref(),
+        );
+        let mut rejected = !schema_rejections.is_empty();
+        for disagreement in schema_rejections {
+            if !outcome.disagreements.contains(&disagreement) {
+                outcome.disagreements.push(disagreement);
             }
         }
         for stylesheet in stylesheets {
@@ -256,8 +269,48 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet, cases: &[Case]) -> Result<Out
     Ok(outcome)
 }
 
+/// A column of [`TABLE`], by case id.
+type Column = std::collections::HashMap<String, String>;
+
+/// The schema steps that reject the case `id`, which runs `stylesheets`: the
+/// schema of each of them that has one, by its column (`stylesheet_schemas`),
+/// and the schema of its KoSIT scenario (`scenario_schema`, the `schema`
+/// column), each that does not find it valid (or that the table lacks).
+fn schema_rejections(
+    id: &str,
+    stylesheets: &[&Stylesheet],
+    stylesheet_schemas: &[(&Schema, Column)],
+    scenario_schema: Option<&Column>,
+) -> Vec<Disagreement> {
+    let rejection = |verdict: &str, saxon: String| {
+        (verdict != "valid").then(|| Disagreement {
+            case: id.to_owned(),
+            kind: "rejected",
+            rule: "schema".to_owned(),
+            saxon,
+        })
+    };
+    let mut out = Vec::new();
+    for schema in stylesheets.iter().filter_map(|s| s.schema) {
+        let verdict = stylesheet_schemas
+            .iter()
+            .find(|(s, _)| s.column() == schema.column())
+            .and_then(|(_, column)| column.get(id))
+            .map_or("", String::as_str);
+        out.extend(rejection(
+            verdict,
+            format!("schema {verdict:?}@{}", schema.entry()),
+        ));
+    }
+    if let Some(column) = scenario_schema {
+        let verdict = column.get(id).map_or("", String::as_str);
+        out.extend(rejection(verdict, format!("schema {verdict:?}")));
+    }
+    out
+}
+
 /// The column `name` of the table [`TABLE`] at `path`, by case id.
-fn table_column(path: &Path, name: &str) -> Result<std::collections::HashMap<String, String>> {
+fn table_column(path: &Path, name: &str) -> Result<Column> {
     let text = util::read_string(path)?;
     let mut lines = text.lines();
     let header: Vec<&str> = lines.next().unwrap_or("").split('\t').collect();
@@ -438,7 +491,10 @@ fn default_level(kind: &str, flag: Option<&str>) -> &'static str {
 /// XML schema of the scenario (its `validateWithXmlSchema`, the configuration's
 /// copy) on the document, as `schema` gives it (xmllint, [`crate::xmllint`]):
 /// `valid`, `invalid` or `malformed` (`-` for a document without a scenario,
-/// which no schema checks, and for the other rule sets); then `verdict`, the
+/// which no schema checks, and for the other rule sets); before them, for a
+/// rule set whose stylesheets have XML schemas ([`schemas_of`]), a column
+/// `schema:<entry point>` per schema: its verdict on every case, `valid`,
+/// `invalid` or `malformed` (xmllint, as for KoSIT); then `verdict`, the
 /// acceptance of the reference validator, for a rule set with KoSIT scenarios:
 /// `reject` for a document without a scenario (none or several) and for one
 /// that its schema does not find valid (the KoSIT validator then skips the
@@ -457,18 +513,7 @@ pub(crate) fn write_table(
         Some(Profiles::KositScenarios { file, .. }) => Some((*file, scenarios(&base, file)?)),
         _ => None,
     };
-    let mut selections = Vec::with_capacity(cases.len());
-    for case in &cases {
-        selections.push(match &kosit {
-            Some((_, scenarios)) => {
-                let text = util::read_string(&util::join(&base, &case.input))?;
-                Some(parse(&text).ok().map_or(Selected::None, |doc| {
-                    Selected::of(scenarios, doc.root_element())
-                }))
-            }
-            None => None,
-        });
-    }
+    let selections = select_all(&base, &cases, kosit.as_ref().map(|(_, s)| s.as_slice()))?;
     let (schema_verdicts, checked_by) = match &kosit {
         Some((file, _)) => {
             let verdicts = schema_step(&base, file, &cases, &selections, schema)?;
@@ -476,16 +521,23 @@ pub(crate) fn write_table(
         }
         None => (vec![None; cases.len()], String::new()),
     };
+    let stylesheet_schemas = StylesheetSchemas::of(&base, &cases, rule_set, schema)?;
     let mut table = String::from("case\tscenario");
     for stylesheet in rule_set.stylesheets {
         let _ = write!(table, "\t{}", stylesheet.golden_dir);
     }
+    stylesheet_schemas.header(&mut table);
     table.push_str("\tschema\tverdict\n");
     let mut rejected = vec![0usize; rule_set.stylesheets.len()];
     let (mut matched, mut unmatched, mut several) = (0, 0, 0);
     let (mut accepts, mut rejects, mut errors) = (0, 0, 0);
     let (mut schema_invalid, mut schema_malformed) = (0, 0);
-    for ((case, selected), schema_verdict) in cases.iter().zip(&selections).zip(&schema_verdicts) {
+    for (index, ((case, selected), schema_verdict)) in cases
+        .iter()
+        .zip(&selections)
+        .zip(&schema_verdicts)
+        .enumerate()
+    {
         let scenario = selected.as_ref().and_then(Selected::scenario);
         match selected {
             Some(Selected::One(_)) => matched += 1,
@@ -513,6 +565,9 @@ pub(crate) fn write_table(
             *count += usize::from(verdict == "reject");
             let _ = write!(table, "\t{verdict}");
             verdicts.push((stylesheet.name, verdict));
+        }
+        for verdicts in &stylesheet_schemas.verdicts {
+            let _ = write!(table, "\t{}", verdicts[index].as_str());
         }
         let verdict = match (&kosit, scenario) {
             (None, _) => "-",
@@ -543,7 +598,7 @@ pub(crate) fn write_table(
             "{matched} matching one scenario, {unmatched} none, {several} several; the schemas ({checked_by}) find {schema_invalid} invalid, {schema_malformed} not well-formed; the configuration accepts {accepts}, rejects {rejects}, stops on {errors}; "
         )
     } else {
-        String::new()
+        stylesheet_schemas.summary()
     };
     Ok(format!(
         "acceptance written: {}: {} cases, {scenarios}{}",
@@ -551,6 +606,152 @@ pub(crate) fn write_table(
         cases.len(),
         rejections.join(", ")
     ))
+}
+
+/// The scenario of each case, with KoSIT `scenarios` (a document that is not
+/// well-formed matches none); `None` for each without.
+fn select_all<'s>(
+    base: &Path,
+    cases: &[Case],
+    scenarios: Option<&'s [Scenario]>,
+) -> Result<Vec<Option<Selected<'s>>>> {
+    cases
+        .iter()
+        .map(|case| {
+            let Some(scenarios) = scenarios else {
+                return Ok(None);
+            };
+            let text = util::read_string(&util::join(base, &case.input))?;
+            Ok(Some(parse(&text).ok().map_or(Selected::None, |doc| {
+                Selected::of(scenarios, doc.root_element())
+            })))
+        })
+        .collect()
+}
+
+/// The schema step of the stylesheets of a rule set whose profiles are
+/// listed: each schema of [`schemas_of`] on every case.
+struct StylesheetSchemas {
+    schemas: Vec<&'static Schema>,
+    /// For each schema, its verdict on each case.
+    verdicts: Vec<Vec<SchemaVerdict>>,
+    /// What checked them; empty without a schema.
+    checked_by: String,
+}
+
+impl StylesheetSchemas {
+    fn of(
+        base: &Path,
+        cases: &[Case],
+        rule_set: &RuleSet,
+        check: &dyn SchemaCheck,
+    ) -> Result<Self> {
+        let schemas = schemas_of(rule_set)?;
+        let mut verdicts = Vec::with_capacity(schemas.len());
+        for schema in &schemas {
+            verdicts.push(every_case(base, cases, schema, check)?);
+        }
+        let checked_by = if schemas.is_empty() {
+            String::new()
+        } else {
+            check.describe()?
+        };
+        Ok(Self {
+            schemas,
+            verdicts,
+            checked_by,
+        })
+    }
+
+    /// Their columns, in the header of [`TABLE`].
+    fn header(&self, table: &mut String) {
+        for schema in &self.schemas {
+            let _ = write!(table, "\t{}", schema.column());
+        }
+    }
+
+    /// What the schemas find, for the summary line; empty without a schema.
+    fn summary(&self) -> String {
+        if self.schemas.is_empty() {
+            return String::new();
+        }
+        let found: Vec<String> = self
+            .schemas
+            .iter()
+            .zip(&self.verdicts)
+            .map(|(schema, verdicts)| {
+                let count = |v: SchemaVerdict| verdicts.iter().filter(|&&x| x == v).count();
+                format!(
+                    "{} {} invalid, {} not well-formed",
+                    schema.entry(),
+                    count(SchemaVerdict::Invalid),
+                    count(SchemaVerdict::Malformed)
+                )
+            })
+            .collect();
+        format!(
+            "the schemas ({}) find: {}; ",
+            self.checked_by,
+            found.join(", ")
+        )
+    }
+}
+
+/// The XML schemas of the stylesheets of a rule set, each once, in the order
+/// of the stylesheets. Two schemas with the same entry point file name (the
+/// same column of [`TABLE`]) must be the same.
+fn schemas_of(rule_set: &RuleSet) -> Result<Vec<&'static Schema>> {
+    let mut out: Vec<&'static Schema> = Vec::new();
+    for stylesheet in rule_set.stylesheets {
+        let Some(schema) = stylesheet.schema else {
+            continue;
+        };
+        match out.iter().find(|s| s.column() == schema.column()) {
+            Some(other) if other.dir != schema.dir => {
+                return Err(Error::new(format!(
+                    "{}: two schemas with the entry point {} ({} and {})",
+                    rule_set.name,
+                    schema.entry(),
+                    other.dir,
+                    schema.dir
+                )));
+            }
+            Some(_) => {}
+            None => out.push(schema),
+        }
+    }
+    Ok(out)
+}
+
+/// The verdict of `schema` (a schema of the fetched files, relative to
+/// `base`) on every case, by `check`.
+fn every_case(
+    base: &Path,
+    cases: &[Case],
+    schema: &Schema,
+    check: &dyn SchemaCheck,
+) -> Result<Vec<SchemaVerdict>> {
+    let entry = util::join(base, &schema.entry_path());
+    if !entry.is_file() {
+        return Err(Error::new(format!(
+            "{}: the XML schema is not there",
+            entry.display()
+        )));
+    }
+    let documents: Vec<PathBuf> = cases
+        .iter()
+        .map(|case| util::join(base, &case.input))
+        .collect();
+    let verdicts = check.verdicts(&entry, &documents)?;
+    if verdicts.len() != cases.len() {
+        return Err(Error::new(format!(
+            "{}: {} schema verdicts for {} documents",
+            entry.display(),
+            verdicts.len(),
+            cases.len()
+        )));
+    }
+    Ok(verdicts)
 }
 
 /// The verdict of the KoSIT configuration `file` on a document that matches
@@ -735,7 +936,7 @@ pub(crate) fn check_bundle(root: &Path, rule_set: &RuleSet) -> Result<Option<Str
     let Some(Profiles::KositScenarios { file, bundle }) =
         rule_set.acceptance.as_ref().map(|a| &a.profiles)
     else {
-        return Ok(None);
+        return check_schema_bundles(root, rule_set);
     };
     let base = rule_set.base(root);
     let path = format!("{bundle}/bundle.toml");
@@ -827,6 +1028,68 @@ pub(crate) fn check_bundle(root: &Path, rule_set: &RuleSet) -> Result<Option<Str
     Ok(Some(format!(
         "bundle checked: {}: {path}, the {count} scenarios of {file} that run its stylesheets",
         rule_set.name
+    )))
+}
+
+/// Checks that the bundle of each stylesheet with an XML schema (the
+/// directory of the stylesheet, where the fetch script wrote it) validates
+/// against that schema: its manifest names the entry point as its `schema`
+/// and each document as a `[[schema-document]]`, and holds the documents of
+/// the fetched files, byte for byte. Returns a summary line; nothing for a
+/// rule set whose stylesheets have no schema.
+fn check_schema_bundles(root: &Path, rule_set: &RuleSet) -> Result<Option<String>> {
+    let base = rule_set.base(root);
+    let mut checked = Vec::new();
+    for stylesheet in rule_set.stylesheets {
+        let Some(schema) = stylesheet.schema else {
+            continue;
+        };
+        let dir = stylesheet.xslt.rsplit_once('/').map_or("", |(d, _)| d);
+        let path = format!("{dir}/bundle.toml");
+        let manifest = util::read_string(&util::join(&base, &path))?;
+        let wanted = format!("\nschema = \"{}\"\n", schema.entry());
+        if !manifest.contains(&wanted) {
+            return Err(Error::new(format!(
+                "{path}: no `schema = \"{}\"`: the bundle of {} does not validate against the schema of the acceptance table",
+                schema.entry(),
+                stylesheet.name
+            )));
+        }
+        let mut documents = String::new();
+        for (name, _) in schema.documents {
+            let _ = write!(documents, "\n[[schema-document]]\npath = \"{name}\"\n");
+            let fetched = util::read(&util::join(&base, &format!("{}/{name}", schema.dir)))?;
+            let bundled = util::read(&util::join(&base, &format!("{dir}/{name}")))?;
+            if fetched != bundled {
+                return Err(Error::new(format!(
+                    "{dir}/{name}: not {}/{name}, byte for byte",
+                    schema.dir
+                )));
+            }
+        }
+        let listed = manifest.split("\n[[schema-document]]\n").skip(1).fold(
+            String::new(),
+            |mut listed, table| {
+                let path = table.lines().next().unwrap_or("");
+                let _ = write!(listed, "\n[[schema-document]]\n{path}\n");
+                listed
+            },
+        );
+        if listed != documents {
+            return Err(Error::new(format!(
+                "{path}: its schema documents are not those of {}: expected{documents}found{listed}",
+                schema.dir
+            )));
+        }
+        checked.push(dir);
+    }
+    if checked.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(format!(
+        "bundles checked: {}: {} validate against the schemas of the acceptance table",
+        rule_set.name,
+        checked.join(", ")
     )))
 }
 
@@ -1091,7 +1354,9 @@ mod tests {
     };
     use crate::corpus::Case;
     use crate::crosscheck::Disagreement;
-    use crate::ruleset::{Acceptance, Generator, Origin, Profiles, RECORD, RuleSet, Stylesheet};
+    use crate::ruleset::{
+        Acceptance, Generator, Origin, Profiles, RECORD, RuleSet, Schema, Stylesheet,
+    };
     use crate::util::{self, Result};
     use crate::xmllint::{SchemaCheck, SchemaVerdict};
 
@@ -1109,6 +1374,7 @@ mod tests {
                 sha256_pin: None,
                 side_files: &[],
                 generator: Generator::IsoSkeleton,
+                schema: None,
             }],
             document_dirs: &[],
             vefa_dirs: &[],
@@ -1198,6 +1464,7 @@ mod tests {
                 sha256_pin: None,
                 side_files: &[],
                 generator: Generator::SchXslt,
+                schema: None,
             },
             Stylesheet {
                 name: "B",
@@ -1206,6 +1473,7 @@ mod tests {
                 sha256_pin: None,
                 side_files: &[],
                 generator: Generator::SchXslt,
+                schema: None,
             },
         ],
         document_dirs: &[("docs", "docs")],
@@ -1491,6 +1759,208 @@ mod tests {
             parsed[1].schema,
             "resources/ubl/2.1/xsd/maindoc/UBL-CreditNote-2.1.xsd"
         );
+    }
+
+    /// The schema of stylesheet A of [`LISTED_SET`].
+    const LISTED_SCHEMA: Schema = Schema {
+        dir: "src/xsd",
+        documents: &[("main.xsd", "main_pin"), ("types.xsd", "types_pin")],
+    };
+
+    /// A rule set whose profiles are listed, of two stylesheets, one with an
+    /// XML schema.
+    const LISTED_SET: RuleSet = RuleSet {
+        name: "synthetic-listed",
+        origin: Origin::Fetched {
+            base: "base",
+            corpus: "corpus",
+        },
+        source: "src",
+        stylesheets: &[
+            Stylesheet {
+                name: "A",
+                xslt: "bundle-a/a.xsl",
+                golden_dir: "golden-a",
+                sha256_pin: None,
+                side_files: &[],
+                generator: Generator::IsoSkeleton,
+                schema: Some(&LISTED_SCHEMA),
+            },
+            Stylesheet {
+                name: "B",
+                xslt: "bundle-b/b.xsl",
+                golden_dir: "golden-b",
+                sha256_pin: None,
+                side_files: &[],
+                generator: Generator::IsoSkeleton,
+                schema: None,
+            },
+        ],
+        document_dirs: &[("docs", "docs")],
+        vefa_dirs: &[],
+        xmute_dirs: &[],
+        xmute_schematrons: &[],
+        ignored: &[],
+        mutation_catalogue: None,
+        mutation_bases: &[],
+        acceptance: Some(Acceptance {
+            cases: &["docs"],
+            profiles: Profiles::Listed(&[("urn:a", &["A", "B"]), ("urn:b", &["B"])]),
+        }),
+        record: RECORD,
+    };
+
+    /// The schema of a stylesheet of a rule set whose profiles are listed: a
+    /// column of the table, on every case; a document of a profile whose
+    /// stylesheet has the schema is rejected when the schema does not find it
+    /// valid, and not otherwise; the bundle of that stylesheet must validate
+    /// against it.
+    #[test]
+    fn listed_profiles_have_the_schemas_of_their_stylesheets() {
+        let root = std::env::temp_dir().join(format!("xtask-listed-{}", std::process::id()));
+        let base = root.join("base");
+        let manifest = write_listed_fixture(&base);
+        let schema = FakeSchema::default();
+        let summary = write_table(&root, &LISTED_SET, &schema).unwrap();
+        let table = util::read_string(&util::join(&base, "corpus/acceptance.tsv")).unwrap();
+        let all = crate::corpus::read_all(&root, &LISTED_SET).unwrap();
+        let outcome = run(&root, &LISTED_SET, &all).unwrap();
+        let bundles = check_bundle(&root, &LISTED_SET);
+        // A bundle that does not validate against the schema, or holds another.
+        util::write(
+            &util::join(&base, "bundle-a/bundle.toml"),
+            manifest.replace("schema = \"main.xsd\"\n", "").as_bytes(),
+        )
+        .unwrap();
+        let unnamed = check_bundle(&root, &LISTED_SET).unwrap_err().to_string();
+        util::write(
+            &util::join(&base, "bundle-a/bundle.toml"),
+            manifest
+                .replace(
+                    "\n[[schema-document]]\npath = \"types.xsd\"\nsha256 = \"1\"\n",
+                    "",
+                )
+                .as_bytes(),
+        )
+        .unwrap();
+        let unlisted = check_bundle(&root, &LISTED_SET).unwrap_err().to_string();
+        util::write(
+            &util::join(&base, "bundle-a/bundle.toml"),
+            manifest.as_bytes(),
+        )
+        .unwrap();
+        util::write(&util::join(&base, "bundle-a/types.xsd"), b"<other/>").unwrap();
+        let other = check_bundle(&root, &LISTED_SET).unwrap_err().to_string();
+        util::remove_dir(&root).unwrap();
+
+        assert_eq!(
+            table,
+            "case\tscenario\tgolden-a\tgolden-b\tschema:main.xsd\tschema\tverdict\n\
+             docs/ok.xml\t-\taccept\taccept\tvalid\t-\t-\n\
+             docs/invalid.xml\t-\taccept\taccept\tinvalid\t-\t-\n\
+             docs/unreadable.xml\t-\taccept\taccept\tmalformed\t-\t-\n\
+             docs/invalid-b.xml\t-\taccept\taccept\tinvalid\t-\t-\n"
+        );
+        assert_eq!(
+            summary,
+            "acceptance written: synthetic-listed: 4 cases, the schemas (fake) find: main.xsd 2 invalid, 1 not well-formed; A rejects 0, B rejects 0"
+        );
+        // One run of the schema, on every case.
+        assert_eq!(schema.calls.into_inner().len(), 1);
+        let rejected = |case: &str, verdict: &str| Disagreement {
+            case: format!("docs/{case}.xml"),
+            kind: "rejected",
+            rule: "schema".to_owned(),
+            saxon: format!("schema \"{verdict}\"@main.xsd"),
+        };
+        assert_eq!((outcome.cases, outcome.agreeing), (4, 2));
+        assert_eq!(
+            outcome.disagreements,
+            [
+                rejected("invalid", "invalid"),
+                rejected("unreadable", "malformed")
+            ]
+        );
+        assert_eq!(
+            bundles.unwrap().as_deref(),
+            Some(
+                "bundles checked: synthetic-listed: bundle-a validate against the schemas of the acceptance table"
+            )
+        );
+        assert!(unnamed.contains("no `schema = \"main.xsd\"`"), "{unnamed}");
+        assert!(
+            unlisted.contains("its schema documents are not those of src/xsd"),
+            "{unlisted}"
+        );
+        assert!(
+            other.contains("bundle-a/types.xsd: not src/xsd/types.xsd"),
+            "{other}"
+        );
+    }
+
+    /// Writes the documents, their goldens, the index, the schema and the
+    /// bundle of stylesheet A of [`LISTED_SET`] under `base`; returns the
+    /// manifest of that bundle.
+    fn write_listed_fixture(base: &Path) -> &'static str {
+        let document = |id: &str| {
+            format!(
+                "<Invoice xmlns:cbc='urn:cbc'><cbc:CustomizationID>{id}</cbc:CustomizationID></Invoice>"
+            )
+        };
+        // (document, its identifier): the schema step of FakeSchema goes by the
+        // file name; a document of urn:b runs B alone, which has no schema.
+        let documents = [
+            ("ok.xml", "urn:a"),
+            ("invalid.xml", "urn:a"),
+            ("unreadable.xml", "urn:a"),
+            ("invalid-b.xml", "urn:b"),
+        ];
+        let mut cases =
+            String::from("case\tinput\tkind\tscope\tsuccess\terror\twarning\tdescription\n");
+        let golden = "svrl-canonical 1\nschematron-output\nfailed-assert flag=\"warning\" id=\"W\" location=\"/\" test=\"t\"\n  text \"m\"\n";
+        for (name, id) in documents {
+            util::write(
+                &util::join(base, &format!("src/docs/{name}")),
+                document(id).as_bytes(),
+            )
+            .unwrap();
+            let _ = writeln!(cases, "docs/{name}\tsrc/docs/{name}\tdocument");
+            for dir in ["golden-a", "golden-b"] {
+                util::write(
+                    &util::join(base, &format!("corpus/{dir}/docs/{name}.svrl.txt")),
+                    golden.as_bytes(),
+                )
+                .unwrap();
+            }
+        }
+        util::write(&util::join(base, "corpus/cases.tsv"), cases.as_bytes()).unwrap();
+        util::write(
+            &util::join(base, "corpus/mutations.tsv"),
+            b"case\tinput\tbase\treason\n",
+        )
+        .unwrap();
+        for (name, text) in [
+            ("main.xsd", "<xs:schema/>"),
+            ("types.xsd", "<xs:schema t=''/>"),
+        ] {
+            util::write(
+                &util::join(base, &format!("src/xsd/{name}")),
+                text.as_bytes(),
+            )
+            .unwrap();
+            util::write(
+                &util::join(base, &format!("bundle-a/{name}")),
+                text.as_bytes(),
+            )
+            .unwrap();
+        }
+        let manifest = "format = 2\nname = \"a\"\nschema = \"main.xsd\"\n\n[[stylesheet]]\nname = \"A\"\n\n[[schema-document]]\npath = \"main.xsd\"\nsha256 = \"0\"\n\n[[schema-document]]\npath = \"types.xsd\"\nsha256 = \"1\"\n";
+        util::write(
+            &util::join(base, "bundle-a/bundle.toml"),
+            manifest.as_bytes(),
+        )
+        .unwrap();
+        manifest
     }
 
     /// The bundle of a rule set with KoSIT scenarios must have the scenarios of

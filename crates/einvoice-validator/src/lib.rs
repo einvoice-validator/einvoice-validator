@@ -10,7 +10,8 @@
 //!    declaration ([`Error::NotXml`], [`Error::Unsupported`]), no element nested deeper
 //!    than [`ValidateOptions::max_depth`] ([`Error::Limit`]);
 //! 2. the XML schema of the rule set, if any (UBL 2.1 for the UBL rule sets, CII D16B
-//!    for `cen-cii`), with [`einvoice_xsd`]: every validity error, with its line and
+//!    for `cen-cii`, or the schema documents a bundle carries, such as the schema of a
+//!    Factur-X profile), with [`einvoice_xsd`]: every validity error, with its line and
 //!    column. The XML check and the schema run in one pass of the streaming reader of
 //!    [`einvoice_xml`] over the text, which builds no tree;
 //! 3. every stylesheet of the rule set, with [`einvoice_xslt_exec`], which executes the
@@ -50,9 +51,9 @@
 //!
 //! A rule set is described by a bundle: a manifest and the files it names. The
 //! manifest gives the rule set's name, title and version, the XML schema to validate
-//! against first, the stylesheets to run, and the resources they read with
-//! `document()` (code lists), each with the SHA-256 of its file, which is checked when
-//! the bundle is loaded. [`RuleSet`] is the manifest, parsed. A stylesheet reads the
+//! against first (an embedded one, or one whose documents the bundle carries), the
+//! stylesheets to run, and the resources they read with `document()` (code lists),
+//! each with the SHA-256 of its file, which is checked when the bundle is loaded. [`RuleSet`] is the manifest, parsed. A stylesheet reads the
 //! resources by their URI relative to its own (`file:` URIs in a directory,
 //! `bundle:/<path>` in memory), and nothing else: `document()` on any other URI is the
 //! error `FODC0002`.
@@ -127,7 +128,9 @@
 //! name = "cen-ubl"             # ASCII letters, digits, '-', '.', '_'
 //! title = "CEN EN 16931 UBL"
 //! version = "1.3.17"           # the version of the official artefacts
-//! schema = "ubl-2.1"           # optional: the XML schema validated first, ubl-2.1 or cii-d16b
+//! schema = "ubl-2.1"           # optional: the XML schema validated first, ubl-2.1 or cii-d16b,
+//! #                            # or (format 2) the path of the entry point of the schema
+//! #                            # documents of the bundle ([[schema-document]])
 //! # unchecked-schema = "..."   # format 2, optional: an XML schema the reference
 //! #                            # validator also checks and this rule set does not
 //!
@@ -142,6 +145,11 @@
 //! [[resource]]                 # format 2: zero or more files read with document()
 //! path = "ubl/xslt/codes.xml"  # relative, '/'-separated, no '..'
 //! sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+//!
+//! [[schema-document]]          # format 2: the documents of the schema of the bundle, when
+//! path = "xsd/main.xsd"        # `schema` is the path of one of them, its entry point: it
+//! sha256 = "1111111111111111111111111111111111111111111111111111111111111111"
+//! #                            # and every document it imports or includes, each a table
 //!
 //! [[scenario]]                 # format 2: zero or more, tried in this order
 //! name = "EN16931 XRechnung (UBL Invoice)"        # unique in the bundle
@@ -171,7 +179,8 @@
 //!
 //! Accepted syntax: comments, `key = value` lines with a bare key, values that are
 //! basic strings (escapes `\"` and `\\` only), literal strings or non-negative integers,
-//! and `[[stylesheet]]`, `[[resource]]` and `[[scenario]]` headers.
+//! and `[[stylesheet]]`, `[[resource]]`, `[[schema-document]]` and `[[scenario]]`
+//! headers.
 //!
 //! # Severities
 //!
@@ -196,9 +205,13 @@
 //!
 //! The KoSIT validator also validates each document against the XML schema of its
 //! scenario: the UBL 2.1 schema, which the XRechnung UBL bundle runs, or the UN/CEFACT
-//! CII D16B schema, which the XRechnung CII bundle runs ([`SchemaId::CiiD16b`]). A
-//! bundle whose reference validator checks a schema this crate does not embed names it
-//! in `unchecked-schema` ([`RuleSet::unchecked_schema`],
+//! CII D16B schema, which the XRechnung CII bundle runs ([`SchemaId::CiiD16b`]). The
+//! Mustang validator validates a Factur-X document against the XML schema of its
+//! profile, and the documentation of the French rules has a document validated against
+//! the schema of its syntax or profile first: their bundles carry those schemas
+//! ([`SchemaId::Bundle`]); a schema error makes the document invalid, and the
+//! stylesheets run all the same. A bundle whose reference validator checks a schema
+//! it does not run names it in `unchecked-schema` ([`RuleSet::unchecked_schema`],
 //! [`RuleSetVersion::unchecked_schema`] in the report): a document it would reject for a
 //! schema error alone is valid here.
 //!
@@ -271,7 +284,8 @@ pub use detect::Syntax;
 pub use error::{Error, ErrorKind};
 pub use licences::{Licence, licences};
 pub use manifest::{
-    MANIFEST_FILE, MANIFEST_FORMAT, ResourceEntry, RuleSet, Scenario, SchemaId, StylesheetEntry,
+    MANIFEST_FILE, MANIFEST_FORMAT, ResourceEntry, RuleSet, Scenario, SchemaDocumentEntry,
+    SchemaId, StylesheetEntry,
 };
 pub use report::{
     Finding, FindingKind, NoScenario, Report, RuleSetVersion, SchemaError, SchemaErrorKind,

@@ -96,35 +96,110 @@ static FACTURX: FamilySpec = FamilySpec {
     }],
 };
 
-/// The Factur-X profiles: bundle directory, Mustang file name, pins of the stylesheet
-/// and of its code list.
-pub(crate) const FACTURX_PROFILES: [(&str, &str, &str, &str); 5] = [
-    (
-        "minimum",
-        "MINIMUM",
-        "minimum_xslt_sha256",
-        "minimum_codedb_sha256",
-    ),
-    (
-        "basic-wl",
-        "BASIC-WL",
-        "basic_wl_xslt_sha256",
-        "basic_wl_codedb_sha256",
-    ),
-    ("basic", "BASIC", "basic_xslt_sha256", "basic_codedb_sha256"),
-    (
-        "en16931",
-        "EN16931",
-        "en16931_xslt_sha256",
-        "en16931_codedb_sha256",
-    ),
-    (
-        "extended",
-        "EXTENDED",
-        "extended_xslt_sha256",
-        "extended_codedb_sha256",
-    ),
+/// A Factur-X profile, as the Mustang validator runs it.
+#[derive(Debug)]
+pub(crate) struct FacturXProfile {
+    /// Its bundle directory.
+    pub(crate) dir: &'static str,
+    /// Its Mustang file name (`FACTUR-X_<file>.xslt`), also the directory of its XML
+    /// schema in the jar (`schema/ZF_250/<file>/`).
+    pub(crate) file: &'static str,
+    /// The pin of the SHA-256 of its stylesheet.
+    pub(crate) xslt: &'static str,
+    /// The pin of the SHA-256 of its code list.
+    pub(crate) codedb: &'static str,
+    /// The pins of the SHA-256 of the documents of its XML schema, in the order of
+    /// [`facturx_schema_documents`].
+    pub(crate) schema: [&'static str; 4],
+}
+
+/// The Factur-X profiles.
+pub(crate) const FACTURX_PROFILES: [FacturXProfile; 5] = [
+    FacturXProfile {
+        dir: "minimum",
+        file: "MINIMUM",
+        xslt: "minimum_xslt_sha256",
+        codedb: "minimum_codedb_sha256",
+        schema: [
+            "minimum_xsd_sha256",
+            "minimum_xsd_qdt_sha256",
+            "minimum_xsd_ram_sha256",
+            "minimum_xsd_udt_sha256",
+        ],
+    },
+    FacturXProfile {
+        dir: "basic-wl",
+        file: "BASIC-WL",
+        xslt: "basic_wl_xslt_sha256",
+        codedb: "basic_wl_codedb_sha256",
+        schema: [
+            "basic_wl_xsd_sha256",
+            "basic_wl_xsd_qdt_sha256",
+            "basic_wl_xsd_ram_sha256",
+            "basic_wl_xsd_udt_sha256",
+        ],
+    },
+    FacturXProfile {
+        dir: "basic",
+        file: "BASIC",
+        xslt: "basic_xslt_sha256",
+        codedb: "basic_codedb_sha256",
+        schema: [
+            "basic_xsd_sha256",
+            "basic_xsd_qdt_sha256",
+            "basic_xsd_ram_sha256",
+            "basic_xsd_udt_sha256",
+        ],
+    },
+    FacturXProfile {
+        dir: "en16931",
+        file: "EN16931",
+        xslt: "en16931_xslt_sha256",
+        codedb: "en16931_codedb_sha256",
+        schema: [
+            "en16931_xsd_sha256",
+            "en16931_xsd_qdt_sha256",
+            "en16931_xsd_ram_sha256",
+            "en16931_xsd_udt_sha256",
+        ],
+    },
+    FacturXProfile {
+        dir: "extended",
+        file: "EXTENDED",
+        xslt: "extended_xslt_sha256",
+        codedb: "extended_codedb_sha256",
+        schema: [
+            "extended_xsd_sha256",
+            "extended_xsd_qdt_sha256",
+            "extended_xsd_ram_sha256",
+            "extended_xsd_udt_sha256",
+        ],
+    },
 ];
+
+/// The modules the entry point of a schema of the Cross Industry family imports (the
+/// Factur-X profiles, CII D22B, CDAR D22B), by the end of their file names.
+const CII_FAMILY_MODULES: [&str; 3] = [
+    "QualifiedDataType",
+    "ReusableAggregateBusinessInformationEntity",
+    "UnqualifiedDataType",
+];
+
+/// The documents of the XML schema of the Factur-X profile whose Mustang file name is
+/// `file`, in `schema/ZF_250/<file>/` of the jar, as `XMLValidator` validates a document
+/// of the profile against it: the entry point `FACTUR-X_<NAME>.xsd` (`NAME`, `file`
+/// without its hyphen), then the three modules it imports.
+pub(crate) fn facturx_schema_documents(file: &str) -> [String; 4] {
+    let name = file.replace('-', "");
+    let module =
+        |m: &str| format!("FACTUR-X_{name}_urn_un_unece_uncefact_data_standard_{m}_100.xsd");
+    [
+        format!("FACTUR-X_{name}.xsd"),
+        module(CII_FAMILY_MODULES[0]),
+        module(CII_FAMILY_MODULES[1]),
+        module(CII_FAMILY_MODULES[2]),
+    ]
+}
 
 // --- XRechnung ---------------------------------------------------------------------
 
@@ -421,88 +496,226 @@ pub(crate) const FR_CTC_STYLESHEETS: [(&str, &str, &str, Option<&str>); 14] = [
     ),
 ];
 
-/// The bundles of the French rules: directory, whether it validates against the UBL
-/// 2.1 schema, title, stylesheets in order.
-pub(crate) const FR_CTC_BUNDLES: [(&str, bool, &str, &[&str]); 14] = [
+/// The XML schemas of the bundles of the French rules, as the package ships them: name,
+/// then each document the entry point reaches, by its path in the package (the entry
+/// point first, the modules it imports next to it), with the pin of its SHA-256.
+pub(crate) const FR_CTC_SCHEMAS: [(&str, [(&str, &str); 4]); 5] = [
+    (
+        "cii-d22b",
+        [
+            (
+                "CII/1xsd-CII_D22B_uncoupled/CrossIndustryInvoice_100pD22B.xsd",
+                "cii_xsd_sha256",
+            ),
+            (
+                "CII/1xsd-CII_D22B_uncoupled/CrossIndustryInvoice_100pD22B_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd",
+                "cii_xsd_qdt_sha256",
+            ),
+            (
+                "CII/1xsd-CII_D22B_uncoupled/CrossIndustryInvoice_100pD22B_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd",
+                "cii_xsd_ram_sha256",
+            ),
+            (
+                "CII/1xsd-CII_D22B_uncoupled/CrossIndustryInvoice_100pD22B_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd",
+                "cii_xsd_udt_sha256",
+            ),
+        ],
+    ),
+    (
+        "cdar-d22b",
+        [
+            (
+                "CDAR/1xsd-CDAR_D22B_uncoupled/CrossDomainAcknowledgementAndResponse_100pD22B.xsd",
+                "cdar_xsd_sha256",
+            ),
+            (
+                "CDAR/1xsd-CDAR_D22B_uncoupled/CrossDomainAcknowledgementAndResponse_100pD22B_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd",
+                "cdar_xsd_qdt_sha256",
+            ),
+            (
+                "CDAR/1xsd-CDAR_D22B_uncoupled/CrossDomainAcknowledgementAndResponse_100pD22B_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd",
+                "cdar_xsd_ram_sha256",
+            ),
+            (
+                "CDAR/1xsd-CDAR_D22B_uncoupled/CrossDomainAcknowledgementAndResponse_100pD22B_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd",
+                "cdar_xsd_udt_sha256",
+            ),
+        ],
+    ),
+    (
+        "factur-x-basic-wl",
+        [
+            (
+                "Factur-X_1.09.2.fixFR04/BASICWL/1xsd/Factur-X_BASICWL.xsd",
+                "fx_basic_wl_xsd_sha256",
+            ),
+            (
+                "Factur-X_1.09.2.fixFR04/BASICWL/1xsd/Factur-X_1.09.2_BASICWL_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd",
+                "fx_basic_wl_xsd_qdt_sha256",
+            ),
+            (
+                "Factur-X_1.09.2.fixFR04/BASICWL/1xsd/Factur-X_1.09.2_BASICWL_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd",
+                "fx_basic_wl_xsd_ram_sha256",
+            ),
+            (
+                "Factur-X_1.09.2.fixFR04/BASICWL/1xsd/Factur-X_1.09.2_BASICWL_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd",
+                "fx_basic_wl_xsd_udt_sha256",
+            ),
+        ],
+    ),
+    (
+        "factur-x-en16931",
+        [
+            (
+                "Factur-X_1.09.2.fixFR04/EN16931/1xsd/Factur-X_EN16931.xsd",
+                "fx_en16931_xsd_sha256",
+            ),
+            (
+                "Factur-X_1.09.2.fixFR04/EN16931/1xsd/Factur-X_1.09.2_EN16931_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd",
+                "fx_en16931_xsd_qdt_sha256",
+            ),
+            (
+                "Factur-X_1.09.2.fixFR04/EN16931/1xsd/Factur-X_1.09.2_EN16931_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd",
+                "fx_en16931_xsd_ram_sha256",
+            ),
+            (
+                "Factur-X_1.09.2.fixFR04/EN16931/1xsd/Factur-X_1.09.2_EN16931_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd",
+                "fx_en16931_xsd_udt_sha256",
+            ),
+        ],
+    ),
+    (
+        "factur-x-extended",
+        [
+            (
+                "Factur-X_1.09.2.fixFR04/EXTENDED/1xsd/Factur-X_EXTENDED.xsd",
+                "fx_extended_xsd_sha256",
+            ),
+            (
+                "Factur-X_1.09.2.fixFR04/EXTENDED/1xsd/Factur-X_1.09.2_EXTENDED_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd",
+                "fx_extended_xsd_qdt_sha256",
+            ),
+            (
+                "Factur-X_1.09.2.fixFR04/EXTENDED/1xsd/Factur-X_1.09.2_EXTENDED_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd",
+                "fx_extended_xsd_ram_sha256",
+            ),
+            (
+                "Factur-X_1.09.2.fixFR04/EXTENDED/1xsd/Factur-X_1.09.2_EXTENDED_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd",
+                "fx_extended_xsd_udt_sha256",
+            ),
+        ],
+    ),
+];
+
+/// The schema of a bundle of the French rules: none, the embedded UBL 2.1 schema, or
+/// one of [`FR_CTC_SCHEMAS`] (its name).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FrCtcSchema {
+    None,
+    Ubl21,
+    Package(&'static str),
+}
+
+/// The documents of the schema `name` of [`FR_CTC_SCHEMAS`].
+pub(crate) fn fr_ctc_schema(
+    name: &str,
+) -> Result<&'static [(&'static str, &'static str); 4], String> {
+    FR_CTC_SCHEMAS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, documents)| documents)
+        .ok_or_else(|| format!("no schema {name} of the French package"))
+}
+
+/// The bundles of the French rules: directory, the XML schema it validates against
+/// first, as the documentation of the package says (UBL 2.1 for UBL, the schemas the
+/// package ships for CII, CDAR and each Factur-X profile; none for Flux 10), title,
+/// stylesheets in order.
+pub(crate) const FR_CTC_BUNDLES: [(&str, FrCtcSchema, &str, &[&str]); 14] = [
     (
         "cii-en16931",
-        false,
+        FrCtcSchema::Package("cii-d22b"),
         "EN 16931 CII and the French rules",
         &["EN16931-CII", "BR-FR-Flux2-CII"],
     ),
     (
         "cii-en16931-warning",
-        false,
+        FrCtcSchema::Package("cii-d22b"),
         "EN 16931 CII and the French rules (WARNING version)",
         &["EN16931-CII", "BR-FR-Flux2-CII_WARNING"],
     ),
     (
         "cii-extended-ctc-fr",
-        false,
+        FrCtcSchema::Package("cii-d22b"),
         "EXTENDED-CTC-FR CII and the French rules",
         &["EXTENDED-CTC-FR-CII", "BR-FR-Flux2-CII"],
     ),
     (
         "cii-extended-ctc-fr-warning",
-        false,
+        FrCtcSchema::Package("cii-d22b"),
         "EXTENDED-CTC-FR CII and the French rules (WARNING version)",
         &["EXTENDED-CTC-FR-CII", "BR-FR-Flux2-CII_WARNING"],
     ),
     (
         "ubl-en16931",
-        true,
+        FrCtcSchema::Ubl21,
         "EN 16931 UBL and the French rules",
         &["EN16931-UBL", "BR-FR-Flux2-UBL"],
     ),
     (
         "ubl-en16931-warning",
-        true,
+        FrCtcSchema::Ubl21,
         "EN 16931 UBL and the French rules (WARNING version)",
         &["EN16931-UBL", "BR-FR-Flux2-UBL_WARNING"],
     ),
     (
         "ubl-extended-ctc-fr",
-        true,
+        FrCtcSchema::Ubl21,
         "EXTENDED-CTC-FR UBL and the French rules",
         &["EXTENDED-CTC-FR-UBL", "BR-FR-Flux2-UBL"],
     ),
     (
         "ubl-extended-ctc-fr-warning",
-        true,
+        FrCtcSchema::Ubl21,
         "EXTENDED-CTC-FR UBL and the French rules (WARNING version)",
         &["EXTENDED-CTC-FR-UBL", "BR-FR-Flux2-UBL_WARNING"],
     ),
     (
         "cdar",
-        false,
+        FrCtcSchema::Package("cdar-d22b"),
         "Life-cycle statuses (CDAR)",
         &["BR-FR-CDV-CDAR"],
     ),
     (
         "cdar-warning",
-        false,
+        FrCtcSchema::Package("cdar-d22b"),
         "Life-cycle statuses (CDAR, WARNING version)",
         &["BR-FR-CDV-CDAR_WARNING"],
     ),
     (
         "factur-x-basic-wl",
-        false,
+        FrCtcSchema::Package("factur-x-basic-wl"),
         "Factur-X BASIC WL and the French rules",
         &["FACTUR-X_BASIC-WL", "BR-FR-Flux2-CII"],
     ),
     (
         "factur-x-en16931",
-        false,
+        FrCtcSchema::Package("factur-x-en16931"),
         "Factur-X EN16931 and the French rules",
         &["FACTUR-X_EN16931", "BR-FR-Flux2-CII"],
     ),
     (
         "factur-x-extended",
-        false,
+        FrCtcSchema::Package("factur-x-extended"),
         "Factur-X EXTENDED and the French rules",
         &["FACTUR-X_EXTENDED", "BR-FR-Flux2-CII"],
     ),
-    ("flux10", false, "E-reporting (Flux 10)", &["Flux10"]),
+    (
+        "flux10",
+        FrCtcSchema::None,
+        "E-reporting (Flux 10)",
+        &["Flux10"],
+    ),
 ];
 
 /// Whether the stylesheet `name` of the package is a Factur-X profile (`FACTUR-X_<P>`),
@@ -1003,22 +1216,29 @@ fn manifest(spec: &RuleSetSpec) -> Result<String, String> {
 /// As `scripts/fetch-facturx.sh` writes it.
 fn manifest_facturx(spec: &RuleSetSpec) -> Result<String, String> {
     let p = |name: &str| spec.family.pins.get(name);
-    let (dir, file, xslt, codedb) = FACTURX_PROFILES
+    let profile = FACTURX_PROFILES
         .iter()
-        .find(|(dir, ..)| *dir == spec.dir)
+        .find(|profile| profile.dir == spec.dir)
         .ok_or_else(|| format!("{}: no Factur-X profile", spec.name))?;
+    let (dir, file) = (profile.dir, profile.file);
     let (facturx, mustang) = (p("facturx")?, p("mustang")?);
-    Ok(format!(
+    let documents = facturx_schema_documents(file);
+    let entry = &documents[0];
+    let mut m = format!(
         "# Factur-X {facturx}, profile {file}, from the Mustang validator {mustang}: the
 # rule-set bundle manifest of einvoice-validator, as scripts/fetch-facturx.sh and
 # einvoice-validate rules fetch write it (einvoice-validate --bundle DIR). The
-# stylesheet reads, with document(), the code list FACTUR-X_{file}_codedb.xml
-# next to it, a resource of the bundle. A failed assert without a flag is fatal,
-# as the Mustang validator reads the report.
+# document is validated first against the XML schema of the profile,
+# {entry} and the modules it imports, next to it, as the Mustang
+# validator validates it: a schema error makes it invalid, and the stylesheet
+# runs all the same. The stylesheet reads, with document(), the code list
+# FACTUR-X_{file}_codedb.xml next to it, a resource of the bundle. A failed
+# assert without a flag is fatal, as the Mustang validator reads the report.
 format = 2
 name = \"factur-x-{dir}\"
 title = \"Factur-X {file}\"
 version = \"{facturx}\"
+schema = \"{entry}\"
 
 [[stylesheet]]
 name = \"FACTUR-X_{file}\"
@@ -1030,9 +1250,17 @@ unflagged-assert = \"fatal\"
 path = \"FACTUR-X_{file}_codedb.xml\"
 sha256 = \"{codedb}\"
 ",
-        xslt = p(xslt)?,
-        codedb = p(codedb)?,
-    ))
+        xslt = p(profile.xslt)?,
+        codedb = p(profile.codedb)?,
+    );
+    for (document, pin) in documents.iter().zip(profile.schema) {
+        let _ = write!(
+            m,
+            "\n[[schema-document]]\npath = \"{document}\"\nsha256 = \"{}\"\n",
+            p(pin)?
+        );
+    }
+    Ok(m)
 }
 
 /// As `scripts/fetch-xrechnung.sh` writes it.
@@ -1105,7 +1333,7 @@ fn manifest_xrechnung(spec: &RuleSetSpec) -> Result<String, String> {
 /// As `scripts/fetch-fr-ctc.sh` writes it.
 fn manifest_fr_ctc(spec: &RuleSetSpec) -> Result<String, String> {
     let p = |name: &str| spec.family.pins.get(name);
-    let (dir, ubl, title, names) = FR_CTC_BUNDLES
+    let (dir, schema, title, names) = FR_CTC_BUNDLES
         .iter()
         .find(|(dir, ..)| *dir == spec.dir)
         .ok_or_else(|| format!("{}: no bundle of the French rules", spec.name))?;
@@ -1116,6 +1344,18 @@ fn manifest_fr_ctc(spec: &RuleSetSpec) -> Result<String, String> {
 # einvoice-validate rules fetch write it (einvoice-validate --bundle DIR).
 "
     );
+    // The documents of the schema of the bundle, if the package ships it.
+    let documents: &[(&str, &str)] = match schema {
+        FrCtcSchema::Package(name) => fr_ctc_schema(name)?,
+        FrCtcSchema::None | FrCtcSchema::Ubl21 => &[],
+    };
+    if let Some((path, _)) = documents.first() {
+        let (directory, entry) = path.rsplit_once('/').unwrap_or(("", path));
+        let _ = write!(
+            m,
+            "# The document is validated first against the XML schema the package ships in\n# {directory}/: {entry}\n# and the modules it imports, next to it.\n"
+        );
+    }
     let stylesheets = names
         .iter()
         .map(|name| {
@@ -1153,8 +1393,13 @@ fn manifest_fr_ctc(spec: &RuleSetSpec) -> Result<String, String> {
         m,
         "format = 2\nname = \"fr-ctc-{dir}\"\ntitle = \"{title}\"\nversion = \"{pack}\"\n"
     );
-    if *ubl {
-        m.push_str("schema = \"ubl-2.1\"\n");
+    match schema {
+        FrCtcSchema::None => {}
+        FrCtcSchema::Ubl21 => m.push_str("schema = \"ubl-2.1\"\n"),
+        FrCtcSchema::Package(_) => {
+            let entry = documents.first().map_or("", |(path, _)| base_name(path));
+            let _ = writeln!(m, "schema = \"{entry}\"");
+        }
     }
     for (name, _, sha, _) in &stylesheets {
         let _ = write!(
@@ -1173,7 +1418,20 @@ fn manifest_fr_ctc(spec: &RuleSetSpec) -> Result<String, String> {
             p(pin)?
         );
     }
+    for (path, pin) in documents {
+        let _ = write!(
+            m,
+            "\n[[schema-document]]\npath = \"{}\"\nsha256 = \"{}\"\n",
+            base_name(path),
+            p(pin)?
+        );
+    }
     Ok(m)
+}
+
+/// The file name of a `/`-separated path.
+pub(crate) fn base_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
 }
 
 /// As `scripts/fetch-peppol.sh` writes it.
@@ -1231,16 +1489,19 @@ mod tests {
                 assert_eq!(s.digest().len(), length, "{}", s.url());
                 assert!(!s.file().contains('/'), "{}", s.file());
             }
-            // UBL 2.1 for UBL; CII D16B for XRechnung CII, whose KoSIT scenarios validate
-            // against it.
-            let schema = if r.syntax() == Some(Syntax::Ubl) {
-                Some(crate::SchemaId::Ubl21)
-            } else if r.name() == "xrechnung-cii" {
-                Some(crate::SchemaId::CiiD16b)
-            } else {
-                None
-            };
-            assert_eq!(parsed.schema(), schema, "{}", r.name());
+            // The XML schema of the reference validator, and the documents of the bundle
+            // that hold it.
+            let (schema, documents) = reference_schema(r.name());
+            assert_eq!(parsed.schema(), schema.as_ref(), "{}", r.name());
+            let paths: Vec<&str> = parsed
+                .schema_documents()
+                .iter()
+                .map(crate::SchemaDocumentEntry::path)
+                .collect();
+            assert_eq!(paths, documents, "{}", r.name());
+            if let Some(crate::SchemaId::Bundle(entry)) = &schema {
+                assert_eq!(Some(entry), documents.first());
+            }
         }
         // Names are unique, and no name is an alias or a family.
         for (i, r) in all.iter().enumerate() {
@@ -1252,6 +1513,83 @@ mod tests {
             assert!(ALIASES.iter().all(|(a, _)| *a != r.name()));
             assert!(FAMILIES.iter().all(|f| f.name != r.name()));
             assert!(crate::BUILTIN_RULE_SETS.iter().all(|b| *b != r.name()));
+        }
+    }
+
+    /// The documents of a schema of the Cross Industry family whose entry point is
+    /// `<entry>.xsd` and whose modules are named `<modules>_urn_un_unece_uncefact_data_
+    /// standard_<module>_100.xsd`: the entry point, then the qualified data types, the
+    /// reusable aggregates and the unqualified data types it imports.
+    fn cii_family(entry: &str, modules: &str) -> Vec<String> {
+        let mut documents = vec![format!("{entry}.xsd")];
+        for module in [
+            "QualifiedDataType",
+            "ReusableAggregateBusinessInformationEntity",
+            "UnqualifiedDataType",
+        ] {
+            documents.push(format!(
+                "{modules}_urn_un_unece_uncefact_data_standard_{module}_100.xsd"
+            ));
+        }
+        documents
+    }
+
+    /// The XML schema the reference validator of the rule set `name` validates a document
+    /// against before the stylesheets, as its bundle names it, and the documents of the
+    /// bundle that hold it (the entry point first; none for an embedded schema).
+    fn reference_schema(name: &str) -> (Option<crate::SchemaId>, Vec<String>) {
+        let bundle = |documents: Vec<String>| {
+            (
+                Some(crate::SchemaId::Bundle(documents[0].clone())),
+                documents,
+            )
+        };
+        match name {
+            // The Mustang validator (XMLValidator): the schema of the profile its
+            // stylesheet is for, schema/ZF_250/<PROFILE>/ of its jar.
+            "factur-x-minimum" => bundle(cii_family("FACTUR-X_MINIMUM", "FACTUR-X_MINIMUM")),
+            "factur-x-basic-wl" => bundle(cii_family("FACTUR-X_BASICWL", "FACTUR-X_BASICWL")),
+            "factur-x-basic" => bundle(cii_family("FACTUR-X_BASIC", "FACTUR-X_BASIC")),
+            "factur-x-en16931" => bundle(cii_family("FACTUR-X_EN16931", "FACTUR-X_EN16931")),
+            "factur-x-extended" => bundle(cii_family("FACTUR-X_EXTENDED", "FACTUR-X_EXTENDED")),
+            // UBL 2.1: the KoSIT validator (the schema of each scenario,
+            // validateWithXmlSchema), the Peppol validators, and the French package for
+            // UBL (step 1 of its documentation, before the Schematron).
+            "xrechnung-ubl"
+            | "peppol-bis-billing-ubl"
+            | "fr-ctc-ubl-en16931"
+            | "fr-ctc-ubl-en16931-warning"
+            | "fr-ctc-ubl-extended-ctc-fr"
+            | "fr-ctc-ubl-extended-ctc-fr-warning" => (Some(crate::SchemaId::Ubl21), vec![]),
+            // The KoSIT validator, for CII: CII D16B.
+            "xrechnung-cii" => (Some(crate::SchemaId::CiiD16b), vec![]),
+            // The French package (step 1 of its documentation, before the Schematron):
+            // the uncoupled UN/CEFACT D22B schema it ships for CII and for the
+            // life-cycle statuses (CDAR), the schema of each Factur-X profile it ships
+            // (the schemas of the Mustang validator, under other file names).
+            "fr-ctc-cii-en16931"
+            | "fr-ctc-cii-en16931-warning"
+            | "fr-ctc-cii-extended-ctc-fr"
+            | "fr-ctc-cii-extended-ctc-fr-warning" => bundle(cii_family(
+                "CrossIndustryInvoice_100pD22B",
+                "CrossIndustryInvoice_100pD22B",
+            )),
+            "fr-ctc-cdar" | "fr-ctc-cdar-warning" => bundle(cii_family(
+                "CrossDomainAcknowledgementAndResponse_100pD22B",
+                "CrossDomainAcknowledgementAndResponse_100pD22B",
+            )),
+            "fr-ctc-factur-x-basic-wl" => {
+                bundle(cii_family("Factur-X_BASICWL", "Factur-X_1.09.2_BASICWL"))
+            }
+            "fr-ctc-factur-x-en16931" => {
+                bundle(cii_family("Factur-X_EN16931", "Factur-X_1.09.2_EN16931"))
+            }
+            "fr-ctc-factur-x-extended" => {
+                bundle(cii_family("Factur-X_EXTENDED", "Factur-X_1.09.2_EXTENDED"))
+            }
+            // The package documents no XML schema step for the e-reporting rules.
+            "fr-ctc-flux10" => (None, vec![]),
+            other => panic!("{other}: no reference schema stated"),
         }
     }
 
@@ -1296,7 +1634,7 @@ mod tests {
                     assert!(!parsed.selects_by_scenario());
                 }
             }
-            // Every XML schema of the reference validator is run.
+            // Every XML schema of the reference validator is run (reference_schema).
             assert_eq!(parsed.unchecked_schema(), None, "{}", r.name());
         }
         let ubl = RuleSet::parse(
