@@ -28,10 +28,10 @@ default = ["fetch"]
 fetch = ["einvoice-validator/fetch"]
 
 [dependencies]
-einvoice-validator = { path = "../einvoice-validator", version = "0.3.0", features = ["pdf"] }
+einvoice-validator = { path = "../einvoice-validator", version = "0.4.0", features = ["pdf"] }
 
 [dev-dependencies]
-einvoice-svrl = { path = "../einvoice-svrl", version = "0.3.0" }
+einvoice-svrl = { path = "../einvoice-svrl", version = "0.4.0" }
 # Not published: without a version, cargo leaves it out of the published manifest.
 einvoice-testkit = { path = "../einvoice-testkit" }
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
