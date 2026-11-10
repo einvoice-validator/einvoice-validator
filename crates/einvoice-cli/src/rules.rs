@@ -128,15 +128,10 @@ fn sources() -> Result<String, String> {
         };
         let _ = writeln!(
             out,
-            "  {family:<10} {} ({} rule set{}){}",
+            "  {family:<10} {} ({} rule set{})",
             first.publisher(),
             members.len(),
             if members.len() == 1 { "" } else { "s" },
-            if first.needs_java() {
-                "; needs Java and network access to Maven Central"
-            } else {
-                ""
-            }
         );
         for source in first.sources() {
             let _ = writeln!(
@@ -272,10 +267,6 @@ fn options(from: &[PathBuf]) -> einvoice_validator::FetchOptions {
         einvoice_validator::FetchOptions::new().progress(|line| eprintln!("{NAME}: {line}"));
     if let Some(mirror) = std::env::var(MIRROR_ENV).ok().filter(|m| !m.is_empty()) {
         options = options.mirror(mirror);
-    }
-    // As the fetch scripts of the repository: JAVA names the Java runtime.
-    if let Some(java) = std::env::var_os("JAVA").filter(|j| !j.is_empty()) {
-        options = options.java(java);
     }
     for dir in from {
         options = options.from_dir(dir);

@@ -149,7 +149,7 @@ fn the_catalogue_downloads_what_the_scripts_download() {
         ("fr-ctc", &[("pack_url", "pack_zip")]),
         (
             "peppol",
-            &[("archive_url", "archive"), ("maven_url", "maven_archive")],
+            &[("archive_url", "archive"), ("isosch_url", "isosch_jar")],
         ),
     ];
     let all = fetched_rule_sets().unwrap();
@@ -310,11 +310,15 @@ fn script_output(family: &str) -> bool {
 #[test]
 fn fetched_bundles_are_the_scripts_bundles_byte_for_byte() {
     // Offline: the downloads of the scripts, and no network (a mirror nobody listens
-    // on). Peppol is compiled by Maven, which downloads the compiler: it is compared
-    // in the online test.
-    let downloads = root().join("target/downloads");
+    // on). Peppol's Schematron is compiled in Rust; its script compiled it with
+    // ph-schematron.
     let mut checked = 0;
-    for family in ["factur-x", "xrechnung", "fr-ctc"] {
+    for family in ["factur-x", "xrechnung", "fr-ctc", "peppol"] {
+        let downloads = if family == "peppol" {
+            output_of(family).join("downloads")
+        } else {
+            root().join("target/downloads")
+        };
         let present = script_output(family)
             && fetched_rule_sets()
                 .unwrap()
@@ -371,7 +375,7 @@ fn fetched_bundles_are_the_scripts_bundles_byte_for_byte() {
 /// first. `EINVOICE_FETCH_FROM` may name directories (`:`-separated) to take published
 /// files from instead of downloading them.
 #[test]
-#[ignore = "downloads every rule set from its publisher (network, Java for Peppol)"]
+#[ignore = "downloads every rule set from its publisher (network)"]
 fn fetches_every_rule_set_from_its_publisher() {
     let cache = RuleSetCache::at(root().join("target/rules-cache"));
     cache.clear().unwrap();

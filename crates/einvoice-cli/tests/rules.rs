@@ -67,7 +67,9 @@ fn rules_list_names_every_rule_set_with_its_source_and_cache_state() {
             assert!(r.stdout.contains(source.digest()), "{}", source.url());
         }
     }
-    assert!(r.stdout.contains("needs Java"));
+    // Peppol is compiled in this program, with the ISO Schematron skeleton it downloads.
+    assert!(!r.stdout.contains("Java"));
+    assert!(r.stdout.contains("ph-schematron-isosch"));
     assert!(r.stdout.contains(
         "Aliases: peppol (peppol-bis-billing-ubl), xrechnung (xrechnung-ubl or xrechnung-cii)"
     ));

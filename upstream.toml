@@ -686,7 +686,7 @@ pinned = "10.3.1"
 source = "maven"
 group = "com.helger.maven"
 artifact = "ph-schematron-maven-plugin"
-hold = "the SHA-256 of the compiled Peppol stylesheets in scripts/fetch-peppol.sh are those of this version"
+hold = "the SHA-256 of the compiled Peppol stylesheets in scripts/fetch-peppol.sh, of the jar of ph-schematron-isosch (isosch_sha256) and of the skeleton files of einvoice-schematron (SKELETON_FILES) are those of this version"
 
 [[upstream.pin]]
 file = "scripts/fetch-peppol.sh"
@@ -703,6 +703,10 @@ pattern = 'ph-schematron-maven-plugin (?<v>[0-9]+(?:\.[0-9]+)+)'
 [[upstream.pin]]
 file = "corpus/README.md"
 pattern = 'ph-schematron-maven-plugin (?<v>[0-9]+(?:\.[0-9]+)+)'
+
+[[upstream.pin]]
+file = "crates/einvoice-schematron/src/pipeline.rs"
+pattern = 'ph-schematron-isosch (?<v>[0-9]+(?:\.[0-9]+)+)'
 
 # Runs ph-schematron-maven-plugin in scripts/fetch-peppol.sh.
 [[upstream]]

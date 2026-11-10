@@ -150,7 +150,14 @@ fn version() -> String {
 /// it), which `einvoice_validator::licences` lists for their code.
 const MIT: &str = include_str!("../LICENSES/MIT.txt");
 
-/// What the MIT licence covers in this binary.
+/// What the MIT licence covers in this binary (einvoice-schematron with the feature
+/// `fetch`).
+#[cfg(feature = "fetch")]
+const MIT_COVERS: &str = "the code of einvoice-validate (crate einvoice-cli) and of the crates \
+    of the project it is built from (einvoice-validator, einvoice-pdf, einvoice-schematron, \
+    einvoice-svrl, einvoice-xdm, einvoice-xml, einvoice-xpath, einvoice-xpath-eval, \
+    einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)";
+#[cfg(not(feature = "fetch"))]
 const MIT_COVERS: &str = "the code of einvoice-validate (crate einvoice-cli) and of the crates \
     of the project it is built from (einvoice-validator, einvoice-bigint, einvoice-pdf, \
     einvoice-svrl, einvoice-xdm, einvoice-xml, einvoice-xpath, einvoice-xpath-eval, \
@@ -251,8 +258,8 @@ Commands:
                        sets of its family. --all: every family. --from DIR: take
                        the published files from DIR when it has them (by their
                        file names, checked all the same). Peppol BIS Billing is
-                       published as Schematron only: building it compiles it with
-                       ph-schematron, which needs Java and access to Maven Central.
+                       published as Schematron only: building it compiles it as
+                       ph-schematron does, in this program.
   rules path [NAME]    Print the cache directory, or the bundle directory of NAME
                        (usable with --bundle).
   rules clear          Remove everything this program put in the cache.
@@ -262,7 +269,6 @@ Environment:
                              ~/.cache (Linux), ~/Library/Caches (macOS),
                              %LOCALAPPDATA% (Windows), with einvoice-validator/.
   EINVOICE_VALIDATOR_MIRROR  Fetch https://HOST/PATH from MIRROR/HOST/PATH instead.
-  JAVA, JAVA_HOME            The Java runtime that compiles the Peppol Schematron.
 
 Output formats:
   text  One line per document with its verdict, then its schema errors and its

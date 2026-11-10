@@ -70,8 +70,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   loads one, every file checked, never downloading. With the feature `fetch`,
   `RuleSetCache::fetch(name, &FetchOptions::new())` downloads the files of the family, checks
   their digests and builds the bundles exactly as the repository's `scripts/fetch-*.sh` do
-  (Peppol BIS Billing, published as Schematron only, is compiled with ph-schematron, which
-  needs Java). The feature adds a minimal HTTPS client on rustls, with a cryptography
+  (Peppol BIS Billing, published as Schematron only, is compiled as ph-schematron compiles
+  it, in Rust, with [`einvoice-schematron`](https://crates.io/crates/einvoice-schematron)
+  and the ISO Schematron skeleton of the pinned jar of ph-schematron-isosch: no Java). The
+  feature adds a minimal HTTPS client on rustls, with a cryptography
   provider on the RustCrypto crates (pure Rust) and the Mozilla roots of webpki-roots; it is
   ignored on WebAssembly.
 

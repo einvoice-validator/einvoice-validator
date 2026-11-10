@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use sha2::{Digest as _, Sha256, Sha512};
+use sha2::{Digest as _, Sha256};
 
 use super::cache::{CacheStatus, DOWNLOADS_DIR, RULES_DIR, RuleSetCache, WORK_DIR, unknown};
 use super::catalogue::{self, Algorithm, FamilySpec, FetchedRuleSet, Kind, Source};
@@ -39,7 +39,6 @@ pub struct FetchOptions {
     retry_delay: Duration,
     timeout: Duration,
     max_size: u64,
-    java: Option<PathBuf>,
     progress: Option<Progress>,
 }
 
@@ -52,7 +51,6 @@ impl fmt::Debug for FetchOptions {
             .field("retry_delay", &self.retry_delay)
             .field("timeout", &self.timeout)
             .field("max_size", &self.max_size)
-            .field("java", &self.java)
             .field("progress", &self.progress.is_some())
             .finish()
     }
@@ -67,7 +65,6 @@ impl Default for FetchOptions {
             retry_delay: Duration::from_secs(2),
             timeout: Duration::from_secs(60),
             max_size: DEFAULT_MAX_SIZE,
-            java: None,
             progress: None,
         }
     }
@@ -132,14 +129,6 @@ impl FetchOptions {
         self
     }
 
-    /// The Java runtime that builds the Peppol bundle (default: `$JAVA_HOME/bin/java`,
-    /// else `java` on the `PATH`).
-    #[must_use]
-    pub fn java(mut self, java: impl Into<PathBuf>) -> Self {
-        self.java = Some(java.into());
-        self
-    }
-
     /// Receives a line for each step: what is downloaded or taken from where, what is
     /// checked, built and installed.
     #[must_use]
@@ -184,10 +173,10 @@ impl RuleSetCache {
     /// them and installed in the cache in one rename; the downloads are then removed.
     ///
     /// Peppol BIS Billing publishes its rules as Schematron only: its bundle is built by
-    /// compiling them with ph-schematron, as the reference validators do, which runs
-    /// Java and Apache Maven (both downloaded files pinned; Maven downloads the compiler
-    /// from Maven Central, with its checksums checked) and needs Java installed. The
-    /// compiled stylesheets must have their pinned SHA-256.
+    /// compiling them as ph-schematron compiles them, as the reference validators do,
+    /// with the ISO Schematron skeleton of ph-schematron (the pinned jar of
+    /// ph-schematron-isosch, from Maven Central) run in Rust by einvoice-schematron: no
+    /// Java. The compiled stylesheets must have their pinned SHA-256.
     ///
     /// # Errors
     ///
@@ -254,22 +243,14 @@ impl RuleSetCache {
                 assemble::assemble(family, &members, &bytes, options.max_size_usize())?
             }
             Kind::Peppol => {
-                let [archive, maven] = sources else {
+                let [archive, isosch] = sources else {
                     return Err(Error::internal("peppol: two sources expected"));
                 };
                 let bytes = fetcher.obtain(archive)?;
                 let schematron = peppol::schematron(family, &bytes)?;
-                let java = peppol::find_java(options)?;
-                let maven_bytes = fetcher.obtain(maven)?;
-                peppol::build(
-                    self,
-                    family,
-                    &members,
-                    &java,
-                    &maven_bytes,
-                    &schematron,
-                    options,
-                )?
+                let jar = fetcher.obtain(isosch)?;
+                let skeleton = peppol::skeleton(family, &jar)?;
+                peppol::build(family, &members, &schematron, &skeleton, options)?
             }
         };
         self.install(first.release(), &files)?;
@@ -351,7 +332,6 @@ pub(crate) fn digest(algorithm: Algorithm, bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let raw: Vec<u8> = match algorithm {
         Algorithm::Sha256 => Sha256::digest(bytes).to_vec(),
-        Algorithm::Sha512 => Sha512::digest(bytes).to_vec(),
     };
     let mut hex = String::with_capacity(raw.len() * 2);
     for byte in raw {
@@ -635,19 +615,6 @@ impl<'a> Fetcher<'a> {
             let _ = std::fs::remove_file(self.downloads.join(source.file()));
         }
     }
-}
-
-/// A fresh work directory in the cache.
-pub(crate) fn work_dir(cache: &RuleSetCache, name: &str) -> Result<PathBuf, Error> {
-    let dir = cache
-        .root()
-        .join(WORK_DIR)
-        .join(format!("{name}-{}", unique()));
-    std::fs::create_dir_all(&dir).map_err(|source| Error::Io {
-        path: dir.clone(),
-        source,
-    })?;
-    Ok(dir)
 }
 
 #[cfg(test)]

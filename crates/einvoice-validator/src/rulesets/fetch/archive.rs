@@ -1,12 +1,10 @@
 //! The archives the rule sets are published in, read in memory, in pure Rust: ZIP (and
 //! jar) with the stored and deflate methods, gzip, and tar (ustar, pax and GNU long
 //! names). Every entry name is checked when the archive is opened: an absolute path, a
-//! `..` component, a backslash, a drive or a NUL refuses the whole archive, so that
-//! nothing can be written outside the directory it is extracted to. Sizes are bounded:
+//! `..` component, a backslash, a drive or a NUL refuses the whole archive. Sizes are
+//! bounded:
 //! an entry larger than its limit, or one that inflates to more than it declares, is
 //! an error, and so is a CRC-32 that does not match.
-
-use std::path::{Path, PathBuf};
 
 /// The most entries an archive may have.
 const MAX_ENTRIES: usize = 200_000;
@@ -499,6 +497,19 @@ impl<'a> Tar<'a> {
             .unwrap_or(&[])
     }
 
+    /// The files whose name, without its first component (`tar --strip-components=1`),
+    /// starts with `prefix`: that name and the content of each, in archive order.
+    pub(crate) fn stripped_under(&self, prefix: &str) -> Vec<(&str, &'a [u8])> {
+        self.entries
+            .iter()
+            .filter(|e| e.kind == TarKind::File)
+            .filter_map(|e| {
+                let (_, rest) = e.name.split_once('/')?;
+                rest.starts_with(prefix).then(|| (rest, self.content(e)))
+            })
+            .collect()
+    }
+
     /// The file whose name, without its first component (`tar --strip-components=1`),
     /// is `name`.
     pub(crate) fn stripped(&self, name: &str) -> Option<&'a [u8]> {
@@ -509,34 +520,6 @@ impl<'a> Tar<'a> {
                     && e.name.split_once('/').is_some_and(|(_, rest)| rest == name)
             })
             .map(|e| self.content(e))
-    }
-
-    /// Extracts every file and directory into `dir` (which must exist), refusing links
-    /// and special files. The names were checked when the archive was opened.
-    pub(crate) fn extract(&self, dir: &Path) -> Result<(), String> {
-        for entry in &self.entries {
-            let mut path = PathBuf::from(dir);
-            path.extend(entry.name.split('/').filter(|c| !c.is_empty() && *c != "."));
-            match entry.kind {
-                TarKind::Directory => std::fs::create_dir_all(&path)
-                    .map_err(|e| format!("{}: {e}", path.display()))?,
-                TarKind::File => {
-                    if let Some(parent) = path.parent() {
-                        std::fs::create_dir_all(parent)
-                            .map_err(|e| format!("{}: {e}", parent.display()))?;
-                    }
-                    std::fs::write(&path, self.content(entry))
-                        .map_err(|e| format!("{}: {e}", path.display()))?;
-                }
-                TarKind::Link | TarKind::Other => {
-                    return Err(format!(
-                        "{}: links and special files are not extracted",
-                        entry.name
-                    ));
-                }
-            }
-        }
-        Ok(())
     }
 }
 
@@ -799,7 +782,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn refuses_traversal_in_tar_names_and_links_on_extraction() {
+    fn refuses_traversal_in_tar_names() {
         for name in ["../evil", "a/../../evil", "/abs/evil", "a\\b"] {
             let data = tar(None, &[(name, b"evil", b'0')]);
             assert!(
@@ -807,16 +790,19 @@ pub(crate) mod tests {
                 "{name}"
             );
         }
-        let dir = std::env::temp_dir().join(format!("einvoice-tar-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let data = tar(None, &[("m/bin/x", b"x", b'0'), ("m/link", b"", b'2')]);
-        let error = Tar::open(&data).unwrap().extract(&dir).unwrap_err();
-        assert!(error.contains("links"), "{error}");
-        let data = tar(None, &[("m/", b"", b'5'), ("m/lib/a.jar", b"jar", b'0')]);
-        Tar::open(&data).unwrap().extract(&dir).unwrap();
-        assert_eq!(std::fs::read(dir.join("m/lib/a.jar")).unwrap(), b"jar");
-        std::fs::remove_dir_all(&dir).unwrap();
+        // Links and directories are listed, never read as files.
+        let data = tar(
+            None,
+            &[
+                ("m/", b"", b'5'),
+                ("m/link", b"", b'2'),
+                ("m/lib/a.jar", b"jar", b'0'),
+            ],
+        );
+        let archive = Tar::open(&data).unwrap();
+        assert_eq!(archive.stripped("link"), None);
+        assert_eq!(archive.stripped("lib/a.jar"), Some(&b"jar"[..]));
+        assert_eq!(archive.stripped_under("li"), [("lib/a.jar", &b"jar"[..])]);
     }
 
     #[test]

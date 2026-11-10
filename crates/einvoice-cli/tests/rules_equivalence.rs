@@ -24,10 +24,10 @@
 //! The corpora and their goldens live in `target/` (built by `scripts/check.sh facturx
 //! xrechnung fr-ctc peppol`), the cache in `target/rules-cache/`. A family missing from
 //! the cache is fetched into it from the downloads of the fetch scripts (`rules fetch
-//! --from target/downloads`; Peppol compiles its Schematron, which needs Java and Maven
-//! Central). Without a corpus, or when a family cannot be fetched, its bundles say
-//! SKIPPED and pass, unless `EINVOICE_RULES_REQUIRED` is set, as `scripts/check.sh rules`
-//! and CI set it.
+//! --from target/downloads`; Peppol from `target/peppol/downloads`, its Schematron
+//! compiled in Rust). Without a corpus, or when a family cannot be fetched, its bundles
+//! say SKIPPED and pass, unless `EINVOICE_RULES_REQUIRED` is set, as `scripts/check.sh
+//! rules` and CI set it.
 
 #![cfg(test)]
 
@@ -259,7 +259,6 @@ fn ensure_cached(rule_set: &FetchedRuleSet) -> bool {
     let root = workspace_root();
     let downloads = root.join("target/downloads");
     let peppol = root.join("target/peppol/downloads");
-    // Maven downloads the Schematron compiler from Maven Central: the real one.
     let r = run_env(
         &[
             "rules",

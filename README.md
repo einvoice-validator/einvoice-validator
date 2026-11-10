@@ -126,8 +126,10 @@ downloads them from their publishers only when asked (`rules fetch NAME|FAMILY|-
 `--fetch`), at pinned URLs, checks every file against its pinned digest, builds their bundles in
 the cache (`EINVOICE_VALIDATOR_CACHE`, default the platform cache directory) exactly as
 `scripts/fetch-*.sh` build them, and uses them offline. Peppol is published as Schematron only;
-its bundle is compiled with ph-schematron, which needs Java. `rules list` shows sources and cache
-state.
+its bundle is compiled as ph-schematron compiles it, in this program: no Java, the ISO Schematron
+skeleton taken from the pinned jar of ph-schematron-isosch and run by the engine, and both
+stylesheets byte for byte those of ph-schematron, their SHA-256 pinned. `rules list` shows
+sources and cache state.
 
 ```sh
 einvoice-validate rules fetch xrechnung        # once, from KoSIT's package registry
@@ -201,7 +203,8 @@ document today) to 2.6 times (CEN CII).
 
 - **The official artefacts, unchanged.** The rule sets are published by their owners (CEN/TC 434,
   OpenPeppol) as Schematron, compiled to XSLT by CEN; the Peppol Schematron is compiled here
-  with the ISO Schematron skeleton of ph-schematron, the output pinned by checksum. The engine
+  with the ISO Schematron skeleton of ph-schematron, run by this engine, the output pinned by
+  checksum. The engine
   is built to execute that compiled XSLT as is: no rule is translated into Rust by hand, so a
   new rule-set release needs new artefacts and new expected results, not new code.
 - **Pure Rust.** No JVM, no C library, no FFI; `unsafe` code is forbidden in every crate. The
@@ -265,6 +268,7 @@ flowchart LR
 | [`einvoice-xslt`](crates/einvoice-xslt) | Loader for the XSLT 2.0 subset emitted by the Schematron compilers: templates, modes, priorities, functions, variables, parameters and instructions, each with its source line. |
 | [`einvoice-xsd`](crates/einvoice-xsd) | XML Schema validation of UBL 2.1 Invoice and CreditNote documents against the official OASIS UBL 2.1 schemas, and of UN/CEFACT CII D16B documents against the official UN/CEFACT schemas, which it embeds; implements exactly the XML Schema 1.0 constructs those schemas (and the other CII-family schemas) use and refuses any other at load time. |
 | [`einvoice-xslt-exec`](crates/einvoice-xslt-exec) | Executor of the XSLT 2.0 subset: runs the official compiled Schematron with the behaviour of Saxon-HE 12.10 and writes SVRL; constructs whose result would differ are refused when a stylesheet is prepared. |
+| [`einvoice-schematron`](crates/einvoice-schematron) | Schematron compiled to XSLT as ph-schematron 10.3.1 compiles it, byte for byte: the three stylesheets of the ISO Schematron skeleton run by the engine, each result passed on as ph-schematron's DOM, and the compiled stylesheet written as its XML writer writes it. |
 | [`einvoice-svrl`](crates/einvoice-svrl) | The canonical, line-oriented form of SVRL reports ([`corpus/SVRL-CANONICAL.md`](corpus/SVRL-CANONICAL.md)) used to compare reports with the reference engine. |
 | [`einvoice-validator`](crates/einvoice-validator) | The public crate: rule-set bundles (a `bundle.toml` manifest with the SHA-256 of each stylesheet and of each resource read with `document()`, from memory or a directory; CEN EN 16931 UBL and CII 1.3.17 built in), the `Validator` (XML check, the schema of the rule set if any, then each stylesheet; `Send + Sync`), the `Report` (schema errors, findings, SVRL, verdict) and `Syntax` (UBL or CII, from the root element). |
 | [`einvoice-cli`](crates/einvoice-cli) | The `einvoice-validate` command-line tool: XML and PDF files and standard input, built-in rule sets (chosen from each document's root element by default) or bundle directories, several threads, text, JSON or SVRL output, documented exit codes. |
@@ -331,7 +335,7 @@ cargo test -p einvoice-xsd --test oracle         # einvoice-xsd against the xmll
 | `pins` | `scripts/freshness.sh pins` (every pin of `upstream.toml` matches the files that record it, offline) and the tests of `scripts/freshness.sh` (needs `jq`) |
 | `guards` | ShellCheck on `scripts/*.sh`, `crates/*/*.sh` and `.githooks/*`, then the tests of the privacy guard and of the release scripts (need `jq`) |
 | `oracle` | artefact checksums, corpus extraction and VEFA cross-check, then xmllint on the oracle cases of `einvoice-xsd` (needs `xmllint`, and `curl` and network access the first time), then Saxon-HE on every corpus case and on the probes of `einvoice-xdm`, `einvoice-xpath-eval` and `einvoice-xslt-exec`: the goldens must not change, and on the hand-written cases of `einvoice-xml` (its `saxon-check` example) (needs Java; each part skipped locally without its tool) |
-| `peppol` | the Peppol corpus in `target/peppol/`: fetch and compile the pinned release, extract the cases, Saxon-HE with both stylesheets, VEFA cross-check, then the engine, and `einvoice-validate` with the Peppol bundle, must match every golden, mutation cases included (needs Java and network access the first time; skipped locally without them) |
+| `peppol` | the Peppol corpus in `target/peppol/`: fetch and compile the pinned release, extract the cases, Saxon-HE with both stylesheets, VEFA cross-check, then the engine, and `einvoice-validate` with the Peppol bundle, must match every golden, mutation cases included; then the Schematron compiled in Rust (`einvoice-schematron`) must give ph-schematron's result at each step and the pinned stylesheets (needs Java and network access the first time; skipped locally without them) |
 | `privacy` | the repository's pre-commit checks on staged changes (maintainers; skipped when nothing is staged) |
 
 The corpus and the oracle can also be run step by step:
@@ -342,12 +346,13 @@ cargo xtask corpus           # corpus/*/cases.tsv, the extracted VEFA documents 
 cargo xtask crosscheck       # goldens against the VEFA expectations
 scripts/fetch-saxon.sh       # Saxon-HE 12.10 and the XML Resolver 5.3.3 from Maven Central into target/, checksums verified
 cargo xtask oracle           # Saxon-HE on every case; the goldens must not change
-scripts/fetch-peppol.sh      # Peppol BIS Billing release and its compiled stylesheets into target/peppol/, checksums verified
+scripts/fetch-peppol.sh      # Peppol BIS Billing release, the skeleton jar and the stylesheets ph-schematron compiles into target/peppol/, checksums verified
 cargo xtask peppol           # Peppol corpus, Saxon-HE goldens and VEFA cross-check, in target/peppol/
 cargo test -p einvoice-xslt-exec --test peppol_equivalence -- --nocapture   # the engine on the Peppol corpus
 cargo test -p einvoice-xslt-exec --test mutation_equivalence -- --nocapture # the engine on the CEN and Peppol mutation cases
 cargo test -p einvoice-xslt-exec --test cii_equivalence -- --nocapture      # the engine on the CII corpus and its mutation cases
 cargo test -p einvoice-cli --test peppol_bundle -- --nocapture              # einvoice-validate with the Peppol bundle
+cargo test -p einvoice-schematron --test peppol -- --nocapture              # the Peppol Schematron compiled in Rust, byte for byte
 cargo run --release -p einvoice-xsd --example xmllint-oracle                # xmllint on the oracle cases of einvoice-xsd
 cargo run --release -p einvoice-xsd --example heap                          # heap of the UBL 2.1 and CII D16B schemas and of validating the CEN corpora
 ```
@@ -420,8 +425,14 @@ upstream.toml        every pinned upstream version and the files that record it
   Central into `target/`; they are neither part of the repository nor distributed.
 - Peppol BIS Billing 3.0 files are fetched at test time into `target/peppol/` and not
   redistributed; nothing derived from them (compiled stylesheets, extracted documents, goldens)
-  is committed. The tools that compile their Schematron, ph-schematron-maven-plugin and Apache
-  Maven (both Apache-2.0), are downloaded there too, for the tests only.
+  is committed. The jar of ph-schematron-isosch 10.3.1 (Apache-2.0; the ISO Schematron skeleton
+  it holds is under the MIT licence), whose skeleton compiles their Schematron, is downloaded
+  with them, by `einvoice-validate rules fetch peppol` too, and is not distributed. The
+  reference compiler of the tests, ph-schematron-maven-plugin run by Apache Maven (both
+  Apache-2.0), is downloaded into `target/peppol/` for the tests only.
+- `crates/einvoice-schematron/tests/data/skeleton/` holds the four stylesheets of that
+  skeleton, unmodified, with the Apache License 2.0 and the `NOTICE` of ph-schematron: test
+  data of the repository, not part of any published crate.
 - `crates/einvoice-xsd/schemas/oasis-ubl-2.1/` holds thirteen of the fifteen schema documents
   of the OASIS UBL 2.1 Standard reachable from the Invoice and CreditNote schemas, vendored
   unmodified and embedded in `einvoice-xsd`. They are not under the MIT licence: each keeps the

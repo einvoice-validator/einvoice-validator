@@ -392,8 +392,11 @@ job_oracle() {
 # (tests/peppol_equivalence.rs of einvoice-xslt-exec, and
 # tests/mutation_equivalence.rs for the mutation cases), and einvoice-validate
 # with the bundle that scripts/fetch-peppol.sh writes must give the Saxon-HE
-# verdicts and findings (tests/peppol_bundle.rs of einvoice-cli); these tests
-# are required to run here.
+# verdicts and findings (tests/peppol_bundle.rs of einvoice-cli), and the
+# Schematron compiled in Rust must give ph-schematron's result at each step and
+# the pinned stylesheets (tests/peppol.rs of einvoice-schematron, after its
+# ph-schematron-oracle example, which also checks the goldens of its synthetic
+# schemas against ph-schematron); these tests are required to run here.
 # Without Java or without network access (and nothing cached yet), SKIPPED,
 # except in CI, where it fails.
 job_peppol() {
@@ -404,7 +407,16 @@ job_peppol() {
     EINVOICE_PEPPOL_REQUIRED=1 cargo test --locked --all-features -p einvoice-xslt-exec \
         --test peppol_equivalence --test mutation_equivalence -- --nocapture || return 1
     EINVOICE_PEPPOL_REQUIRED=1 cargo test --locked --all-features -p einvoice-cli \
-        --test peppol_bundle -- --nocapture
+        --test peppol_bundle -- --nocapture || return 1
+    # The Schematron compiled in Rust as ph-schematron compiles it: ph-schematron's
+    # result of each step (its oracle, with the Maven of fetch-peppol.sh) must be the
+    # goldens of the synthetic schemas of einvoice-schematron, and is written for the
+    # Peppol ones; then the same steps and the pinned stylesheets from
+    # einvoice-schematron.
+    cargo run --locked --release -p einvoice-schematron --example ph-schematron-oracle &&
+        cargo run --locked --release -p einvoice-schematron --example ph-schematron-oracle -- --peppol &&
+        EINVOICE_SCHEMATRON_PEPPOL_REQUIRED=1 cargo test --locked --release -p einvoice-schematron \
+            --test peppol -- --nocapture
 }
 # build_corpus NAME SCRIPT: the corpus of a family of fetched rule sets in target/:
 # Saxon-HE (scripts/fetch-saxon.sh, unless SAXON_JAR names it), the fetch script
@@ -497,7 +509,7 @@ job_fr-ctc() { fetched_family fr-ctc scripts/fetch-fr-ctc.sh fr-ctc-cii-1.4.0.04
 # xrechnung, fr-ctc and peppol jobs, validated with `einvoice-validate --rules NAME`
 # from the cache target/rules-cache/, gives the Saxon-HE results and the verdicts of
 # the acceptance tables (tests/rules_equivalence.rs, a release build; the Peppol bundle
-# is compiled there with Maven, which needs Java and Maven Central). Runs after those
+# is compiled there in Rust, from the downloads of scripts/fetch-peppol.sh). Runs after those
 # jobs, or after the corpora job, on their outputs in target/: without them the tests
 # say SKIPPED, except in CI, where they are required.
 job_rules() {

@@ -14,26 +14,32 @@
 #     OpenPeppol/peppol-bis-invoice-3, tag=3.0.22 below), check its SHA-256
 #     and the commit id it records, and extract it into
 #     DIR/peppol-bis-billing-ubl-3.0.22/source/ (always afresh).
-#  2. Compile rules/sch/PEPPOL-EN16931-UBL.sch and rules/sch/CEN-EN16931-UBL.sch
-#     with the ISO Schematron skeleton as packaged in ph-schematron:
+#  2. Download the ISO Schematron skeleton as packaged in ph-schematron, the
+#     jar of ph-schematron-isosch 10.3.1 (from Maven Central, SHA-256 checked):
+#     the stylesheets `einvoice-validate rules fetch peppol` compiles the
+#     Schematron with, in Rust.
+#  3. Compile rules/sch/PEPPOL-EN16931-UBL.sch and rules/sch/CEN-EN16931-UBL.sch
+#     with that skeleton as ph-schematron does, with ph-schematron itself, the
+#     reference the Rust compilation is tested against:
 #     ph-schematron-maven-plugin 10.3.1, goal `convert`, engine
 #     iso-schematron, run by Apache Maven 3.9.16 (from Maven Central, SHA-512
 #     checked) with strict checksums and a private local repository, DIR/m2/
-#     (the user's Maven settings and repository are not used). Each result
-#     must have the SHA-256 below; they go into
-#     DIR/peppol-bis-billing-ubl-3.0.22/xslt/. When both files are already
-#     there with the right checksums, Maven is not run.
-#  3. Write DIR/peppol-bis-billing-ubl-3.0.22/bundle.toml, the rule-set
+#     (the user's Maven settings and repository are not used), whose copy of
+#     the jar of step 2 must be that jar. Each result must have the SHA-256
+#     below; they go into DIR/peppol-bis-billing-ubl-3.0.22/xslt/. When both
+#     files are already there with the right checksums, Maven is not run.
+#  4. Write DIR/peppol-bis-billing-ubl-3.0.22/bundle.toml, the rule-set
 #     bundle manifest of einvoice-validator naming both stylesheets with
 #     their pinned SHA-256, CEN rules first, as Peppol validation runs them,
 #     the CEN stylesheet with the version its Schematron file states, which
 #     must be the pin cen below:
 #     `einvoice-validate --bundle DIR/peppol-bis-billing-ubl-3.0.22 FILE`.
-#     `einvoice-validate rules fetch peppol` runs the same steps, from the
+#     `einvoice-validate rules fetch peppol` runs steps 1, 2 and 4 from the
 #     same pins (crates/einvoice-validator/pins/, a copy of the block below),
-#     and writes the same bundle, byte for byte.
+#     step 3 in Rust (einvoice-schematron, no Java), and writes the same
+#     bundle, byte for byte.
 #
-# Needs bash, curl, tar, gzip, git and Java (CI uses Java 21).
+# Needs bash, curl, tar, gzip, git, cmp and Java (CI uses Java 21).
 # Exit status: 0 done; 75 a download failed (no network); 1 anything else,
 # including a checksum mismatch: a file that does not match is never used.
 #
@@ -53,12 +59,14 @@ cen=1.3.16
 maven=3.9.16
 maven_sha512=831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6
 plugin=10.3.1
+isosch_sha256=f87dbacccf4a896ca315851107b2099ee210f83418cda6f65e8b1b87e3720bc0
 peppol_xslt_sha256=8c318aad5a3fc1fc69897422e1d2f631d8894069be5ac20e3475c7e6a2b62aeb
 cen_xslt_sha256=06a850a48703faa7e38cbcc7a8ded0f0645a941a0ee448598a02ae7197b86356
 # --- end of pins ------------------------------------------------------------
 
 archive_url=https://github.com/OpenPeppol/peppol-bis-invoice-3/archive/refs/tags/$tag.tar.gz
 maven_url=https://repo1.maven.org/maven2/org/apache/maven/apache-maven/$maven/apache-maven-$maven-bin.tar.gz
+isosch_url=https://repo1.maven.org/maven2/com/helger/schematron/ph-schematron-isosch/$plugin/ph-schematron-isosch-$plugin.jar
 
 cd "$(git rev-parse --show-toplevel)"
 dir=${1:-target/peppol}
@@ -80,7 +88,7 @@ hash_of() { # ALGORITHM FILE
     fi
 }
 
-for tool in curl tar gzip git; do
+for tool in curl tar gzip git cmp; do
     command -v "$tool" >/dev/null 2>&1 || fail "$tool is not installed"
 done
 
@@ -135,7 +143,12 @@ rm -rf "$release/source"
 mv "$tmp/source" "$release/source"
 say "$release/source extracted (tag $tag, commit $commit)"
 
-# --- 2. the compiled stylesheets ----------------------------------------------
+# --- 2. the ISO Schematron skeleton -------------------------------------------
+
+isosch_jar=$dir/downloads/ph-schematron-isosch-$plugin.jar
+fetch "$isosch_url" "$isosch_jar" 256 "$isosch_sha256"
+
+# --- 3. the compiled stylesheets ----------------------------------------------
 
 xslt=(
     PEPPOL-EN16931-UBL "$peppol_xslt_sha256"
@@ -150,7 +163,7 @@ compiled() { # true when every stylesheet is in place with its checksum
     done
 }
 
-# --- 3. the bundle manifest ---------------------------------------------------
+# --- 4. the bundle manifest ---------------------------------------------------
 
 # Written afresh on every run, from the pins: the stylesheets it names have
 # been checked against the same checksums just before.
@@ -273,6 +286,10 @@ if [ "$status" -ne 0 ]; then
     fi
     fail "Maven failed (status $status)"
 fi
+
+# The skeleton ph-schematron ran is the one of step 2.
+maven_jar=$dir/m2/com/helger/schematron/ph-schematron-isosch/$plugin/ph-schematron-isosch-$plugin.jar
+cmp -s "$maven_jar" "$isosch_jar" || fail "$maven_jar is not $isosch_jar"
 
 for ((i = 0; i < ${#xslt[@]}; i += 2)); do
     out=$work/out/${xslt[i]}.xslt

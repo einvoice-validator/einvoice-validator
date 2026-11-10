@@ -10,15 +10,33 @@ const MIT: Licence = Licence {
 };
 
 /// What the MIT licence covers in this build: the crates of the project it is built from
-/// (einvoice-pdf with the feature `pdf`).
-#[cfg(feature = "pdf")]
+/// (einvoice-pdf with the feature `pdf`, einvoice-schematron with the feature `fetch`,
+/// which is ignored on WebAssembly).
+#[cfg(all(feature = "pdf", feature = "fetch", not(target_family = "wasm")))]
+const MIT_COVERS: &str = "the code of einvoice-validator and of the crates of the project it \
+     is built from (einvoice-bigint, einvoice-pdf, einvoice-schematron, einvoice-svrl, einvoice-xdm, \
+     einvoice-xml, einvoice-xpath, einvoice-xpath-eval, einvoice-xsd, einvoice-xslt, \
+     einvoice-xslt-exec)";
+#[cfg(all(
+    feature = "pdf",
+    not(all(feature = "fetch", not(target_family = "wasm")))
+))]
 const MIT_COVERS: &str = "the code of einvoice-validator and of the crates of the project it \
      is built from (einvoice-bigint, einvoice-pdf, einvoice-svrl, einvoice-xdm, einvoice-xml, \
-     einvoice-xpath, einvoice-xpath-eval, einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)";
-#[cfg(not(feature = "pdf"))]
+     einvoice-xpath, einvoice-xpath-eval, einvoice-xsd, einvoice-xslt, \
+     einvoice-xslt-exec)";
+#[cfg(all(not(feature = "pdf"), feature = "fetch", not(target_family = "wasm")))]
 const MIT_COVERS: &str = "the code of einvoice-validator and of the crates of the project it \
-     is built from (einvoice-bigint, einvoice-svrl, einvoice-xdm, einvoice-xml, \
-     einvoice-xpath, einvoice-xpath-eval, einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)";
+     is built from (einvoice-bigint, einvoice-schematron, einvoice-svrl, einvoice-xdm, einvoice-xml, \
+     einvoice-xpath, einvoice-xpath-eval, einvoice-xsd, einvoice-xslt, \
+     einvoice-xslt-exec)";
+#[cfg(all(
+    not(feature = "pdf"),
+    not(all(feature = "fetch", not(target_family = "wasm")))
+))]
+const MIT_COVERS: &str = "the code of einvoice-validator and of the crates of the project it \
+     is built from (einvoice-bigint, einvoice-svrl, einvoice-xdm, einvoice-xml, einvoice-xpath, \
+     einvoice-xpath-eval, einvoice-xsd, einvoice-xslt, einvoice-xslt-exec)";
 
 /// The EUPL-1.2 of the CEN stylesheets of the built-in rule sets `cen-ubl` and `cen-cii`.
 #[cfg(any(feature = "cen-ubl", feature = "cen-cii"))]

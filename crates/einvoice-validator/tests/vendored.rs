@@ -201,6 +201,9 @@ fn features() -> Vec<&'static str> {
     if cfg!(feature = "pdf") {
         features.push("pdf");
     }
+    if cfg!(feature = "fetch") {
+        features.push("fetch");
+    }
     features
 }
 

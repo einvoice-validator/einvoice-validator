@@ -77,7 +77,7 @@
 //! fourteen bundles of the FNFE-MPE package) and Peppol BIS Billing 3.0 may not be
 //! redistributed, so the crate does not embed them: [`fetched_rule_sets`] is their
 //! catalogue, which gives, for each, the files of its family at their publishers (pinned
-//! URL and SHA-256 or SHA-512, the pins of the fetch scripts of the repository) and the
+//! URL and SHA-256, the pins of the fetch scripts of the repository) and the
 //! manifest of its bundle. Not on WebAssembly.
 //!
 //! - With the feature `fetch` (off by default; on in `einvoice-cli`),
@@ -86,8 +86,9 @@
 //!   digest, assembles the bundles exactly as the fetch scripts do (a test checks they
 //!   are the same, byte for byte) and installs them in the cache in one rename. Peppol
 //!   BIS Billing publishes its rules as Schematron only: its bundle is built by
-//!   compiling them with ph-schematron as the reference validators do, through Apache
-//!   Maven, which needs Java and network access to Maven Central. The HTTP client is
+//!   compiling them as ph-schematron compiles them for the reference validators, in
+//!   Rust (`einvoice-schematron`, with the ISO Schematron skeleton of the pinned jar of
+//!   ph-schematron-isosch): no Java. The HTTP client is
 //!   minimal and pure Rust, its cryptography included (rustls, with a provider on the
 //!   `RustCrypto` crates, and the Mozilla roots of webpki-roots): HTTPS only (plain
 //!   HTTP only to a loopback address, for a local mirror), at most five redirects,

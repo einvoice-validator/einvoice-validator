@@ -17,7 +17,6 @@ use crate::{Error, Syntax};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Algorithm {
     Sha256,
-    Sha512,
 }
 
 /// A file a family downloads.
@@ -62,8 +61,6 @@ pub(crate) struct FamilySpec {
     pub(crate) publisher: &'static str,
     /// What is downloaded, in order.
     pub(crate) sources: &'static [SourceSpec],
-    /// Whether assembling the bundles runs Java (the Schematron compiler).
-    pub(crate) needs_java: bool,
 }
 
 /// A rule set of a family.
@@ -97,7 +94,6 @@ static FACTURX: FamilySpec = FamilySpec {
         algorithm: Algorithm::Sha256,
         digest: "mustang_jar_sha256",
     }],
-    needs_java: false,
 };
 
 /// The Factur-X profiles: bundle directory, Mustang file name, pins of the stylesheet
@@ -147,7 +143,6 @@ static XRECHNUNG: FamilySpec = FamilySpec {
         algorithm: Algorithm::Sha256,
         digest: "configuration_sha256",
     }],
-    needs_java: false,
 };
 
 /// The stylesheets of the configuration: name in the bundles, path in the
@@ -335,7 +330,6 @@ static FR_CTC: FamilySpec = FamilySpec {
         algorithm: Algorithm::Sha256,
         digest: "pack_sha256",
     }],
-    needs_java: false,
 };
 
 /// The top directory of the package (a template).
@@ -538,7 +532,7 @@ static PEPPOL: FamilySpec = FamilySpec {
     pins: pins::PEPPOL,
     release: "peppol-bis-billing-ubl-{tag}",
     version: "{tag}",
-    publisher: "the Peppol BIS Billing {tag} release (OpenPeppol, github.com), its Schematron compiled with ph-schematron {plugin} (Apache Maven {maven}, Java)",
+    publisher: "the Peppol BIS Billing {tag} release (OpenPeppol, github.com), its Schematron compiled as ph-schematron {plugin} compiles it, with the ISO Schematron skeleton of ph-schematron-isosch {plugin} (Maven Central)",
     sources: &[
         SourceSpec {
             what: "the Peppol BIS Billing {tag} release archive",
@@ -548,14 +542,13 @@ static PEPPOL: FamilySpec = FamilySpec {
             digest: "archive_sha256",
         },
         SourceSpec {
-            what: "Apache Maven {maven}",
-            url: "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/{maven}/apache-maven-{maven}-bin.tar.gz",
-            file: "apache-maven-{maven}-bin.tar.gz",
-            algorithm: Algorithm::Sha512,
-            digest: "maven_sha512",
+            what: "the ISO Schematron skeleton of ph-schematron-isosch {plugin}",
+            url: "https://repo1.maven.org/maven2/com/helger/schematron/ph-schematron-isosch/{plugin}/ph-schematron-isosch-{plugin}.jar",
+            file: "ph-schematron-isosch-{plugin}.jar",
+            algorithm: Algorithm::Sha256,
+            digest: "isosch_sha256",
         },
     ],
-    needs_java: true,
 };
 
 /// The two compiled stylesheets of Peppol, in the order they run: name (and file name
@@ -777,12 +770,11 @@ impl Source {
         &self.file
     }
 
-    /// `SHA-256` or `SHA-512`: the digest pinned for it.
+    /// `SHA-256`: the digest pinned for it.
     #[must_use]
     pub const fn algorithm(&self) -> &'static str {
         match self.algorithm {
             Algorithm::Sha256 => "SHA-256",
-            Algorithm::Sha512 => "SHA-512",
         }
     }
 
@@ -867,13 +859,6 @@ impl FetchedRuleSet {
     #[must_use]
     pub fn sources(&self) -> &[Source] {
         &self.sources
-    }
-
-    /// Whether building its bundle runs Java: Peppol BIS Billing publishes its rules as
-    /// Schematron only, which the reference validators compile with ph-schematron.
-    #[must_use]
-    pub const fn needs_java(&self) -> bool {
-        self.spec.family.needs_java
     }
 
     /// The syntax of the documents it validates, when it is UBL or CII.
@@ -1242,7 +1227,6 @@ mod tests {
                 assert!(s.url().starts_with("https://"), "{}", s.url());
                 let length = match s.algorithm_kind() {
                     Algorithm::Sha256 => 64,
-                    Algorithm::Sha512 => 128,
                 };
                 assert_eq!(s.digest().len(), length, "{}", s.url());
                 assert!(!s.file().contains('/'), "{}", s.file());

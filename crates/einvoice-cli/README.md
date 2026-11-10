@@ -49,7 +49,7 @@ einvoice-validate rules clear
 | `factur-x` | `factur-x-minimum`, `factur-x-basic-wl`, `factur-x-basic`, `factur-x-en16931`, `factur-x-extended` | the compiled stylesheets and code lists of Factur-X 1.09.2 as the Mustang validator ships them (`org.mustangproject:validator`, Maven Central) |
 | `xrechnung` | `xrechnung-ubl`, `xrechnung-cii` (alias `xrechnung`: the one of each document's syntax) | the KoSIT validator configuration for XRechnung 3.0.2 (projekte.kosit.org): the EN 16931 rules, then the XRechnung rules |
 | `fr-ctc` | `fr-ctc-cii-en16931`, `fr-ctc-cii-extended-ctc-fr`, `fr-ctc-ubl-en16931`, `fr-ctc-ubl-extended-ctc-fr`, `fr-ctc-cdar`, each also as `...-warning`; `fr-ctc-factur-x-basic-wl`, `fr-ctc-factur-x-en16931`, `fr-ctc-factur-x-extended`; `fr-ctc-flux10` | the FNFE-MPE package "Schematrons FR CTC" 1.4.0.04 (fnfe-mpe.org) |
-| `peppol` | `peppol-bis-billing-ubl` (alias `peppol`) | the Peppol BIS Billing 3.0.22 release (OpenPeppol), published as Schematron only: compiled with ph-schematron 10.3.1 as the reference validators do, which needs **Java** and network access to Maven Central (Apache Maven 3.9.16 runs it with strict checksums and a private local repository in the cache) |
+| `peppol` | `peppol-bis-billing-ubl` (alias `peppol`) | the Peppol BIS Billing 3.0.22 release (OpenPeppol), published as Schematron only: compiled as ph-schematron 10.3.1 compiles it for the reference validators, by this program (no Java), with the ISO Schematron skeleton of the jar of ph-schematron-isosch 10.3.1 (Maven Central); both stylesheets have their pinned SHA-256 |
 
 A family is fetched as a whole: its rule sets come from the same files. `rules fetch` takes
 rule-set names, aliases (`peppol`, `xrechnung`), families or `--all`, and `--from DIR` (any
@@ -70,7 +70,6 @@ paths, `..`, links and oversized entries. Requests name the project in their `Us
 |---|---|
 | `EINVOICE_VALIDATOR_CACHE` | The cache directory. Default: `$XDG_CACHE_HOME/einvoice-validator`, else `~/.cache/einvoice-validator` (Linux and others), `~/Library/Caches/einvoice-validator` (macOS), `%LOCALAPPDATA%\einvoice-validator\cache` (Windows). `rules clear` removes only what the tool put there. |
 | `EINVOICE_VALIDATOR_MIRROR` | A mirror of the publishers' files: `https://HOST/PATH` is fetched as `MIRROR/HOST/PATH` (an `https://` URL, or `http://` to a loopback address). The digests are checked all the same. |
-| `JAVA`, `JAVA_HOME` | The Java runtime that compiles the Peppol Schematron (default: `java` on the `PATH`). |
 
 Built without the default feature `fetch` (`cargo install einvoice-cli --no-default-features`),
 the binary has no network code: it still lists the rule sets and validates with those already

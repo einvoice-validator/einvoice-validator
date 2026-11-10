@@ -100,9 +100,39 @@ against.
   (`peppol-bis-billing-ubl`, alias `peppol`), read from a cache and downloaded only with
   `rules fetch` or `--fetch`; library `fetched_rule_sets`, `RuleSetCache`, `Validator::from_cache`,
   `Error::NotCached`, `Error::Fetch`, and the feature `fetch` (HTTPS on rustls, retries, resumed
-  downloads, size limits, ZIP/tar/gzip readers with path checks; Peppol compiled with
-  ph-schematron through Maven). The bundles are byte for byte those of `scripts/fetch-*.sh`; with
-  them, every corpus gives the Saxon-HE results.
+  downloads, size limits, ZIP/tar/gzip readers with path checks; Peppol compiled as
+  ph-schematron compiles it, in Rust, without Java). The bundles are byte for byte those of
+  `scripts/fetch-*.sh`; with them, every corpus gives the Saxon-HE results.
+- `einvoice-validate rules fetch peppol` needs no Java: the Peppol BIS Billing Schematron is
+  compiled by `einvoice-schematron` with the ISO Schematron skeleton of the pinned jar of
+  ph-schematron-isosch 10.3.1 (Maven Central, SHA-256 checked), and both stylesheets are byte for
+  byte those of ph-schematron-maven-plugin 10.3.1, their SHA-256 pinned
+  (`PEPPOL-EN16931-UBL` 8c318aad…, `CEN-EN16931-UBL` 06a850a4…); `FetchOptions::java` and
+  `FetchedRuleSet::needs_java` are gone. The Peppol corpus (707 cases and 509 mutation cases)
+  gives the Saxon-HE results with the bundle it builds.
+- `einvoice-schematron` compiles Schematron to XSLT as ph-schematron 10.3.1 does, in Rust:
+  `Skeleton` prepares the three stylesheets of the ISO Schematron skeleton (`iso_dsdl_include`,
+  `iso_abstract_expand`, `iso_svrl_for_xslt2` importing `iso_schematron_skeleton_for_saxon`, the
+  files of ph-schematron-isosch 10.3.1, `SKELETON_FILES`) on the engine; `Skeleton::compile` runs
+  them, each result passed to the next step as ph-schematron passes it (a DOM document of the
+  JDK read through Saxon's DOM wrapper, `TreeView::Dom`), `document()` restricted to the files
+  given (`Sources`), and writes the stylesheet as ph-schematron-maven-plugin writes it. On the
+  synthetic test schemas and on the Peppol and CEN Schematron files, each step gives
+  ph-schematron's result, byte for byte.
+- The XSLT engine runs the ISO Schematron skeleton as Saxon-HE 12.10 does, each construct
+  checked against Saxon-HE by probes: `xsl:copy`, `xsl:copy-of`, `xsl:element`,
+  `xsl:namespace`, `xsl:processing-instruction`, `xsl:message` (`terminate` as an attribute
+  value template, `XTMM9000`), `xsl:attribute` with `namespace`, `xsl:import` with import
+  precedence (`einvoice_xslt::load_with_imports`, `ModuleResolver`, `resolve_uri`),
+  `xsl:namespace-alias`, `use-when` (`element_available`, `system_property`),
+  `extension-element-prefixes`; the `descendant::` axis; `document()` with two arguments and
+  base URIs, `id()`, `generate-id()`, `element-available()`, `function-available()` and
+  `system-property()`; result trees given to another transformation
+  (`Executable::transform_tree`, `TreeTransformation`, `einvoice_xslt_exec::serialize`,
+  `Serialization`). A named template that ends with a call of another runs it in place (a tail
+  call, as Saxon does), at most `TransformOptions::max_tail_calls` times in a row
+  (`DEFAULT_MAX_TAIL_CALLS`, 65 536; beyond, `LimitExceeded::TailCalls`). The `namespace::` and
+  `following::` axes are still refused.
 - `cargo xtask bench`: the wall time, CPU time and peak memory of `einvoice-validate` and of
   Saxon-HE 12.10 on the whole corpus of each rule set (every document, mutation cases included,
   through every stylesheet) at the given thread counts, a run doing exactly Saxon-HE's work (each
