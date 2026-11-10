@@ -200,9 +200,26 @@ EOF
     say "$release/bundle.toml written"
 }
 
+# Maven, installed from its pinned archive; also wanted when the stylesheets are
+# already compiled, by the ph-schematron oracle of einvoice-schematron
+# (EINVOICE_PEPPOL_TOOLS=1, as scripts/check.sh peppol sets it).
+install_maven() {
+    maven_archive=$dir/downloads/apache-maven-$maven-bin.tar.gz
+    fetch "$maven_url" "$maven_archive" 512 "$maven_sha512"
+    rm -rf "$dir/tools/apache-maven-$maven"
+    mkdir -p "$dir/tools"
+    tar -xzf "$maven_archive" -C "$dir/tools" --no-same-owner --no-same-permissions
+    mvn=$dir/tools/apache-maven-$maven/bin/mvn
+    [ -x "$mvn" ] || fail "$maven_archive has no bin/mvn"
+}
+
 if compiled; then
     say "$release/xslt already compiled, SHA-256 verified"
     write_bundle
+    if [ "${EINVOICE_PEPPOL_TOOLS:-}" = 1 ]; then
+        install_maven
+        say "Maven $maven installed for the ph-schematron oracle"
+    fi
     exit 0
 fi
 
@@ -212,13 +229,7 @@ if [ -n "${JAVA:-}" ] && [ -z "${JAVA_HOME:-}" ]; then
     PATH=$(dirname "$(command -v "$JAVA")"):$PATH
 fi
 
-maven_archive=$dir/downloads/apache-maven-$maven-bin.tar.gz
-fetch "$maven_url" "$maven_archive" 512 "$maven_sha512"
-rm -rf "$dir/tools/apache-maven-$maven"
-mkdir -p "$dir/tools"
-tar -xzf "$maven_archive" -C "$dir/tools" --no-same-owner --no-same-permissions
-mvn=$dir/tools/apache-maven-$maven/bin/mvn
-[ -x "$mvn" ] || fail "$maven_archive has no bin/mvn"
+install_maven
 
 work=$tmp/compile
 mkdir -p "$work/in" "$work/out" "$dir/m2"

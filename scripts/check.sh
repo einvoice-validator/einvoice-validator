@@ -401,7 +401,7 @@ job_oracle() {
 # except in CI, where it fails.
 job_peppol() {
     local status=0
-    build_corpus peppol scripts/fetch-peppol.sh || status=$?
+    EINVOICE_PEPPOL_TOOLS=1 build_corpus peppol scripts/fetch-peppol.sh || status=$?
     [ "$status" -ne 2 ] || return 0
     [ "$status" -eq 0 ] || return 1
     EINVOICE_PEPPOL_REQUIRED=1 cargo test --locked --all-features -p einvoice-xslt-exec \
