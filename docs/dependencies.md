@@ -27,8 +27,8 @@ features) and the WebAssembly module of the npm package (`einvoice-wasm`,
   (`crates/einvoice-validator/src/rulesets/fetch/tls.rs`) on the RustCrypto crates: pure
   Rust, without the C and assembly of `ring` or `aws-lc-rs`. What is downloaded is checked
   against the SHA-256 or SHA-512 pinned for it; TLS is a second line of defence. Without
-  the feature, nothing is downloaded and none of those crates is built. `rsa` (a release
-  candidate, 0.10.0-rc) only verifies signatures with public keys: the advisory every
+  the feature, nothing is downloaded and none of those crates is built. `rsa` (0.10.0) only
+  verifies signatures with public keys: the advisory every
   release of it carries, RUSTSEC-2023-0071 (timing leaks in private-key operations), is
   ignored in `deny.toml` for that reason.
 
