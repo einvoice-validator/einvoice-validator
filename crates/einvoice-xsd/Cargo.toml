@@ -16,7 +16,7 @@ readme = "README.md"
 license = "MIT AND LicenseRef-OASIS-Copyright-Notice AND LicenseRef-UN-CEFACT-Copyright-Notice AND W3C-19980720"
 
 [dependencies]
-einvoice-xml = { path = "../einvoice-xml", version = "0.2.0" }
+einvoice-xml = { path = "../einvoice-xml", version = "0.3.0" }
 roxmltree = "0.21.2"
 
 [dev-dependencies]

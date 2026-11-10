@@ -16,11 +16,11 @@ license.workspace = true
 exclude = ["tests/"]
 
 [dependencies]
-einvoice-xml = { path = "../einvoice-xml", version = "0.2.0" }
-einvoice-xpath = { path = "../einvoice-xpath", version = "0.2.0" }
-einvoice-xpath-eval = { path = "../einvoice-xpath-eval", version = "0.2.0" }
-einvoice-xslt = { path = "../einvoice-xslt", version = "0.2.0" }
-einvoice-xslt-exec = { path = "../einvoice-xslt-exec", version = "0.2.0" }
+einvoice-xml = { path = "../einvoice-xml", version = "0.3.0" }
+einvoice-xpath = { path = "../einvoice-xpath", version = "0.3.0" }
+einvoice-xpath-eval = { path = "../einvoice-xpath-eval", version = "0.3.0" }
+einvoice-xslt = { path = "../einvoice-xslt", version = "0.3.0" }
+einvoice-xslt-exec = { path = "../einvoice-xslt-exec", version = "0.3.0" }
 sha2 = "0.11.1"
 
 [dev-dependencies]

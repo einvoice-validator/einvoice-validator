@@ -20,7 +20,7 @@ cen-ubl = ["einvoice-validator/cen-ubl"]
 cen-cii = ["einvoice-validator/cen-cii"]
 
 [dependencies]
-einvoice-validator = { path = "../einvoice-validator", version = "0.2.0", default-features = false }
+einvoice-validator = { path = "../einvoice-validator", version = "0.3.0", default-features = false }
 js-sys = { version = "0.3.107", default-features = false }
 wasm-bindgen = "0.2.130"
 

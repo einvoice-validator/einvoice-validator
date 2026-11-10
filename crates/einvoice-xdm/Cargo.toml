@@ -13,7 +13,7 @@ readme = "README.md"
 license.workspace = true
 
 [dependencies]
-einvoice-bigint = { path = "../einvoice-bigint", version = "0.2.0" }
+einvoice-bigint = { path = "../einvoice-bigint", version = "0.3.0" }
 regex = "1.13.1"
 
 [dev-dependencies]
