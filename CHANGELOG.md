@@ -16,6 +16,12 @@ against.
   failed on macOS and Windows (#11).
 ### Changed
 
+- On WebAssembly, `ValidateOptions::max_depth` is capped at `WASM_MAX_DEPTH` (400) and
+  `ValidateOptions::max_stack` at `WASM_MAX_STACK` (256 KiB, the default there): asking for
+  more fails with the new `Error::OptionOutOfRange` (#34). The caps were measured against the
+  native stacks of Chrome, Firefox and Node.js, on the main thread and in a Web Worker: with
+  them, a recursion ends with the library's stack limit, never the engine's own overflow. The
+  npm package takes its `maxDepth` bound from `WASM_MAX_DEPTH`. Other targets are unchanged.
 - **Breaking** (#37): the Factur-X bundles (MINIMUM, BASIC WL, BASIC, EN 16931, EXTENDED) and
   the bundles of the French package validate a document against the XML schema their reference
   validator runs before the stylesheet, as the UBL bundles already did: the Factur-X schema of
@@ -46,6 +52,24 @@ against.
   `privacy.yml` can be run by hand; `main` requires the `ci-ok` check (#11).
 ### Added
 
+- Documents in UTF-16 (either byte order, with a byte order mark, or without one when the
+  document starts with `<?`), US-ASCII, ISO-8859-1, ISO-8859-15 and windows-1252 are decoded
+  as xmllint and Saxon-HE read them (#6): `einvoice_xml::decode`, `decode_owned` and
+  `encoding_of` find the encoding from the byte order mark, the first bytes and the XML
+  declaration, and decode to UTF-8 (without a copy for UTF-8). Any other encoding is
+  unsupported (`Error::Unsupported`, exit status 3); malformed bytes, or first bytes that
+  contradict the declaration, are not well-formed (`Error::NotXml`, with line and column).
+  `einvoice-validator`, `einvoice-xsd` (`Schema::validate_bytes`) and `Syntax::detect` read
+  them. Checked against Saxon-HE 12.10 and xmllint on 743 synthetic documents (the 43 where
+  they disagree, or where an encoding is not read, are listed with their reason) and on every
+  document of the CEN UBL and CII corpora re-encoded into UTF-16 and each single-byte encoding
+  its characters allow: the same report as for the UTF-8 document each time.
+- `xsi:type` may name any built-in simple type of XML Schema 1.0 (#6): the bounded integer
+  types, `float`, `double`, `duration`, the `g*` types, `hexBinary`, `QName`, `NMTOKEN(S)`,
+  `IDREF(S)`, `ENTITY`/`ENTITIES` and `NOTATION`, which were refused as unsupported. An
+  `IDREF` value that is not the value of an ID of the document is reported
+  (`unresolved-idref`, `ErrorKind::UnresolvedIdref`). Compared with xmllint on 123 new
+  mutations: the 19 differences, where libxml2 departs from XML Schema 1.0, are documented.
 - Rule-set bundles with an XML schema of their own (#37): `[[schema-document]]` tables (path
   and SHA-256) list the documents of the schema, and `schema` names the path of its entry
   point (`SchemaId::Bundle`, `RuleSet::schema_documents`, `SchemaDocumentEntry`). The

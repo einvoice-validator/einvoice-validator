@@ -38,7 +38,7 @@ rule sets, the engine produces the same SVRL report as Saxon-HE (see the table b
 | Same results as Saxon-HE on the whole CEN corpus | done: 1179 / 1179 cases and 508 / 508 mutation cases identical (the same SVRL, or the same error code where Saxon-HE stops with a dynamic error) ([#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
 | Test corpus of Peppol BIS Billing 3.0.22 (707 cases, and 509 mutation cases), built locally from the pinned release (not redistributed) with the Saxon-HE results of both stylesheets | done ([#4](https://github.com/einvoice-validator/einvoice-validator/issues/4)) |
 | Same results as Saxon-HE on the whole Peppol corpus | done: 707 / 707 cases and 509 / 509 mutation cases identical with each of the two stylesheets ([#5](https://github.com/einvoice-validator/einvoice-validator/issues/5), [#3](https://github.com/einvoice-validator/einvoice-validator/issues/3)) |
-| `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1555 cases, every corpus case agrees, the other differences are listed with their cause (XAdES content is validated laxly: its schemas are not redistributable) | done ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6) follow-ups) |
+| `einvoice-xsd`: UBL 2.1 XML Schema validation against the official OASIS schemas; compared with xmllint on 1681 cases, every corpus case agrees, the other differences are listed with their cause (XAdES content is validated laxly: its schemas are not redistributable) | done ([#6](https://github.com/einvoice-validator/einvoice-validator/issues/6) follow-ups) |
 | Public API (`einvoice-validator`: rule-set bundles, `Validator`, `Report`) and command-line tool (`einvoice-validate`); verdicts and findings agree with Saxon-HE on all 1179 CEN cases and 508 mutation cases and, with the Peppol bundle, on all 707 Peppol cases and 509 mutation cases | done ([#10](https://github.com/einvoice-validator/einvoice-validator/issues/10)) |
 | Test corpus of CEN EN 16931 CII 1.3.17 (24 cases: the 15 examples and the 9 VEFA tests of the release, and 808 mutation cases of our own, [`corpus/mutations-cii.toml`](corpus/mutations-cii.toml)) with the Saxon-HE results; 785 of the 810 assert ids of the stylesheet fail in some case, the 25 others cannot ([`corpus/cen-en16931-cii-1.3.17/README.md`](corpus/cen-en16931-cii-1.3.17/README.md)) | done ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
 | Same results as Saxon-HE on the whole CII corpus; built-in rule set `cen-cii` and detection of the syntax from the root element in `einvoice-validate` | done: 24 / 24 cases and 808 / 808 mutation cases identical, from the engine, the library and the tool ([#12](https://github.com/einvoice-validator/einvoice-validator/issues/12)) |
@@ -119,6 +119,21 @@ that recurses without end fails with `Error::Limit` instead of overflowing the s
 **Deeply nested stylesheets.** A rule-set bundle whose expressions nest deeper than 128 levels,
 or whose instructions nest deeper than 64, is refused when it is loaded rather than overflowing
 the stack; the official rule sets need 32 and 9.
+
+**Encodings.** Documents in UTF-8, UTF-16 (either byte order, with a byte order mark, or without
+one when the document starts with `<?`), US-ASCII, ISO-8859-1, ISO-8859-15 and windows-1252 are
+read as xmllint and Saxon-HE read them, the encoding found from the byte order mark, the first
+bytes and the XML declaration (`einvoice_xml::decode`); any other encoding is unsupported (exit
+status `3`, `Error::Unsupported`), and malformed bytes or first bytes that contradict the
+declaration make the document not well-formed. Checked against both references on 743
+synthetic documents and on the CEN UBL and CII corpora re-encoded in each of these encodings
+(new after 0.3.0, which read UTF-8 only).
+
+**WebAssembly.** The library builds for `wasm32-unknown-unknown`, where `max_depth` is capped at
+`WASM_MAX_DEPTH` (400) and `max_stack` at `WASM_MAX_STACK` (256 KiB): asking for more fails with
+`Error::OptionOutOfRange`. With these caps a recursion ends with the library's stack limit,
+never with an overflow of the JavaScript engine's stack, as measured in Chrome, Firefox and
+Node.js, on the main thread and in a Web Worker (new after 0.3.0).
 
 **Rule sets fetched on demand.** Factur-X (five profiles), XRechnung (UBL, CII), the French rules
 (FNFE-MPE, fourteen bundles) and Peppol BIS Billing 3.0 may not be redistributed: `einvoice-validate`
@@ -274,7 +289,7 @@ flowchart LR
 | [`einvoice-xpath`](crates/einvoice-xpath) | Parser and syntax tree for the XPath 2.0 subset, XSLT match patterns, sequence types and attribute value templates. |
 | [`einvoice-xpath-eval`](crates/einvoice-xpath-eval) | Node model and evaluator of the XPath 2.0 subset, with the behaviour of Saxon-HE 12.10; unknown functions and variables are refused when an expression is compiled. |
 | [`einvoice-xslt`](crates/einvoice-xslt) | Loader for the XSLT 2.0 subset emitted by the Schematron compilers: templates, modes, priorities, functions, variables, parameters and instructions, each with its source line. |
-| [`einvoice-xsd`](crates/einvoice-xsd) | XML Schema validation of UBL 2.1 Invoice and CreditNote documents against the official OASIS UBL 2.1 schemas, and of UN/CEFACT CII D16B documents against the official UN/CEFACT schemas, which it embeds; implements exactly the XML Schema 1.0 constructs those schemas (and the other CII-family schemas) use and refuses any other at load time. |
+| [`einvoice-xsd`](crates/einvoice-xsd) | XML Schema validation of UBL 2.1 Invoice and CreditNote documents against the official OASIS UBL 2.1 schemas, and of UN/CEFACT CII D16B documents against the official UN/CEFACT schemas, which it embeds; implements exactly the XML Schema 1.0 constructs those schemas (and the other CII-family schemas) use and refuses any other at load time; `xsi:type` in a document may name any built-in simple type of XML Schema 1.0, and unresolved `IDREF` values are reported (after 0.3.0, on `main`). |
 | [`einvoice-xslt-exec`](crates/einvoice-xslt-exec) | Executor of the XSLT 2.0 subset: runs the official compiled Schematron with the behaviour of Saxon-HE 12.10 and writes SVRL; constructs whose result would differ are refused when a stylesheet is prepared. |
 | [`einvoice-schematron`](crates/einvoice-schematron) | Schematron compiled to XSLT as ph-schematron 10.3.1 compiles it, byte for byte: the three stylesheets of the ISO Schematron skeleton run by the engine, each result passed on as ph-schematron's DOM, and the compiled stylesheet written as its XML writer writes it. |
 | [`einvoice-svrl`](crates/einvoice-svrl) | The canonical, line-oriented form of SVRL reports ([`corpus/SVRL-CANONICAL.md`](corpus/SVRL-CANONICAL.md)) used to compare reports with the reference engine. |
