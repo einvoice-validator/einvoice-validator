@@ -217,11 +217,24 @@ is documented in the crate.
 whole corpus of each rule set (every document, mutation cases included, through every
 stylesheet), on 1 and 8 threads: wall time, CPU time, peak memory, and the latency of one
 document in a new process. `cargo xtask bench` measures it; `--write` updates the page and
-`docs/benchmarks.json`. In short (median of 5 runs, on a loaded machine, see the page): peak
-memory is 17 to 42 times lower than Saxon-HE's; one small invoice in a new process takes about
-44 ms against 660 ms; on 8 threads the whole jobs are 2.8 to 8 times faster; on one thread they
-range from 0.9 times (XRechnung UBL, large invoices: a warmed-up JVM is faster per large
-document today) to 2.6 times (CEN CII).
+`docs/benchmarks.json`. In short (median of 5 runs, measured on main after 0.3.0, commit
+`61df544`, see the page for the machine and its load):
+
+- **One thread**, the nine whole jobs together: 37.2 s against 80.6 s for Saxon-HE (2.2 times
+  faster), 74.7 s for Saxon-HE without the start of its JVMs (2.0 times). Per rule set, from
+  1.0 times (XRechnung UBL, large invoices; 0.9 times against Saxon-HE without its JVM start)
+  to 16 times (French CDAR; 12 times without the JVM start); CEN UBL 1.5 times, CEN CII 2.5,
+  Peppol 2.3, Factur-X 3.1, French CII 2.7.
+- **Eight threads**: 2.9 times (XRechnung UBL) to 53 times (French CDAR) faster per rule set;
+  5.4 s against 33.9 s for the nine jobs (6.2 times).
+- **Peak memory** 19 to 38 times lower than Saxon-HE's on one thread, 19 to 46 times on eight.
+- **One small invoice in a new process**: 46 ms with the UBL 2.1 schema (33 ms without),
+  against 614 ms for Saxon-HE, 455 ms without its JVM start.
+
+The benchmark's bundles validate the XML schema for the UBL rule sets (UBL 2.1), the built-in
+`cen-cii` and XRechnung CII (CII D16B); its Factur-X and French CII and CDAR jobs run the
+stylesheets without the XML schemas the fetched bundles of those rule sets validate since #37.
+Saxon-HE runs no XML schema.
 
 ## Design
 
