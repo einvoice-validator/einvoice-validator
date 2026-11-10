@@ -148,15 +148,21 @@ format of `vefa-disagreements.tsv`.
 or a rule set without scenarios; `several: A | B` when several do), then for each stylesheet,
 in a column named after its golden directory, `reject` when one of its findings rejects the
 case as the reference validator reads the report, `accept` when none does, `error` when
-Saxon-HE stopped on the case, and last `verdict`, the acceptance of the KoSIT configuration
-(`-` for the other rule sets). For the Mustang validator and the French rules, a failed assert
+Saxon-HE stopped on the case, then `schema`, the verdict of the XML schema of the KoSIT
+scenario on the case (`valid`, `invalid` or `malformed`; `-` without a scenario, and for the
+other rule sets), and last `verdict`, the acceptance of the KoSIT configuration (`-` for the
+other rule sets). For the Mustang validator and the French rules, a failed assert
 rejects unless flagged `warning` or `information`, a successful report when flagged `fatal` or
 `error`. For XRechnung, as the KoSIT validator reads the reports (`default-report.xsl`), a
 failed assert or a successful report rejects unless its flag or its role is `warning`, `warn`,
 `information` or `info`, the levels of the matching scenario first; `verdict` is `reject` for a
-document that matches no scenario or several (the validator's fallback scenario), otherwise
-`error`, `reject` or `accept` from the stylesheets of its scenario alone (a document with XML
-Schema errors is rejected too, which the table leaves to the tests). The `match` expressions of
+document that matches no scenario or several (the validator's fallback scenario) and for one
+that the XML schema of its scenario does not find valid (the validator then runs no
+stylesheet), otherwise `error`, `reject` or `accept` from the stylesheets of its scenario. The
+schema step is xmllint's (libxml2, the reference of `einvoice-xsd`; `$XMLLINT`, else `xmllint`),
+run with `--huge` on the schema the scenario names, as the configuration ships it (UBL 2.1 with
+its XAdES schemas, or the CII D16B schema): without `--huge`, libxml2's parser refuses documents
+nested deeper than 256 elements, a limit of that parser, not a schema verdict. The `match` expressions of
 the configuration are read in their three forms, `exists(/p:R/p:C[ . = 'X'])` (the string
 value), `exists(/p:R[p:A/p:B/text() = 'X'])` (a text node child) and
 `exists(/p:R[p:A = 'X'])`, and evaluated with their XPath meaning, on xtask's own parser: any
@@ -168,7 +174,10 @@ D16B schema must be, byte for byte, the one `einvoice-xsd` embeds) or names unch
 `crates/einvoice-cli/tests/rules_equivalence.rs` requires the verdict of every bundle on every
 document to be that table's: invalid with schema errors or when one of its stylesheets rejects
 the document; for XRechnung, the scenario of each document is the table's, the stylesheets that
-ran are its scenario's, and the status is the table's `verdict`.
+ran are its scenario's, the bundle finds schema errors exactly when the table's `schema` is not
+`valid`, but for the differences listed with their cause in
+`crates/einvoice-cli/tests/schema-disagreements.tsv` (libxml2's limit of 24 digits in a
+decimal), and the status is the table's `verdict`.
 
 ## Peppol BIS Billing 3.0.22: built locally, not committed
 

@@ -17,7 +17,7 @@ command is one process for the whole corpus:
 - **einvoice-validate**: the release build, `--format json --jobs N`, with the built-in rule set
   (`cen-ubl`, `cen-cii`) or a bundle of the rule set's stylesheets and the files they read. This
   is the tool as it validates: the XML check, then the XML schema (UBL 2.1 for UBL, CII D16B for
-  the built-in `cen-cii`), then the stylesheets. The XML schema is work Saxon-HE does not do. On
+  the built-in `cen-cii` and for XRechnung CII), then the stylesheets. The XML schema is work Saxon-HE does not do. On
   a corpus with a document nested deeper than the default limit of 256 levels (the CII mutation
   cases), `--max-depth 1024` is given, as in the equivalence tests, so that every document is
   validated.

@@ -32,7 +32,9 @@
 //! `oracle` and the families take Java from `--java`, else `$JAVA`, else `java` on
 //! the PATH, and the Saxon-HE jar from `--saxon`, else `$SAXON_JAR`, else
 //! where `scripts/fetch-saxon.sh` puts it; the two XML Resolver jars that
-//! Saxon-HE 12.10 needs are taken from the directory of Saxon's jar.
+//! Saxon-HE 12.10 needs are taken from the directory of Saxon's jar. The
+//! acceptance tables of the XRechnung corpora run the XML Schema step of the
+//! KoSIT scenarios with xmllint: `$XMLLINT`, else `xmllint` on the PATH.
 //! `engine-status` and `bench` take the tool from `--cli`, else
 //! `target/release/einvoice-validate`; `bench` takes Java and Saxon-HE as
 //! `oracle` does (see the `bench` module). `bench-measure` is its helper.
@@ -52,6 +54,7 @@ mod svrl;
 mod toml;
 mod util;
 mod vefa;
+mod xmllint;
 mod xmute;
 
 use std::ffi::OsString;

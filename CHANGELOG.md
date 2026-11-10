@@ -68,11 +68,20 @@ against.
   scenario it matches, whether the findings of each stylesheet reject it as the reference
   validator reads them (an unflagged failed assert is an error; for XRechnung, the levels the
   KoSIT report stylesheet gives flags and roles, then those of the scenario), and for XRechnung
-  the verdict of the configuration (`verdict`: rejected without a scenario or with several,
-  otherwise from the stylesheets of the scenario alone); it checks the scenarios of the XRechnung
-  bundles against the configuration (namespaces, `match` as written, stylesheets, levels, XML
-  schema). `tests/rules_equivalence.rs` of `einvoice-cli` compares the verdict of every bundle on
-  every corpus document with it, and for XRechnung the scenario and the stylesheets that ran.
+  the verdict of the XML schema of the scenario (`schema`: xmllint, run with `--huge` on the
+  configuration's copy of the schema, UBL 2.1 or CII D16B; `$XMLLINT`, else `xmllint`) and the
+  verdict of the configuration (`verdict`: rejected without a scenario or with several, or when
+  the schema does not find the document valid, otherwise from the stylesheets of the scenario);
+  documents the test suite accepts must be schema-valid too. It checks the scenarios of the
+  XRechnung bundles against the configuration (namespaces, `match` as written, stylesheets,
+  levels, XML schema). `tests/rules_equivalence.rs` of `einvoice-cli` compares the verdict of
+  every bundle on every corpus document with it, and for XRechnung the scenario, the stylesheets
+  that ran and the schema verdict: the bundles agree with xmllint on every document but three
+  mutation cases with decimals beyond libxml2's 24 digits
+  (`crates/einvoice-cli/tests/schema-disagreements.tsv`). With the CII D16B schema (#32), the
+  `xrechnung-cii` bundle finds 183 more of its 1494 corpus documents invalid, as the KoSIT
+  configuration does: 132 that the stylesheets accept, and 51 on which a stylesheet stops with
+  a dynamic error (the report is returned, invalid); `xrechnung-ubl` already ran UBL 2.1.
 - XML Schema validation of CII (#32): `einvoice-xsd` vendors and embeds the UN/CEFACT CII D16B
   schemas with uncoupled code lists (`CrossIndustryInvoice_100pD16B.xsd` and the three modules
   it imports), UNECE's files byte for byte, CRLF line ends included

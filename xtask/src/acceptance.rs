@@ -16,6 +16,11 @@
 //!   every scenario is evaluated on it, and when none is true, or more than
 //!   one, the validator takes its fallback scenario, whose acceptance is
 //!   always false: the document is rejected and no stylesheet runs on it;
+//! - the document is validated against the XML schema of the scenario
+//!   (`validateWithXmlSchema`, the configuration's copy): when it is not
+//!   valid, the document is rejected and no stylesheet runs on it. The
+//!   reference of the schema step is xmllint (libxml2), run here on the
+//!   configuration's schema ([`crate::xmllint`]);
 //! - the scenario's `validateWithSchematron` stylesheets run, in order;
 //! - the level of each failed assert and successful report is `error` when
 //!   its flag or role is `fatal` or `error`, `warning` when one is `warning`
@@ -25,9 +30,7 @@
 //!   `UNSPECIFIC` without one) their level instead;
 //! - the document is accepted when no finding has the level `error` (the
 //!   scenario's `acceptMatch`, `/rep:report/rep:assessment[1]/rep:accept[1]`,
-//!   on the report). A document with XML Schema errors is rejected too (the
-//!   validator then skips the Schematron): the schema is not read here, the
-//!   tests compare with the schema errors of the bundle themselves.
+//!   on the report).
 //!
 //! The `match` expressions of the configuration have three forms, which this
 //! module evaluates with their XPath meaning, on its own parser (not the
@@ -47,7 +50,8 @@
 //!   `cbc:CustomizationID` under the root of a UBL document,
 //!   `ExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter/ID`
 //!   in CII and CDAR; with [`Profiles::KositScenarios`], by the scenario the
-//!   document matches.
+//!   document matches, whose schema must find it valid too (the `schema`
+//!   column of [`TABLE`], which [`write_table`] writes first).
 //! - [`write_table`]: the reference acceptance of every case of a fetched
 //!   corpus, stylesheet by stylesheet and as a whole ([`TABLE`]), which the
 //!   tests of `einvoice-validate --rules` compare the verdicts of the bundles
@@ -55,7 +59,7 @@
 //!   configuration's.
 
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use roxmltree::{Document, Node, ParsingOptions};
 
@@ -64,6 +68,7 @@ use crate::crosscheck::Disagreement;
 use crate::ruleset::{Profiles, RuleSet, Stylesheet};
 use crate::svrl;
 use crate::util::{self, Error, Result};
+use crate::xmllint::{SchemaCheck, SchemaVerdict};
 
 const SCENARIOS_NS: &str = "http://www.xoev.de/de/validator/framework/1/scenarios";
 
@@ -174,6 +179,15 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet, cases: &[Case]) -> Result<Out
         Profiles::Listed(_) => None,
         Profiles::KositScenarios { file, .. } => Some((file, scenarios(&base, file)?)),
     };
+    // With KoSIT scenarios, the verdict of the schema step on each case: the
+    // `schema` column of the table `write_table` wrote.
+    let schema_column = match scenarios {
+        Some(_) => Some(table_column(
+            &util::join(&base, &rule_set.corpus_dir()).join(TABLE),
+            "schema",
+        )?),
+        None => None,
+    };
     let mut outcome = Outcome::default();
     for case in cases {
         if case.expectation.is_some()
@@ -197,6 +211,19 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet, cases: &[Case]) -> Result<Out
             continue;
         };
         let mut rejected = false;
+        if let Some(column) = &schema_column {
+            let verdict = column.get(&case.id).map_or("", String::as_str);
+            if verdict != "valid" {
+                // The schema of its scenario rejects it (or the table lacks it).
+                rejected = true;
+                outcome.disagreements.push(Disagreement {
+                    case: case.id.clone(),
+                    kind: "rejected",
+                    rule: "schema".to_owned(),
+                    saxon: format!("schema {verdict:?}"),
+                });
+            }
+        }
         for stylesheet in stylesheets {
             for (kind, id, flag, role) in findings(&base, rule_set, stylesheet, case)? {
                 let level = match kosit {
@@ -227,6 +254,28 @@ pub(crate) fn run(root: &Path, rule_set: &RuleSet, cases: &[Case]) -> Result<Out
         }
     }
     Ok(outcome)
+}
+
+/// The column `name` of the table [`TABLE`] at `path`, by case id.
+fn table_column(path: &Path, name: &str) -> Result<std::collections::HashMap<String, String>> {
+    let text = util::read_string(path)?;
+    let mut lines = text.lines();
+    let header: Vec<&str> = lines.next().unwrap_or("").split('\t').collect();
+    let index = header
+        .iter()
+        .position(|h| *h == name)
+        .ok_or_else(|| Error::new(format!("{}: no column {name}", path.display())))?;
+    lines
+        .map(|line| {
+            let columns: Vec<&str> = line.split('\t').collect();
+            match (columns.first(), columns.get(index)) {
+                (Some(id), Some(value)) if columns.len() == header.len() => {
+                    Ok(((*id).to_owned(), (*value).to_owned()))
+                }
+                _ => Err(Error::new(format!("{}: bad line {line:?}", path.display()))),
+            }
+        })
+        .collect()
 }
 
 /// The stylesheets of the profile of a document (its text), and for a rule
@@ -385,41 +434,69 @@ fn default_level(kind: &str, flag: Option<&str>) -> &'static str {
 /// stylesheet (a column named after its golden directory) `reject` when one of
 /// its findings has the level `error`, `accept` when none has, `error` when
 /// Saxon-HE stopped on the case, whether the scenario runs the stylesheet or
-/// not; then `verdict`, the acceptance of the reference validator for a
-/// schema-valid document, for a rule set with KoSIT scenarios: `reject` for a
-/// document without a scenario (none or several), else `error` when Saxon-HE
-/// stopped with one of the scenario's stylesheets, `reject` when one of them
-/// rejects it, `accept` otherwise (`-` for the other rule sets, whose bundles
-/// each run some of the stylesheets). Returns a summary line.
-pub(crate) fn write_table(root: &Path, rule_set: &RuleSet) -> Result<String> {
+/// not; then, for a rule set with KoSIT scenarios, `schema`: the verdict of the
+/// XML schema of the scenario (its `validateWithXmlSchema`, the configuration's
+/// copy) on the document, as `schema` gives it (xmllint, [`crate::xmllint`]):
+/// `valid`, `invalid` or `malformed` (`-` for a document without a scenario,
+/// which no schema checks, and for the other rule sets); then `verdict`, the
+/// acceptance of the reference validator, for a rule set with KoSIT scenarios:
+/// `reject` for a document without a scenario (none or several) and for one
+/// that its schema does not find valid (the KoSIT validator then skips the
+/// Schematron), else `error` when Saxon-HE stopped with one of the scenario's
+/// stylesheets, `reject` when one of them rejects it, `accept` otherwise (`-`
+/// for the other rule sets, whose bundles each run some of the stylesheets).
+/// Returns a summary line.
+pub(crate) fn write_table(
+    root: &Path,
+    rule_set: &RuleSet,
+    schema: &dyn SchemaCheck,
+) -> Result<String> {
     let base = rule_set.base(root);
     let cases = corpus::read_all(root, rule_set)?;
     let kosit = match rule_set.acceptance.as_ref().map(|a| &a.profiles) {
         Some(Profiles::KositScenarios { file, .. }) => Some((*file, scenarios(&base, file)?)),
         _ => None,
     };
+    let mut selections = Vec::with_capacity(cases.len());
+    for case in &cases {
+        selections.push(match &kosit {
+            Some((_, scenarios)) => {
+                let text = util::read_string(&util::join(&base, &case.input))?;
+                Some(parse(&text).ok().map_or(Selected::None, |doc| {
+                    Selected::of(scenarios, doc.root_element())
+                }))
+            }
+            None => None,
+        });
+    }
+    let (schema_verdicts, checked_by) = match &kosit {
+        Some((file, _)) => {
+            let verdicts = schema_step(&base, file, &cases, &selections, schema)?;
+            (verdicts, schema.describe()?)
+        }
+        None => (vec![None; cases.len()], String::new()),
+    };
     let mut table = String::from("case\tscenario");
     for stylesheet in rule_set.stylesheets {
         let _ = write!(table, "\t{}", stylesheet.golden_dir);
     }
-    table.push_str("\tverdict\n");
+    table.push_str("\tschema\tverdict\n");
     let mut rejected = vec![0usize; rule_set.stylesheets.len()];
     let (mut matched, mut unmatched, mut several) = (0, 0, 0);
     let (mut accepts, mut rejects, mut errors) = (0, 0, 0);
-    for case in &cases {
-        let text = util::read_string(&util::join(&base, &case.input))?;
-        let doc = parse(&text).ok();
-        let selected = match (&kosit, &doc) {
-            (Some((_, scenarios)), Some(doc)) => Some(Selected::of(scenarios, doc.root_element())),
-            (Some(_), None) => Some(Selected::None),
-            (None, _) => None,
-        };
+    let (mut schema_invalid, mut schema_malformed) = (0, 0);
+    for ((case, selected), schema_verdict) in cases.iter().zip(&selections).zip(&schema_verdicts) {
         let scenario = selected.as_ref().and_then(Selected::scenario);
-        match &selected {
+        match selected {
             Some(Selected::One(_)) => matched += 1,
             Some(Selected::None) => unmatched += 1,
             Some(Selected::Several(_)) => several += 1,
             None => {}
+        }
+        match schema_verdict {
+            Some(SchemaVerdict::Invalid) => schema_invalid += 1,
+            Some(SchemaVerdict::Malformed) => schema_malformed += 1,
+            Some(SchemaVerdict::Valid) | None => {}
         }
         let _ = write!(
             table,
@@ -441,20 +518,7 @@ pub(crate) fn write_table(root: &Path, rule_set: &RuleSet) -> Result<String> {
             (None, _) => "-",
             (Some(_), None) => "reject",
             (Some((file, _)), Some(scenario)) => {
-                let runs = stylesheets_of(rule_set, scenario, file)?;
-                let of = |s: &Stylesheet| {
-                    verdicts
-                        .iter()
-                        .find(|(name, _)| *name == s.name)
-                        .map_or("", |(_, v)| *v)
-                };
-                if runs.iter().any(|s| of(s) == "error") {
-                    "error"
-                } else if runs.iter().any(|s| of(s) == "reject") {
-                    "reject"
-                } else {
-                    "accept"
-                }
+                configuration_verdict(rule_set, file, scenario, *schema_verdict, &verdicts)?
             }
         };
         match verdict {
@@ -463,7 +527,8 @@ pub(crate) fn write_table(root: &Path, rule_set: &RuleSet) -> Result<String> {
             "error" => errors += 1,
             _ => {}
         }
-        let _ = writeln!(table, "\t{verdict}");
+        let schema_column = schema_verdict.map_or("-", SchemaVerdict::as_str);
+        let _ = writeln!(table, "\t{schema_column}\t{verdict}");
     }
     let corpus_dir = util::join(&base, &rule_set.corpus_dir());
     util::write(&corpus_dir.join(TABLE), table.as_bytes())?;
@@ -475,7 +540,7 @@ pub(crate) fn write_table(root: &Path, rule_set: &RuleSet) -> Result<String> {
         .collect();
     let scenarios = if kosit.is_some() {
         format!(
-            "{matched} matching one scenario, {unmatched} none, {several} several; the configuration accepts {accepts}, rejects {rejects}, stops on {errors}; "
+            "{matched} matching one scenario, {unmatched} none, {several} several; the schemas ({checked_by}) find {schema_invalid} invalid, {schema_malformed} not well-formed; the configuration accepts {accepts}, rejects {rejects}, stops on {errors}; "
         )
     } else {
         String::new()
@@ -486,6 +551,91 @@ pub(crate) fn write_table(root: &Path, rule_set: &RuleSet) -> Result<String> {
         cases.len(),
         rejections.join(", ")
     ))
+}
+
+/// The verdict of the KoSIT configuration `file` on a document that matches
+/// `scenario`, given the verdict of the scenario's schema on it and the
+/// stylesheet columns of [`TABLE`] (`verdicts`, by stylesheet name): `reject`
+/// when the schema does not find it valid (the stylesheets do not run), else
+/// `error` when Saxon-HE stopped with one of the scenario's stylesheets,
+/// `reject` when one of them rejects it, `accept` otherwise.
+fn configuration_verdict(
+    rule_set: &RuleSet,
+    file: &str,
+    scenario: &Scenario,
+    schema: Option<SchemaVerdict>,
+    verdicts: &[(&str, &'static str)],
+) -> Result<&'static str> {
+    if schema != Some(SchemaVerdict::Valid) {
+        return Ok("reject");
+    }
+    let runs = stylesheets_of(rule_set, scenario, file)?;
+    let of = |s: &Stylesheet| {
+        verdicts
+            .iter()
+            .find(|(name, _)| *name == s.name)
+            .map_or("", |(_, v)| *v)
+    };
+    Ok(if runs.iter().any(|s| of(s) == "error") {
+        "error"
+    } else if runs.iter().any(|s| of(s) == "reject") {
+        "reject"
+    } else {
+        "accept"
+    })
+}
+
+/// The schema step of a KoSIT configuration (`file`, relative to `base`): the
+/// verdict of `schema` on each case that has a scenario, against the XML schema
+/// of that scenario as the configuration ships it (its location relative to the
+/// configuration's directory); `None` for a case without a scenario. One run
+/// of the checker per schema.
+fn schema_step(
+    base: &Path,
+    file: &str,
+    cases: &[Case],
+    selections: &[Option<Selected<'_>>],
+    schema: &dyn SchemaCheck,
+) -> Result<Vec<Option<SchemaVerdict>>> {
+    let configuration = util::join(base, file.rsplit_once('/').map_or("", |(d, _)| d));
+    let mut by_schema: Vec<(&str, Vec<usize>)> = Vec::new();
+    for (index, selected) in selections.iter().enumerate() {
+        let Some(scenario) = selected.as_ref().and_then(Selected::scenario) else {
+            continue;
+        };
+        let location = scenario.schema.as_str();
+        match by_schema.iter_mut().find(|(l, _)| *l == location) {
+            Some((_, indices)) => indices.push(index),
+            None => by_schema.push((location, vec![index])),
+        }
+    }
+    let mut out = vec![None; cases.len()];
+    for (location, indices) in &by_schema {
+        let entry = util::join(&configuration, location);
+        if !entry.is_file() {
+            return Err(Error::new(format!(
+                "{}: the XML schema of a scenario of {file} is not there",
+                entry.display()
+            )));
+        }
+        let documents: Vec<PathBuf> = indices
+            .iter()
+            .map(|&i| util::join(base, &cases[i].input))
+            .collect();
+        let verdicts = schema.verdicts(&entry, &documents)?;
+        if verdicts.len() != indices.len() {
+            return Err(Error::new(format!(
+                "{}: {} schema verdicts for {} documents",
+                entry.display(),
+                verdicts.len(),
+                indices.len()
+            )));
+        }
+        for (&i, verdict) in indices.iter().zip(verdicts) {
+            out[i] = Some(verdict);
+        }
+    }
+    Ok(out)
 }
 
 /// The stylesheet column of [`TABLE`] for one case: `error` when Saxon-HE
@@ -931,8 +1081,9 @@ fn parse_match(text: &str, namespaces: &[(String, String)]) -> Option<Match> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::fmt::Write as _;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use super::{
         Match, Selected, check_bundle, identify, kosit_level, parse, parse_match, run, scenarios,
@@ -941,7 +1092,8 @@ mod tests {
     use crate::corpus::Case;
     use crate::crosscheck::Disagreement;
     use crate::ruleset::{Acceptance, Generator, Origin, Profiles, RECORD, RuleSet, Stylesheet};
-    use crate::util;
+    use crate::util::{self, Result};
+    use crate::xmllint::{SchemaCheck, SchemaVerdict};
 
     /// A negative control: what rejects a document, and what does not.
     #[test]
@@ -1135,7 +1287,26 @@ mod tests {
                 Some("R1"),
             ),
             ("stops.xml", invoice(&id("urn:one")), "R1", None),
+            // The schema of the scenario finds them invalid (FakeSchema): rejected,
+            // whatever the stylesheets found, or whether one stopped.
+            ("invalid.xml", invoice(&id("urn:one")), "R1", Some("R4")),
+            ("invalid-stops.xml", invoice(&id("urn:one")), "R1", None),
+            ("unreadable.xml", credit_note("urn:plain"), "R1", Some("R2")),
+            // No scenario: the schema does not run.
+            (
+                "invalid-other.xml",
+                invoice(&id("urn:two")),
+                "R1",
+                Some("R2"),
+            ),
         ];
+        // The schemas the scenarios name, which only FakeSchema reads (their names).
+        for schema in [
+            "conf/resources/ubl/2.1/xsd/maindoc/UBL-Invoice-2.1.xsd",
+            "conf/resources/ubl/2.1/xsd/maindoc/UBL-CreditNote-2.1.xsd",
+        ] {
+            util::write(&util::join(base, schema), b"<xs:schema/>").unwrap();
+        }
         let mut cases =
             String::from("case\tinput\tkind\tscope\tsuccess\terror\twarning\tdescription\n");
         let golden = |id: &str| {
@@ -1175,38 +1346,128 @@ mod tests {
         .unwrap();
     }
 
+    /// The schema step of the fixture: a document whose file name starts with
+    /// `invalid` is invalid, with `unreadable` not well-formed, valid otherwise;
+    /// each call recorded (schema and documents, by file name).
+    #[derive(Default)]
+    struct FakeSchema {
+        calls: RefCell<Vec<(String, Vec<String>)>>,
+    }
+
+    impl SchemaCheck for FakeSchema {
+        fn verdicts(&self, schema: &Path, documents: &[PathBuf]) -> Result<Vec<SchemaVerdict>> {
+            let name = |p: &Path| {
+                p.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            };
+            assert!(schema.is_file(), "{}", schema.display());
+            self.calls
+                .borrow_mut()
+                .push((name(schema), documents.iter().map(|d| name(d)).collect()));
+            Ok(documents
+                .iter()
+                .map(|d| {
+                    assert!(d.is_file(), "{}", d.display());
+                    let n = name(d);
+                    if n.starts_with("invalid") {
+                        SchemaVerdict::Invalid
+                    } else if n.starts_with("unreadable") {
+                        SchemaVerdict::Malformed
+                    } else {
+                        SchemaVerdict::Valid
+                    }
+                })
+                .collect())
+        }
+
+        fn describe(&self) -> Result<String> {
+            Ok("fake".to_owned())
+        }
+    }
+
     /// The table of a corpus with KoSIT scenarios: the levels of the scenario
-    /// each document matches, stylesheet by stylesheet, and the verdict of the
-    /// configuration on the stylesheets of that scenario.
+    /// each document matches, stylesheet by stylesheet, the verdict of the
+    /// schema of that scenario, and the verdict of the configuration.
     #[test]
     fn the_table_follows_the_scenarios() {
         let root = std::env::temp_dir().join(format!("xtask-table-{}", std::process::id()));
         let base = root.join("base");
         write_fixture(&base);
-        let summary = write_table(&root, &TABLE_SET).unwrap();
+        let schema = FakeSchema::default();
+        let summary = write_table(&root, &TABLE_SET, &schema).unwrap();
         let table = util::read_string(&util::join(&base, "corpus/acceptance.tsv")).unwrap();
         let parsed = scenarios(&base, "conf/scenarios.xml").unwrap();
+        // Documents the reference pipeline accepts: the schema step of the table
+        // must find them valid too.
+        let accepted: Vec<Case> = crate::corpus::read_all(&root, &TABLE_SET)
+            .unwrap()
+            .into_iter()
+            .filter(|c| {
+                ["one", "plain", "invalid", "unreadable"]
+                    .iter()
+                    .any(|n| c.id == format!("docs/{n}.xml"))
+            })
+            .collect();
+        let outcome = run(&root, &TABLE_SET, &accepted).unwrap();
         util::remove_dir(&root).unwrap();
+        assert_eq!((outcome.cases, outcome.agreeing), (4, 1));
+        let rejected = |case: &str, rule: &str, saxon: &str| Disagreement {
+            case: format!("docs/{case}.xml"),
+            kind: "rejected",
+            rule: rule.to_owned(),
+            saxon: saxon.to_owned(),
+        };
+        assert_eq!(
+            outcome.disagreements,
+            [
+                rejected("one", "R2", "warning@B"),
+                rejected("invalid", "schema", "schema \"invalid\""),
+                rejected("unreadable", "schema", "schema \"malformed\""),
+            ]
+        );
         // R1 is a warning everywhere; R2 is one too, but the scenario One
         // makes it an error. A document whose identifier differs, by a space
         // included, or is split by a comment, matches no scenario: rejected,
         // whatever its findings. Plain runs A alone, whose findings are
         // warnings: accepted though B would reject it. Two scenarios: none.
-        // B stopped on stops.xml, which One runs it on.
+        // B stopped on stops.xml, which One runs it on. A document the schema of
+        // its scenario does not find valid is rejected, whether a stylesheet
+        // would reject it, accept it or stop on it; without a scenario, no
+        // schema runs.
         assert_eq!(
             table,
-            "case\tscenario\tgolden-a\tgolden-b\tverdict\n\
-             docs/one.xml\tOne\taccept\treject\treject\n\
-             docs/padded.xml\t-\taccept\taccept\treject\n\
-             docs/other.xml\t-\taccept\terror\treject\n\
-             docs/plain.xml\tPlain\taccept\taccept\taccept\n\
-             docs/split.xml\t-\taccept\taccept\treject\n\
-             docs/both.xml\tseveral: One | Other\taccept\taccept\treject\n\
-             docs/stops.xml\tOne\taccept\terror\terror\n"
+            "case\tscenario\tgolden-a\tgolden-b\tschema\tverdict\n\
+             docs/one.xml\tOne\taccept\treject\tvalid\treject\n\
+             docs/padded.xml\t-\taccept\taccept\t-\treject\n\
+             docs/other.xml\t-\taccept\terror\t-\treject\n\
+             docs/plain.xml\tPlain\taccept\taccept\tvalid\taccept\n\
+             docs/split.xml\t-\taccept\taccept\t-\treject\n\
+             docs/both.xml\tseveral: One | Other\taccept\taccept\t-\treject\n\
+             docs/stops.xml\tOne\taccept\terror\tvalid\terror\n\
+             docs/invalid.xml\tOne\taccept\taccept\tinvalid\treject\n\
+             docs/invalid-stops.xml\tOne\taccept\terror\tinvalid\treject\n\
+             docs/unreadable.xml\tPlain\taccept\taccept\tmalformed\treject\n\
+             docs/invalid-other.xml\t-\taccept\taccept\t-\treject\n"
         );
         assert_eq!(
             summary,
-            "acceptance written: synthetic-table: 7 cases, 3 matching one scenario, 3 none, 1 several; the configuration accepts 1, rejects 5, stops on 1; A rejects 0, B rejects 1"
+            "acceptance written: synthetic-table: 11 cases, 6 matching one scenario, 4 none, 1 several; the schemas (fake) find 2 invalid, 1 not well-formed; the configuration accepts 1, rejects 9, stops on 1; A rejects 0, B rejects 1"
+        );
+        // One run per schema, on the documents of the scenarios that name it.
+        let strings = |names: &[&str]| names.iter().map(|&n| n.to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            schema.calls.into_inner(),
+            [
+                (
+                    "UBL-Invoice-2.1.xsd".to_owned(),
+                    strings(&["one.xml", "stops.xml", "invalid.xml", "invalid-stops.xml"])
+                ),
+                (
+                    "UBL-CreditNote-2.1.xsd".to_owned(),
+                    strings(&["plain.xml", "unreadable.xml"])
+                ),
+            ]
         );
         let levels: Vec<(&str, &str)> = parsed[0]
             .levels

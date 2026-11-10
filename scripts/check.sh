@@ -29,7 +29,8 @@
 # (Saxon-HE, the Peppol release, Maven and the Schematron compiler); without
 # them it prints SKIPPED, except in CI, where it fails. So do the facturx,
 # xrechnung and fr-ctc jobs (the Factur-X, XRechnung and French corpora, built
-# in target/ by their fetch scripts and cross-checked). The npm job needs the
+# in target/ by their fetch scripts and cross-checked); the XRechnung corpora
+# need xmllint too (the XML Schema step of their acceptance tables). The npm job needs the
 # wasm target, Node.js and npm, and the tools that crates/einvoice-wasm/npm.sh
 # tools installs (wasm-bindgen-cli, wasm-opt); without them it prints
 # SKIPPED, except in CI, where it fails (npm.sh itself skips a missing
@@ -428,6 +429,12 @@ build_corpus() {
         skipped "java is not installed"
         return
     fi
+    # The acceptance tables of XRechnung run the XML Schema step of the KoSIT
+    # scenarios with xmllint (cargo xtask reads $XMLLINT, else xmllint).
+    if [ "$name" = xrechnung ] && ! command -v "${XMLLINT:-xmllint}" >/dev/null 2>&1; then
+        skipped "xmllint is not installed"
+        return
+    fi
     "${JAVA:-java}" -version 2>&1 | head -n 1
     if [ -n "${SAXON_JAR:-}" ]; then
         echo "using SAXON_JAR=$SAXON_JAR (checksum verified by xtask)"
@@ -447,15 +454,17 @@ build_corpus() {
 # corpus/<rule set>/). The fetch script downloads the pinned inputs into
 # target/ (checksums verified), then `cargo xtask <family>` extracts the
 # cases, runs Saxon-HE with every stylesheet, writes the acceptance table
-# and cross-checks the goldens with the expectations (XML Mutate, accepted
-# documents) against the committed records (build_corpus), then the
+# (for XRechnung with the XML Schema step of the KoSIT scenarios, run with
+# xmllint) and cross-checks the goldens with the expectations (XML Mutate,
+# accepted documents) against the committed records (build_corpus), then the
 # equivalence test of the engine on the corpus (tests/<family>_equivalence.rs
 # of einvoice-xslt-exec, required), then xmllint (libxml2) and einvoice-xsd on
 # every case of the family's CII corpus against the CII D16B schemas
 # (fetched_cii_corpora_agree_with_xmllint in tests/oracle.rs of einvoice-xsd,
 # required: every difference must be explained).
-# Without Java or without network access (and nothing cached yet),
-# SKIPPED, except in CI, where it fails; so is the xmllint run without xmllint.
+# Without Java or without network access (and nothing cached yet), or for
+# XRechnung without xmllint, SKIPPED, except in CI, where it fails; so is the
+# xmllint run without xmllint.
 #   fetched_family NAME SCRIPT CII_CORPUS
 fetched_family() {
     local name=$1 script=$2 cii=$3 status=0

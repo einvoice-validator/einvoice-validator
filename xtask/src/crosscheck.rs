@@ -357,8 +357,14 @@ pub(crate) fn report(root: &Path, rule_set: &RuleSet) -> Result<(String, bool)> 
         ));
     }
     if rule_set.acceptance.is_some() {
+        // With KoSIT scenarios, the schema of the scenario (xmllint) must accept
+        // them too.
+        let by = match rule_set.acceptance.as_ref().map(|a| &a.profiles) {
+            Some(crate::ruleset::Profiles::KositScenarios { .. }) => "Saxon and xmllint",
+            _ => "Saxon",
+        };
         parts.push(format!(
-            "{} accepted documents, {} accepted by Saxon, {} rejected",
+            "{} accepted documents, {} accepted by {by}, {} rejected",
             summary.accepted_cases,
             summary.agreeing_accepted_cases,
             summary.accepted_cases - summary.agreeing_accepted_cases

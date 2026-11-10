@@ -14,7 +14,10 @@
 //! The XRechnung bundles select by scenario, as the KoSIT validator runs its
 //! configuration: the scenario each document matches (by the `match` expressions, which
 //! the bundles evaluate with the engine and xtask on its own) must be the table's, the
-//! stylesheets that ran those of the scenario, compared with their goldens, and the
+//! stylesheets that ran those of the scenario, compared with their goldens, the schema
+//! errors there exactly when xmllint does not find the document valid against the schema
+//! of the scenario, as the configuration ships it (the table's `schema`), but for the
+//! differences listed with their cause in `tests/schema-disagreements.tsv`, and the
 //! verdict the configuration's (the table's `verdict`): a document that matches no
 //! scenario, or several, is invalid and nothing runs on it.
 //!
@@ -30,7 +33,7 @@
 
 mod common;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use common::{Golden, MutationCase, check_document, golden_of, join, run_env, workspace_root};
@@ -546,10 +549,12 @@ fn check_documents(
 /// [`check_documents`] for a bundle that selects by scenario (XRechnung): for each case,
 /// the scenario of the document must be the table's (`-` and `several: ...`: none), the
 /// stylesheets that ran those of that scenario, in its order, their findings those of
-/// their goldens, the status the one their levels give, and the verdict that of the
-/// configuration (the table's `verdict`, with the schema errors: invalid with any). A
-/// document without a scenario is invalid, without findings, schema errors or stylesheet
-/// errors. The problems, and a summary.
+/// their goldens, the status the one their levels give, the schema errors there exactly
+/// when xmllint does not find the document valid (the table's `schema`) but for the
+/// differences documented in [`SCHEMA_DISAGREEMENTS`], each of which must occur, and the
+/// verdict that of the configuration (the table's `verdict`). A document without a
+/// scenario is invalid, without findings, schema errors or stylesheet errors. The
+/// problems, and a summary.
 fn check_selected(
     name: &str,
     manifest: &RuleSet,
@@ -560,6 +565,8 @@ fn check_selected(
     acceptance: &Acceptance,
 ) -> (Vec<String>, String) {
     let mut found = Vec::new();
+    let documented = documented_schema_disagreements(name);
+    let mut schema_differences = HashSet::new();
     let (mut valid, mut invalid, mut errors, mut unmatched) = (0, 0, 0, 0);
     for (case, document) in cases.iter().zip(documents) {
         assert_eq!(document.get("path").str(), Some(case.input.as_str()));
@@ -586,11 +593,30 @@ fn check_selected(
                 manifest,
                 stylesheets,
                 goldens,
+                &mut schema_differences,
+            ));
+        }
+    }
+    for id in &schema_differences {
+        if !documented.contains(id) {
+            found.push(format!(
+                "{id}: the schema differs from xmllint (the table's schema {:?}), not in {SCHEMA_DISAGREEMENTS}",
+                acceptance
+                    .get(id)
+                    .map_or("", |table| column(table, "schema"))
+            ));
+        }
+    }
+    for id in &documented {
+        if !schema_differences.contains(id) {
+            found.push(format!(
+                "{id}: in {SCHEMA_DISAGREEMENTS}, but the schema agrees with xmllint"
             ));
         }
     }
     let summary = format!(
-        "{valid} valid, {invalid} invalid ({unmatched} without a scenario), {errors} stopped by an error"
+        "{valid} valid, {invalid} invalid ({unmatched} without a scenario), {errors} stopped by an error; {} documented schema differences with xmllint",
+        schema_differences.len()
     );
     (found, summary)
 }
@@ -668,6 +694,7 @@ fn check_matched(
     manifest: &RuleSet,
     stylesheets: &[(&str, &str)],
     goldens: &[(&str, &str)],
+    schema_differences: &mut HashSet<String>,
 ) -> Vec<String> {
     let expected = column(table, "scenario");
     // Stopped by a stylesheet error, there is no report: the scenario is the table's,
@@ -709,15 +736,29 @@ fn check_matched(
         })
         .collect();
     let mut found = check_document(id, document, &run_goldens, Some(&rejecting));
+    // The schema step: the bundle's schema finds errors exactly when xmllint, on the
+    // schema of the scenario as the configuration ships it, does not find the document
+    // valid (the table's `schema`); a difference is checked against the documented ones
+    // by check_selected.
+    let schema_errors = document.get("counts").get("schema_errors").number();
+    let reference = column(table, "schema");
+    if !matches!(reference, "valid" | "invalid" | "malformed") {
+        return vec![format!("{id}: table schema verdict {reference:?}")];
+    }
+    if (schema_errors > 0) != (reference != "valid") {
+        schema_differences.insert(id.to_owned());
+        // check_document has compared the status with the goldens and the schema
+        // errors of the bundle.
+        return found;
+    }
     // The verdict of the configuration.
     let status = document.get("status").str().unwrap_or("");
-    let schema_errors = document.get("counts").get("schema_errors").number();
     let verdict = column(table, "verdict");
-    let expected_status = match (verdict, schema_errors) {
-        (_, 1..) | ("reject", 0) => "invalid",
-        ("accept", 0) => "valid",
-        ("error", 0) => "error",
-        (other, _) => return vec![format!("{id}: table verdict {other:?}")],
+    let expected_status = match verdict {
+        "reject" => "invalid",
+        "accept" => "valid",
+        "error" => "error",
+        other => return vec![format!("{id}: table verdict {other:?}")],
     };
     if status != expected_status {
         found.push(format!(
@@ -725,4 +766,37 @@ fn check_matched(
         ));
     }
     found
+}
+
+/// The XML Schema verdicts on which a bundle that selects by scenario differs from
+/// xmllint on the schema of the scenario (the table's `schema`), relative to the
+/// workspace root: one per line, the bundle, the case id in the acceptance table, and the
+/// cause.
+const SCHEMA_DISAGREEMENTS: &str = "crates/einvoice-cli/tests/schema-disagreements.tsv";
+
+/// The cases of [`SCHEMA_DISAGREEMENTS`] for a bundle.
+fn documented_schema_disagreements(bundle: &str) -> HashSet<String> {
+    let text = std::fs::read_to_string(join(&workspace_root(), SCHEMA_DISAGREEMENTS)).unwrap();
+    let mut lines = text.lines().filter(|l| !l.starts_with('#'));
+    assert_eq!(lines.next(), Some("bundle\tcase\texplanation"));
+    let mut out = HashSet::new();
+    for line in lines {
+        let columns: Vec<&str> = line.split('\t').collect();
+        assert!(
+            columns.len() == 3 && columns.iter().all(|c| !c.trim().is_empty()),
+            "{SCHEMA_DISAGREEMENTS}: {line}"
+        );
+        assert!(
+            BUNDLES.iter().any(|(name, ..)| *name == columns[0]),
+            "{SCHEMA_DISAGREEMENTS}: no bundle {}",
+            columns[0]
+        );
+        if columns[0] == bundle {
+            assert!(
+                out.insert(columns[1].to_owned()),
+                "{SCHEMA_DISAGREEMENTS}: {line}"
+            );
+        }
+    }
+    out
 }

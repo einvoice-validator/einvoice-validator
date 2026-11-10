@@ -36,8 +36,8 @@ tracked tree, then checks them:
    Saxon-HE with both stylesheets on every case (`golden-cen/`, `golden-xrechnung/`),
    cross-checks the goldens with the expectations against `disagreements.tsv`, writes
    `acceptance.tsv` (the scenario of each case, whether the findings of each stylesheet reject
-   it as the KoSIT validator reads them, and the verdict of the configuration, see
-   `../README.md`), checks the scenarios of the bundle (its `[[scenario]]` tables) against
+   it as the KoSIT validator reads them, the verdict of the XML schema of its scenario, run
+   with xmllint, and the verdict of the configuration, see `../README.md`), checks the scenarios of the bundle (its `[[scenario]]` tables) against
    `source/configuration/scenarios.xml`, and writes `complete.txt`.
 3. The equivalence test of the engine, `tests/xrechnung_equivalence.rs` of `crates/einvoice-xslt-exec`
    (required by `scripts/check.sh xrechnung`), runs every stylesheet on every case and mutation

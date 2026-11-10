@@ -11,8 +11,9 @@
 //!   `--format json --jobs N`, with the built-in rule set (`cen-ubl` with the
 //!   UBL 2.1 schema, `cen-cii` with the CII D16B schema) or a bundle of the rule
 //!   set's stylesheets and the files they read; the bundle of a UBL rule set
-//!   names the UBL 2.1 schema, so that the tool validates as it does for its
-//!   users, the XML schema included. In
+//!   names the UBL 2.1 schema, and that of XRechnung CII the CII D16B schema,
+//!   so that the tool validates as it does for its users, the XML schema
+//!   included. In
 //!   that run, a stylesheet that stops with a dynamic error on a document
 //!   without schema errors ends the document's validation: the stylesheets
 //!   after it do not run on it;
@@ -140,7 +141,7 @@ pub(crate) const TARGETS: &[Target] = &[
         rule_set: &ruleset::XRECHNUNG_CII,
         family: Some(&ruleset::XRECHNUNG),
         builtin: None,
-        schema: None,
+        schema: Some("cii-d16b"),
     },
     Target {
         key: "fr-ctc-cii",

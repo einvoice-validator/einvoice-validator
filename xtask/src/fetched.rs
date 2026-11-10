@@ -23,6 +23,7 @@ use crate::crosscheck;
 use crate::oracle;
 use crate::ruleset::{Family, Origin, RuleSet};
 use crate::util::{self, Error, Result};
+use crate::xmllint;
 
 /// The stamp of a complete cache, relative to the corpus directory.
 pub(crate) const STAMP: &str = "complete.txt";
@@ -187,7 +188,11 @@ pub(crate) fn run(
 
         // What the reference validator makes of the goldens, case by case, and
         // the levels of the bundle the fetch script wrote.
-        let _ = writeln!(out, "{}", acceptance::write_table(root, rule_set)?);
+        let _ = writeln!(
+            out,
+            "{}",
+            acceptance::write_table(root, rule_set, &xmllint::Xmllint::from_env())?
+        );
         if let Some(checked) = acceptance::check_bundle(root, rule_set)? {
             let _ = writeln!(out, "{checked}");
         }
