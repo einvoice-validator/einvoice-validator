@@ -591,7 +591,12 @@ fn whole_job(report: &Report, threads: usize, out: &mut String) {
         let same_run = target.run(Tool::EngineSameWork, threads);
         let same = target.same_work(threads);
         let saxon = target.run(Tool::Saxon, threads);
-        let saxon_jvm = saxon.and_then(ToolRun::in_jvm).map(|s| s.median);
+        // Saxon-HE's own timings are given on one thread only: elsewhere
+        // the totals are complete without them.
+        let saxon_jvm = saxon
+            .and_then(ToolRun::in_jvm)
+            .map(|s| s.median)
+            .or((!in_jvm).then_some(Duration::ZERO));
         documents += target.documents;
         stylesheets += target.stylesheets;
         for (total, value) in totals.iter_mut().zip([
@@ -1396,6 +1401,47 @@ mod tests {
         ] {
             assert!(text.contains(expected), "missing {expected:?} in:\n{text}");
         }
+    }
+
+    /// On several threads, where Saxon-HE's own timings are not given, the
+    /// whole-corpus table still ends with the totals of the other columns.
+    #[test]
+    fn totals_on_several_threads() {
+        let summary = Outcome::Engine(Summary {
+            documents: 100,
+            valid: 10,
+            invalid: 85,
+            errors: 5,
+        });
+        let saxon = Outcome::Saxon { failed: 5 };
+        let mut report = report();
+        report.threads = vec![1, 8];
+        report.targets[0].runs.extend([
+            run(Tool::Engine, 8, &[100, 90, 110], 30 * 1024, summary),
+            run(Tool::EngineSameWork, 8, &[80, 80, 80], 20 * 1024, summary),
+            run(Tool::Saxon, 8, &[700, 600, 800], 400 * 1024, saxon),
+        ]);
+        report.targets[1].runs.extend([
+            run(Tool::Engine, 8, &[50, 50, 50], 10 * 1024, summary),
+            run(Tool::Saxon, 8, &[500, 500, 500], 200 * 1024, saxon),
+        ]);
+        let text = markdown(&report);
+        let eight = text
+            .split_once("### Whole corpus, 8 threads")
+            .map(|(_, rest)| rest)
+            .unwrap();
+        for expected in [
+            "| CEN UBL | 100 | 1 | 0.100 s (0.090–0.110) | 0.080 s (0.080–0.080) | 0.700 s (0.600–0.800) | 7.0× | 8.8× |",
+            "| **All** | **150** | **3** | **0.150 s** | **0.130 s** | **1.20 s** | **8.0×** | **9.2×** |",
+        ] {
+            assert!(
+                eight.contains(expected),
+                "missing {expected:?} in:\n{eight}"
+            );
+        }
+        assert!(text.contains(
+            "| **All** | **150** | **3** | **0.600 s** | **0.400 s** | **2.50 s** | **1.25 s** |"
+        ));
     }
 
     #[test]
