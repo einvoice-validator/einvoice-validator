@@ -206,8 +206,8 @@ pub(crate) struct CompiledTemplate {
 /// can.
 fn has_tail_call(body: &[Inst]) -> bool {
     match body.last() {
-        Some(Inst::CallTemplate { .. }) => true,
-        Some(Inst::Choose { whens, otherwise }) => {
+        Some(Inst::CallTemplate(_)) => true,
+        Some(Inst::Choose(CompiledChoose { whens, otherwise })) => {
             whens.iter().any(|w| has_tail_call(&w.body)) || has_tail_call(otherwise)
         }
         _ => false,
@@ -244,31 +244,16 @@ pub(crate) enum AvtItem {
 /// An instruction of a sequence constructor.
 #[derive(Debug)]
 pub(crate) enum Inst {
-    ApplyTemplates {
-        line: u32,
-        select: Box<CompiledExpr>,
-        mode: ModeRef,
-        params: Vec<WithParam>,
-    },
-    NextMatch {
-        line: u32,
-        params: Vec<WithParam>,
-    },
-    CallTemplate {
-        line: u32,
-        template: usize,
-        params: Vec<WithParam>,
-    },
+    // The instructions on the path of a recursion through the templates hold their parts
+    // in a struct of their own, which `Runtime::instruction` passes whole to the function
+    // that runs it: a debug build keeps every binding of every arm of a match on the
+    // stack, and that function is part of every level of the recursion.
+    ApplyTemplates(CompiledApplyTemplates),
+    NextMatch(CompiledNextMatch),
+    CallTemplate(CompiledCallTemplate),
     /// `xsl:choose`, and `xsl:if` as a choose with one branch.
-    Choose {
-        whens: Vec<When>,
-        otherwise: Vec<Inst>,
-    },
-    ForEach {
-        line: u32,
-        select: Box<CompiledExpr>,
-        body: Vec<Inst>,
-    },
+    Choose(CompiledChoose),
+    ForEach(CompiledForEach),
     Variable(Box<Binding>),
     Sequence {
         line: u32,
@@ -299,13 +284,8 @@ pub(crate) enum Inst {
         /// `None`: nodes of the context node's kind and name.
         count: Option<CountPattern>,
     },
-    Element {
-        line: u32,
-        name: Arc<QName>,
-        namespaces: Arc<[NamespaceBinding]>,
-        attributes: Vec<(Arc<QName>, CompiledAvt)>,
-        body: Vec<Inst>,
-    },
+    /// A literal result element.
+    Element(CompiledElement),
     /// `xsl:copy`.
     Copy {
         line: u32,
@@ -344,6 +324,55 @@ pub(crate) enum Inst {
         terminate: Option<CompiledAvt>,
         body: Vec<Inst>,
     },
+}
+
+/// `xsl:apply-templates`.
+#[derive(Debug)]
+pub(crate) struct CompiledApplyTemplates {
+    pub(crate) line: u32,
+    pub(crate) select: Box<CompiledExpr>,
+    pub(crate) mode: ModeRef,
+    pub(crate) params: Vec<WithParam>,
+}
+
+/// `xsl:next-match`.
+#[derive(Debug)]
+pub(crate) struct CompiledNextMatch {
+    pub(crate) line: u32,
+    pub(crate) params: Vec<WithParam>,
+}
+
+/// `xsl:call-template`.
+#[derive(Debug)]
+pub(crate) struct CompiledCallTemplate {
+    pub(crate) line: u32,
+    pub(crate) template: usize,
+    pub(crate) params: Vec<WithParam>,
+}
+
+/// `xsl:choose`, and `xsl:if` as a choose with one branch.
+#[derive(Debug)]
+pub(crate) struct CompiledChoose {
+    pub(crate) whens: Vec<When>,
+    pub(crate) otherwise: Vec<Inst>,
+}
+
+/// `xsl:for-each`.
+#[derive(Debug)]
+pub(crate) struct CompiledForEach {
+    pub(crate) line: u32,
+    pub(crate) select: Box<CompiledExpr>,
+    pub(crate) body: Vec<Inst>,
+}
+
+/// A literal result element.
+#[derive(Debug)]
+pub(crate) struct CompiledElement {
+    pub(crate) line: u32,
+    pub(crate) name: Arc<QName>,
+    pub(crate) namespaces: Arc<[NamespaceBinding]>,
+    pub(crate) attributes: Vec<(Arc<QName>, CompiledAvt)>,
+    pub(crate) body: Vec<Inst>,
 }
 
 /// A branch of `xsl:choose` (`xsl:when`), or `xsl:if`: an error in its test is
@@ -827,10 +856,10 @@ fn for_each_body(inst: &Inst, f: &mut dyn FnMut(&[Inst])) {
         }
     };
     match inst {
-        Inst::ApplyTemplates { params: p, .. }
-        | Inst::NextMatch { params: p, .. }
-        | Inst::CallTemplate { params: p, .. } => params(p, f),
-        Inst::Choose { whens, otherwise } => {
+        Inst::ApplyTemplates(CompiledApplyTemplates { params: p, .. })
+        | Inst::NextMatch(CompiledNextMatch { params: p, .. })
+        | Inst::CallTemplate(CompiledCallTemplate { params: p, .. }) => params(p, f),
+        Inst::Choose(CompiledChoose { whens, otherwise }) => {
             for w in whens {
                 f(&w.body);
             }
@@ -841,11 +870,11 @@ fn for_each_body(inst: &Inst, f: &mut dyn FnMut(&[Inst])) {
                 f(body);
             }
         }
-        Inst::ForEach { body, .. }
+        Inst::ForEach(CompiledForEach { body, .. })
         | Inst::ValueOf { body, .. }
         | Inst::Attribute { body, .. }
         | Inst::Comment { body, .. }
-        | Inst::Element { body, .. }
+        | Inst::Element(CompiledElement { body, .. })
         | Inst::Copy { body, .. }
         | Inst::ComputedElement { body, .. }
         | Inst::Namespace { body, .. }
@@ -865,10 +894,10 @@ fn for_each_body_mut<'i>(inst: &'i mut Inst, f: &mut dyn FnMut(&'i mut Vec<Inst>
         }
     };
     match inst {
-        Inst::ApplyTemplates { params: p, .. }
-        | Inst::NextMatch { params: p, .. }
-        | Inst::CallTemplate { params: p, .. } => params(p, f),
-        Inst::Choose { whens, otherwise } => {
+        Inst::ApplyTemplates(CompiledApplyTemplates { params: p, .. })
+        | Inst::NextMatch(CompiledNextMatch { params: p, .. })
+        | Inst::CallTemplate(CompiledCallTemplate { params: p, .. }) => params(p, f),
+        Inst::Choose(CompiledChoose { whens, otherwise }) => {
             for w in whens {
                 f(&mut w.body);
             }
@@ -879,11 +908,11 @@ fn for_each_body_mut<'i>(inst: &'i mut Inst, f: &mut dyn FnMut(&'i mut Vec<Inst>
                 f(body);
             }
         }
-        Inst::ForEach { body, .. }
+        Inst::ForEach(CompiledForEach { body, .. })
         | Inst::ValueOf { body, .. }
         | Inst::Attribute { body, .. }
         | Inst::Comment { body, .. }
-        | Inst::Element { body, .. }
+        | Inst::Element(CompiledElement { body, .. })
         | Inst::Copy { body, .. }
         | Inst::ComputedElement { body, .. }
         | Inst::Namespace { body, .. }
@@ -1479,20 +1508,20 @@ impl Compiler<'_> {
             ApplyMode::Mode(m) => ModeRef::Mode(self.mode_index(m)),
         };
         let params = self.with_params(&apply.params, frame, false);
-        Some(Inst::ApplyTemplates {
+        Some(Inst::ApplyTemplates(CompiledApplyTemplates {
             line: apply.line,
             select: select?,
             mode,
             params,
-        })
+        }))
     }
 
     /// `xsl:next-match`.
     fn next_match(&mut self, next: &NextMatch, frame: &mut Frame) -> Inst {
-        Inst::NextMatch {
+        Inst::NextMatch(CompiledNextMatch {
             line: next.line,
             params: self.with_params(&next.params, frame, false),
-        }
+        })
     }
 
     /// `xsl:call-template`.
@@ -1517,11 +1546,11 @@ impl Compiler<'_> {
             self.error(call.line, message);
             return None;
         }
-        Some(Inst::CallTemplate {
+        Some(Inst::CallTemplate(CompiledCallTemplate {
             line: call.line,
             template,
             params: self.with_params(&call.params, frame, true),
-        })
+        }))
     }
 
     /// `xsl:choose`.
@@ -1534,7 +1563,7 @@ impl Compiler<'_> {
             Some(body) => self.sequence_constructor(body, frame),
             None => Vec::new(),
         };
-        Some(Inst::Choose { whens, otherwise })
+        Some(Inst::Choose(CompiledChoose { whens, otherwise }))
     }
 
     /// `xsl:when`, and `xsl:if` as a `xsl:choose` of one `xsl:when`.
@@ -1557,10 +1586,10 @@ impl Compiler<'_> {
     /// `xsl:if`.
     fn if_instruction(&mut self, i: &If, frame: &mut Frame) -> Option<Inst> {
         let when = self.when(i.line, &i.test, &i.body, frame)?;
-        Some(Inst::Choose {
+        Some(Inst::Choose(CompiledChoose {
             whens: vec![when],
             otherwise: Vec::new(),
-        })
+        }))
     }
 
     /// `xsl:for-each`.
@@ -1569,11 +1598,11 @@ impl Compiler<'_> {
         frame.depth += 1;
         let body = self.sequence_constructor(&f.body, frame);
         frame.depth -= 1;
-        Some(Inst::ForEach {
+        Some(Inst::ForEach(CompiledForEach {
             line: f.line,
             select: select?,
             body,
-        })
+        }))
     }
 
     /// A local `xsl:variable`.
@@ -1766,13 +1795,13 @@ impl Compiler<'_> {
         if !ok {
             return None;
         }
-        Some(Inst::Element {
+        Some(Inst::Element(CompiledElement {
             line: e.line,
             name: self.intern(&e.name),
             namespaces: Arc::clone(&e.namespaces),
             attributes,
             body,
-        })
+        }))
     }
 
     /// A pattern (template `match`, `xsl:number/@count`): global variables only.

@@ -14,6 +14,18 @@ against.
 
 - `scripts/check.sh test` fetches every package first: the licence tests of `einvoice-cli`
   failed on macOS and Windows (#11).
+- A level of recursion through the templates needs less stack, so that the default limits
+  hold on Windows too (#38): there, in a debug build, 551 named templates invoked one inside
+  another used more than the default `max_stack` (1.5 MiB) and ended with a `LIMIT` error.
+  An `xsl:choose` or `xsl:if` that ends a sequence constructor runs its branch in place, a
+  template invocation pushes its frame of variables without a closure, and the instructions
+  that recurse are passed whole to the function that runs them. Measured on x86-64 Linux in a
+  debug build: 1.2 KiB per named template (2.7 before), 2.1 KiB per template rule (2.7), 1.0
+  KiB per built-in rule (1.1); the CEN stylesheet on a document 256 deep needs 550 KiB of
+  stack (715), the Peppol stylesheet 1090 KiB (1421); in a release build, 0.6 KiB per named
+  template (1.0), the others unchanged. `tests/limits.rs` of `einvoice-xslt-exec` measures
+  the stack of a level on every platform the tests run on: less than 3 KiB, and 512 levels
+  within the default `max_stack`.
 ### Changed
 
 - On WebAssembly, `ValidateOptions::max_depth` is capped at `WASM_MAX_DEPTH` (400) and

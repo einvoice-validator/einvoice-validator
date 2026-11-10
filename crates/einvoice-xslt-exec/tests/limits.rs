@@ -338,6 +338,80 @@ fn bounded_recursion_and_the_configurable_limits() {
     });
 }
 
+/// The least `max_stack` with which `executable` transforms `input` (to 16 bytes), the
+/// depth and the nesting not limited: the stack the transformation uses, as the limit
+/// measures it. At most [`DEFAULT_MAX_STACK`].
+fn least_stack(executable: &Executable, input: &str) -> u32 {
+    let runs = |max_stack: u32| {
+        let options = TransformOptions {
+            max_depth: u32::MAX,
+            max_nesting: u32::MAX,
+            max_stack,
+            ..TransformOptions::default()
+        };
+        match executable.transform_with(input, None, &options) {
+            Ok(_) => true,
+            Err(e) if e.limit() == Some(LimitExceeded::Stack { max: max_stack }) => false,
+            Err(e) => panic!("{e}"),
+        }
+    };
+    let (mut low, mut high) = (0, DEFAULT_MAX_STACK);
+    assert!(runs(high), "{input:.80}: more than the default stack");
+    while high - low > 16 {
+        let middle = low + (high - low) / 2;
+        if runs(middle) {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    high
+}
+
+/// The stack a level of recursion through the templates needs, in the build being tested
+/// (debug for `cargo test`), on every platform the tests run on: less than 3 KiB, and 512
+/// levels (the nesting of the Peppol stylesheets on a document [`DEFAULT_MAX_DEPTH`]
+/// deep) within [`DEFAULT_MAX_STACK`]. A level is measured as the difference of the stack
+/// used at two depths, divided by the levels between them: a named template calling
+/// itself (not as a tail call), template rules applied to the children
+/// (`xsl:apply-templates` in a template rule, as the ISO Schematron skeleton writes
+/// them), the built-in rules, and the CEN stylesheet, one level per element level.
+#[test]
+fn the_stack_of_a_level_of_recursion() {
+    on_a_default_stack(|| {
+        let named = prepare(
+            r#"<xsl:template match="/"><r><xsl:call-template name="down"><xsl:with-param name="n" select="xs:integer(/n)"/></xsl:call-template></r></xsl:template>
+<xsl:template name="down"><xsl:param name="n"/><xsl:choose><xsl:when test="$n eq 0"><xsl:value-of select="$n"/></xsl:when><xsl:otherwise><xsl:call-template name="down"><xsl:with-param name="n" select="$n - 1"/></xsl:call-template><xsl:sequence select="()"/></xsl:otherwise></xsl:choose></xsl:template>"#,
+        );
+        let rules = prepare(
+            r#"<xsl:template match="x"><xsl:apply-templates select="@*|*"/></xsl:template>"#,
+        );
+        let built_in =
+            prepare(r#"<xsl:template match="/"><r><xsl:apply-templates/></r></xsl:template>"#);
+        let cen = common::executable(&common::workspace_root()).unwrap();
+        let number = |n: usize| format!("<n>{n}</n>");
+        let elements = |n: usize| nested(n, "");
+        let invoice = |n: usize| deep_invoice(n, n).0;
+        // The stack of a level, from `deepest` levels and half as many.
+        let level = |executable: &Executable, input: &dyn Fn(usize) -> String, deepest: u32| {
+            let half = deepest / 2;
+            let low = least_stack(executable, &input(half as usize));
+            let high = least_stack(executable, &input(deepest as usize));
+            (high - low) / half
+        };
+        let levels = [
+            ("named template", level(&named, &number, 512)),
+            ("template rule", level(&rules, &elements, 512)),
+            ("built-in rule", level(&built_in, &elements, 512)),
+            ("CEN stylesheet", level(&cen, &invoice, DEFAULT_MAX_DEPTH)),
+        ];
+        assert!(
+            levels.iter().all(|&(_, bytes)| bytes < 3 << 10),
+            "{levels:?}"
+        );
+    });
+}
+
 /// A lazy value that refers to another, and so on, is computed inside the one that refers
 /// to it: a parameter passed down a recursion and read only at its end (Saxon passes the
 /// parameters of `xsl:call-template` lazily) is a chain of computations as deep as the

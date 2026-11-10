@@ -112,9 +112,10 @@ the line and column of that element: `Error::Limit` in the library, exit status 
 `einvoice-validate`. `ValidateOptions::max_depth` and `--max-depth N` set another maximum. The
 stylesheets recurse once or twice per element level, so the limit keeps a validation within a
 bounded call stack: at the default maximum, it runs on a thread with the default 2 MiB stack, in
-a debug build too. The stylesheets' template and function invocations are bounded as well, in
-nesting and in the stack they use (`ValidateOptions::max_stack`, 1.5 MiB by default): a rule set
-that recurses without end fails with `Error::Limit` instead of overflowing the stack.
+a debug build too, on Linux, macOS and Windows. The stylesheets' template and function
+invocations are bounded as well, in nesting and in the stack they use
+(`ValidateOptions::max_stack`, 1.5 MiB by default): a rule set that recurses without end fails
+with `Error::Limit` instead of overflowing the stack.
 
 **Deeply nested stylesheets.** A rule-set bundle whose expressions nest deeper than 128 levels,
 or whose instructions nest deeper than 64, is refused when it is loaded rather than overflowing
