@@ -770,7 +770,7 @@ pattern = 'ph-schematron-isosch (?<v>[0-9]+(?:\.[0-9]+)+)'
 [[upstream]]
 name = "Apache Maven"
 severity = "info"
-pinned = "3.9.16"
+pinned = "3.10.0"
 source = "maven"
 group = "org.apache.maven"
 artifact = "apache-maven"

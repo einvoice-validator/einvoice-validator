@@ -22,7 +22,7 @@
 #     with that skeleton as ph-schematron does, with ph-schematron itself, the
 #     reference the Rust compilation is tested against:
 #     ph-schematron-maven-plugin 10.3.1, goal `convert`, engine
-#     iso-schematron, run by Apache Maven 3.9.16 (from Maven Central, SHA-512
+#     iso-schematron, run by Apache Maven 3.10.0 (from Maven Central, SHA-512
 #     checked) with strict checksums and a private local repository, DIR/m2/
 #     (the user's Maven settings and repository are not used), whose copy of
 #     the jar of step 2 must be that jar. Each result must have the SHA-256
@@ -56,8 +56,8 @@ tag=3.0.22
 commit=38d693d71d28d813781323a6ca97324edcc4d239
 archive_sha256=0bec0d84c444fd5afa3a4a2d6462e162afc157560bd100052b7e589bd94ebd13
 cen=1.3.16
-maven=3.9.16
-maven_sha512=831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6
+maven=3.10.0
+maven_sha512=908b1501bfb420bf7c8affb855534a9c407fd6099367bfb9f2f2dcb8e9799102bffb84518cde74c679bd76870247c6528683abdd620581bffa90f95d92d175aa
 plugin=10.3.1
 isosch_sha256=f87dbacccf4a896ca315851107b2099ee210f83418cda6f65e8b1b87e3720bc0
 peppol_xslt_sha256=8c318aad5a3fc1fc69897422e1d2f631d8894069be5ac20e3475c7e6a2b62aeb
@@ -273,15 +273,17 @@ cat >"$work/pom.xml" <<EOF
   </build>
 </project>
 EOF
-# Maven 3.9 downloads through the native HTTP transport of Maven Resolver
-# (selected explicitly, so that the settings below apply): a failed request is
-# retried five times, with an exponential back-off from five seconds, on an
-# I/O error and on the HTTP statuses listed (by default only 429 and 503).
+# Maven 3.10 downloads through the native (Apache HttpClient) HTTP transport of
+# Maven Resolver 2 (selected explicitly, so that the settings below apply): a
+# failed request is retried five times, with an exponential back-off from five
+# seconds, on an I/O error and on the HTTP statuses listed (by default only 429
+# and 503). Resolver 2 reads these settings under aether.transport.http only;
+# the aether.connector.http names of Resolver 1 (Maven 3.9) are ignored.
 maven_retries=(
     -Dmaven.resolver.transport=native
-    -Daether.connector.http.retryHandler.count=5
-    -Daether.connector.http.retryHandler.interval=5000
-    '-Daether.connector.http.retryHandler.serviceUnavailable=429,500,502,503,504'
+    -Daether.transport.http.retryHandler.count=5
+    -Daether.transport.http.retryHandler.interval=5000
+    '-Daether.transport.http.retryHandler.serviceUnavailable=429,500,502,503,504'
 )
 say "compiling with ph-schematron-maven-plugin $plugin (Maven $maven)"
 status=0

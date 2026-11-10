@@ -191,7 +191,7 @@ runs too (`.github/workflows/peppol.yml`):
    SHA-256 and the commit it records, then compiles `rules/sch/PEPPOL-EN16931-UBL.sch` and
    `rules/sch/CEN-EN16931-UBL.sch` with the ISO Schematron skeleton as packaged in ph-schematron
    (ph-schematron-maven-plugin 10.3.1, goal `convert`, engine `iso-schematron`, run by
-   Apache Maven 3.9.16 with strict checksums and a private local repository). Both results must
+   Apache Maven 3.10.0 with strict checksums and a private local repository). Both results must
    have the SHA-256 pinned in the script.
 2. `cargo xtask peppol` extracts the cases as above into
    `target/peppol/peppol-bis-billing-ubl-3.0.22/corpus/`, applies the mutation catalogue to the
