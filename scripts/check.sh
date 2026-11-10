@@ -361,8 +361,11 @@ job_guards() {
 # reasons); then, with both, the encodings other than UTF-8: Saxon-HE and
 # xmllint on the encoding probes of einvoice-xml (its encoding-oracle example:
 # their results must not change, and the decoder must agree with them but for
-# the differences it lists) and on the corpora re-encoded (the encoding-oracle
-# example of einvoice-validator: the results of the documents in UTF-8).
+# the differences it lists; the results are those of the runner of oracle.yml,
+# and outside that environment, those of a reference whose environment differs
+# are listed as differences of the environment) and on the corpora re-encoded
+# (the encoding-oracle example of einvoice-validator: the results of the
+# documents in UTF-8).
 # Without xmllint or Java, that run is SKIPPED, except in CI, where it fails.
 job_oracle() {
     need_toolchain || return 1

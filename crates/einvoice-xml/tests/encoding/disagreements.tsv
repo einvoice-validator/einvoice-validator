@@ -1,32 +1,37 @@
 # Cases where the decoder of this crate does not read a probe as Saxon-HE 12.10 and xmllint
-# (libxml2 2.9.14) both do, with the reason: the reference parsers disagree and the decoder
-# refuses the document, or both read it in an encoding the decoder does not read.
+# both do in the reference environment of expected.tsv (libxml2 2.9.14 built with iconv and
+# ICU, on Ubuntu 24.04; Java 21), with the reason: the reference parsers disagree and the
+# decoder refuses the document, or both read it in an encoding the decoder does not read.
 # tests/encoding.rs fails on any other difference and on any listed case that no longer differs.
 case	reason
 utf16le/bom-decl-utf-8	A UTF-16 byte order mark and a declaration naming UTF-8: xmllint reads UTF-16, Saxon-HE refuses the document. Refused (Error::EncodingMismatch).
 utf16be/bom-decl-utf-8	As utf16le/bom-decl-utf-8.
 utf16le/no-bom-decl-utf-8	As utf16le/bom-decl-utf-8, without a byte order mark (the first bytes are `<?` in UTF-16).
 utf16be/no-bom-decl-utf-8	As utf16le/no-bom-decl-utf-8.
-utf16le/bom-decl-ucs-2	ISO-10646-UCS-2: Saxon-HE reads it as UTF-16, xmllint does not support it. Refused as unsupported.
+utf16le/bom-decl-ucs-2	ISO-10646-UCS-2 after a UTF-16 byte order mark: both read this short document as UTF-16, but not the longer ones: xmllint looks the name up in ICU (iconv does not know it) and decodes what follows its first reads of the file with that converter, refusing the document in little-endian (utf16le/bom-decl-ucs-2-long) and dropping the characters split across two reads in big-endian (utf16be/bom-decl-ucs-2-long), where Saxon-HE reads UTF-16. Refused as unsupported.
 utf16be/bom-decl-ucs-2	As utf16le/bom-decl-ucs-2.
+utf16le/no-bom-decl-ucs-2	As utf16le/bom-decl-ucs-2, without a byte order mark (the first bytes are `<?` in UTF-16).
+utf16be/no-bom-decl-ucs-2	As utf16le/no-bom-decl-ucs-2.
+utf16le/bom-decl-ucs-2-long	ISO-10646-UCS-2 in UTF-16LE, a document longer than the first reads of xmllint: xmllint refuses it, Saxon-HE reads it as UTF-16 (utf16le/bom-decl-utf-16-long: both do under the name UTF-16). Refused as unsupported.
+utf16le/no-bom-decl-ucs-2-long	As utf16le/bom-decl-ucs-2-long, without a byte order mark.
+utf16be/bom-decl-ucs-2-long	ISO-10646-UCS-2 in UTF-16BE, a document longer than the first reads of xmllint: xmllint drops two of the six characters split across two of its reads, Saxon-HE reads them all (utf16be/bom-decl-utf-16-long: both do under the name UTF-16). Refused as unsupported.
+utf16be/no-bom-decl-ucs-2-long	As utf16be/bom-decl-ucs-2-long, without a byte order mark.
+utf16le/bom-decl-ucs-2-short	The name UCS-2 after a UTF-16LE byte order mark: xmllint reads it (iconv knows UCS-2), Saxon-HE refuses it; after a UTF-16BE byte order mark, both refuse it (utf16be/bom-decl-ucs-2-short). Refused as unsupported.
 utf16le/bom-decl-utf16-no-dash	The name UTF16 after a UTF-16LE byte order mark: xmllint reads it, Saxon-HE refuses it. Refused as unsupported.
 utf16be/bom-decl-utf16-no-dash	The name UTF16 after a UTF-16BE byte order mark: both read it, but not in the other byte order (utf16le/bom-decl-utf16-no-dash), so the name is not one the decoder accepts. Refused as unsupported.
 utf16le/bom-high-at-end	An unpaired high surrogate at the end of the document: xmllint ignores it, Saxon-HE refuses the document. Refused (Error::InvalidEncodedBytes).
 utf16be/bom-high-at-end	As utf16le/bom-high-at-end.
 utf16le/bom-odd-length	An odd number of bytes, the last one after the document element: xmllint ignores it, Saxon-HE refuses the document. Refused (Error::InvalidEncodedBytes).
 utf16be/bom-odd-length	As utf16le/bom-odd-length.
-utf8/name-6-unicode-1-1-utf-8	A name of UTF-8 that Saxon-HE accepts and xmllint does not support. Refused as unsupported.
+utf8/name-5-UTF_8	A name of UTF-8 that xmllint accepts through ICU (which ignores case, `-` and `_` in names) and Saxon-HE does not. Refused as unsupported.
 utf8/bom-decl-Shift_JIS-ascii	Shift_JIS, read by both: an encoding the decoder does not read. Refused as unsupported.
 utf8/bom-decl-Shift_JIS-non-ascii	As utf8/bom-decl-Shift_JIS-ascii (both read the bytes after the UTF-8 byte order mark as Shift_JIS).
-latin1/name-13-ISO8859_1	A Java name of ISO-8859-1: Saxon-HE accepts it, xmllint does not support it. Refused as unsupported.
-latin1/name-15-ISO-LATIN-1	A name of ISO-8859-1 that xmllint accepts (iconv) and Saxon-HE does not. Refused as unsupported.
-latin1/name-17-ISO_8859_1	As latin1/name-13-ISO8859_1.
-latin9/name-07-csISOLatin9	A name of ISO-8859-15 that Saxon-HE accepts and xmllint does not support. Refused as unsupported.
-latin9/name-08-L9	As latin9/name-07-csISOLatin9.
+latin1/name-15-ISO-LATIN-1	A name of ISO-8859-1 that xmllint accepts (one of the names libxml2 knows itself) and Saxon-HE does not. Refused as unsupported.
 latin9/name-10-ISO-IR-203	A name of ISO-8859-15 that xmllint accepts (iconv) and Saxon-HE does not. Refused as unsupported.
-latin9/name-11-LATIN0	As latin9/name-07-csISOLatin9.
-latin9/name-12-csISO885915	As latin9/name-07-csISOLatin9.
+latin9/name-12-csISO885915	A name of ISO-8859-15 that Saxon-HE accepts and xmllint does not support (neither iconv nor ICU knows it). Refused as unsupported.
 cp1252/name-07-MS-ANSI	A name of windows-1252 that xmllint accepts (iconv) and Saxon-HE does not. Refused as unsupported.
+cp1252/name-06-x-cp1252	A name of windows-1252 that xmllint accepts through ICU and Saxon-HE does not. Refused as unsupported.
+cp1252/name-08-cp-1252	As cp1252/name-06-x-cp1252.
 cp1252/byte-81	A byte that is no character in windows-1252: Saxon-HE reads U+FFFD in its place, xmllint refuses the document. Refused (Error::InvalidEncodedBytes).
 cp1252/byte-8d	As cp1252/byte-81.
 cp1252/byte-8f	As cp1252/byte-81.
@@ -38,6 +43,7 @@ other/name-Shift_JIS	As latin2/name-00-ISO-8859-2.
 other/name-EUC-JP	As latin2/name-00-ISO-8859-2.
 other/name-ISO-2022-JP	As latin2/name-00-ISO-8859-2.
 other/name-UTF-7	UTF-7: xmllint reads it, Saxon-HE does not support it. Refused as unsupported.
+other/name-x-mac-roman	Mac OS Roman: xmllint reads it through ICU, Saxon-HE does not support it. Refused as unsupported.
 other/name-KOI8-R	As latin2/name-00-ISO-8859-2.
 other/name-GB2312	As latin2/name-00-ISO-8859-2.
 other/name-ISO-8859-16	As latin2/name-00-ISO-8859-2.

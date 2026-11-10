@@ -126,7 +126,7 @@ one when the document starts with `<?`), US-ASCII, ISO-8859-1, ISO-8859-15 and w
 read as xmllint and Saxon-HE read them, the encoding found from the byte order mark, the first
 bytes and the XML declaration (`einvoice_xml::decode`); any other encoding is unsupported (exit
 status `3`, `Error::Unsupported`), and malformed bytes or first bytes that contradict the
-declaration make the document not well-formed. Checked against both references on 743
+declaration make the document not well-formed. Checked against both references on 755
 synthetic documents and on the CEN UBL and CII corpora re-encoded in each of these encodings
 (new after 0.3.0, which read UTF-8 only).
 

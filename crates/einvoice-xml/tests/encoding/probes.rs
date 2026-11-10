@@ -11,6 +11,16 @@ pub(crate) const EXPECTED: &str = "tests/encoding/expected.tsv";
 /// The cases where the decoder differs from the reference parsers, and why.
 pub(crate) const DISAGREEMENTS: &str = "tests/encoding/disagreements.tsv";
 
+/// The environment of xmllint that `expected.tsv` is recorded in, that of the runner of the
+/// `oracle` workflow (GitHub's `ubuntu-24.04`), as the `encoding-oracle` example describes
+/// it: the version of libxml2, the converters it is built with, and the system whose iconv
+/// (glibc) and ICU tables it uses. libxml2 reads a few encodings itself and looks any
+/// other name up in iconv, then in ICU, so the names it accepts depend on all three.
+pub(crate) const REFERENCE_XMLLINT: &str = "libxml 20914 with Iconv ICU ISO8859X, on ubuntu 24.04";
+/// The Java of Saxon-HE 12.10 that `expected.tsv` is recorded with: the XML parser of
+/// Saxon-HE and the encoding names it accepts are the JDK's.
+pub(crate) const REFERENCE_JAVA: &str = "Java 21";
+
 /// The text of the documents that hold a few characters of each kind: two-byte, three-byte
 /// and four-byte in UTF-8.
 const BODY: &str = "<a>\u{e9}\u{20ac}\u{1F600} x</a>";
@@ -50,6 +60,26 @@ fn utf16_with(text: &str, at: usize, inserted: &[u16], big_endian: bool) -> Vec<
     units.extend_from_slice(inserted);
     units.extend(tail);
     utf16_units(&units, big_endian, true)
+}
+
+/// A document in UTF-16 longer than 24000 bytes, its XML declaration naming `encoding`,
+/// whose text is six U+1F600, each split across a multiple of 4000 bytes of the file (its
+/// high surrogate in the two bytes before it), comments filling the rest: xmllint reads a
+/// file 4000 bytes at a time, and decodes them with the converter of the declared encoding
+/// after the first ones.
+fn utf16_across_reads(encoding: &str, big_endian: bool, bom: bool) -> Vec<u8> {
+    let mut units: Vec<u16> = (declaration(encoding) + "<a>").encode_utf16().collect();
+    let before = usize::from(bom);
+    for read in 1..=6 {
+        // The code unit in bytes 4000 read - 2 and 4000 read - 1 of the file.
+        let high = 2000 * read - 1 - before;
+        let fill = high - units.len() - "<!---->".len();
+        units.extend("<!--".encode_utf16());
+        units.extend(std::iter::repeat_n(u16::from(b'x'), fill));
+        units.extend("-->\u{1F600}".encode_utf16());
+    }
+    units.extend("</a>".encode_utf16());
+    utf16_units(&units, big_endian, bom)
 }
 
 /// The names given to each single-byte encoding in an XML declaration, the first one
@@ -186,6 +216,18 @@ pub(crate) fn probes() -> Vec<(String, Vec<u8>)> {
             utf16(&decl("ISO-10646-UCS-2"), big, true),
         );
         add(
+            format!("utf16{e}/bom-decl-ucs-2-short"),
+            utf16(&decl("UCS-2"), big, true),
+        );
+        add(
+            format!("utf16{e}/bom-decl-ucs-2-long"),
+            utf16_across_reads("ISO-10646-UCS-2", big, true),
+        );
+        add(
+            format!("utf16{e}/bom-decl-utf-16-long"),
+            utf16_across_reads("UTF-16", big, true),
+        );
+        add(
             format!("utf16{e}/bom-decl-shift-jis"),
             utf16(&decl("Shift_JIS"), big, true),
         );
@@ -228,6 +270,18 @@ pub(crate) fn probes() -> Vec<(String, Vec<u8>)> {
         add(
             format!("utf16{e}/no-bom-decl-iso-8859-1"),
             utf16(&decl("ISO-8859-1"), big, false),
+        );
+        add(
+            format!("utf16{e}/no-bom-decl-ucs-2"),
+            utf16(&decl("ISO-10646-UCS-2"), big, false),
+        );
+        add(
+            format!("utf16{e}/no-bom-decl-ucs-2-long"),
+            utf16_across_reads("ISO-10646-UCS-2", big, false),
+        );
+        add(
+            format!("utf16{e}/no-bom-decl-utf-16-long"),
+            utf16_across_reads("UTF-16", big, false),
         );
         add(
             format!("utf16{e}/no-bom-decl-without-encoding"),
@@ -604,11 +658,14 @@ impl Outcome {
 /// The lines of `expected.tsv`: id, Saxon-HE's outcome, xmllint's outcome.
 #[must_use]
 pub(crate) fn format_expected(rows: &[(String, Outcome, Outcome)]) -> String {
-    let mut out = String::from(
+    let mut out = format!(
         "# Written by `cargo run -p einvoice-xml --example encoding-oracle -- --write`: what\n\
          # Saxon-HE 12.10 (doc()) and xmllint (libxml2, --xpath 'string(/)') make of each\n\
          # document of tests/encoding/probes.rs: `ok` and the code points of the string value\n\
          # of the document, in hexadecimal, or `refused`. Do not edit by hand.\n\
+         # Reference environment (the runner of the oracle workflow):\n\
+         # xmllint: {REFERENCE_XMLLINT}\n\
+         # Saxon-HE 12.10: {REFERENCE_JAVA}\n\
          case\tsaxon\txmllint\n",
     );
     for (id, saxon, xmllint) in rows {

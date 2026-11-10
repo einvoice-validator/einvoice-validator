@@ -2,6 +2,9 @@
 # Saxon-HE 12.10 (doc()) and xmllint (libxml2, --xpath 'string(/)') make of each
 # document of tests/encoding/probes.rs: `ok` and the code points of the string value
 # of the document, in hexadecimal, or `refused`. Do not edit by hand.
+# Reference environment (the runner of the oracle workflow):
+# xmllint: libxml 20914 with Iconv ICU ISO8859X, on ubuntu 24.04
+# Saxon-HE 12.10: Java 21
 case	saxon	xmllint
 utf16le/bom	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf16le/bom-decl-utf-16	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
@@ -12,7 +15,10 @@ utf16le/bom-decl-other-order	refused	refused
 utf16le/bom-decl-utf-8	refused	ok e9 20ac 1f600 20 78
 utf16le/bom-decl-iso-8859-1	refused	refused
 utf16le/bom-decl-us-ascii	refused	refused
-utf16le/bom-decl-ucs-2	ok e9 20ac 1f600 20 78	refused
+utf16le/bom-decl-ucs-2	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/bom-decl-ucs-2-short	refused	ok e9 20ac 1f600 20 78
+utf16le/bom-decl-ucs-2-long	ok 1f600 1f600 1f600 1f600 1f600 1f600	refused
+utf16le/bom-decl-utf-16-long	ok 1f600 1f600 1f600 1f600 1f600 1f600	ok 1f600 1f600 1f600 1f600 1f600 1f600
 utf16le/bom-decl-shift-jis	refused	refused
 utf16le/bom-decl-unknown	refused	refused
 utf16le/bom-decl-utf16-no-dash	refused	ok e9 20ac 1f600 20 78
@@ -23,6 +29,9 @@ utf16le/no-bom-decl-own-order	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf16le/no-bom-decl-other-order	refused	refused
 utf16le/no-bom-decl-utf-8	refused	ok e9 20ac 1f600 20 78
 utf16le/no-bom-decl-iso-8859-1	refused	refused
+utf16le/no-bom-decl-ucs-2	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/no-bom-decl-ucs-2-long	ok 1f600 1f600 1f600 1f600 1f600 1f600	refused
+utf16le/no-bom-decl-utf-16-long	ok 1f600 1f600 1f600 1f600 1f600 1f600	ok 1f600 1f600 1f600 1f600 1f600 1f600
 utf16le/no-bom-decl-without-encoding	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf16le/no-bom-pi	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf16le/no-bom-element	refused	refused
@@ -51,7 +60,10 @@ utf16be/bom-decl-other-order	refused	refused
 utf16be/bom-decl-utf-8	refused	ok e9 20ac 1f600 20 78
 utf16be/bom-decl-iso-8859-1	refused	refused
 utf16be/bom-decl-us-ascii	refused	refused
-utf16be/bom-decl-ucs-2	ok e9 20ac 1f600 20 78	refused
+utf16be/bom-decl-ucs-2	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/bom-decl-ucs-2-short	refused	refused
+utf16be/bom-decl-ucs-2-long	ok 1f600 1f600 1f600 1f600 1f600 1f600	ok 1f600 1f600 1f600 1f600
+utf16be/bom-decl-utf-16-long	ok 1f600 1f600 1f600 1f600 1f600 1f600	ok 1f600 1f600 1f600 1f600 1f600 1f600
 utf16be/bom-decl-shift-jis	refused	refused
 utf16be/bom-decl-unknown	refused	refused
 utf16be/bom-decl-utf16-no-dash	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
@@ -62,6 +74,9 @@ utf16be/no-bom-decl-own-order	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf16be/no-bom-decl-other-order	refused	refused
 utf16be/no-bom-decl-utf-8	refused	ok e9 20ac 1f600 20 78
 utf16be/no-bom-decl-iso-8859-1	refused	refused
+utf16be/no-bom-decl-ucs-2	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/no-bom-decl-ucs-2-long	ok 1f600 1f600 1f600 1f600 1f600 1f600	ok 1f600 1f600 1f600 1f600
+utf16be/no-bom-decl-utf-16-long	ok 1f600 1f600 1f600 1f600 1f600 1f600	ok 1f600 1f600 1f600 1f600 1f600 1f600
 utf16be/no-bom-decl-without-encoding	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf16be/no-bom-pi	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf16be/no-bom-element	refused	refused
@@ -86,8 +101,8 @@ utf8/name-1-utf-8	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf8/name-2-UTF8	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf8/name-3-utf8	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf8/name-4-Utf-8	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
-utf8/name-5-UTF_8	refused	refused
-utf8/name-6-unicode-1-1-utf-8	ok e9 20ac 1f600 20 78	refused
+utf8/name-5-UTF_8	refused	ok e9 20ac 1f600 20 78
+utf8/name-6-unicode-1-1-utf-8	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf8/bom	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
 utf8/bom-twice	refused	refused
 utf8/bom-character-in-text	ok feff	ok feff
@@ -131,11 +146,11 @@ latin1/name-09-L1	ok 78	ok 78
 latin1/name-10-CP819	ok 78	ok 78
 latin1/name-11-IBM819	ok 78	ok 78
 latin1/name-12-csISOLatin1	ok 78	ok 78
-latin1/name-13-ISO8859_1	ok 78	refused
+latin1/name-13-ISO8859_1	ok 78	ok 78
 latin1/name-14-8859_1	refused	refused
 latin1/name-15-ISO-LATIN-1	refused	ok 78
 latin1/name-16-ISO_8859-1:1987	refused	refused
-latin1/name-17-ISO_8859_1	ok 78	refused
+latin1/name-17-ISO_8859_1	ok 78	ok 78
 latin1/byte-80	ok 80	ok 80
 latin1/byte-81	ok 81	ok 81
 latin1/byte-82	ok 82	ok 82
@@ -277,11 +292,11 @@ latin9/name-03-ISO8859-15	ok 78	ok 78
 latin9/name-04-LATIN-9	ok 78	ok 78
 latin9/name-05-Latin-9	ok 78	ok 78
 latin9/name-06-latin9	ok 78	ok 78
-latin9/name-07-csISOLatin9	ok 78	refused
-latin9/name-08-L9	ok 78	refused
+latin9/name-07-csISOLatin9	ok 78	ok 78
+latin9/name-08-L9	ok 78	ok 78
 latin9/name-09-ISO_8859-15:1998	refused	refused
 latin9/name-10-ISO-IR-203	refused	ok 78
-latin9/name-11-LATIN0	ok 78	refused
+latin9/name-11-LATIN0	ok 78	ok 78
 latin9/name-12-csISO885915	ok 78	refused
 latin9/byte-80	ok 80	ok 80
 latin9/byte-81	ok 81	ok 81
@@ -423,9 +438,9 @@ cp1252/name-02-Windows-1252	ok 78	ok 78
 cp1252/name-03-cp1252	ok 78	ok 78
 cp1252/name-04-CP1252	ok 78	ok 78
 cp1252/name-05-Cp1252	ok 78	ok 78
-cp1252/name-06-x-cp1252	refused	refused
+cp1252/name-06-x-cp1252	refused	ok 78
 cp1252/name-07-MS-ANSI	refused	ok 78
-cp1252/name-08-cp-1252	refused	refused
+cp1252/name-08-cp-1252	refused	ok 78
 cp1252/byte-80	ok 20ac	ok 20ac
 cp1252/byte-81	ok fffd	refused
 cp1252/byte-82	ok 201a	ok 201a
@@ -726,7 +741,7 @@ other/name-UCS-2	refused	refused
 other/name-ISO-10646-UCS-2	refused	refused
 other/name-UTF-32LE	refused	refused
 other/name-ISO-8859-16	ok 78	ok 78
-other/name-x-mac-roman	refused	refused
+other/name-x-mac-roman	refused	ok 78
 other/name-ISO-8859-5	ok 78	ok 78
 other/name-windows-1251	ok 78	ok 78
 other/name-Big5	ok 78	ok 78

@@ -12,6 +12,22 @@ against.
 
 ### Fixed
 
+- The encoding oracle of `einvoice-xml` failed in CI (#42): the encoding names xmllint
+  accepts depend on its environment (libxml2 reads a few encodings itself and looks other
+  names up in iconv, then in ICU, if it is built with it: Ubuntu's libxml2 is, Debian's is
+  not), and its table had been recorded in another one. `tests/encoding/expected.tsv` is now
+  recorded in one reference environment, the runner of the `oracle` workflow (libxml2 2.9.14
+  with iconv and ICU, on Ubuntu 24.04; Java 21), which its header names; the
+  `encoding-oracle` example describes the environment it runs in, checks every result there
+  (and in CI, where the environment must be the reference one), and elsewhere lists the
+  results of a reference whose environment differs as differences of the environment while
+  still checking the other reference. The decoder now reads `unicode-1-1-utf-8`,
+  `ISO8859_1`, `ISO_8859_1`, `csISOLatin9`, `L9` and `LATIN0`, which both references read
+  there as UTF-8, ISO-8859-1 and ISO-8859-15 (every byte checked); `UTF_8`, `x-cp1252`,
+  `cp-1252` and `x-mac-roman`, which only xmllint reads (through ICU), and
+  `ISO-10646-UCS-2`, which xmllint reads as UTF-16 in short documents only (new probes show
+  it refusing longer ones in little-endian, and dropping characters split across its reads
+  in big-endian), stay unsupported, each listed with its reason. 12 probes added (755).
 - `scripts/check.sh test` fetches every package first: the licence tests of `einvoice-cli`
   failed on macOS and Windows (#11).
 - A level of recursion through the templates needs less stack, so that the default limits
@@ -103,7 +119,7 @@ against.
   unsupported (`Error::Unsupported`, exit status 3); malformed bytes, or first bytes that
   contradict the declaration, are not well-formed (`Error::NotXml`, with line and column).
   `einvoice-validator`, `einvoice-xsd` (`Schema::validate_bytes`) and `Syntax::detect` read
-  them. Checked against Saxon-HE 12.10 and xmllint on 743 synthetic documents (the 43 where
+  them. Checked against Saxon-HE 12.10 and xmllint on 755 synthetic documents (the 48 where
   they disagree, or where an encoding is not read, are listed with their reason) and on every
   document of the CEN UBL and CII corpora re-encoded into UTF-16 and each single-byte encoding
   its characters allow: the same report as for the UTF-8 document each time.

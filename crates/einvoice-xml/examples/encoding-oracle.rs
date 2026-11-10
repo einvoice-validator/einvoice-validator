@@ -15,6 +15,22 @@
 //! directory; the SHA-256 of each jar is checked. Java from `$JAVA`, else `java`;
 //! xmllint from `$XMLLINT`, else `xmllint`. Saxon-HE reads each document with `doc()`,
 //! that is with the XML parser it reads source documents with (the JDK's).
+//!
+//! Which encoding names each reference accepts depends on its environment: libxml2 reads
+//! a few encodings itself and looks any other name up in the converters it is built with
+//! (iconv, then ICU), whose tables are the system's; the XML parser of Saxon-HE takes them
+//! from the JDK. The table is recorded in one reference environment, the runner of the
+//! `oracle` workflow, which the header of `expected.tsv` describes (`REFERENCE_XMLLINT` and
+//! `REFERENCE_JAVA` of `tests/encoding/probes.rs`): libxml2 2.9.14 built with iconv and
+//! ICU, on Ubuntu 24.04, and Java 21. The example describes the environment it runs in the
+//! same way: the version of libxml2 and its converters (`xmllint --version`), the system
+//! (`ID` and `VERSION_ID` of `/etc/os-release`) and the version of the Java specification
+//! (`java.specification.version`). In the reference environment, every result must be
+//! the recorded one. Elsewhere, the results of a reference whose environment differs are
+//! not checked: those that differ from the table are listed as differences of the
+//! environment, not as failures; the results of the other reference must still be the
+//! recorded ones. In CI (`$CI` set), the environment must be the reference one, and
+//! `--write` refuses to rewrite the table in any other.
 
 #[path = "../tests/encoding/probes.rs"]
 mod probes;
@@ -23,7 +39,10 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-use probes::{Outcome, compare, format_expected, parse_disagreements, parse_expected};
+use probes::{
+    Outcome, REFERENCE_JAVA, REFERENCE_XMLLINT, compare, format_expected, parse_disagreements,
+    parse_expected,
+};
 use sha2::{Digest, Sha256};
 
 const SAXON_JARS: [(&str, &str); 3] = [
@@ -83,6 +102,28 @@ fn crate_dir() -> &'static Path {
 
 fn run() -> Result<(), String> {
     let write = std::env::args().skip(1).any(|a| a == "--write");
+    let java = std::env::var_os("JAVA").unwrap_or_else(|| "java".into());
+    let xmllint = std::env::var_os("XMLLINT").unwrap_or_else(|| "xmllint".into());
+    let environment = Environment::detect(&java, &xmllint)?;
+    let xmllint_is_reference = environment.xmllint == REFERENCE_XMLLINT;
+    let java_is_reference = environment.java == REFERENCE_JAVA;
+    environment.print(xmllint_is_reference, java_is_reference);
+    if !(xmllint_is_reference && java_is_reference) {
+        let ci = std::env::var_os("CI").is_some_and(|v| !v.is_empty());
+        if ci || write {
+            return Err(format!(
+                "{} is recorded in the reference environment (xmllint: {REFERENCE_XMLLINT}; \
+                 Saxon-HE 12.10: {REFERENCE_JAVA}), {}",
+                probes::EXPECTED,
+                if write {
+                    "and only rewritten in it"
+                } else {
+                    "and checked in it in CI"
+                }
+            ));
+        }
+    }
+
     let probes = probes::probes();
     let work = crate_dir().join("../../target/oracle/einvoice-xml-encoding");
     if work.exists() {
@@ -98,55 +139,43 @@ fn run() -> Result<(), String> {
         let _ = writeln!(index, "file://{}", path.display());
         files.push(path);
     }
-    let saxon = saxon(&work, &index, probes.len())?;
-    let xmllint = std::env::var_os("XMLLINT").unwrap_or_else(|| "xmllint".into());
+    let saxon = saxon(&java, &work, &index, probes.len())?;
     let mut rows = Vec::with_capacity(probes.len());
     for (((id, _), path), saxon) in probes.iter().zip(&files).zip(saxon) {
         rows.push((id.clone(), saxon, xmllint_outcome(&xmllint, path)?));
     }
 
     let expected_path = crate_dir().join(probes::EXPECTED);
-    let written = format_expected(&rows);
-    if write {
-        std::fs::write(&expected_path, &written).map_err(|e| e.to_string())?;
+    // The reference results: those just obtained when the table is rewritten, else the
+    // recorded ones, which those obtained must equal where the environment is the
+    // reference one.
+    let reference = if write {
+        std::fs::write(&expected_path, format_expected(&rows)).map_err(|e| e.to_string())?;
         println!("wrote {}", expected_path.display());
+        rows
     } else {
-        let current = std::fs::read_to_string(&expected_path).map_err(|e| e.to_string())?;
-        let current = parse_expected(&current)?;
-        let mut stale = Vec::new();
-        for row in &rows {
-            if !current.contains(row) {
-                stale.push(format!(
-                    "{}: Saxon-HE {}, xmllint {}",
-                    row.0,
-                    row.1.to_field(),
-                    row.2.to_field()
-                ));
-            }
-        }
-        if !stale.is_empty() || current.len() != rows.len() {
-            return Err(format!(
-                "{} differs from the reference parsers (run with --write):\n{}",
-                expected_path.display(),
-                stale.join("\n")
-            ));
-        }
-        println!("{}: as Saxon-HE 12.10 and xmllint", expected_path.display());
-    }
-    let agree = rows.iter().filter(|(_, s, x)| s == x).count();
+        let recorded = std::fs::read_to_string(&expected_path).map_err(|e| e.to_string())?;
+        let recorded = parse_expected(&recorded)?;
+        check(&rows, &recorded, xmllint_is_reference, java_is_reference)
+            .map_err(|e| format!("{}: {e}", expected_path.display()))?;
+        recorded
+    };
+    let agree = reference.iter().filter(|(_, s, x)| s == x).count();
     println!(
         "{} probes: Saxon-HE and xmllint agree on {agree} ({} read by both, {} refused by both)",
-        rows.len(),
-        rows.iter()
+        reference.len(),
+        reference
+            .iter()
             .filter(|(_, s, x)| s == x && matches!(s, Outcome::Ok(_)))
             .count(),
-        rows.iter()
+        reference
+            .iter()
             .filter(|(_, s, x)| s == x && *s == Outcome::Refused)
             .count(),
     );
     let disagreements = std::fs::read_to_string(crate_dir().join(probes::DISAGREEMENTS))
         .map_err(|e| e.to_string())?;
-    let comparison = compare(&probes, &rows, &parse_disagreements(&disagreements)?);
+    let comparison = compare(&probes, &reference, &parse_disagreements(&disagreements)?);
     println!(
         "this crate: {} read and {} refused as both, {} listed:",
         comparison.read,
@@ -162,16 +191,200 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
+/// Compares the results obtained (`rows`) with the recorded ones, probe by probe: those
+/// of a reference whose environment is the reference one must be equal; those of the
+/// other are listed where they differ, as differences of the environment.
+fn check(
+    rows: &[(String, Outcome, Outcome)],
+    recorded: &[(String, Outcome, Outcome)],
+    xmllint_is_reference: bool,
+    java_is_reference: bool,
+) -> Result<(), String> {
+    let ids = |rows: &[(String, Outcome, Outcome)]| -> Vec<String> {
+        rows.iter().map(|(id, _, _)| id.clone()).collect()
+    };
+    if ids(rows) != ids(recorded) {
+        return Err(format!(
+            "{} probes, {} recorded results, not for the same probes (run with --write in \
+             the reference environment)",
+            rows.len(),
+            recorded.len()
+        ));
+    }
+    let mut failures = Vec::new();
+    let mut environment = Vec::new();
+    for ((id, saxon, xmllint), (_, recorded_saxon, recorded_xmllint)) in rows.iter().zip(recorded) {
+        for (reference, name, here, recorded) in [
+            (java_is_reference, "Saxon-HE", saxon, recorded_saxon),
+            (xmllint_is_reference, "xmllint", xmllint, recorded_xmllint),
+        ] {
+            if here != recorded {
+                let line = format!(
+                    "{id}: {name} {} here, {} recorded",
+                    here.to_field(),
+                    recorded.to_field()
+                );
+                if reference {
+                    failures.push(line);
+                } else {
+                    environment.push(line);
+                }
+            }
+        }
+    }
+    if !environment.is_empty() {
+        println!(
+            "{} results differ from the recorded ones in this environment (differences of \
+             the environment, not checked):",
+            environment.len()
+        );
+        for line in &environment {
+            println!("  {line}");
+        }
+    }
+    if !failures.is_empty() {
+        return Err(format!(
+            "differs from the reference parsers (run with --write in the reference \
+             environment):\n{}",
+            failures.join("\n")
+        ));
+    }
+    let checked: Vec<&str> = [
+        (java_is_reference, "Saxon-HE 12.10"),
+        (xmllint_is_reference, "xmllint"),
+    ]
+    .iter()
+    .filter_map(|&(reference, name)| reference.then_some(name))
+    .collect();
+    if checked.is_empty() {
+        println!("results of neither reference checked (not the reference environment)");
+    } else {
+        println!("results of {} as recorded", checked.join(" and "));
+    }
+    Ok(())
+}
+
+/// The environment of each reference, described as `REFERENCE_XMLLINT` and
+/// `REFERENCE_JAVA` describe the reference one, with details for the log.
+struct Environment {
+    /// The version of libxml2, its converters and the system.
+    xmllint: String,
+    /// The version of the Java specification.
+    java: String,
+    /// The vendor and version of the Java runtime.
+    java_runtime: String,
+}
+
+impl Environment {
+    fn detect(java: &std::ffi::OsStr, xmllint: &std::ffi::OsStr) -> Result<Self, String> {
+        let output = Command::new(xmllint)
+            .arg("--version")
+            .output()
+            .map_err(|e| format!("cannot run {}: {e}", xmllint.display()))?;
+        let text = String::from_utf8_lossy(&output.stderr).into_owned()
+            + &String::from_utf8_lossy(&output.stdout);
+        let version = text
+            .lines()
+            .find_map(|l| l.split_once("using libxml version ").map(|(_, v)| v.trim()))
+            .ok_or_else(|| format!("{} --version: no libxml version", xmllint.display()))?;
+        let features: Vec<&str> = text
+            .lines()
+            .find_map(|l| l.split_once("compiled with:").map(|(_, f)| f))
+            .ok_or_else(|| format!("{} --version: no features", xmllint.display()))?
+            .split_whitespace()
+            .collect();
+        let converters: Vec<&str> = ["Iconv", "ICU", "ISO8859X"]
+            .into_iter()
+            .filter(|c| features.contains(c))
+            .collect();
+        let converters = if converters.is_empty() {
+            "no converter".to_owned()
+        } else {
+            converters.join(" ")
+        };
+        let xmllint = format!("libxml {version} with {converters}, on {}", system());
+
+        let output = Command::new(java)
+            .args(["-XshowSettings:properties", "-version"])
+            .output()
+            .map_err(|e| format!("cannot run {}: {e}", java.display()))?;
+        let text = String::from_utf8_lossy(&output.stderr).into_owned()
+            + &String::from_utf8_lossy(&output.stdout);
+        let property = |name: &str| {
+            text.lines().find_map(|l| {
+                l.trim()
+                    .strip_prefix(name)
+                    .and_then(|rest| rest.trim_start().strip_prefix('='))
+                    .map(|v| v.trim().to_owned())
+            })
+        };
+        let specification = property("java.specification.version")
+            .ok_or_else(|| format!("{}: no java.specification.version", java.display()))?;
+        let java_runtime = format!(
+            "{} {}",
+            property("java.vendor").unwrap_or_default(),
+            property("java.runtime.version").unwrap_or_default()
+        );
+        Ok(Self {
+            xmllint,
+            java: format!("Java {specification}"),
+            java_runtime,
+        })
+    }
+
+    fn print(&self, xmllint_is_reference: bool, java_is_reference: bool) {
+        let reference = |is: bool, which: &str| {
+            if is {
+                " (the reference)".to_owned()
+            } else {
+                format!(" (not the reference: {which})")
+            }
+        };
+        println!(
+            "xmllint: {}{}",
+            self.xmllint,
+            reference(xmllint_is_reference, REFERENCE_XMLLINT)
+        );
+        println!(
+            "Saxon-HE 12.10: {} ({}){}",
+            self.java,
+            self.java_runtime.trim(),
+            reference(java_is_reference, REFERENCE_JAVA)
+        );
+    }
+}
+
+/// The system: `ID` and `VERSION_ID` of `/etc/os-release`, else the name of the OS.
+fn system() -> String {
+    let release = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
+    let field = |name: &str| {
+        release.lines().find_map(|l| {
+            l.strip_prefix(name)
+                .and_then(|v| v.strip_prefix('='))
+                .map(|v| v.trim().trim_matches('"').to_owned())
+        })
+    };
+    match (field("ID"), field("VERSION_ID")) {
+        (Some(id), Some(version)) => format!("{id} {version}"),
+        (Some(id), None) => id,
+        _ => std::env::consts::OS.to_owned(),
+    }
+}
+
 /// Saxon-HE's outcome for each document of the index, in order.
-fn saxon(work: &Path, index: &str, count: usize) -> Result<Vec<Outcome>, String> {
+fn saxon(
+    java: &std::ffi::OsStr,
+    work: &Path,
+    index: &str,
+    count: usize,
+) -> Result<Vec<Outcome>, String> {
     let class_path = saxon_class_path()?;
     let index_path = work.join("index.txt");
     std::fs::write(&index_path, index).map_err(|e| e.to_string())?;
     let stylesheet = work.join("read.xsl");
     std::fs::write(&stylesheet, STYLESHEET).map_err(|e| e.to_string())?;
     let output = work.join("saxon.xml");
-    let java = std::env::var_os("JAVA").unwrap_or_else(|| "java".into());
-    let status = Command::new(&java)
+    let status = Command::new(java)
         .arg("-cp")
         .arg(&class_path)
         .arg("net.sf.saxon.Transform")

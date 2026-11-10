@@ -1,11 +1,14 @@
 //! The decoder (`einvoice_xml::decode`) against the two reference parsers, Saxon-HE 12.10
 //! and xmllint (libxml2 2.9.14), on every document of `encoding/probes.rs`, as
-//! `encoding/expected.tsv` records what they make of each (the `encoding-oracle` example
-//! writes it and checks it against them; this test needs neither). Where both read a
-//! document to the same text, so must the decoder and the reader; where both refuse it,
-//! so must they; where the references differ, the decoder must refuse the document, and
-//! the case must be listed in `encoding/disagreements.tsv` with the reason, as must every
-//! document both read that the decoder refuses (an encoding it does not read).
+//! `encoding/expected.tsv` records what they make of each in their reference environment
+//! (the runner of the `oracle` workflow, which its header describes: the encoding names
+//! xmllint accepts depend on the iconv and ICU of the system, those Saxon-HE accepts on
+//! the JDK). The `encoding-oracle` example writes it and checks it against them; this test
+//! needs neither. Where both read a document to the same text, so must the decoder and
+//! the reader; where both refuse it, so must they; where the references differ, the
+//! decoder must refuse the document, and the case must be listed in
+//! `encoding/disagreements.tsv` with the reason, as must every document both read that
+//! the decoder refuses (an encoding it does not read).
 
 #![cfg(test)]
 

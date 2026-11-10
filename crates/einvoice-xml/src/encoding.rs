@@ -6,6 +6,10 @@
 //! the same way, among those found in e-invoices: UTF-8, UTF-16 (either byte order),
 //! US-ASCII, ISO-8859-1, ISO-8859-15 and windows-1252, each under the names both accept.
 //! Any other encoding is refused as unsupported, rather than read differently from them.
+//! The names both accept are those of their reference environment (libxml2 2.9.14 built
+//! with iconv and ICU, on Ubuntu 24.04, and Java 21), where the encoding oracle of the
+//! crate records them: libxml2 looks most names up in iconv and ICU, and the names it
+//! accepts depend on the tables of the system.
 
 use std::borrow::Cow;
 
@@ -66,6 +70,7 @@ enum Named {
 const NAMES: &[(&str, Named)] = &[
     ("UTF-8", Named::Is(Encoding::Utf8)),
     ("UTF8", Named::Is(Encoding::Utf8)),
+    ("unicode-1-1-utf-8", Named::Is(Encoding::Utf8)),
     ("UTF-16", Named::Utf16),
     ("UTF-16LE", Named::Is(Encoding::Utf16Le)),
     ("UTF-16BE", Named::Is(Encoding::Utf16Be)),
@@ -88,11 +93,16 @@ const NAMES: &[(&str, Named)] = &[
     ("CP819", Named::Is(Encoding::Iso8859_1)),
     ("IBM819", Named::Is(Encoding::Iso8859_1)),
     ("csISOLatin1", Named::Is(Encoding::Iso8859_1)),
+    ("ISO8859_1", Named::Is(Encoding::Iso8859_1)),
+    ("ISO_8859_1", Named::Is(Encoding::Iso8859_1)),
     ("ISO-8859-15", Named::Is(Encoding::Iso8859_15)),
     ("ISO_8859-15", Named::Is(Encoding::Iso8859_15)),
     ("ISO8859-15", Named::Is(Encoding::Iso8859_15)),
     ("LATIN-9", Named::Is(Encoding::Iso8859_15)),
     ("latin9", Named::Is(Encoding::Iso8859_15)),
+    ("csISOLatin9", Named::Is(Encoding::Iso8859_15)),
+    ("L9", Named::Is(Encoding::Iso8859_15)),
+    ("LATIN0", Named::Is(Encoding::Iso8859_15)),
     ("windows-1252", Named::Is(Encoding::Windows1252)),
     ("cp1252", Named::Is(Encoding::Windows1252)),
 ];
@@ -513,11 +523,13 @@ mod tests {
             decode(&[&[0xFF, 0xFE][..], &utf16le(latin)].concat()),
             Err(Error::EncodingMismatch { .. })
         ));
-        let ucs2 = "<?xml version='1.0' encoding='ISO-10646-UCS-2'?><a/>";
-        assert_eq!(
-            decode(&[&[0xFE, 0xFF][..], &utf16be(ucs2)].concat()),
-            Err(Error::UnsupportedEncoding("ISO-10646-UCS-2".to_owned()))
-        );
+        for name in ["ISO-10646-UCS-2", "UCS-2"] {
+            let ucs2 = format!("<?xml version='1.0' encoding='{name}'?><a/>");
+            assert_eq!(
+                decode(&[&[0xFE, 0xFF][..], &utf16be(&ucs2)].concat()),
+                Err(Error::UnsupportedEncoding(name.to_owned()))
+            );
+        }
     }
 
     #[test]
@@ -557,11 +569,13 @@ mod tests {
             decode(&latin1).unwrap(),
             format!("{}<a>\u{e9}\u{80}\u{a4}</a>", decl("ISO-8859-1"))
         );
-        let latin9 = [decl("latin9").as_bytes(), b"<a>\xA4\xBE\xE9</a>"].concat();
-        assert_eq!(
-            decode(&latin9).unwrap(),
-            format!("{}<a>\u{20AC}\u{178}\u{e9}</a>", decl("latin9"))
-        );
+        for name in ["latin9", "L9", "LATIN0", "csISOLatin9"] {
+            let latin9 = [decl(name).as_bytes(), b"<a>\xA4\xBE\xE9</a>"].concat();
+            assert_eq!(
+                decode(&latin9).unwrap(),
+                format!("{}<a>\u{20AC}\u{178}\u{e9}</a>", decl(name))
+            );
+        }
         let cp1252 = [decl("Windows-1252").as_bytes(), b"<a>\x80\x9F\xFF</a>"].concat();
         assert_eq!(
             decode(&cp1252).unwrap(),
@@ -630,6 +644,13 @@ mod tests {
         assert_eq!(named("Latin1"), Named::Is(Encoding::Iso8859_1));
         assert_eq!(named("WINDOWS-1252"), Named::Is(Encoding::Windows1252));
         assert_eq!(named("utf-16"), Named::Utf16);
+        assert_eq!(named("ISO-10646-UCS-2"), Named::Other);
+        assert_eq!(named("UCS-2"), Named::Other);
+        assert_eq!(named("l9"), Named::Is(Encoding::Iso8859_15));
+        assert_eq!(named("iso8859_1"), Named::Is(Encoding::Iso8859_1));
+        assert_eq!(named("UNICODE-1-1-UTF-8"), Named::Is(Encoding::Utf8));
+        assert_eq!(named("UTF_8"), Named::Other);
+        assert_eq!(named("x-cp1252"), Named::Other);
         assert_eq!(named("Shift_JIS"), Named::Other);
         assert_eq!(named("ISO-8859-2"), Named::Other);
         assert_eq!(named(""), Named::Invalid);
