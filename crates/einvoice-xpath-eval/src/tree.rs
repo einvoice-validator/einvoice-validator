@@ -887,6 +887,19 @@ impl Node {
         out
     }
 
+    /// Whether the node is an element with namespace bindings of its own (given to it,
+    /// or declared in the text it was parsed from). An element without has the
+    /// [namespaces in scope](Node::namespaces_in_scope) of its parent.
+    #[must_use]
+    pub fn has_own_namespaces(&self) -> bool {
+        self.kind() == NodeKind::Element
+            && self
+                .doc
+                .namespaces
+                .binary_search_by_key(&self.index, |(e, _)| *e)
+                .is_ok()
+    }
+
     /// The string value (XDM `dm:string-value`).
     #[must_use]
     pub fn string_value(&self) -> Cow<'_, str> {

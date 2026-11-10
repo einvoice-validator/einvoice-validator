@@ -77,26 +77,34 @@ pub(crate) trait Sink {
 /// recursion: its depth is only bounded by the document's.
 pub(crate) fn copy_node(sink: &mut dyn Sink, node: &Node) -> Result<()> {
     // The document node or elements being copied, innermost last, each with its children
-    // not copied yet, and whether it is an element (to close).
-    let mut open: Vec<(Axis, bool)> = Vec::new();
+    // not copied yet, and for an element (to close) its namespaces in scope.
+    let mut open: Vec<(Axis, Option<Arc<[NamespaceBinding]>>)> = Vec::new();
     let mut next = Some(node.clone());
     loop {
         if let Some(node) = next.take() {
             match node.kind() {
                 NodeKind::Document => {
                     sink.start_document()?;
-                    open.push((node.children(), false));
+                    open.push((node.children(), None));
                 }
                 NodeKind::Element => {
                     let Some(name) = node.name() else {
                         return err("INTERNAL", "element without name");
                     };
-                    let namespaces: Arc<[NamespaceBinding]> = node.namespaces_in_scope().into();
+                    // Those of the parent element, unless it has bindings of its own.
+                    let inherited = open
+                        .last()
+                        .and_then(|(_, parent)| parent.as_ref())
+                        .filter(|_| !node.has_own_namespaces());
+                    let namespaces: Arc<[NamespaceBinding]> = match inherited {
+                        Some(parent) => Arc::clone(parent),
+                        None => node.namespaces_in_scope().into(),
+                    };
                     sink.start_copied_element(name, &namespaces)?;
                     for attribute in node.attributes() {
                         copy_attribute(sink, &attribute)?;
                     }
-                    open.push((node.children(), true));
+                    open.push((node.children(), Some(namespaces)));
                 }
                 NodeKind::Attribute => copy_attribute(sink, &node)?,
                 NodeKind::Text => sink.text(&node.string_value())?,
@@ -114,7 +122,7 @@ pub(crate) fn copy_node(sink: &mut dyn Sink, node: &Node) -> Result<()> {
             Some(child) => next = Some(child),
             None => {
                 if let Some((_, element)) = open.pop() {
-                    if element {
+                    if element.is_some() {
                         sink.end_element()?;
                     } else {
                         sink.end_document()?;
@@ -229,6 +237,41 @@ impl StartTag {
         }
     }
 
+    /// The element's own namespace nodes when they are exactly those it was given: no
+    /// `xsl:namespace` added any, and namespace fixup ([`StartTag::fix`]) adds none and
+    /// renames nothing, as the namespace nodes given bind the prefix of the element and
+    /// that of each attribute in a namespace already. `None` otherwise. Allocates
+    /// nothing: the common case of a literal result element or a copy, whose names are
+    /// bound by its own namespace nodes.
+    fn given_unchanged(&self) -> Option<&Arc<[NamespaceBinding]>> {
+        if !self.added.is_empty() {
+            return None;
+        }
+        let bound = |prefix: Option<&str>| {
+            self.given
+                .iter()
+                .find(|b| b.prefix.as_deref() == prefix)
+                .map(|b| b.uri.as_str())
+        };
+        if self.name.prefix.as_deref() != Some("xml")
+            && bound(self.name.prefix.as_deref())
+                != Some(self.name.namespace.as_deref().unwrap_or(""))
+        {
+            return None;
+        }
+        for (attribute, _) in &self.attributes {
+            let Some(namespace) = attribute.namespace.as_deref() else {
+                continue;
+            };
+            match attribute.prefix.as_deref() {
+                Some("xml") => {}
+                Some(prefix) if bound(Some(prefix)) == Some(namespace) => {}
+                _ => return None,
+            }
+        }
+        Some(&self.given)
+    }
+
     /// Namespace fixup, as Saxon-HE 12.10 does it when the start tag is complete: the
     /// element's name, then each attribute's, gets a namespace node for its prefix unless
     /// the element's own namespace nodes (those it was given, those added, those fixup
@@ -327,6 +370,10 @@ struct Open {
     tag: String,
     /// How many entries of the namespace scope this element added.
     bindings: usize,
+    /// The namespace nodes the element was given, when they are its own namespace nodes
+    /// ([`StartTag::given_unchanged`]): each is bound as it is in the scope after its
+    /// start tag, and so for a child given the same set.
+    given: Option<Arc<[NamespaceBinding]>>,
     has_elements: bool,
     has_text: bool,
 }
@@ -499,6 +546,20 @@ impl<T: Target> XmlWriter<T> {
             .map(|(_, uri)| uri.as_str())
     }
 
+    /// Whether each of the namespace nodes `given` is bound as it is in the scope, so
+    /// that a start tag with these as its own namespace nodes declares none. Without a
+    /// look at the scope when the parent element was given the same set.
+    fn all_bound(&self, given: &Arc<[NamespaceBinding]>) -> bool {
+        let parent_given = self.open.last().and_then(|o| o.given.as_ref());
+        if parent_given.is_some_and(|p| Arc::ptr_eq(p, given)) {
+            return true;
+        }
+        given.iter().all(|b| {
+            b.prefix.as_deref() == Some("xml")
+                || self.bound(b.prefix.as_deref()).unwrap_or("") == b.uri
+        })
+    }
+
     /// Writes the pending start tag, its namespaces fixed up ([`StartTag::fix`]): the
     /// declarations of the namespace nodes not in scope yet, sorted by prefix, then the
     /// attributes. Bindings in scope that the element lacks are not undeclared (Saxon's
@@ -507,6 +568,16 @@ impl<T: Target> XmlWriter<T> {
         let Some(pending) = self.pending.take() else {
             return Ok(());
         };
+        let given = pending.given_unchanged().map(Arc::clone);
+        if given.as_ref().is_some_and(|g| self.all_bound(g)) {
+            // Fixup would change nothing, and each namespace node of the element is in
+            // scope already: no declaration, nothing to copy.
+            let StartTag {
+                name, attributes, ..
+            } = pending;
+            self.write_start_tag(&name, &attributes, &[], given);
+            return Ok(());
+        }
         let (name, attributes, own) = pending.fix()?;
         let mut declarations: Vec<Binding> = own
             .into_iter()
@@ -516,6 +587,19 @@ impl<T: Target> XmlWriter<T> {
             })
             .collect();
         declarations.sort_by(declaration_order);
+        self.write_start_tag(&name, &attributes, &declarations, given);
+        Ok(())
+    }
+
+    /// Writes a start tag: its namespace declarations (added to the scope), then its
+    /// attributes; and opens the element. `given`: as [`Open::given`].
+    fn write_start_tag(
+        &mut self,
+        name: &QName,
+        attributes: &[(QName, String)],
+        declarations: &[Binding],
+        given: Option<Arc<[NamespaceBinding]>>,
+    ) {
         let bindings_before = self.scope.len();
         self.scope.extend(declarations.iter().cloned());
         let mut tag = String::new();
@@ -526,7 +610,7 @@ impl<T: Target> XmlWriter<T> {
         tag.push_str(&name.local);
         self.out.push('<');
         self.out.push_str(&tag);
-        for (prefix, uri) in &declarations {
+        for (prefix, uri) in declarations {
             self.out.push_str(" xmlns");
             if let Some(prefix) = prefix {
                 self.out.push(':');
@@ -536,7 +620,7 @@ impl<T: Target> XmlWriter<T> {
             escape_attribute(&mut self.out, uri);
             self.out.push('"');
         }
-        for (name, value) in &attributes {
+        for (name, value) in attributes {
             self.out.push(' ');
             if let Some(prefix) = &name.prefix {
                 self.out.push_str(prefix);
@@ -548,14 +632,14 @@ impl<T: Target> XmlWriter<T> {
             self.out.push('"');
         }
         self.out.push('>');
-        self.target.start_element(&name, &attributes);
+        self.target.start_element(name, attributes);
         self.open.push(Open {
             tag,
             bindings: self.scope.len() - bindings_before,
+            given,
             has_elements: false,
             has_text: false,
         });
-        Ok(())
     }
 
     /// Writes the pending start tag, if any, as a piece of its own: content follows, the
@@ -805,7 +889,70 @@ pub(crate) struct TreeSink {
     /// The start tag not added yet, and whether it is a copy's.
     pending: Option<(StartTag, bool)>,
     /// The namespaces in scope on each open element, innermost last.
-    scopes: Vec<Vec<NamespaceBinding>>,
+    scopes: Vec<Scope>,
+    /// The namespaces of the start tags whose own namespace nodes were those given, as
+    /// worked out for the last of them (at most [`SCOPE_MEMO_SIZE`], the oldest dropped).
+    memo: Vec<ScopeMemo>,
+}
+
+/// The namespaces in scope on an element of a tree being built: shared by the elements
+/// of a tree that have the same, so that the scope of an element is known by its
+/// address.
+type Scope = Rc<[NamespaceBinding]>;
+
+/// The namespaces of an element ([`TreeSink::flush`]) whose own namespace nodes are the
+/// set `given` ([`StartTag::given_unchanged`]), copied or not, under a parent of scope
+/// `parent` (`None`: no parent element): its scope, and the namespace entries of its
+/// node. A function of these three alone, known by their addresses (kept alive here).
+#[derive(Debug)]
+struct ScopeMemo {
+    parent: Option<Scope>,
+    given: Arc<[NamespaceBinding]>,
+    copied: bool,
+    scope: Scope,
+    entries: Arc<[NamespaceBinding]>,
+}
+
+/// How many [`ScopeMemo`] a tree keeps: the few combinations of the literal result
+/// elements of a stylesheet that build it.
+const SCOPE_MEMO_SIZE: usize = 16;
+
+/// The namespaces in scope on an element, and the namespace entries of its node, from
+/// those of its parent and its own namespace nodes `own` once fixed up: a constructed
+/// element inherits its parent's (`copied` false), a copy has exactly its own. The
+/// entries are the bindings of its scope its parent's lacks, and the prefixes of its
+/// parent's it lacks undeclared (bound to the empty URI).
+fn child_scope<'a>(
+    parent: &[NamespaceBinding],
+    own: impl Iterator<Item = (Option<&'a str>, &'a str)>,
+    copied: bool,
+) -> (Vec<NamespaceBinding>, Vec<NamespaceBinding>) {
+    let mut scope: Vec<NamespaceBinding> = if copied { Vec::new() } else { parent.to_vec() };
+    for (prefix, uri) in own {
+        if prefix == Some("xml") {
+            continue;
+        }
+        scope.retain(|b| b.prefix.as_deref() != prefix);
+        scope.push(NamespaceBinding {
+            prefix: prefix.map(str::to_owned),
+            uri: uri.to_owned(),
+        });
+    }
+    scope.retain(|b| !b.uri.is_empty());
+    let mut entries: Vec<NamespaceBinding> = scope
+        .iter()
+        .filter(|b| !parent.contains(b))
+        .cloned()
+        .collect();
+    for binding in parent {
+        if !scope.iter().any(|b| b.prefix == binding.prefix) {
+            entries.push(NamespaceBinding {
+                prefix: binding.prefix.clone(),
+                uri: String::new(),
+            });
+        }
+    }
+    (scope, entries)
 }
 
 impl TreeSink {
@@ -825,6 +972,7 @@ impl TreeSink {
             last_atomic: false,
             pending: None,
             scopes: Vec::new(),
+            memo: Vec::new(),
         }
     }
 
@@ -840,40 +988,30 @@ impl TreeSink {
             .map_err(|e| TransformError::new("INTERNAL", e.message()))
     }
 
-    /// Adds the pending start tag to the tree: the element, with as namespace nodes the
-    /// bindings of its scope its parent's lacks, and the prefixes of its parent's it
-    /// lacks undeclared (bound to the empty URI); then its attributes.
+    /// Adds the pending start tag to the tree: the element, with its namespace entries
+    /// ([`child_scope`]); then its attributes.
     fn flush(&mut self) -> Result<()> {
         let Some((tag, copied)) = self.pending.take() else {
             return Ok(());
         };
-        let (name, attributes, own) = tag.fix()?;
-        let parent: Vec<NamespaceBinding> = self.scopes.last().cloned().unwrap_or_default();
-        let mut scope: Vec<NamespaceBinding> = if copied { Vec::new() } else { parent.clone() };
-        for (prefix, uri) in own {
-            if prefix.as_deref() == Some("xml") {
-                continue;
-            }
-            scope.retain(|b| b.prefix != prefix);
-            scope.push(NamespaceBinding { prefix, uri });
-        }
-        scope.retain(|b| !b.uri.is_empty());
-        let mut entries: Vec<NamespaceBinding> = scope
-            .iter()
-            .filter(|b| !parent.contains(b))
-            .cloned()
-            .collect();
-        for binding in &parent {
-            if !scope.iter().any(|b| b.prefix == binding.prefix) {
-                entries.push(NamespaceBinding {
-                    prefix: binding.prefix.clone(),
-                    uri: String::new(),
-                });
-            }
-        }
+        let parent = self.scopes.last().cloned();
+        let (name, attributes, scope, entries) = if let Some(given) = tag.given_unchanged() {
+            let given = Arc::clone(given);
+            let (scope, entries) = self.memoized_scope(parent, given, copied);
+            let StartTag {
+                name, attributes, ..
+            } = tag;
+            (name, attributes, scope, entries)
+        } else {
+            let (name, attributes, own) = tag.fix()?;
+            let own = own.iter().map(|(p, u)| (p.as_deref(), u.as_str()));
+            let parent = parent.as_deref().unwrap_or_default();
+            let (scope, entries) = child_scope(parent, own, copied);
+            (name, attributes, scope.into(), entries.into())
+        };
         self.scopes.push(scope);
         self.builder
-            .start_element_with_namespaces(name, entries.into())
+            .start_element_with_namespaces(name, entries)
             .map_err(|e| tree_error(&e))?;
         for (name, value) in attributes {
             self.builder
@@ -881,6 +1019,50 @@ impl TreeSink {
                 .map_err(|e| tree_error(&e))?;
         }
         Ok(())
+    }
+
+    /// The scope and the namespace entries of an element whose own namespace nodes are
+    /// `given`, from [`TreeSink::memo`] or worked out ([`child_scope`]) and kept. A scope
+    /// equal to the parent's is the parent's.
+    fn memoized_scope(
+        &mut self,
+        parent: Option<Scope>,
+        given: Arc<[NamespaceBinding]>,
+        copied: bool,
+    ) -> (Scope, Arc<[NamespaceBinding]>) {
+        let found = self.memo.iter().find(|m| {
+            m.copied == copied
+                && Arc::ptr_eq(&m.given, &given)
+                && match (&m.parent, &parent) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+                    _ => false,
+                }
+        });
+        if let Some(m) = found {
+            return (Rc::clone(&m.scope), Arc::clone(&m.entries));
+        }
+        let own = given.iter().map(|b| (b.prefix.as_deref(), b.uri.as_str()));
+        let parent_bindings = parent.as_deref().unwrap_or_default();
+        let (scope, entries) = child_scope(parent_bindings, own, copied);
+        let scope: Scope = match &parent {
+            Some(p) if **p == *scope => Rc::clone(p),
+            _ => scope.into(),
+        };
+        let entries: Arc<[NamespaceBinding]> = entries.into();
+        let memo = ScopeMemo {
+            parent,
+            given,
+            copied,
+            scope: Rc::clone(&scope),
+            entries: Arc::clone(&entries),
+        };
+        if self.memo.len() == SCOPE_MEMO_SIZE {
+            // The oldest goes.
+            self.memo.remove(0);
+        }
+        self.memo.push(memo);
+        (scope, entries)
     }
 
     /// The start tag being built, or the error for an attribute or a namespace node that
@@ -928,9 +1110,13 @@ impl Sink for TreeSink {
 
     fn attribute(&mut self, name: &QName, value: &str) -> Result<()> {
         self.last_atomic = false;
-        let what = format!("an attribute node ({name})");
-        self.start_tag(&what)?.attribute(name, value);
-        Ok(())
+        if let Some((tag, _)) = self.pending.as_mut() {
+            tag.attribute(name, value);
+            return Ok(());
+        }
+        // The error, its message written only now.
+        self.start_tag(&format!("an attribute node ({name})"))
+            .map(|_| ())
     }
 
     fn end_element(&mut self) -> Result<()> {

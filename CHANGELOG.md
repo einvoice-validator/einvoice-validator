@@ -28,6 +28,19 @@ against.
   within the default `max_stack`.
 ### Changed
 
+- Faster construction of elements, most of all for the stylesheets compiled with SchXslt
+  (XRechnung, and the CEN stylesheets of its package), which build their report as a
+  temporary tree and copy it to the result (#40): an element whose own namespace nodes are
+  those it was given, and are in scope already, is built and written without copying its
+  namespace bindings; the namespaces of an element under a parent of a known scope are
+  worked out once per tree; a copied element without namespace declarations of its own takes
+  its parent's. Same reports, byte for byte. On one thread
+  (`cargo xtask bench --threads 1`, the two builds alternating), the XRechnung UBL job takes
+  4.1–4.2 s instead of 6.25 s (Saxon-HE 12.10: 5.9–6.1 s), the XRechnung CII job 2.8 s instead
+  of 4.5–4.6 s (Saxon-HE: 5.0–5.5 s), and the CEN UBL job 1.35 s instead of 1.5 s; the median
+  peak heap per document goes from 152 to 140 KiB (XRechnung UBL) and from 135 to 124 KiB
+  (XRechnung CII).
+
 - On WebAssembly, `ValidateOptions::max_depth` is capped at `WASM_MAX_DEPTH` (400) and
   `ValidateOptions::max_stack` at `WASM_MAX_STACK` (256 KiB, the default there): asking for
   more fails with the new `Error::OptionOutOfRange` (#34). The caps were measured against the

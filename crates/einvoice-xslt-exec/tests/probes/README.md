@@ -4,8 +4,10 @@ Synthetic stylesheets for the XSLT behaviour the official rule sets do not all e
 rule selection and ties, `xsl:next-match`, modes, built-in rules, simple and complex content,
 variables and parameters, the static types Saxon gives their references (`static-types`),
 `xsl:function`, `xsl:number`, patterns (the XSLT 3.0 parenthesized ones in
-`patterns-parenthesized`), namespaces, `cast as`, nodes constructed in a sequence as the
-stylesheets compiled by SchXslt construct them (`sequences`), when Saxon evaluates variables and
+`patterns-parenthesized`), namespaces (also in a temporary tree, as the stylesheets compiled by
+SchXslt build their report: `temporary-tree-namespaces`), `cast as`, nodes constructed in a
+sequence as the stylesheets compiled by SchXslt construct them (`sequences`), when Saxon
+evaluates variables and
 parameters (`lazy`, and the `error-learned-*`, `error-eager-*` and `error-stale-references`
 probes, where a value nothing reads raises an error), paths whose nodes Saxon reads unsorted and
 lazily where neither their order nor their duplicates matter (`unordered-paths`, and the
