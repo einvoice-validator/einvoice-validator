@@ -17,7 +17,8 @@
 # Statuses of upstream.toml entries: "current"; "OUTDATED" (severity high: an
 # official rule set has a newer release); "newer exists" (severity info);
 # "pinned, newer exists" (severity info, held on purpose: `hold` in
-# upstream.toml); "ERROR".
+# upstream.toml); "not queried" (source unlisted: the publisher offers no list
+# a script can read; the link is checked by hand, the note says why); "ERROR".
 #
 # Cargo dependencies: every direct dependency, dev-dependency and
 # build-dependency on crates.io of every workspace member, read from the
@@ -153,7 +154,8 @@ def default_pattern($source):
 | map(
     .line as $n | .keys as $k
     | ($k | keys | map(select(known(["name", "severity", "pinned", "source", "repository",
-        "group", "artifact", "url", "version-pattern", "series", "hold", "unused", "release-name"])
+        "group", "artifact", "url", "version-pattern", "series", "hold", "unused", "release-name",
+        "unlisted"])
         | not)))
         as $unknown
     | if ($unknown | length) > 0 then fail($n; "unknown key \($unknown | join(", "))")
@@ -163,18 +165,22 @@ def default_pattern($source):
         fail($n; "severity must be \"high\" or \"info\"")
       elif ($k.pinned | test("^[0-9][0-9A-Za-z.+-]*$") | not) then
         fail($n; "pinned must be a version, not \"\($k.pinned)\"")
-      elif ($k.source | known(["github-release", "maven", "listing"]) | not) then
-        fail($n; "source must be github-release, maven or listing")
+      elif ($k.source | known(["github-release", "maven", "listing", "unlisted"]) | not) then
+        fail($n; "source must be github-release, maven, listing or unlisted")
       else . end
-    | (if $k.source == "github-release" then [["repository"], ["group", "artifact", "url"]]
-       elif $k.source == "maven" then [["group", "artifact"], ["repository", "url"]]
-       else [["url", "version-pattern"], ["repository", "group", "artifact"]] end) as [$need, $deny]
+    | (if $k.source == "github-release" then [["repository"], ["group", "artifact", "url", "unlisted"]]
+       elif $k.source == "maven" then [["group", "artifact"], ["repository", "url", "unlisted"]]
+       elif $k.source == "listing" then [["url", "version-pattern"], ["repository", "group", "artifact", "unlisted"]]
+       else [["url", "unlisted"], ["repository", "group", "artifact", "version-pattern", "series"]] end)
+      as [$need, $deny]
     | ($k["version-pattern"] // default_pattern($k.source)) as $pattern
     | if any($need[]; $k[.] == null or $k[.] == "") then
         fail($n; "source \($k.source) needs \($need | join(" and "))")
       elif any($deny[]; $k[.] != null) then
         fail($n; "source \($k.source) takes none of \($deny | join(", "))")
-      elif ($pattern | contains("(?<v>") | not) then
+      elif $k.source == "unlisted" and $k.severity != "info" then
+        fail($n; "source unlisted is for severity info only: an official rule set must be queried")
+      elif $k.source != "unlisted" and ($pattern | contains("(?<v>") | not) then
         fail($n; "version-pattern needs a group named v: (?<v>...)")
       elif $k.hold != null and $k.severity != "info" then
         fail($n; "hold is for severity info only")
@@ -190,7 +196,7 @@ def default_pattern($source):
     | {
         line: $n, name: $k.name, severity: $k.severity, pinned: $k.pinned, source: $k.source,
         repository: $k.repository, group: $k.group, artifact: $k.artifact, url: $k.url,
-        pattern: $pattern, series: $k.series, hold: $k.hold, unused: $k.unused,
+        pattern: $pattern, series: $k.series, hold: $k.hold, unused: $k.unused, unlisted: $k.unlisted,
         query: (if $k.source == "github-release" then "https://api.github.com/repos/\($k.repository)/releases"
                 elif $k.source == "maven" then
                   "https://repo1.maven.org/maven2/\($k.group | gsub("\\."; "/"))/\($k.artifact)/maven-metadata.xml"
@@ -702,7 +708,8 @@ read -r -d '' assess_jq <<'JQ' || true
 def key: [scan("[0-9]+") | tonumber];
 $entries[$i] as $e
 | {name: $e.name, severity: $e.severity, pinned: $e.pinned, link: $e.link, hold: $e.hold}
-| if $error != "" then . + {latest: "?", status: "ERROR", note: $error, actionable: false}
+| if $e.unlisted != null then . + {latest: "?", status: "not queried", note: $e.unlisted, actionable: false}
+  elif $error != "" then . + {latest: "?", status: "ERROR", note: $error, actionable: false}
   else
     ($versions | unique | sort_by(key)) as $s
     | ($s | map(select(key > ($e.pinned | key))) | length) as $newer
@@ -741,6 +748,7 @@ for ((i = 0; i < count; i++)); do
     github-release) error=$(versions_github "$i" "$versions") || true ;;
     maven) error=$(versions_page "$i" "$versions" "$maven_jq") || true ;;
     listing) error=$(versions_page "$i" "$versions" "$listing_jq") || true ;;
+    unlisted) ;; # nothing to query: the row says "not queried"
     esac
     jq -nc --slurpfile entries "$entries" --argjson i "$i" --slurpfile versions "$versions" \
         --arg error "$error" '$entries[0] as $entries | $versions[0] as $versions | '"$assess_jq" >>"$rows"
@@ -871,7 +879,8 @@ outdated=$(jq '[.[] | select(.status == "OUTDATED")] | length' "$results")
 newer=$(jq '[.[] | select(.status == "newer exists" or .status == "pinned, newer exists")] | length' "$results")
 major=$(jq '[.[] | select(.status == "major update" or .status == "locked version yanked")] | length' "$results")
 compatible=$(jq '[.[] | select(.status == "compatible update")] | length' "$results")
-summary="$newer tool(s) or standard(s) with a newer version; $major Cargo dependenc(ies) with a major update or a yanked lock (manual migration); $compatible with a compatible update (Dependabot)"
+unlisted=$(jq '[.[] | select(.status == "not queried")] | length' "$results")
+summary="$newer tool(s) or standard(s) with a newer version; $major Cargo dependenc(ies) with a major update or a yanked lock (manual migration); $compatible with a compatible update (Dependabot); $unlisted not queried (checked by hand at their link)"
 echo
 if [ "$errors" -gt 0 ]; then
     echo "freshness: $errors upstream(s) or crate(s) could not be checked (ERROR above): nothing is known about them" >&2

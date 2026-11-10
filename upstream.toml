@@ -21,6 +21,10 @@
 #                    "maven"           maven-metadata.xml of `group`:`artifact` on
 #                                      Maven Central
 #                    "listing"         the page at `url`
+#                    "unlisted"        none a script can read: `url` is the page
+#                                      to check by hand, `unlisted` says why;
+#                                      reported as "not queried" (severity
+#                                      "info" only)
 #   version-pattern  regular expression with a group named `v` (the version);
 #                    applied to each release tag (github-release), each version
 #                    (maven) or the whole page, all matches (listing). Only what
@@ -30,6 +34,8 @@
 #                    reported as "pinned, newer exists" and opens no issue
 #   unused           no file records this pin yet; says so, and no
 #                    [[upstream.pin]] may follow
+#   unlisted         source "unlisted" only: why the published versions cannot
+#                    be listed by a script (the note of the report row)
 #   release-name     "high" only: the name of the rule set in the release notes
 #                    (scripts/release.sh), followed there by `pinned`; defaults
 #                    to `name`. For a name that ends with a version itself
@@ -518,6 +524,58 @@ pattern = "cbc:UBLVersionID = '(?<v>[0-9.]+)'"
 [[upstream.pin]]
 file = "crates/einvoice-validator/bundles/cen-ubl/ubl/xslt/EN16931-UBL-validation.xslt"
 pattern = "cbc:UBLVersionID = '(?<v>[0-9.]+)'"
+
+# The UBL 2.1 schemas einvoice-xsd embeds.
+[[upstream.pin]]
+file = "crates/einvoice-xsd/schemas/oasis-ubl-2.1/README.md"
+pattern = 'os-UBL-(?<v>[0-9]+(?:\.[0-9]+)*)/'
+
+[[upstream.pin]]
+file = "crates/einvoice-xsd/schemas/oasis-ubl-2.1/README.md"
+pattern = 'UBL (?<v>[0-9]+(?:\.[0-9]+)*) OASIS Standard'
+
+[[upstream.pin]]
+file = "crates/einvoice-xsd/schemas/oasis-ubl-2.1/SHA256SUMS"
+pattern = '-(?<v>[0-9]+(?:\.[0-9]+)*)\.xsd'
+
+[[upstream.pin]]
+file = "crates/einvoice-xsd/schemas/oasis-ubl-2.1/xsd/maindoc/UBL-Invoice-2.1.xsd"
+pattern = 'os-UBL-(?<v>[0-9]+(?:\.[0-9]+)*)/'
+
+[[upstream.pin]]
+file = "crates/einvoice-xsd/schemas/oasis-ubl-2.1/xsd/maindoc/UBL-CreditNote-2.1.xsd"
+pattern = 'os-UBL-(?<v>[0-9]+(?:\.[0-9]+)*)/'
+
+[[upstream.pin]]
+file = "crates/einvoice-xsd/src/ubl.rs"
+pattern = 'oasis-ubl-(?<v>[0-9]+(?:\.[0-9]+)*)/'
+
+# The schemas of the Cross Industry Invoice that einvoice-xsd embeds. UNECE
+# serves its pages and downloads to browsers only.
+[[upstream]]
+name = "UN/CEFACT Cross Industry Invoice"
+severity = "info"
+pinned = "16B"
+source = "unlisted"
+url = "https://unece.org/trade/uncefact/xml-schemas"
+unlisted = "unece.org answers scripts with HTTP 403: check the releases by hand at the link"
+hold = "EN 16931 binds its CII syntax to D16B: the CEN CII validation artefacts are built against these schemas"
+
+[[upstream.pin]]
+file = "crates/einvoice-xsd/schemas/uncefact-cii-d16b/README.md"
+pattern = 'D(?<v>[0-9]{2}[A-Z])[ _]SCRDM'
+
+[[upstream.pin]]
+file = "crates/einvoice-xsd/schemas/uncefact-cii-d16b/README.md"
+pattern = '_100pD(?<v>[0-9]{2}[A-Z])\.xsd'
+
+[[upstream.pin]]
+file = "crates/einvoice-xsd/schemas/uncefact-cii-d16b/SHA256SUMS"
+pattern = '_100pD(?<v>[0-9]{2}[A-Z])\.xsd'
+
+[[upstream.pin]]
+file = "crates/einvoice-xsd/src/cii.rs"
+pattern = '_100pD(?<v>[0-9]{2}[A-Z])\.xsd'
 
 [[upstream]]
 name = "Saxon-HE"

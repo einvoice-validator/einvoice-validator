@@ -131,6 +131,25 @@ valid_entry | sed 's|^source = "github-release"$|source = "listing"|; /^reposito
     case_toml
 expect "listing without version-pattern" 2 "needs url and version-pattern" pins
 
+# unlisted_entry: the valid entry with a source that cannot be queried.
+unlisted_entry() {
+    valid_entry | sed 's|^source = "github-release"$|source = "unlisted"|; s|^repository = .*|url = "https://example.org/"\nunlisted = "no list a script can read"|'
+}
+unlisted_entry | case_toml
+expect "unlisted with url and reason" 0 "pins: 1 pins of 1 upstreams" pins
+
+unlisted_entry | sed '/^unlisted = /d' | case_toml
+expect "unlisted without a reason" 2 "needs url and unlisted" pins
+
+unlisted_entry | sed "s|^url = .*|&\nversion-pattern = '(?<v>[0-9.]+)'|" | case_toml
+expect "unlisted with a version-pattern" 2 "takes none of" pins
+
+unlisted_entry | sed 's/^severity = "info"$/severity = "high"/' | case_toml
+expect "unlisted on severity high" 2 "for severity info only" pins
+
+valid_entry | sed 's|^repository = .*|&\nunlisted = "no list"|' | case_toml
+expect "unlisted reason on a github-release source" 2 "takes none of" pins
+
 valid_entry | sed "s|^repository = .*|&\nversion-pattern = '^v?([0-9.]+)\$'|" | case_toml
 expect "version-pattern without group v" 2 "needs a group named v" pins
 
@@ -570,7 +589,15 @@ rm "$tmp/crates/proptest.json"
 cp upstream.toml "$tmp/case.toml"
 stubbed expect "query run without network exits 2" 2 "could not be checked" --json "$tmp/out.json"
 check "query run without network: crates are queried too" json 'any(.[]; .name == "crate num-bigint")'
-check "query run without network: nothing is current" json 'all(.[]; .status == "ERROR")'
+check "query run without network: nothing is current" json 'all(.[]; .status == "ERROR" or .status == "not queried")'
+check "query run: an unlisted upstream is not queried" json \
+    'any(.[]; .status == "not queried" and .latest == "?" and .actionable == false and .note != "")'
+unlisted_not_fetched() {
+    local link
+    link=$(jq -er '[.[] | select(.status == "not queried") | .link] | first' "$tmp/out.json") &&
+        ! grep -qF -- "$link" "$tmp/curl.log"
+}
+check "query run: no request for an unlisted upstream" unlisted_not_fetched
 
 # The repository's own workspace is read (no network: every crate errs).
 rm -f "$tmp/curl.log"
