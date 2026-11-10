@@ -2,7 +2,7 @@
 
 Command-line validation of e-invoices against the official EN 16931 validation artefacts,
 with the [`einvoice-validator`](https://crates.io/crates/einvoice-validator) library: for each
-document, the XML check (UTF-8, well-formed, no document type declaration), the XML schema of
+document, the XML check (UTF-8, UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15 or windows-1252, well-formed, no document type declaration), the XML schema of
 the rule set (UBL 2.1, or CII D16B for `cen-cii`), then the official compiled Schematron
 stylesheets of the rule set, executed with the behaviour of Saxon-HE. XML files and Factur-X / ZUGFeRD / Order-X PDF files
 (the invoice XML they embed). It is part of
@@ -131,7 +131,7 @@ The highest code that applies to the run:
 | 0 | Every document is valid: no schema error and no finding of severity `fatal` (see [Severities](#severities)). |
 | 1 | At least one document is invalid: schema errors, fatal findings, or not well-formed XML. |
 | 2 | Usage error; a document that cannot be read, a PDF file included (malformed, without an embedded file named as an invoice or with several, XMP metadata that is not well-formed); a bundle that cannot be read or is not valid (manifest, missing file, SHA-256 mismatch, stylesheet that is not SVRL-producing XSLT). |
-| 3 | A construct the engine does not support (in a document: an encoding other than UTF-8, a document type declaration; in a PDF file: encryption, a PDF feature outside the subset read, a limit of the PDF reader; in a rule set: XSLT or XPath outside the supported subset), a document beyond a limit (an element nested deeper than `--max-depth`; a stylesheet whose templates or functions recurse beyond the nesting or the stack allowed), a dynamic error raised by a stylesheet on a document, or an internal error. |
+| 3 | A construct the engine does not support (in a document: an encoding the validator does not read, a document type declaration; in a PDF file: encryption, a PDF feature outside the subset read, a limit of the PDF reader; in a rule set: XSLT or XPath outside the supported subset), a document beyond a limit (an element nested deeper than `--max-depth`; a stylesheet whose templates or functions recurse beyond the nesting or the stack allowed), a dynamic error raised by a stylesheet on a document, or an internal error. |
 
 The `rules` commands exit with 0 when they succeed and 2 otherwise (a usage error, a rule set
 that cannot be fetched, `rules path` of a rule set not in the cache), after saying why on

@@ -5,7 +5,8 @@ artefacts, in pure Rust: no JVM, no C library, no FFI.
 
 A `Validator` is built once from a rule set (the XML schema it names loaded, its official
 compiled XSLT stylesheets prepared), is `Send + Sync`, and validates any number of
-documents. Each validation runs the XML check (UTF-8, well-formed, no document type
+documents. Each validation runs the XML check (UTF-8, UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15 or windows-1252,
+well-formed, no document type
 declaration, no element nested deeper than 256 levels or the maximum set with
 `ValidateOptions::max_depth`, so that the stylesheets run within a bounded stack), the XML schema of the rule set if any (UBL 2.1, with
 [`einvoice-xsd`](https://crates.io/crates/einvoice-xsd)), then every stylesheet of the rule set with

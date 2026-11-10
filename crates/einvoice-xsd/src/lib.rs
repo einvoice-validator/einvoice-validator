@@ -388,73 +388,28 @@ impl Schema {
         Validation::new(self, text)
     }
 
-    /// Validates a document given as bytes: UTF-8, with or without a byte order
-    /// mark.
+    /// Validates a document given as bytes, in any encoding that
+    /// [`einvoice_xml::decode`] reads (UTF-8, UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15,
+    /// windows-1252), as its byte order mark, first bytes and XML declaration say.
     ///
     /// # Errors
     ///
-    /// As [`Schema::validate`]; also [`DocumentError::Unsupported`] when the XML
-    /// declaration names an encoding other than UTF-8 (or US-ASCII) or the bytes
-    /// start with a UTF-16 byte order mark, and [`DocumentError::Malformed`] when the
-    /// bytes are not UTF-8.
+    /// As [`Schema::validate`]; also [`DocumentError::Unsupported`] for another
+    /// encoding, and [`DocumentError::Malformed`] for bytes that are not a character of
+    /// the encoding or first bytes and an XML declaration that disagree.
     pub fn validate_bytes(&self, bytes: &[u8]) -> Result<Report, DocumentError> {
-        let unsupported = |message: String| DocumentError::Unsupported {
-            line: 1,
-            column: 1,
-            message,
-        };
-        if bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xFF, 0xFE]) {
-            return Err(unsupported("UTF-16 documents".to_owned()));
-        }
-        let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
-        if let Some(encoding) = declared_encoding(bytes) {
-            let utf8 = ["utf-8", "utf8", "us-ascii", "ascii"];
-            if !utf8.iter().any(|e| e.eq_ignore_ascii_case(encoding)) {
-                return Err(unsupported(format!(
-                    "the {encoding} encoding: only UTF-8 is supported"
-                )));
-            }
-        }
-        let text = std::str::from_utf8(bytes).map_err(|e| {
-            let before = &bytes[..e.valid_up_to()];
-            let line = before.split(|&b| b == b'\n').count();
-            DocumentError::Malformed {
-                line: u32::try_from(line).unwrap_or(u32::MAX),
+        let text = einvoice_xml::decode(bytes).map_err(|e| match e {
+            einvoice_xml::Error::UnsupportedEncoding(name) => DocumentError::Unsupported {
+                line: 1,
                 column: 1,
-                message: format!("not UTF-8: {e}"),
-            }
+                message: format!("the {name} encoding"),
+            },
+            e => DocumentError::Malformed {
+                line: e.pos().row,
+                column: e.pos().col,
+                message: e.to_string(),
+            },
         })?;
-        self.validate(text)
-    }
-}
-
-/// The `encoding` pseudo-attribute of the XML declaration, if any.
-fn declared_encoding(bytes: &[u8]) -> Option<&str> {
-    let declaration = bytes.strip_prefix(b"<?xml")?;
-    let end = declaration.windows(2).position(|w| w == b"?>")?;
-    let declaration = std::str::from_utf8(&declaration[..end]).ok()?;
-    let rest = &declaration[declaration.find("encoding")? + "encoding".len()..];
-    let rest = rest.trim_start().strip_prefix('=')?.trim_start();
-    let quote = rest.chars().next().filter(|c| *c == '"' || *c == '\'')?;
-    let value = &rest[1..];
-    value.find(quote).map(|end| &value[..end])
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn encodings() {
-        assert_eq!(
-            declared_encoding(br#"<?xml version="1.0" encoding="UTF-8"?><a/>"#),
-            Some("UTF-8")
-        );
-        assert_eq!(
-            declared_encoding(b"<?xml version='1.0' encoding = 'latin1' ?><a/>"),
-            Some("latin1")
-        );
-        assert_eq!(declared_encoding(b"<?xml version='1.0'?><a/>"), None);
-        assert_eq!(declared_encoding(b"<a/>"), None);
+        self.validate(&text)
     }
 }

@@ -5,7 +5,7 @@ CrossIndustryInvoice) against the **official** CEN validation artefacts, in WebA
 JVM, no native code, nothing fetched at run time. For browsers, bundlers and Node.js, with
 TypeScript declarations.
 
-Each validation runs the XML check (UTF-8, well-formed, no document type declaration, no
+Each validation runs the XML check (UTF-8, UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15 or windows-1252, well-formed, no document type declaration, no
 element nested deeper than 256 levels), the XML schema of the syntax (OASIS UBL 2.1 for UBL,
 UN/CEFACT CII D16B for CII), then the official compiled CEN EN 16931 Schematron stylesheet of
 the syntax (release 1.3.17, embedded unmodified), executed with the behaviour of the reference
@@ -68,7 +68,8 @@ keep the main thread free.
   version, schema and stylesheets (with their SHA-256). `validator.free()` releases its memory
   at once (otherwise it is released when the object is garbage-collected).
 - `validator.validate(bytes, options?)`: the report of a document given as a `Uint8Array` (a
-  Node.js `Buffer` is one), UTF-8.
+  Node.js `Buffer` is one), in UTF-8, UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15 or windows-1252, as its byte order mark, first bytes
+  and XML declaration say.
 - `validator.validateSvrl(bytes, options?)`: the SVRL report of each stylesheet, exactly as it
   wrote it: `[{ stylesheet, version, sha256, svrl }]`.
 - `options`: `documentUri` (the URI of the document: the base URI of its nodes, as Saxon-HE
@@ -116,7 +117,7 @@ already has schema errors.
 
 When no complete verdict can be given, the call throws an `Error` named
 `EinvoiceValidatorError` with a `kind`: `bundle` (an unknown rule-set name), `unsupported` (an
-encoding other than UTF-8, a document type declaration, or a construct the engine refuses
+encoding the package does not read, a document type declaration, or a construct the engine refuses
 rather than answer differently from Saxon-HE; and a document beyond a limit, with `limit`:
 `depth` for an element nested deeper than `maxDepth`, with its `line` and `column`, `nesting`
 or `stack` for stylesheets recursing beyond what that depth or the module's stack allows, and

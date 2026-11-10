@@ -36,7 +36,9 @@ pub enum Error {
         /// The SHA-256 of the file.
         actual: String,
     },
-    /// The document is not well-formed XML (or not UTF-8, or not namespace-well-formed).
+    /// The document is not well-formed XML (or not namespace-well-formed, or with bytes
+    /// that are not characters of its encoding, or first bytes and an XML declaration
+    /// that name different encodings).
     NotXml {
         /// 1-based line.
         line: u32,
@@ -46,7 +48,8 @@ pub enum Error {
         message: String,
     },
     /// The document or a rule-set artefact needs a construct that this engine does not
-    /// implement (an encoding other than UTF-8, a document type declaration, an XSLT or
+    /// implement (an encoding the validator does not read, a document type declaration,
+    /// an XSLT or
     /// XML Schema construct outside the supported subset). Refused rather than answered
     /// differently from the reference engine.
     Unsupported {

@@ -114,8 +114,9 @@ impl Validator {
         parse(&render::rule_set(self.inner.rule_set()))
     }
 
-    /// Validates a document: checks that it is well-formed XML (UTF-8, no document type
-    /// declaration), validates it against the rule set's XML schema, then runs every
+    /// Validates a document: checks that it is well-formed XML (UTF-8, UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15 or windows-1252;
+    /// no document type declaration), validates it against the rule set's XML schema,
+    /// then runs every
     /// stylesheet of the rule set on it. The bytes are copied; the array is not changed.
     ///
     /// Returns the report: `status` is `"valid"` when there is no schema error and no
@@ -124,8 +125,8 @@ impl Validator {
     ///
     /// # Errors
     ///
-    /// Throws an `EinvoiceValidatorError` with a `kind`: `unsupported` for an encoding
-    /// other than UTF-8, a document type declaration or a construct the engine refuses,
+    /// Throws an `EinvoiceValidatorError` with a `kind`: `unsupported` for another
+    /// encoding, a document type declaration or a construct the engine refuses,
     /// and for a document beyond a limit (with `limit`: `depth`, an element nested deeper
     /// than `maxDepth`, with its `line` and `column`; `nesting` or `stack`, stylesheets
     /// recursing beyond what that depth or the stack allows);
@@ -434,7 +435,7 @@ fn document_bytes(document: &JsValue) -> Result<Vec<u8>, JsValue> {
         || {
             Err(argument_error(
                 ArgumentError::Type,
-                "the document must be a Uint8Array (its bytes, UTF-8)",
+                "the document must be a Uint8Array (its bytes)",
             ))
         },
         |array| Ok(array.to_vec()),

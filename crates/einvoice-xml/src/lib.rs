@@ -37,7 +37,9 @@
 //! # What is accepted
 //!
 //! The text is UTF-8 (a `&str`; a byte order mark at the start is skipped; the
-//! `encoding` of the XML declaration is checked for syntax only). Supported: the XML
+//! `encoding` of the XML declaration is checked for syntax only). A document given as
+//! bytes is decoded to such a text first with [`decode`] (see [Encodings](#encodings)).
+//! Supported: the XML
 //! declaration, elements and attributes, namespaces (prefixes, the default namespace
 //! and its undeclaration with `xmlns=""`, the predefined `xml` prefix for attributes),
 //! comments, processing instructions, CDATA sections, character references and the five
@@ -83,6 +85,23 @@
 //! feed or a carriage return at the start of the text is an XML declaration (for
 //! `roxmltree`, a processing instruction).
 //!
+//! # Encodings
+//!
+//! [`decode`] finds the encoding of a document given as bytes as XML 1.0 (4.3.3 and
+//! Appendix F) says, from its byte order mark, its first bytes and its XML declaration,
+//! and decodes it to UTF-8 (without a copy when it is UTF-8 already). It reads the
+//! encodings that the reference parsers of e-invoice validation, libxml2 (`xmllint`) and
+//! the XML parser of Saxon-HE (Xerces, in the JDK), both read in the same way, under the
+//! names both accept ([`encoding_names`]): UTF-8, UTF-16 (with a byte order mark, or
+//! without one when the document starts with `<?`), US-ASCII, ISO-8859-1, ISO-8859-15 and
+//! windows-1252 ([`Encoding`]). A document in any other encoding is refused with
+//! [`Error::UnsupportedEncoding`], one whose first bytes and declaration disagree with
+//! [`Error::EncodingMismatch`], and bytes that are not a character of the encoding with
+//! [`Error::InvalidEncodedBytes`], where both reference parsers, or one of them, refuse
+//! them too (the test `tests/encoding.rs` checks each case against what they do, as the
+//! example `encoding-oracle` records it). A position in a decoded text counts its
+//! characters, as for any text.
+//!
 //! # Limits
 //!
 //! [`Limits`] bounds the number of nodes, the depth, the number of attributes and the
@@ -92,11 +111,13 @@
 
 mod chars;
 mod decode;
+mod encoding;
 mod error;
 mod event;
 mod namespaces;
 mod reader;
 
+pub use encoding::{Encoding, decode, decode_owned, encoding_names, encoding_of};
 pub use error::{Error, TextPos};
 pub use event::{
     Attribute, Comment, EndElement, Event, Name, ProcessingInstruction, StartElement, Text,

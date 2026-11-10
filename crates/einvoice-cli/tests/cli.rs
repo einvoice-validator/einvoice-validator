@@ -458,7 +458,7 @@ fn an_unsupported_document_exits_with_3() {
     );
     let r = run(
         &["-"],
-        Some(b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><Invoice/>"),
+        Some(b"<?xml version=\"1.0\" encoding=\"Shift_JIS\"?><Invoice/>"),
     );
     assert_eq!(r.code, 3);
 }

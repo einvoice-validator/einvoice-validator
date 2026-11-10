@@ -358,7 +358,11 @@ job_guards() {
 # stylesheet probes of einvoice-xslt-exec: the goldens must not change; and
 # Saxon-HE on the hand-written cases of einvoice-xml (its saxon-check example:
 # the same verdict and data, but for the differences it lists with their
-# reasons).
+# reasons); then, with both, the encodings other than UTF-8: Saxon-HE and
+# xmllint on the encoding probes of einvoice-xml (its encoding-oracle example:
+# their results must not change, and the decoder must agree with them but for
+# the differences it lists) and on the corpora re-encoded (the encoding-oracle
+# example of einvoice-validator: the results of the documents in UTF-8).
 # Without xmllint or Java, that run is SKIPPED, except in CI, where it fails.
 job_oracle() {
     need_toolchain || return 1
@@ -385,7 +389,13 @@ job_oracle() {
     cargo run --locked -p einvoice-xdm --example saxon-oracle || return 1
     cargo run --locked -p einvoice-xpath-eval --example saxon-oracle || return 1
     cargo run --locked -p einvoice-xslt-exec --example saxon-probes || return 1
-    cargo run --locked -p einvoice-xml --example saxon-check
+    cargo run --locked -p einvoice-xml --example saxon-check || return 1
+    if command -v "$xmllint" >/dev/null 2>&1; then
+        XMLLINT=$xmllint cargo run --locked -p einvoice-xml --example encoding-oracle || return 1
+        XMLLINT=$xmllint cargo run --locked --release -p einvoice-validator --example encoding-oracle
+    else
+        missing "encoding oracles (xmllint is not installed)"
+    fi
 }
 # The Peppol BIS Billing 3.0 corpus (corpus/README.md), which is not committed
 # because the Peppol files carry no licence: scripts/fetch-peppol.sh downloads

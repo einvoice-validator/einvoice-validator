@@ -58,8 +58,8 @@ pub enum DocumentError {
         message: String,
     },
     /// The document needs a feature outside the subset this crate implements (an
-    /// encoding other than UTF-8, or `xsi:type` naming a built-in type the UBL
-    /// schemas do not use). Refused rather than answered wrongly.
+    /// encoding that [`einvoice_xml::decode`] does not read, or `xsi:type` naming a
+    /// built-in type the UBL schemas do not use). Refused rather than answered wrongly.
     Unsupported {
         /// 1-based line.
         line: u32,

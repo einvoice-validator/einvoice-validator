@@ -1,0 +1,748 @@
+# Written by `cargo run -p einvoice-xml --example encoding-oracle -- --write`: what
+# Saxon-HE 12.10 (doc()) and xmllint (libxml2, --xpath 'string(/)') make of each
+# document of tests/encoding/probes.rs: `ok` and the code points of the string value
+# of the document, in hexadecimal, or `refused`. Do not edit by hand.
+case	saxon	xmllint
+utf16le/bom	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/bom-decl-utf-16	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/bom-decl-utf-16-lower	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/bom-decl-own-order	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/bom-decl-own-order-lower	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/bom-decl-other-order	refused	refused
+utf16le/bom-decl-utf-8	refused	ok e9 20ac 1f600 20 78
+utf16le/bom-decl-iso-8859-1	refused	refused
+utf16le/bom-decl-us-ascii	refused	refused
+utf16le/bom-decl-ucs-2	ok e9 20ac 1f600 20 78	refused
+utf16le/bom-decl-shift-jis	refused	refused
+utf16le/bom-decl-unknown	refused	refused
+utf16le/bom-decl-utf16-no-dash	refused	ok e9 20ac 1f600 20 78
+utf16le/bom-decl-without-encoding	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/bom-decl-spaces	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/no-bom-decl-utf-16	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/no-bom-decl-own-order	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/no-bom-decl-other-order	refused	refused
+utf16le/no-bom-decl-utf-8	refused	ok e9 20ac 1f600 20 78
+utf16le/no-bom-decl-iso-8859-1	refused	refused
+utf16le/no-bom-decl-without-encoding	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/no-bom-pi	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16le/no-bom-element	refused	refused
+utf16le/no-bom-comment	refused	refused
+utf16le/no-bom-space-first	refused	refused
+utf16le/bom-empty	refused	refused
+utf16le/bom-twice	refused	refused
+utf16le/bom-crlf	ok 31 a 32 a 33	ok 31 a 32 a 33
+utf16le/bom-fffe	refused	refused
+utf16le/bom-nul	refused	refused
+utf16le/bom-lone-high	refused	refused
+utf16le/bom-lone-low	refused	refused
+utf16le/bom-reversed-pair	refused	refused
+utf16le/bom-high-at-end	refused	ok 78
+utf16le/bom-high-on-line-2	refused	refused
+utf16le/bom-odd-length	refused	ok 78
+utf16le/bom-odd-length-inside	refused	refused
+utf16le/bom-lines	refused	refused
+utf16le/bom-names	ok 74	ok 74
+utf16be/bom	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/bom-decl-utf-16	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/bom-decl-utf-16-lower	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/bom-decl-own-order	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/bom-decl-own-order-lower	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/bom-decl-other-order	refused	refused
+utf16be/bom-decl-utf-8	refused	ok e9 20ac 1f600 20 78
+utf16be/bom-decl-iso-8859-1	refused	refused
+utf16be/bom-decl-us-ascii	refused	refused
+utf16be/bom-decl-ucs-2	ok e9 20ac 1f600 20 78	refused
+utf16be/bom-decl-shift-jis	refused	refused
+utf16be/bom-decl-unknown	refused	refused
+utf16be/bom-decl-utf16-no-dash	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/bom-decl-without-encoding	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/bom-decl-spaces	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/no-bom-decl-utf-16	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/no-bom-decl-own-order	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/no-bom-decl-other-order	refused	refused
+utf16be/no-bom-decl-utf-8	refused	ok e9 20ac 1f600 20 78
+utf16be/no-bom-decl-iso-8859-1	refused	refused
+utf16be/no-bom-decl-without-encoding	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/no-bom-pi	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf16be/no-bom-element	refused	refused
+utf16be/no-bom-comment	refused	refused
+utf16be/no-bom-space-first	refused	refused
+utf16be/bom-empty	refused	refused
+utf16be/bom-twice	refused	refused
+utf16be/bom-crlf	ok 31 a 32 a 33	ok 31 a 32 a 33
+utf16be/bom-fffe	refused	refused
+utf16be/bom-nul	refused	refused
+utf16be/bom-lone-high	refused	refused
+utf16be/bom-lone-low	refused	refused
+utf16be/bom-reversed-pair	refused	refused
+utf16be/bom-high-at-end	refused	ok 78
+utf16be/bom-high-on-line-2	refused	refused
+utf16be/bom-odd-length	refused	ok 78
+utf16be/bom-odd-length-inside	refused	refused
+utf16be/bom-lines	refused	refused
+utf16be/bom-names	ok 74	ok 74
+utf8/name-0-UTF-8	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf8/name-1-utf-8	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf8/name-2-UTF8	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf8/name-3-utf8	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf8/name-4-Utf-8	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf8/name-5-UTF_8	refused	refused
+utf8/name-6-unicode-1-1-utf-8	ok e9 20ac 1f600 20 78	refused
+utf8/bom	ok e9 20ac 1f600 20 78	ok e9 20ac 1f600 20 78
+utf8/bom-twice	refused	refused
+utf8/bom-character-in-text	ok feff	ok feff
+utf8/decl-UTF-16	refused	refused
+utf8/bom-decl-UTF-16	refused	refused
+utf8/decl-UTF-16LE	refused	refused
+utf8/bom-decl-UTF-16LE	refused	refused
+utf8/decl-utf-16be	refused	refused
+utf8/bom-decl-utf-16be	refused	refused
+utf8/bom-decl-ISO-8859-1-ascii	ok 78	ok 78
+utf8/bom-decl-ISO-8859-1-non-ascii	ok c3 a9 e2 82 ac	ok c3 a9 e2 82 ac
+utf8/bom-decl-ISO-8859-15-ascii	ok 78	ok 78
+utf8/bom-decl-ISO-8859-15-non-ascii	ok c3 a9 e2 82 ac	ok c3 a9 e2 82 ac
+utf8/bom-decl-windows-1252-ascii	ok 78	ok 78
+utf8/bom-decl-windows-1252-non-ascii	ok c3 a9 e2 201a ac	ok c3 a9 e2 201a ac
+utf8/bom-decl-US-ASCII-ascii	ok 78	ok 78
+utf8/bom-decl-US-ASCII-non-ascii	refused	refused
+utf8/bom-decl-Shift_JIS-ascii	ok 78	ok 78
+utf8/bom-decl-Shift_JIS-non-ascii	ok ff83 ff69 7ac4 ff6c	ok ff83 ff69 7ac4 ff6c
+utf8/bom-decl-ISO-10646-UCS-2-ascii	refused	refused
+utf8/bom-decl-ISO-10646-UCS-2-non-ascii	refused	refused
+utf8/bom-decl-x-unknown-ascii	refused	refused
+utf8/bom-decl-x-unknown-non-ascii	refused	refused
+utf8/invalid-byte	refused	refused
+utf8/overlong	refused	refused
+utf8/surrogate	refused	refused
+utf8/truncated	refused	refused
+utf8/truncated-at-end	refused	refused
+utf8/above-10ffff	refused	refused
+utf8/latin1-without-declaration	refused	refused
+latin1/name-00-ISO-8859-1	ok 78	ok 78
+latin1/name-01-iso-8859-1	ok 78	ok 78
+latin1/name-02-ISO_8859-1	ok 78	ok 78
+latin1/name-03-ISO8859-1	ok 78	ok 78
+latin1/name-04-ISO-IR-100	ok 78	ok 78
+latin1/name-05-iso-ir-100	ok 78	ok 78
+latin1/name-06-latin1	ok 78	ok 78
+latin1/name-07-LATIN1	ok 78	ok 78
+latin1/name-08-l1	ok 78	ok 78
+latin1/name-09-L1	ok 78	ok 78
+latin1/name-10-CP819	ok 78	ok 78
+latin1/name-11-IBM819	ok 78	ok 78
+latin1/name-12-csISOLatin1	ok 78	ok 78
+latin1/name-13-ISO8859_1	ok 78	refused
+latin1/name-14-8859_1	refused	refused
+latin1/name-15-ISO-LATIN-1	refused	ok 78
+latin1/name-16-ISO_8859-1:1987	refused	refused
+latin1/name-17-ISO_8859_1	ok 78	refused
+latin1/byte-80	ok 80	ok 80
+latin1/byte-81	ok 81	ok 81
+latin1/byte-82	ok 82	ok 82
+latin1/byte-83	ok 83	ok 83
+latin1/byte-84	ok 84	ok 84
+latin1/byte-85	ok 85	ok 85
+latin1/byte-86	ok 86	ok 86
+latin1/byte-87	ok 87	ok 87
+latin1/byte-88	ok 88	ok 88
+latin1/byte-89	ok 89	ok 89
+latin1/byte-8a	ok 8a	ok 8a
+latin1/byte-8b	ok 8b	ok 8b
+latin1/byte-8c	ok 8c	ok 8c
+latin1/byte-8d	ok 8d	ok 8d
+latin1/byte-8e	ok 8e	ok 8e
+latin1/byte-8f	ok 8f	ok 8f
+latin1/byte-90	ok 90	ok 90
+latin1/byte-91	ok 91	ok 91
+latin1/byte-92	ok 92	ok 92
+latin1/byte-93	ok 93	ok 93
+latin1/byte-94	ok 94	ok 94
+latin1/byte-95	ok 95	ok 95
+latin1/byte-96	ok 96	ok 96
+latin1/byte-97	ok 97	ok 97
+latin1/byte-98	ok 98	ok 98
+latin1/byte-99	ok 99	ok 99
+latin1/byte-9a	ok 9a	ok 9a
+latin1/byte-9b	ok 9b	ok 9b
+latin1/byte-9c	ok 9c	ok 9c
+latin1/byte-9d	ok 9d	ok 9d
+latin1/byte-9e	ok 9e	ok 9e
+latin1/byte-9f	ok 9f	ok 9f
+latin1/byte-a0	ok a0	ok a0
+latin1/byte-a1	ok a1	ok a1
+latin1/byte-a2	ok a2	ok a2
+latin1/byte-a3	ok a3	ok a3
+latin1/byte-a4	ok a4	ok a4
+latin1/byte-a5	ok a5	ok a5
+latin1/byte-a6	ok a6	ok a6
+latin1/byte-a7	ok a7	ok a7
+latin1/byte-a8	ok a8	ok a8
+latin1/byte-a9	ok a9	ok a9
+latin1/byte-aa	ok aa	ok aa
+latin1/byte-ab	ok ab	ok ab
+latin1/byte-ac	ok ac	ok ac
+latin1/byte-ad	ok ad	ok ad
+latin1/byte-ae	ok ae	ok ae
+latin1/byte-af	ok af	ok af
+latin1/byte-b0	ok b0	ok b0
+latin1/byte-b1	ok b1	ok b1
+latin1/byte-b2	ok b2	ok b2
+latin1/byte-b3	ok b3	ok b3
+latin1/byte-b4	ok b4	ok b4
+latin1/byte-b5	ok b5	ok b5
+latin1/byte-b6	ok b6	ok b6
+latin1/byte-b7	ok b7	ok b7
+latin1/byte-b8	ok b8	ok b8
+latin1/byte-b9	ok b9	ok b9
+latin1/byte-ba	ok ba	ok ba
+latin1/byte-bb	ok bb	ok bb
+latin1/byte-bc	ok bc	ok bc
+latin1/byte-bd	ok bd	ok bd
+latin1/byte-be	ok be	ok be
+latin1/byte-bf	ok bf	ok bf
+latin1/byte-c0	ok c0	ok c0
+latin1/byte-c1	ok c1	ok c1
+latin1/byte-c2	ok c2	ok c2
+latin1/byte-c3	ok c3	ok c3
+latin1/byte-c4	ok c4	ok c4
+latin1/byte-c5	ok c5	ok c5
+latin1/byte-c6	ok c6	ok c6
+latin1/byte-c7	ok c7	ok c7
+latin1/byte-c8	ok c8	ok c8
+latin1/byte-c9	ok c9	ok c9
+latin1/byte-ca	ok ca	ok ca
+latin1/byte-cb	ok cb	ok cb
+latin1/byte-cc	ok cc	ok cc
+latin1/byte-cd	ok cd	ok cd
+latin1/byte-ce	ok ce	ok ce
+latin1/byte-cf	ok cf	ok cf
+latin1/byte-d0	ok d0	ok d0
+latin1/byte-d1	ok d1	ok d1
+latin1/byte-d2	ok d2	ok d2
+latin1/byte-d3	ok d3	ok d3
+latin1/byte-d4	ok d4	ok d4
+latin1/byte-d5	ok d5	ok d5
+latin1/byte-d6	ok d6	ok d6
+latin1/byte-d7	ok d7	ok d7
+latin1/byte-d8	ok d8	ok d8
+latin1/byte-d9	ok d9	ok d9
+latin1/byte-da	ok da	ok da
+latin1/byte-db	ok db	ok db
+latin1/byte-dc	ok dc	ok dc
+latin1/byte-dd	ok dd	ok dd
+latin1/byte-de	ok de	ok de
+latin1/byte-df	ok df	ok df
+latin1/byte-e0	ok e0	ok e0
+latin1/byte-e1	ok e1	ok e1
+latin1/byte-e2	ok e2	ok e2
+latin1/byte-e3	ok e3	ok e3
+latin1/byte-e4	ok e4	ok e4
+latin1/byte-e5	ok e5	ok e5
+latin1/byte-e6	ok e6	ok e6
+latin1/byte-e7	ok e7	ok e7
+latin1/byte-e8	ok e8	ok e8
+latin1/byte-e9	ok e9	ok e9
+latin1/byte-ea	ok ea	ok ea
+latin1/byte-eb	ok eb	ok eb
+latin1/byte-ec	ok ec	ok ec
+latin1/byte-ed	ok ed	ok ed
+latin1/byte-ee	ok ee	ok ee
+latin1/byte-ef	ok ef	ok ef
+latin1/byte-f0	ok f0	ok f0
+latin1/byte-f1	ok f1	ok f1
+latin1/byte-f2	ok f2	ok f2
+latin1/byte-f3	ok f3	ok f3
+latin1/byte-f4	ok f4	ok f4
+latin1/byte-f5	ok f5	ok f5
+latin1/byte-f6	ok f6	ok f6
+latin1/byte-f7	ok f7	ok f7
+latin1/byte-f8	ok f8	ok f8
+latin1/byte-f9	ok f9	ok f9
+latin1/byte-fa	ok fa	ok fa
+latin1/byte-fb	ok fb	ok fb
+latin1/byte-fc	ok fc	ok fc
+latin1/byte-fd	ok fd	ok fd
+latin1/byte-fe	ok fe	ok fe
+latin1/byte-ff	ok ff	ok ff
+latin1/ascii	ok 20 21 22 23 24 25 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e	ok 20 21 22 23 24 25 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e
+latin1/names	ok e9	ok e9
+latin1/lines	refused	refused
+latin1/control	refused	refused
+latin1/single-quotes	ok 78	ok 78
+latin1/standalone	ok 78	ok 78
+latin9/name-00-ISO-8859-15	ok 78	ok 78
+latin9/name-01-iso-8859-15	ok 78	ok 78
+latin9/name-02-ISO_8859-15	ok 78	ok 78
+latin9/name-03-ISO8859-15	ok 78	ok 78
+latin9/name-04-LATIN-9	ok 78	ok 78
+latin9/name-05-Latin-9	ok 78	ok 78
+latin9/name-06-latin9	ok 78	ok 78
+latin9/name-07-csISOLatin9	ok 78	refused
+latin9/name-08-L9	ok 78	refused
+latin9/name-09-ISO_8859-15:1998	refused	refused
+latin9/name-10-ISO-IR-203	refused	ok 78
+latin9/name-11-LATIN0	ok 78	refused
+latin9/name-12-csISO885915	ok 78	refused
+latin9/byte-80	ok 80	ok 80
+latin9/byte-81	ok 81	ok 81
+latin9/byte-82	ok 82	ok 82
+latin9/byte-83	ok 83	ok 83
+latin9/byte-84	ok 84	ok 84
+latin9/byte-85	ok 85	ok 85
+latin9/byte-86	ok 86	ok 86
+latin9/byte-87	ok 87	ok 87
+latin9/byte-88	ok 88	ok 88
+latin9/byte-89	ok 89	ok 89
+latin9/byte-8a	ok 8a	ok 8a
+latin9/byte-8b	ok 8b	ok 8b
+latin9/byte-8c	ok 8c	ok 8c
+latin9/byte-8d	ok 8d	ok 8d
+latin9/byte-8e	ok 8e	ok 8e
+latin9/byte-8f	ok 8f	ok 8f
+latin9/byte-90	ok 90	ok 90
+latin9/byte-91	ok 91	ok 91
+latin9/byte-92	ok 92	ok 92
+latin9/byte-93	ok 93	ok 93
+latin9/byte-94	ok 94	ok 94
+latin9/byte-95	ok 95	ok 95
+latin9/byte-96	ok 96	ok 96
+latin9/byte-97	ok 97	ok 97
+latin9/byte-98	ok 98	ok 98
+latin9/byte-99	ok 99	ok 99
+latin9/byte-9a	ok 9a	ok 9a
+latin9/byte-9b	ok 9b	ok 9b
+latin9/byte-9c	ok 9c	ok 9c
+latin9/byte-9d	ok 9d	ok 9d
+latin9/byte-9e	ok 9e	ok 9e
+latin9/byte-9f	ok 9f	ok 9f
+latin9/byte-a0	ok a0	ok a0
+latin9/byte-a1	ok a1	ok a1
+latin9/byte-a2	ok a2	ok a2
+latin9/byte-a3	ok a3	ok a3
+latin9/byte-a4	ok 20ac	ok 20ac
+latin9/byte-a5	ok a5	ok a5
+latin9/byte-a6	ok 160	ok 160
+latin9/byte-a7	ok a7	ok a7
+latin9/byte-a8	ok 161	ok 161
+latin9/byte-a9	ok a9	ok a9
+latin9/byte-aa	ok aa	ok aa
+latin9/byte-ab	ok ab	ok ab
+latin9/byte-ac	ok ac	ok ac
+latin9/byte-ad	ok ad	ok ad
+latin9/byte-ae	ok ae	ok ae
+latin9/byte-af	ok af	ok af
+latin9/byte-b0	ok b0	ok b0
+latin9/byte-b1	ok b1	ok b1
+latin9/byte-b2	ok b2	ok b2
+latin9/byte-b3	ok b3	ok b3
+latin9/byte-b4	ok 17d	ok 17d
+latin9/byte-b5	ok b5	ok b5
+latin9/byte-b6	ok b6	ok b6
+latin9/byte-b7	ok b7	ok b7
+latin9/byte-b8	ok 17e	ok 17e
+latin9/byte-b9	ok b9	ok b9
+latin9/byte-ba	ok ba	ok ba
+latin9/byte-bb	ok bb	ok bb
+latin9/byte-bc	ok 152	ok 152
+latin9/byte-bd	ok 153	ok 153
+latin9/byte-be	ok 178	ok 178
+latin9/byte-bf	ok bf	ok bf
+latin9/byte-c0	ok c0	ok c0
+latin9/byte-c1	ok c1	ok c1
+latin9/byte-c2	ok c2	ok c2
+latin9/byte-c3	ok c3	ok c3
+latin9/byte-c4	ok c4	ok c4
+latin9/byte-c5	ok c5	ok c5
+latin9/byte-c6	ok c6	ok c6
+latin9/byte-c7	ok c7	ok c7
+latin9/byte-c8	ok c8	ok c8
+latin9/byte-c9	ok c9	ok c9
+latin9/byte-ca	ok ca	ok ca
+latin9/byte-cb	ok cb	ok cb
+latin9/byte-cc	ok cc	ok cc
+latin9/byte-cd	ok cd	ok cd
+latin9/byte-ce	ok ce	ok ce
+latin9/byte-cf	ok cf	ok cf
+latin9/byte-d0	ok d0	ok d0
+latin9/byte-d1	ok d1	ok d1
+latin9/byte-d2	ok d2	ok d2
+latin9/byte-d3	ok d3	ok d3
+latin9/byte-d4	ok d4	ok d4
+latin9/byte-d5	ok d5	ok d5
+latin9/byte-d6	ok d6	ok d6
+latin9/byte-d7	ok d7	ok d7
+latin9/byte-d8	ok d8	ok d8
+latin9/byte-d9	ok d9	ok d9
+latin9/byte-da	ok da	ok da
+latin9/byte-db	ok db	ok db
+latin9/byte-dc	ok dc	ok dc
+latin9/byte-dd	ok dd	ok dd
+latin9/byte-de	ok de	ok de
+latin9/byte-df	ok df	ok df
+latin9/byte-e0	ok e0	ok e0
+latin9/byte-e1	ok e1	ok e1
+latin9/byte-e2	ok e2	ok e2
+latin9/byte-e3	ok e3	ok e3
+latin9/byte-e4	ok e4	ok e4
+latin9/byte-e5	ok e5	ok e5
+latin9/byte-e6	ok e6	ok e6
+latin9/byte-e7	ok e7	ok e7
+latin9/byte-e8	ok e8	ok e8
+latin9/byte-e9	ok e9	ok e9
+latin9/byte-ea	ok ea	ok ea
+latin9/byte-eb	ok eb	ok eb
+latin9/byte-ec	ok ec	ok ec
+latin9/byte-ed	ok ed	ok ed
+latin9/byte-ee	ok ee	ok ee
+latin9/byte-ef	ok ef	ok ef
+latin9/byte-f0	ok f0	ok f0
+latin9/byte-f1	ok f1	ok f1
+latin9/byte-f2	ok f2	ok f2
+latin9/byte-f3	ok f3	ok f3
+latin9/byte-f4	ok f4	ok f4
+latin9/byte-f5	ok f5	ok f5
+latin9/byte-f6	ok f6	ok f6
+latin9/byte-f7	ok f7	ok f7
+latin9/byte-f8	ok f8	ok f8
+latin9/byte-f9	ok f9	ok f9
+latin9/byte-fa	ok fa	ok fa
+latin9/byte-fb	ok fb	ok fb
+latin9/byte-fc	ok fc	ok fc
+latin9/byte-fd	ok fd	ok fd
+latin9/byte-fe	ok fe	ok fe
+latin9/byte-ff	ok ff	ok ff
+latin9/ascii	ok 20 21 22 23 24 25 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e	ok 20 21 22 23 24 25 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e
+latin9/names	ok e9	ok e9
+latin9/lines	refused	refused
+latin9/control	refused	refused
+latin9/single-quotes	ok 78	ok 78
+latin9/standalone	ok 78	ok 78
+cp1252/name-00-windows-1252	ok 78	ok 78
+cp1252/name-01-WINDOWS-1252	ok 78	ok 78
+cp1252/name-02-Windows-1252	ok 78	ok 78
+cp1252/name-03-cp1252	ok 78	ok 78
+cp1252/name-04-CP1252	ok 78	ok 78
+cp1252/name-05-Cp1252	ok 78	ok 78
+cp1252/name-06-x-cp1252	refused	refused
+cp1252/name-07-MS-ANSI	refused	ok 78
+cp1252/name-08-cp-1252	refused	refused
+cp1252/byte-80	ok 20ac	ok 20ac
+cp1252/byte-81	ok fffd	refused
+cp1252/byte-82	ok 201a	ok 201a
+cp1252/byte-83	ok 192	ok 192
+cp1252/byte-84	ok 201e	ok 201e
+cp1252/byte-85	ok 2026	ok 2026
+cp1252/byte-86	ok 2020	ok 2020
+cp1252/byte-87	ok 2021	ok 2021
+cp1252/byte-88	ok 2c6	ok 2c6
+cp1252/byte-89	ok 2030	ok 2030
+cp1252/byte-8a	ok 160	ok 160
+cp1252/byte-8b	ok 2039	ok 2039
+cp1252/byte-8c	ok 152	ok 152
+cp1252/byte-8d	ok fffd	refused
+cp1252/byte-8e	ok 17d	ok 17d
+cp1252/byte-8f	ok fffd	refused
+cp1252/byte-90	ok fffd	refused
+cp1252/byte-91	ok 2018	ok 2018
+cp1252/byte-92	ok 2019	ok 2019
+cp1252/byte-93	ok 201c	ok 201c
+cp1252/byte-94	ok 201d	ok 201d
+cp1252/byte-95	ok 2022	ok 2022
+cp1252/byte-96	ok 2013	ok 2013
+cp1252/byte-97	ok 2014	ok 2014
+cp1252/byte-98	ok 2dc	ok 2dc
+cp1252/byte-99	ok 2122	ok 2122
+cp1252/byte-9a	ok 161	ok 161
+cp1252/byte-9b	ok 203a	ok 203a
+cp1252/byte-9c	ok 153	ok 153
+cp1252/byte-9d	ok fffd	refused
+cp1252/byte-9e	ok 17e	ok 17e
+cp1252/byte-9f	ok 178	ok 178
+cp1252/byte-a0	ok a0	ok a0
+cp1252/byte-a1	ok a1	ok a1
+cp1252/byte-a2	ok a2	ok a2
+cp1252/byte-a3	ok a3	ok a3
+cp1252/byte-a4	ok a4	ok a4
+cp1252/byte-a5	ok a5	ok a5
+cp1252/byte-a6	ok a6	ok a6
+cp1252/byte-a7	ok a7	ok a7
+cp1252/byte-a8	ok a8	ok a8
+cp1252/byte-a9	ok a9	ok a9
+cp1252/byte-aa	ok aa	ok aa
+cp1252/byte-ab	ok ab	ok ab
+cp1252/byte-ac	ok ac	ok ac
+cp1252/byte-ad	ok ad	ok ad
+cp1252/byte-ae	ok ae	ok ae
+cp1252/byte-af	ok af	ok af
+cp1252/byte-b0	ok b0	ok b0
+cp1252/byte-b1	ok b1	ok b1
+cp1252/byte-b2	ok b2	ok b2
+cp1252/byte-b3	ok b3	ok b3
+cp1252/byte-b4	ok b4	ok b4
+cp1252/byte-b5	ok b5	ok b5
+cp1252/byte-b6	ok b6	ok b6
+cp1252/byte-b7	ok b7	ok b7
+cp1252/byte-b8	ok b8	ok b8
+cp1252/byte-b9	ok b9	ok b9
+cp1252/byte-ba	ok ba	ok ba
+cp1252/byte-bb	ok bb	ok bb
+cp1252/byte-bc	ok bc	ok bc
+cp1252/byte-bd	ok bd	ok bd
+cp1252/byte-be	ok be	ok be
+cp1252/byte-bf	ok bf	ok bf
+cp1252/byte-c0	ok c0	ok c0
+cp1252/byte-c1	ok c1	ok c1
+cp1252/byte-c2	ok c2	ok c2
+cp1252/byte-c3	ok c3	ok c3
+cp1252/byte-c4	ok c4	ok c4
+cp1252/byte-c5	ok c5	ok c5
+cp1252/byte-c6	ok c6	ok c6
+cp1252/byte-c7	ok c7	ok c7
+cp1252/byte-c8	ok c8	ok c8
+cp1252/byte-c9	ok c9	ok c9
+cp1252/byte-ca	ok ca	ok ca
+cp1252/byte-cb	ok cb	ok cb
+cp1252/byte-cc	ok cc	ok cc
+cp1252/byte-cd	ok cd	ok cd
+cp1252/byte-ce	ok ce	ok ce
+cp1252/byte-cf	ok cf	ok cf
+cp1252/byte-d0	ok d0	ok d0
+cp1252/byte-d1	ok d1	ok d1
+cp1252/byte-d2	ok d2	ok d2
+cp1252/byte-d3	ok d3	ok d3
+cp1252/byte-d4	ok d4	ok d4
+cp1252/byte-d5	ok d5	ok d5
+cp1252/byte-d6	ok d6	ok d6
+cp1252/byte-d7	ok d7	ok d7
+cp1252/byte-d8	ok d8	ok d8
+cp1252/byte-d9	ok d9	ok d9
+cp1252/byte-da	ok da	ok da
+cp1252/byte-db	ok db	ok db
+cp1252/byte-dc	ok dc	ok dc
+cp1252/byte-dd	ok dd	ok dd
+cp1252/byte-de	ok de	ok de
+cp1252/byte-df	ok df	ok df
+cp1252/byte-e0	ok e0	ok e0
+cp1252/byte-e1	ok e1	ok e1
+cp1252/byte-e2	ok e2	ok e2
+cp1252/byte-e3	ok e3	ok e3
+cp1252/byte-e4	ok e4	ok e4
+cp1252/byte-e5	ok e5	ok e5
+cp1252/byte-e6	ok e6	ok e6
+cp1252/byte-e7	ok e7	ok e7
+cp1252/byte-e8	ok e8	ok e8
+cp1252/byte-e9	ok e9	ok e9
+cp1252/byte-ea	ok ea	ok ea
+cp1252/byte-eb	ok eb	ok eb
+cp1252/byte-ec	ok ec	ok ec
+cp1252/byte-ed	ok ed	ok ed
+cp1252/byte-ee	ok ee	ok ee
+cp1252/byte-ef	ok ef	ok ef
+cp1252/byte-f0	ok f0	ok f0
+cp1252/byte-f1	ok f1	ok f1
+cp1252/byte-f2	ok f2	ok f2
+cp1252/byte-f3	ok f3	ok f3
+cp1252/byte-f4	ok f4	ok f4
+cp1252/byte-f5	ok f5	ok f5
+cp1252/byte-f6	ok f6	ok f6
+cp1252/byte-f7	ok f7	ok f7
+cp1252/byte-f8	ok f8	ok f8
+cp1252/byte-f9	ok f9	ok f9
+cp1252/byte-fa	ok fa	ok fa
+cp1252/byte-fb	ok fb	ok fb
+cp1252/byte-fc	ok fc	ok fc
+cp1252/byte-fd	ok fd	ok fd
+cp1252/byte-fe	ok fe	ok fe
+cp1252/byte-ff	ok ff	ok ff
+cp1252/ascii	ok 20 21 22 23 24 25 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e	ok 20 21 22 23 24 25 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e
+cp1252/names	ok e9	ok e9
+cp1252/lines	refused	refused
+cp1252/control	refused	refused
+cp1252/single-quotes	ok 78	ok 78
+cp1252/standalone	ok 78	ok 78
+ascii/name-00-US-ASCII	ok 78	ok 78
+ascii/name-01-us-ascii	ok 78	ok 78
+ascii/name-02-ASCII	ok 78	ok 78
+ascii/name-03-ascii	ok 78	ok 78
+ascii/name-04-ANSI_X3.4-1968	ok 78	ok 78
+ascii/name-05-ANSI_X3.4-1986	ok 78	ok 78
+ascii/name-06-ISO646-US	ok 78	ok 78
+ascii/name-07-ISO-IR-6	ok 78	ok 78
+ascii/name-08-iso-ir-6	ok 78	ok 78
+ascii/name-09-CP367	ok 78	ok 78
+ascii/name-10-IBM367	ok 78	ok 78
+ascii/name-11-US	ok 78	ok 78
+ascii/name-12-csASCII	ok 78	ok 78
+ascii/name-13-ISO_646.irv:1991	refused	refused
+ascii/name-14-646	refused	refused
+ascii/byte-80	refused	refused
+ascii/byte-81	refused	refused
+ascii/byte-82	refused	refused
+ascii/byte-83	refused	refused
+ascii/byte-84	refused	refused
+ascii/byte-85	refused	refused
+ascii/byte-86	refused	refused
+ascii/byte-87	refused	refused
+ascii/byte-88	refused	refused
+ascii/byte-89	refused	refused
+ascii/byte-8a	refused	refused
+ascii/byte-8b	refused	refused
+ascii/byte-8c	refused	refused
+ascii/byte-8d	refused	refused
+ascii/byte-8e	refused	refused
+ascii/byte-8f	refused	refused
+ascii/byte-90	refused	refused
+ascii/byte-91	refused	refused
+ascii/byte-92	refused	refused
+ascii/byte-93	refused	refused
+ascii/byte-94	refused	refused
+ascii/byte-95	refused	refused
+ascii/byte-96	refused	refused
+ascii/byte-97	refused	refused
+ascii/byte-98	refused	refused
+ascii/byte-99	refused	refused
+ascii/byte-9a	refused	refused
+ascii/byte-9b	refused	refused
+ascii/byte-9c	refused	refused
+ascii/byte-9d	refused	refused
+ascii/byte-9e	refused	refused
+ascii/byte-9f	refused	refused
+ascii/byte-a0	refused	refused
+ascii/byte-a1	refused	refused
+ascii/byte-a2	refused	refused
+ascii/byte-a3	refused	refused
+ascii/byte-a4	refused	refused
+ascii/byte-a5	refused	refused
+ascii/byte-a6	refused	refused
+ascii/byte-a7	refused	refused
+ascii/byte-a8	refused	refused
+ascii/byte-a9	refused	refused
+ascii/byte-aa	refused	refused
+ascii/byte-ab	refused	refused
+ascii/byte-ac	refused	refused
+ascii/byte-ad	refused	refused
+ascii/byte-ae	refused	refused
+ascii/byte-af	refused	refused
+ascii/byte-b0	refused	refused
+ascii/byte-b1	refused	refused
+ascii/byte-b2	refused	refused
+ascii/byte-b3	refused	refused
+ascii/byte-b4	refused	refused
+ascii/byte-b5	refused	refused
+ascii/byte-b6	refused	refused
+ascii/byte-b7	refused	refused
+ascii/byte-b8	refused	refused
+ascii/byte-b9	refused	refused
+ascii/byte-ba	refused	refused
+ascii/byte-bb	refused	refused
+ascii/byte-bc	refused	refused
+ascii/byte-bd	refused	refused
+ascii/byte-be	refused	refused
+ascii/byte-bf	refused	refused
+ascii/byte-c0	refused	refused
+ascii/byte-c1	refused	refused
+ascii/byte-c2	refused	refused
+ascii/byte-c3	refused	refused
+ascii/byte-c4	refused	refused
+ascii/byte-c5	refused	refused
+ascii/byte-c6	refused	refused
+ascii/byte-c7	refused	refused
+ascii/byte-c8	refused	refused
+ascii/byte-c9	refused	refused
+ascii/byte-ca	refused	refused
+ascii/byte-cb	refused	refused
+ascii/byte-cc	refused	refused
+ascii/byte-cd	refused	refused
+ascii/byte-ce	refused	refused
+ascii/byte-cf	refused	refused
+ascii/byte-d0	refused	refused
+ascii/byte-d1	refused	refused
+ascii/byte-d2	refused	refused
+ascii/byte-d3	refused	refused
+ascii/byte-d4	refused	refused
+ascii/byte-d5	refused	refused
+ascii/byte-d6	refused	refused
+ascii/byte-d7	refused	refused
+ascii/byte-d8	refused	refused
+ascii/byte-d9	refused	refused
+ascii/byte-da	refused	refused
+ascii/byte-db	refused	refused
+ascii/byte-dc	refused	refused
+ascii/byte-dd	refused	refused
+ascii/byte-de	refused	refused
+ascii/byte-df	refused	refused
+ascii/byte-e0	refused	refused
+ascii/byte-e1	refused	refused
+ascii/byte-e2	refused	refused
+ascii/byte-e3	refused	refused
+ascii/byte-e4	refused	refused
+ascii/byte-e5	refused	refused
+ascii/byte-e6	refused	refused
+ascii/byte-e7	refused	refused
+ascii/byte-e8	refused	refused
+ascii/byte-e9	refused	refused
+ascii/byte-ea	refused	refused
+ascii/byte-eb	refused	refused
+ascii/byte-ec	refused	refused
+ascii/byte-ed	refused	refused
+ascii/byte-ee	refused	refused
+ascii/byte-ef	refused	refused
+ascii/byte-f0	refused	refused
+ascii/byte-f1	refused	refused
+ascii/byte-f2	refused	refused
+ascii/byte-f3	refused	refused
+ascii/byte-f4	refused	refused
+ascii/byte-f5	refused	refused
+ascii/byte-f6	refused	refused
+ascii/byte-f7	refused	refused
+ascii/byte-f8	refused	refused
+ascii/byte-f9	refused	refused
+ascii/byte-fa	refused	refused
+ascii/byte-fb	refused	refused
+ascii/byte-fc	refused	refused
+ascii/byte-fd	refused	refused
+ascii/byte-fe	refused	refused
+ascii/byte-ff	refused	refused
+ascii/ascii	ok 20 21 22 23 24 25 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e	ok 20 21 22 23 24 25 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e
+ascii/names	refused	refused
+ascii/lines	refused	refused
+ascii/control	refused	refused
+ascii/single-quotes	ok 78	ok 78
+ascii/standalone	ok 78	ok 78
+latin2/name-00-ISO-8859-2	ok 78	ok 78
+cp1250/name-00-windows-1250	ok 78	ok 78
+other/name-foo	refused	refused
+other/name-x-unknown	refused	refused
+other/name-IBM037	refused	refused
+other/name-UTF-32	refused	refused
+other/name-UCS-4	refused	refused
+other/name-Shift_JIS	ok 78	ok 78
+other/name-EUC-JP	ok 78	ok 78
+other/name-ISO-2022-JP	ok 78	ok 78
+other/name-UTF-7	refused	ok 78
+other/name-KOI8-R	ok 78	ok 78
+other/name-GB2312	ok 78	ok 78
+other/name-UCS-2	refused	refused
+other/name-ISO-10646-UCS-2	refused	refused
+other/name-UTF-32LE	refused	refused
+other/name-ISO-8859-16	ok 78	ok 78
+other/name-x-mac-roman	refused	refused
+other/name-ISO-8859-5	ok 78	ok 78
+other/name-windows-1251	ok 78	ok 78
+other/name-Big5	ok 78	ok 78
+other/utf32le-bom	refused	refused
+other/utf32be-bom	refused	refused
+other/utf32le-no-bom	ok e9	refused
+other/ebcdic	ok 78	ok 78
+decl/newlines	ok e9	ok e9
+decl/tab	ok e9	ok e9
+decl/spaces	ok e9	ok e9
+decl/not-first	refused	refused
+decl/no-version	refused	refused
+decl/unterminated	refused	refused
+decl/mismatched-quotes	refused	refused
+decl/invalid-name	refused	refused
+decl/space-in-name	refused	refused
+decl/empty-name	refused	refused
+decl/encoding-twice	refused	refused
+decl/upper-case-xml	refused	refused

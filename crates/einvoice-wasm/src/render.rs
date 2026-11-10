@@ -448,8 +448,7 @@ mod tests {
 
     #[test]
     fn other_errors_are_returned() {
-        let (validator, result) =
-            validate(b"<?xml version='1.0' encoding='ISO-8859-1'?><a/>", None);
+        let (validator, result) = validate(b"<?xml version='1.0' encoding='Shift_JIS'?><a/>", None);
         let e = report(validator.rule_set(), None, result).unwrap_err();
         assert_eq!(e.kind().as_str(), "unsupported");
         assert_eq!(

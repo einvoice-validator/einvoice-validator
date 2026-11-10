@@ -3,6 +3,8 @@
 
 use std::fmt;
 
+use einvoice_xml::Encoding;
+
 use crate::manifest::{CII, UBL_CREDIT_NOTE, UBL_INVOICE};
 
 /// The syntax of an e-invoice, as its root element names it.
@@ -21,11 +23,18 @@ impl Syntax {
     /// The syntax of `document`, from its root element alone: its local name and
     /// namespace. `None` when the document does not start like XML with one of the root
     /// elements above (another root element, a document that is not XML, a document type
-    /// declaration before the root, an encoding other than UTF-8). Only the start of the
-    /// document is read; whether it is well-formed is for the validation to say.
+    /// declaration before the root, UTF-16 bytes that are not). Only the start of the
+    /// document is read, in the encoding the validation reads it in (UTF-16 or an
+    /// encoding whose bytes below 0x80 are ASCII); whether it is well-formed, and in an
+    /// encoding the validation reads, is for the validation to say.
     #[must_use]
     pub fn detect(document: &[u8]) -> Option<Self> {
-        let (local, namespace) = root_name(document)?;
+        let (local, namespace) = match einvoice_xml::encoding_of(document) {
+            Ok(encoding @ (Encoding::Utf16Le | Encoding::Utf16Be)) => {
+                root_name(utf16_lossy(document, encoding).as_bytes())?
+            }
+            _ => root_name(document)?,
+        };
         match (local.as_str(), namespace.as_str()) {
             ("Invoice", UBL_INVOICE) | ("CreditNote", UBL_CREDIT_NOTE) => Some(Self::Ubl),
             ("CrossIndustryInvoice", CII) => Some(Self::Cii),
@@ -58,6 +67,25 @@ impl fmt::Display for Syntax {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
+}
+
+/// A UTF-16 document (after its byte order mark, if any) in UTF-8, each unpaired
+/// surrogate replaced with U+FFFD.
+fn utf16_lossy(document: &[u8], encoding: Encoding) -> String {
+    let bytes = document
+        .strip_prefix(&[0xFF, 0xFE])
+        .or_else(|| document.strip_prefix(&[0xFE, 0xFF]))
+        .unwrap_or(document);
+    let units = bytes.as_chunks::<2>().0.iter().map(|&pair| {
+        if encoding == Encoding::Utf16Le {
+            u16::from_le_bytes(pair)
+        } else {
+            u16::from_be_bytes(pair)
+        }
+    });
+    char::decode_utf16(units)
+        .map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER))
+        .collect()
 }
 
 /// Whitespace in the sense of XML (`S`).
@@ -105,9 +133,12 @@ fn root_name(document: &[u8]) -> Option<(String, String)> {
         let quote = *after.first().filter(|q| matches!(q, b'"' | b'\''))?;
         let after = &after[1..];
         let end = after.iter().position(|&b| b == quote)?;
-        let value = std::str::from_utf8(&after[..end]).ok()?;
         rest = &after[end + 1..];
-        // A value with a reference would need decoding: not one of the namespaces above.
+        // A value that is not ASCII-compatible text, or with a reference, which would need
+        // decoding: not one of the namespaces above.
+        let Ok(value) = std::str::from_utf8(&after[..end]) else {
+            continue;
+        };
         if value.contains(['&', '<']) {
             continue;
         }
@@ -184,6 +215,25 @@ mod tests {
             ),
             Some(Syntax::Cii)
         );
+    }
+
+    #[test]
+    fn other_encodings() {
+        let ubl = "<?xml version='1.0' encoding='UTF-16'?><Invoice note='\u{e9}' xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'/>";
+        let le: Vec<u8> = [0xFF, 0xFE]
+            .into_iter()
+            .chain(ubl.encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        assert_eq!(Syntax::detect(&le), Some(Syntax::Ubl));
+        let be: Vec<u8> = ubl.encode_utf16().flat_map(u16::to_be_bytes).collect();
+        assert_eq!(Syntax::detect(&be), Some(Syntax::Ubl));
+        // An unpaired surrogate after the root's start tag.
+        let mut lone = le.clone();
+        lone.extend([0x00, 0xD8]);
+        assert_eq!(Syntax::detect(&lone), Some(Syntax::Ubl));
+        // ISO-8859-1, a non-ASCII byte in another attribute of the root.
+        let latin1 = b"<?xml version='1.0' encoding='ISO-8859-1'?><rsm:CrossIndustryInvoice a='\xE9' xmlns:rsm='urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100'/>";
+        assert_eq!(Syntax::detect(latin1), Some(Syntax::Cii));
     }
 
     #[test]

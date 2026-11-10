@@ -285,20 +285,34 @@ fn a_failing_vefa_case() {
 #[cfg(feature = "cen-ubl")]
 #[test]
 fn documents_that_are_not_xml() {
-    let cases: [(&[u8], ErrorKind, &str); 7] = [
+    let cases: [(&[u8], ErrorKind, &str); 9] = [
         (b"<Invoice", ErrorKind::NotXml, "1:1: not well-formed XML"),
         (b"<a>\n<b></a>", ErrorKind::NotXml, "2:"),
         (b"<p:a/>", ErrorKind::NotXml, "not well-formed XML"),
         (
             b"<a>\xFF</a>",
             ErrorKind::NotXml,
-            "1:4: not well-formed XML: not UTF-8",
+            "1:4: not well-formed XML: bytes that are not UTF-8 at 1:4",
         ),
-        (b"\xFF\xFE<\0a\0/\0>\0", ErrorKind::Unsupported, "UTF-16"),
         (
-            b"<?xml version='1.0' encoding='ISO-8859-1'?><a/>",
+            b"\xFF\xFE<\0a\0>\0\0\xD8<\0/\0a\0>\0",
+            ErrorKind::NotXml,
+            "1:4: not well-formed XML: bytes that are not UTF-16LE at 1:4",
+        ),
+        (
+            b"\xFF\xFE<\0?\0x\0m\0l\0 \0v\0e\0r\0s\0i\0o\0n\0=\0'\x001\0.\x000\0'\0 \0e\0n\0c\0o\0d\0i\0n\0g\0=\0'\0U\0T\0F\0-\08\0'\0?\0>\0<\0a\0/\0>\0",
+            ErrorKind::NotXml,
+            "1:1: not well-formed XML: a UTF-16LE byte order mark, but the XML declaration names the encoding 'UTF-8'",
+        ),
+        (
+            b"<?xml version='1.0' encoding='Shift_JIS'?><a/>",
             ErrorKind::Unsupported,
-            "the ISO-8859-1 encoding",
+            "the Shift_JIS encoding",
+        ),
+        (
+            b"\xEF\xBB\xBF\xEF\xBB\xBF<a/>",
+            ErrorKind::NotXml,
+            "1:1: not well-formed XML: unknown token at 1:1",
         ),
         (
             b"<!DOCTYPE a [<!ENTITY e 'x'>]><a>&e;</a>",
@@ -384,8 +398,9 @@ fn constructs_xml_forbids_are_not_xml() {
             e.to_string()
         );
     }
-    // XML 1.0 [80], [81]: an encoding name starts with a letter. The validator refuses
-    // encodings other than UTF-8 before reading the document.
+    // XML 1.0 [80], [81]: an encoding name starts with a letter. Not an encoding the
+    // validator refuses as unsupported: a declaration that is not well-formed, as for
+    // Saxon-HE and xmllint.
     let declaration = "encoding=\"UTF-8\"";
     assert_eq!(text.matches(declaration).count(), 1);
     let e = cen()
@@ -394,7 +409,12 @@ fn constructs_xml_forbids_are_not_xml() {
                 .as_bytes(),
         )
         .unwrap_err();
-    assert_eq!(e.kind(), ErrorKind::Unsupported, "{e}");
+    assert_eq!(e.kind(), ErrorKind::NotXml, "{e}");
+    assert!(
+        e.to_string()
+            .ends_with("the encoding is not an encoding name"),
+        "{e}"
+    );
 }
 
 #[cfg(feature = "cen-ubl")]
@@ -1128,12 +1148,12 @@ fn stylesheets_read_the_resources_of_their_bundle() {
         Err(Error::Bundle { message }) => assert!(message.contains("xslt/codes.xml"), "{message}"),
         other => panic!("{other:?}"),
     }
-    let latin1 = b"<?xml version='1.0' encoding='ISO-8859-1'?><codes/>";
+    let shift_jis = b"<?xml version='1.0' encoding='Shift_JIS'?><codes/>";
     let files: &[(&str, &[u8])] = &[
         ("xslt/codes.xsl", CODES_STYLESHEET.as_bytes()),
-        ("xslt/codes.xml", latin1),
+        ("xslt/codes.xml", shift_jis),
     ];
-    match Validator::from_bundle(&codes_manifest(latin1), files) {
+    match Validator::from_bundle(&codes_manifest(shift_jis), files) {
         Err(Error::Bundle { message }) => {
             assert!(message.contains("resource xslt/codes.xml"), "{message}");
         }

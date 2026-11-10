@@ -6,6 +6,8 @@
     reason = "shared by several test targets, each using a part"
 )]
 
+pub(crate) mod reencode;
+
 use std::path::{Path, PathBuf};
 
 pub(crate) const CORPUS: &str = "corpus/cen-en16931-ubl-1.3.17";

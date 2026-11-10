@@ -93,8 +93,8 @@ export interface EinvoiceValidatorError extends Error {
   /**
    * `bundle`: an unknown rule-set name, or a rule set that cannot be loaded;
    * `not-xml`: a document that is not well-formed XML (thrown by `validateSvrl` only;
-   * `validate` reports it as an invalid document); `unsupported`: an encoding other
-   * than UTF-8, a document type declaration, or a construct the engine refuses rather
+   * `validate` reports it as an invalid document); `unsupported`: an encoding the
+   * module does not read, a document type declaration, or a construct the engine refuses rather
    * than answering differently from the reference engine, and a document beyond a limit
    * (`limit` set); `transform`: a dynamic error raised by a stylesheet on the document;
    * `internal`: a bug.

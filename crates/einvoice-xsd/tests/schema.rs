@@ -216,13 +216,24 @@ fn bytes_input() {
     with_bom.extend_from_slice(xml.as_bytes());
     assert!(schema.validate_bytes(&with_bom).unwrap().is_valid());
     let latin1 = format!("<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n{xml}");
+    assert!(schema.validate_bytes(latin1.as_bytes()).unwrap().is_valid());
+    let utf16: Vec<u8> = [0xFF, 0xFE]
+        .into_iter()
+        .chain(xml.encode_utf16().flat_map(u16::to_le_bytes))
+        .collect();
+    assert!(schema.validate_bytes(&utf16).unwrap().is_valid());
+    let shift_jis = format!("<?xml version=\"1.0\" encoding=\"Shift_JIS\"?>\n{xml}");
     assert!(matches!(
-        schema.validate_bytes(latin1.as_bytes()),
+        schema.validate_bytes(shift_jis.as_bytes()),
         Err(DocumentError::Unsupported { .. })
     ));
     assert!(matches!(
-        schema.validate_bytes(&[0xFF, 0xFE, b'<', 0]),
-        Err(DocumentError::Unsupported { .. })
+        schema.validate_bytes(&[0xFF, 0xFE, b'<', 0, 0x00, 0xD8]),
+        Err(DocumentError::Malformed {
+            line: 1,
+            column: 2,
+            ..
+        })
     ));
     let mut not_utf8 = xml.into_bytes();
     not_utf8.insert(10, 0xFF);

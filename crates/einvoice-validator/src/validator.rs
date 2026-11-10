@@ -467,13 +467,14 @@ impl Validator {
     /// all the same, invalid, with the error in [`StylesheetReport::failure`]; without
     /// schema errors, the error is returned.
     ///
-    /// The document must be UTF-8 (a byte order mark is allowed) and have no document
-    /// type declaration.
+    /// The document must be in an encoding the validator reads (UTF-8, UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15 or windows-1252,
+    /// see [`einvoice_xml::decode`]) and have no document type declaration.
     ///
     /// # Errors
     ///
-    /// [`Error::NotXml`] when the document is not well-formed XML (or not UTF-8);
-    /// [`Error::Unsupported`] for another encoding, a document type declaration, or a
+    /// [`Error::NotXml`] when the document is not well-formed XML (bytes that are not
+    /// characters of its encoding included); [`Error::Unsupported`] for an encoding the
+    /// validator does not read, a document type declaration, or a
     /// construct the engine refuses; [`Error::Limit`] for a document beyond a limit;
     /// [`Error::OptionOutOfRange`] for options beyond what the target allows (on
     /// WebAssembly); [`Error::Transform`] when a stylesheet raises a dynamic error on
@@ -485,7 +486,7 @@ impl Validator {
         options: &ValidateOptions<'_>,
     ) -> Result<Report, Error> {
         options.check(CAPS)?;
-        self.validate_text(Cow::Borrowed(decode(document)?), options)
+        self.validate_text(decode(document)?, options)
     }
 
     /// The validation of a decoded document: borrowed by the schema and every stylesheet
@@ -744,7 +745,7 @@ fn read(path: &Path) -> Result<Vec<u8>, Error> {
 }
 
 /// A document of the schema of a bundle: its SHA-256 checked against the manifest's, its
-/// text decoded as a document is (UTF-8); its path in the bundle and its text.
+/// text decoded as a document is (any supported encoding); its path in the bundle and its text.
 fn schema_document(entry: &SchemaDocumentEntry, bytes: &[u8]) -> Result<(String, String), Error> {
     let actual = sha256_hex(bytes);
     if actual != entry.sha256() {
@@ -756,7 +757,7 @@ fn schema_document(entry: &SchemaDocumentEntry, bytes: &[u8]) -> Result<(String,
     }
     let text = decode(bytes)
         .map_err(|e| Error::bundle(format!("schema document {}: {e}", entry.path())))?;
-    Ok((entry.path().to_owned(), text.to_owned()))
+    Ok((entry.path().to_owned(), text.into_owned()))
 }
 
 /// Loads the schema `id`: an embedded one, or that of the bundle from its documents
@@ -815,7 +816,7 @@ fn prepare(
     }
     let what = format!("stylesheet {} ({})", entry.name(), entry.path());
     let text = decode(bytes).map_err(|e| Error::bundle(format!("{what}: {e}")))?;
-    let sheet = einvoice_xslt::load(text).map_err(|errors| {
+    let sheet = einvoice_xslt::load(&text).map_err(|errors| {
         let unsupported = errors.0.iter().any(|e| {
             matches!(
                 e.kind,
@@ -885,100 +886,34 @@ fn transform_error(entry: &StylesheetEntry, e: &TransformError) -> Error {
     }
 }
 
-/// The UTF-8 byte order mark.
-const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
-
-/// The text of a document given as bytes: UTF-8, with or without a byte order mark,
-/// and an XML declaration, if any, naming UTF-8 or US-ASCII.
-pub(crate) fn decode(bytes: &[u8]) -> Result<&str, Error> {
-    refuse_utf16(bytes)?;
-    let bytes = bytes.strip_prefix(BOM).unwrap_or(bytes);
-    check_encoding(bytes)?;
-    std::str::from_utf8(bytes).map_err(|e| not_utf8(bytes, &e))
+/// The text of a document given as bytes, decoded with [`einvoice_xml::decode`]: UTF-8
+/// (borrowed), UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15 or windows-1252, as its byte
+/// order mark, first bytes and XML declaration say.
+pub(crate) fn decode(bytes: &[u8]) -> Result<Cow<'_, str>, Error> {
+    einvoice_xml::decode(bytes).map_err(decoding_error)
 }
 
-/// [`decode`] on a buffer, which becomes the text without being copied (the byte order
-/// mark, if any, is removed in place).
-fn decode_owned(mut bytes: Vec<u8>) -> Result<String, Error> {
-    refuse_utf16(&bytes)?;
-    if bytes.starts_with(BOM) {
-        bytes.drain(..BOM.len());
+/// [`decode`] on a buffer, which becomes the text without being copied when it is UTF-8
+/// (the byte order mark, if any, is removed in place).
+fn decode_owned(bytes: Vec<u8>) -> Result<String, Error> {
+    einvoice_xml::decode_owned(bytes).map_err(decoding_error)
+}
+
+/// The error for a document that cannot be decoded: [`Error::Unsupported`] for an
+/// encoding that is not read, [`Error::NotXml`] otherwise (bytes that are not a character
+/// of the encoding, first bytes and an XML declaration that disagree, a second byte
+/// order mark).
+fn decoding_error(e: einvoice_xml::Error) -> Error {
+    match e {
+        einvoice_xml::Error::UnsupportedEncoding(name) => Error::unsupported(format!(
+            "the {name} encoding: the encodings read are UTF-8, UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15 and windows-1252"
+        )),
+        e => Error::NotXml {
+            line: e.pos().row,
+            column: e.pos().col,
+            message: e.to_string(),
+        },
     }
-    check_encoding(&bytes)?;
-    String::from_utf8(bytes).map_err(|e| not_utf8(e.as_bytes(), &e.utf8_error()))
-}
-
-/// The error for bytes (after the byte order mark) that are not UTF-8.
-fn not_utf8(bytes: &[u8], e: &std::str::Utf8Error) -> Error {
-    bad_at(bytes, e.valid_up_to(), format!("not UTF-8: {e}"))
-}
-
-/// A [`Error::NotXml`] at the byte `valid_up_to` of `bytes` (after the byte order mark).
-fn bad_at(bytes: &[u8], valid_up_to: usize, message: String) -> Error {
-    let before = &bytes[..valid_up_to];
-    let line_start = before
-        .iter()
-        .rposition(|&b| b == b'\n')
-        .map_or(0, |i| i + 1);
-    let line = before.split(|&b| b == b'\n').count();
-    let column = String::from_utf8_lossy(&before[line_start..])
-        .chars()
-        .count()
-        + 1;
-    Error::NotXml {
-        line: u32::try_from(line).unwrap_or(u32::MAX),
-        column: u32::try_from(column).unwrap_or(u32::MAX),
-        message,
-    }
-}
-
-/// Refuses a document that starts with a UTF-16 byte order mark.
-fn refuse_utf16(bytes: &[u8]) -> Result<(), Error> {
-    if bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xFF, 0xFE]) {
-        return Err(Error::unsupported(
-            "a UTF-16 document: only UTF-8 is supported",
-        ));
-    }
-    Ok(())
-}
-
-/// Checks the XML declaration of a document given as bytes (after the byte order mark,
-/// if any): its encoding, if any, must be UTF-8 or US-ASCII, and with US-ASCII every
-/// byte must be ASCII. Whether the bytes are UTF-8 is checked by the caller.
-fn check_encoding(bytes: &[u8]) -> Result<(), Error> {
-    let ascii = match declared_encoding(bytes) {
-        None => false,
-        Some(e) if e.eq_ignore_ascii_case("utf-8") || e.eq_ignore_ascii_case("utf8") => false,
-        Some(e) if e.eq_ignore_ascii_case("us-ascii") || e.eq_ignore_ascii_case("ascii") => true,
-        Some(e) => {
-            return Err(Error::unsupported(format!(
-                "the {e} encoding: only UTF-8 is supported"
-            )));
-        }
-    };
-    if ascii && let Some(i) = bytes.iter().position(|b| !b.is_ascii()) {
-        return Err(bad_at(
-            bytes,
-            i,
-            "a byte outside US-ASCII, the encoding the XML declaration names".to_owned(),
-        ));
-    }
-    Ok(())
-}
-
-/// The `encoding` pseudo-attribute of the XML declaration, if any.
-fn declared_encoding(bytes: &[u8]) -> Option<&str> {
-    let declaration = bytes.strip_prefix(b"<?xml")?;
-    if !declaration.first().is_some_and(u8::is_ascii_whitespace) {
-        return None;
-    }
-    let end = declaration.windows(2).position(|w| w == b"?>")?;
-    let declaration = std::str::from_utf8(&declaration[..end]).ok()?;
-    let rest = &declaration[declaration.find("encoding")? + "encoding".len()..];
-    let rest = rest.trim_start().strip_prefix('=')?.trim_start();
-    let quote = rest.chars().next().filter(|c| *c == '"' || *c == '\'')?;
-    let value = &rest[1..];
-    value.find(quote).map(|end| &value[..end])
 }
 
 /// The namespace of the UBL basic components (`cbc:`).
@@ -1331,10 +1266,14 @@ mod tests {
             b"<a>\n  \xC3\xA9\xFF</a>",
             b"\xEF\xBB\xBF<a>\n\xFF</a>",
             b"<?xml version=\"1.0\" encoding=\"US-ASCII\"?>\n<a>\xC3\xA9</a>",
+            b"<?xml version='1.0' encoding='Shift_JIS'?><a/>",
+            b"\xEF\xBB\xBF\xEF\xBB\xBF<a/>",
             b"\xEF\xBB\xBF",
             b"",
         ] {
-            let borrowed = decode(bytes).map(str::to_owned).map_err(|e| e.to_string());
+            let borrowed = decode(bytes)
+                .map(Cow::into_owned)
+                .map_err(|e| e.to_string());
             let owned = decode_owned(bytes.to_vec()).map_err(|e| e.to_string());
             assert_eq!(owned, borrowed, "{bytes:?}");
         }
@@ -1347,26 +1286,47 @@ mod tests {
             decode(b"<?xml version='1.0' encoding='UTF-8'?><a/>").unwrap(),
             "<?xml version='1.0' encoding='UTF-8'?><a/>"
         );
-        assert!(matches!(
-            decode(b"\xFF\xFE<\0a\0/\0>\0"),
-            Err(Error::Unsupported { .. })
-        ));
-        assert!(matches!(
-            decode(b"<?xml version='1.0' encoding='ISO-8859-1'?><a/>"),
-            Err(Error::Unsupported { .. })
-        ));
+        assert!(matches!(decode(b"<a/>").unwrap(), Cow::Borrowed("<a/>")));
+        assert_eq!(decode(b"\xFF\xFE<\0a\0/\0>\0").unwrap(), "<a/>");
+        assert_eq!(
+            decode(b"<?xml version='1.0' encoding='ISO-8859-1'?><a>\xE9</a>").unwrap(),
+            "<?xml version='1.0' encoding='ISO-8859-1'?><a>\u{e9}</a>"
+        );
+        match decode(b"<?xml version='1.0' encoding='Shift_JIS'?><a/>") {
+            Err(Error::Unsupported { message }) => assert_eq!(
+                message,
+                "the Shift_JIS encoding: the encodings read are UTF-8, UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15 and windows-1252"
+            ),
+            other => panic!("{other:?}"),
+        }
+        match decode(b"<?xml version='1.0' encoding='UTF-16'?><a/>") {
+            Err(Error::NotXml {
+                line: 1,
+                column: 1,
+                message,
+            }) => assert_eq!(
+                message,
+                "UTF-8 (no byte order mark), but the XML declaration names the encoding 'UTF-16'"
+            ),
+            other => panic!("{other:?}"),
+        }
         match decode(b"<a>\n  \xC3\xA9\xFF</a>") {
             Err(Error::NotXml { line, column, .. }) => assert_eq!((line, column), (2, 4)),
             other => panic!("{other:?}"),
         }
         match decode(b"<?xml version=\"1.0\" encoding=\"US-ASCII\"?>\n<a>\xC3\xA9</a>") {
-            Err(Error::NotXml { line, column, .. }) => assert_eq!((line, column), (2, 4)),
+            Err(Error::NotXml {
+                line,
+                column,
+                message,
+            }) => {
+                assert_eq!((line, column), (2, 4));
+                assert_eq!(message, "bytes that are not US-ASCII at 2:4");
+            }
             other => panic!("{other:?}"),
         }
-        assert_eq!(
-            declared_encoding(b"<?xml-stylesheet encoding='x'?><a/>"),
-            None
-        );
+        // Not an XML declaration: UTF-8.
+        assert!(decode(b"<?xml-stylesheet encoding='x'?><a/>").is_ok());
     }
 
     #[test]

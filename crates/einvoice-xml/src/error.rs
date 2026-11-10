@@ -158,6 +158,25 @@ pub enum Error {
     PrefixedXmlnsAttribute(String, TextPos),
     /// Elements nested deeper than [`crate::Limits::depth`].
     DepthLimitReached,
+    /// A document in an encoding that [`decode`](crate::decode) does not read: the name
+    /// its XML declaration gives, or `UCS-4` or `EBCDIC` for a document whose first bytes
+    /// are in one of those.
+    UnsupportedEncoding(String),
+    /// The first bytes of a document (a byte order mark, or `<?` in UTF-16) and its XML
+    /// declaration name different encodings.
+    EncodingMismatch {
+        /// What the first bytes say.
+        found: &'static str,
+        /// The encoding the XML declaration names.
+        declared: String,
+    },
+    /// Bytes that are not a character in the encoding of the document.
+    InvalidEncodedBytes {
+        /// The encoding.
+        encoding: &'static str,
+        /// The position of the character they would be, in the decoded text.
+        pos: TextPos,
+    },
 }
 
 impl Error {
@@ -192,7 +211,8 @@ impl Error {
             | Self::EmptyPrefixedNamespace(_, pos)
             | Self::XmlnsPrefixDeclared(pos)
             | Self::DuplicatedNamespaceDeclaration(_, pos)
-            | Self::PrefixedXmlnsAttribute(_, pos) => *pos,
+            | Self::PrefixedXmlnsAttribute(_, pos)
+            | Self::InvalidEncodedBytes { pos, .. } => *pos,
             Self::NoRootNode
             | Self::UnclosedRootNode
             | Self::DtdDetected
@@ -200,7 +220,9 @@ impl Error {
             | Self::AttributesLimitReached
             | Self::NamespacesLimitReached
             | Self::UnexpectedEndOfStream
-            | Self::DepthLimitReached => TextPos::new(1, 1),
+            | Self::DepthLimitReached
+            | Self::UnsupportedEncoding(_)
+            | Self::EncodingMismatch { .. } => TextPos::new(1, 1),
         }
     }
 }
@@ -317,6 +339,14 @@ impl fmt::Display for Error {
                 "attribute '{name}' at {pos}: a prefixed attribute named 'xmlns' is not supported"
             ),
             Self::DepthLimitReached => f.write_str("elements nested deeper than the limit"),
+            Self::UnsupportedEncoding(name) => write!(f, "unsupported encoding '{name}'"),
+            Self::EncodingMismatch { found, declared } => write!(
+                f,
+                "{found}, but the XML declaration names the encoding '{declared}'"
+            ),
+            Self::InvalidEncodedBytes { encoding, pos } => {
+                write!(f, "bytes that are not {encoding} at {pos}")
+            }
         }
     }
 }

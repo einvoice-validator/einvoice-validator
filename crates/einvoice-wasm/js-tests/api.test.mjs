@@ -246,11 +246,46 @@ test("a stylesheet stopped by a dynamic error on a document with schema errors",
 
 test("an unsupported encoding is an unsupported error", () => {
   const e = thrown(() =>
-    validator.validate(new TextEncoder().encode("<?xml version='1.0' encoding='ISO-8859-1'?><a/>")),
+    validator.validate(new TextEncoder().encode("<?xml version='1.0' encoding='Shift_JIS'?><a/>")),
   );
   assert.equal(e.name, "EinvoiceValidatorError");
   assert.equal(e.kind, "unsupported");
-  assert.match(e.message, /ISO-8859-1/);
+  assert.match(e.message, /Shift_JIS/);
+});
+
+/** `text` in UTF-16LE after a byte order mark. */
+function utf16le(text) {
+  const bytes = new Uint8Array(2 + text.length * 2);
+  bytes.set([0xff, 0xfe]);
+  for (let i = 0; i < text.length; i += 1) {
+    bytes[2 + 2 * i] = text.charCodeAt(i) & 0xff;
+    bytes[3 + 2 * i] = text.charCodeAt(i) >> 8;
+  }
+  return bytes;
+}
+
+test("documents in UTF-16 and ISO-8859-1 give the report of the same document in UTF-8", () => {
+  const utf8 = read(EXAMPLE);
+  const text = new TextDecoder().decode(utf8);
+  const expected = validator.validate(utf8, { now: 0 });
+  const declared = text.replace(/encoding="UTF-8"/, 'encoding="UTF-16"');
+  assert.notEqual(declared, text);
+  const latin1Text = text.replace(/encoding="UTF-8"/, 'encoding="ISO-8859-1"');
+  const latin1 = Uint8Array.from(latin1Text, (c) => {
+    assert.ok(c.charCodeAt(0) < 256);
+    return c.charCodeAt(0);
+  });
+  for (const bytes of [utf16le(text.replace(/encoding="UTF-8"/, "")), utf16le(declared), latin1]) {
+    const report = validator.validate(bytes, { now: 0 });
+    assert.equal(report.status, expected.status);
+    assert.deepEqual(report.findings, expected.findings);
+    assert.deepEqual(report.schema_errors, expected.schema_errors);
+  }
+  // A UTF-16 byte order mark and a declaration naming UTF-8: not well-formed.
+  const report = validator.validate(utf16le(text), { now: 0 });
+  assert.equal(report.status, "invalid");
+  assert.equal(report.error.kind, "not-xml");
+  assert.match(report.error.message, /UTF-16LE byte order mark/);
 });
 
 test("the options and the clock", () => {

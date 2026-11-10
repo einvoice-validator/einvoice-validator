@@ -6,7 +6,9 @@
 //! documents, from any number of threads ([`Validator`] is `Send + Sync`). Each
 //! validation runs, in order:
 //!
-//! 1. the XML check: UTF-8, well-formed, namespace-well-formed, no document type
+//! 1. the XML check: an encoding the validator reads (UTF-8, UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15 or windows-1252,
+//!    as the byte order mark, the first bytes and the XML declaration say, decoded with
+//!    [`einvoice_xml::decode`]), well-formed, namespace-well-formed, no document type
 //!    declaration ([`Error::NotXml`], [`Error::Unsupported`]), no element nested deeper
 //!    than [`ValidateOptions::max_depth`] ([`Error::Limit`]);
 //! 2. the XML schema of the rule set, if any (UBL 2.1 for the UBL rule sets, CII D16B

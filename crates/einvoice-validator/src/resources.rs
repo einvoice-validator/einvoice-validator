@@ -42,7 +42,7 @@ impl Resources {
         }
         let text =
             decode(bytes).map_err(|e| Error::bundle(format!("resource {}: {e}", entry.path())))?;
-        self.by_uri.push((uri, text.to_owned()));
+        self.by_uri.push((uri, text.into_owned()));
         Ok(())
     }
 }

@@ -1,0 +1,48 @@
+# Cases where the decoder of this crate does not read a probe as Saxon-HE 12.10 and xmllint
+# (libxml2 2.9.14) both do, with the reason: the reference parsers disagree and the decoder
+# refuses the document, or both read it in an encoding the decoder does not read.
+# tests/encoding.rs fails on any other difference and on any listed case that no longer differs.
+case	reason
+utf16le/bom-decl-utf-8	A UTF-16 byte order mark and a declaration naming UTF-8: xmllint reads UTF-16, Saxon-HE refuses the document. Refused (Error::EncodingMismatch).
+utf16be/bom-decl-utf-8	As utf16le/bom-decl-utf-8.
+utf16le/no-bom-decl-utf-8	As utf16le/bom-decl-utf-8, without a byte order mark (the first bytes are `<?` in UTF-16).
+utf16be/no-bom-decl-utf-8	As utf16le/no-bom-decl-utf-8.
+utf16le/bom-decl-ucs-2	ISO-10646-UCS-2: Saxon-HE reads it as UTF-16, xmllint does not support it. Refused as unsupported.
+utf16be/bom-decl-ucs-2	As utf16le/bom-decl-ucs-2.
+utf16le/bom-decl-utf16-no-dash	The name UTF16 after a UTF-16LE byte order mark: xmllint reads it, Saxon-HE refuses it. Refused as unsupported.
+utf16be/bom-decl-utf16-no-dash	The name UTF16 after a UTF-16BE byte order mark: both read it, but not in the other byte order (utf16le/bom-decl-utf16-no-dash), so the name is not one the decoder accepts. Refused as unsupported.
+utf16le/bom-high-at-end	An unpaired high surrogate at the end of the document: xmllint ignores it, Saxon-HE refuses the document. Refused (Error::InvalidEncodedBytes).
+utf16be/bom-high-at-end	As utf16le/bom-high-at-end.
+utf16le/bom-odd-length	An odd number of bytes, the last one after the document element: xmllint ignores it, Saxon-HE refuses the document. Refused (Error::InvalidEncodedBytes).
+utf16be/bom-odd-length	As utf16le/bom-odd-length.
+utf8/name-6-unicode-1-1-utf-8	A name of UTF-8 that Saxon-HE accepts and xmllint does not support. Refused as unsupported.
+utf8/bom-decl-Shift_JIS-ascii	Shift_JIS, read by both: an encoding the decoder does not read. Refused as unsupported.
+utf8/bom-decl-Shift_JIS-non-ascii	As utf8/bom-decl-Shift_JIS-ascii (both read the bytes after the UTF-8 byte order mark as Shift_JIS).
+latin1/name-13-ISO8859_1	A Java name of ISO-8859-1: Saxon-HE accepts it, xmllint does not support it. Refused as unsupported.
+latin1/name-15-ISO-LATIN-1	A name of ISO-8859-1 that xmllint accepts (iconv) and Saxon-HE does not. Refused as unsupported.
+latin1/name-17-ISO_8859_1	As latin1/name-13-ISO8859_1.
+latin9/name-07-csISOLatin9	A name of ISO-8859-15 that Saxon-HE accepts and xmllint does not support. Refused as unsupported.
+latin9/name-08-L9	As latin9/name-07-csISOLatin9.
+latin9/name-10-ISO-IR-203	A name of ISO-8859-15 that xmllint accepts (iconv) and Saxon-HE does not. Refused as unsupported.
+latin9/name-11-LATIN0	As latin9/name-07-csISOLatin9.
+latin9/name-12-csISO885915	As latin9/name-07-csISOLatin9.
+cp1252/name-07-MS-ANSI	A name of windows-1252 that xmllint accepts (iconv) and Saxon-HE does not. Refused as unsupported.
+cp1252/byte-81	A byte that is no character in windows-1252: Saxon-HE reads U+FFFD in its place, xmllint refuses the document. Refused (Error::InvalidEncodedBytes).
+cp1252/byte-8d	As cp1252/byte-81.
+cp1252/byte-8f	As cp1252/byte-81.
+cp1252/byte-90	As cp1252/byte-81.
+cp1252/byte-9d	As cp1252/byte-81.
+latin2/name-00-ISO-8859-2	Read by both: an encoding the decoder does not read. Refused as unsupported.
+cp1250/name-00-windows-1250	As latin2/name-00-ISO-8859-2.
+other/name-Shift_JIS	As latin2/name-00-ISO-8859-2.
+other/name-EUC-JP	As latin2/name-00-ISO-8859-2.
+other/name-ISO-2022-JP	As latin2/name-00-ISO-8859-2.
+other/name-UTF-7	UTF-7: xmllint reads it, Saxon-HE does not support it. Refused as unsupported.
+other/name-KOI8-R	As latin2/name-00-ISO-8859-2.
+other/name-GB2312	As latin2/name-00-ISO-8859-2.
+other/name-ISO-8859-16	As latin2/name-00-ISO-8859-2.
+other/name-ISO-8859-5	As latin2/name-00-ISO-8859-2.
+other/name-windows-1251	As latin2/name-00-ISO-8859-2.
+other/name-Big5	As latin2/name-00-ISO-8859-2.
+other/utf32le-no-bom	UTF-32LE without a byte order mark: Saxon-HE reads it, xmllint refuses it. Refused as unsupported (UCS-4, from the first bytes).
+other/ebcdic	EBCDIC (code page 037), read by both: an encoding the decoder does not read. Refused as unsupported (from the first bytes).

@@ -22,7 +22,9 @@ fn main() -> Result<(), einvoice_xml::Error> {
 }
 ```
 
-Supported: UTF-8 text (a byte order mark is skipped), the XML declaration, elements,
+Supported: UTF-8 text (a byte order mark is skipped; `einvoice_xml::decode` decodes a document
+given as bytes, in UTF-8, UTF-16, US-ASCII, ISO-8859-1, ISO-8859-15 or windows-1252, as libxml2 and Saxon-HE's parser both read it,
+refusing any other encoding), the XML declaration, elements,
 attributes, namespaces, comments, processing instructions, CDATA sections, character
 references and the five predefined entities, line-end and attribute-value normalisation.
 Document type declarations are refused, and so is any other entity.
