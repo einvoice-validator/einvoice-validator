@@ -213,6 +213,12 @@ against.
   xmllint oracle of `einvoice-xsd`. The EN 16931 and Peppol rules report nothing on any of them;
   `einvoice-validate` reports exactly one schema error on the misordered element, as xmllint
   does, and exits with 1 (`einvoice-cli` tests).
+- `einvoice-bigint`, a new crate: arbitrary-precision signed integers in safe Rust, without
+  dependencies and without assembly (no `unsafe`, no `asm!`, no 128-bit division), `no_std` with
+  `alloc`, built for `wasm32-unknown-unknown` too. No division panics: `checked_div_rem`,
+  `checked_div`, `checked_rem`, `checked_div_floor`, `checked_mod_floor`, `checked_div_ceil` and
+  the others return `None` for a zero divisor, `div_rem_u64` divides by a `NonZeroU64`. The
+  tests compare every operation with `num-bigint` 0.5, a dev-dependency only.
 
 ### Changed
 
