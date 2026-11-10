@@ -214,27 +214,29 @@ is documented in the crate.
 ## Performance
 
 [docs/benchmarks.md](docs/benchmarks.md) compares `einvoice-validate` with Saxon-HE 12.10 on the
-whole corpus of each rule set (every document, mutation cases included, through every
-stylesheet), on 1 and 8 threads: wall time, CPU time, peak memory, and the latency of one
-document in a new process. `cargo xtask bench` measures it; `--write` updates the page and
-`docs/benchmarks.json`. In short (median of 5 runs, measured on main after 0.3.0, commit
-`61df544`, see the page for the machine and its load):
+whole corpus of each rule set (every document, mutation cases included), on 1 and 8 threads:
+wall time, CPU time, peak memory, and the latency of one document in a new process. There are
+23 jobs, one per rule set as `einvoice-validate --rules NAME` runs it (#41): the built-in
+`cen-ubl` and `cen-cii`, Peppol BIS Billing, each Factur-X profile, XRechnung UBL and CII, and
+each rule set of the French package but e-reporting, which no corpus covers. Each job is what
+its users get: the rule set read from the cache `rules fetch` fills, the XML schema step, the
+XRechnung scenarios, the stylesheets and the verdicts, which must be the reference verdicts on
+every document and every run. Saxon-HE runs the stylesheets only; a run of `einvoice-validate`
+doing exactly that work is measured too. `cargo xtask bench` measures it; `--write` updates the
+page and `docs/benchmarks.json`. In short (median of 5 runs, measured on main after 0.3.0,
+commit `f07b7a8`, see the page for the machine and its load):
 
-- **One thread**, the nine whole jobs together: 37.2 s against 80.6 s for Saxon-HE (2.2 times
-  faster), 74.7 s for Saxon-HE without the start of its JVMs (2.0 times). Per rule set, from
-  1.0 times (XRechnung UBL, large invoices; 0.9 times against Saxon-HE without its JVM start)
-  to 16 times (French CDAR; 12 times without the JVM start); CEN UBL 1.5 times, CEN CII 2.5,
-  Peppol 2.3, Factur-X 3.1, French CII 2.7.
-- **Eight threads**: 2.9 times (XRechnung UBL) to 53 times (French CDAR) faster per rule set;
-  5.4 s against 33.9 s for the nine jobs (6.2 times).
-- **Peak memory** 19 to 38 times lower than Saxon-HE's on one thread, 19 to 46 times on eight.
-- **One small invoice in a new process**: 46 ms with the UBL 2.1 schema (33 ms without),
-  against 614 ms for Saxon-HE, 455 ms without its JVM start.
-
-The benchmark's bundles validate the XML schema for the UBL rule sets (UBL 2.1), the built-in
-`cen-cii` and XRechnung CII (CII D16B); its Factur-X and French CII and CDAR jobs run the
-stylesheets without the XML schemas the fetched bundles of those rule sets validate since #37.
-Saxon-HE runs no XML schema.
+- **One thread**, the 23 whole jobs together (19682 documents): 43.2 s against 109 s for
+  Saxon-HE (2.5 times faster), 101 s for Saxon-HE without the start of its JVMs (2.3 times).
+  Per rule set, from 1.7 times (CEN UBL) to 17 times (French CDAR); CEN CII 2.9 times, Peppol
+  2.5, Factur-X 2.9 to 5.6, the French CII and UBL rule sets 2.0 to 2.9. XRechnung UBL and CII
+  are 2.1 times faster, and faster than Saxon-HE without its JVM start too (1.3 and 1.6 times,
+  doing exactly its work), where they were about as fast before #40.
+- **Eight threads**: 6.74 s against 47.4 s for the 23 jobs (7.0 times); 5.0 times (CEN UBL) to
+  46 times (French CDAR) per rule set.
+- **Peak memory** 23 to 93 times lower than Saxon-HE's on one thread, 23 to 71 times on eight.
+- **One small invoice in a new process**: 45 ms with the UBL 2.1 schema (32 ms without),
+  against 599 ms for Saxon-HE, 450 ms without its JVM start.
 
 ## Design
 

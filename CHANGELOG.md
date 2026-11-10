@@ -85,7 +85,13 @@ against.
   the stylesheets without the XML schema step, the five Factur-X profiles in one bundle that
   read only `fatal` flags (802 valid documents where `factur-x-en16931` finds 181). Saxon-HE
   runs the stylesheets of each rule set, the stylesheet step of the reference validators only:
-  `docs/benchmarks.md` states what each command measures. Its results predate this change.
+  `docs/benchmarks.md` states what each command measures. The whole-corpus table of every
+  thread count ends with the totals (it had none above one thread). Results at `f07b7a8`
+  (`docs/benchmarks.md`, median of 5 runs), the 23 jobs together, 19682 documents: on one
+  thread 43.2 s against 109 s for Saxon-HE 12.10 (2.5 times faster; 2.3 times against
+  Saxon-HE without its JVM start), from 1.7 times (CEN UBL) to 17 times (French CDAR) per rule
+  set, XRechnung UBL and CII 2.1 times (#40); on eight threads 6.74 s against 47.4 s (7.0
+  times); peak memory 23 to 93 times lower.
 
 ### Added
 
