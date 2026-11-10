@@ -49,7 +49,6 @@ fn unsupported_expressions() {
         ("1 (: comment :) + 2", 2, "XPath comment"),
         ("+1", 0, "unary `+`"),
         ("1 + +1", 4, "unary `+`"),
-        ("descendant::a", 0, "axis `descendant::`"),
         ("a/following::b", 2, "axis `following::`"),
         ("namespace::*", 0, "axis `namespace::`"),
         ("a ! b", 2, "simple map operator"),

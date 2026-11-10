@@ -322,20 +322,24 @@ fn refused(body: &str, expected: &str) {
 #[test]
 fn unknown_instructions_are_refused_with_their_line() {
     refused(
-        "<xsl:template match='/'>\n  <xsl:message>hi</xsl:message>\n</xsl:template>",
-        "line 4: unsupported XSLT element xsl:message",
+        "<xsl:template match='/'>\n  <xsl:result-document href='x'/>\n</xsl:template>",
+        "line 4: unsupported XSLT element xsl:result-document",
     );
     refused(
-        "<xsl:template match='/'><xsl:copy-of select='.'/></xsl:template>",
-        "line 3: unsupported XSLT element xsl:copy-of",
+        "<xsl:template match='/'><xsl:analyze-string select='.' regex='a'/></xsl:template>",
+        "line 3: unsupported XSLT element xsl:analyze-string",
     );
     refused(
-        "<xsl:template match='/'><xsl:element name='e'/></xsl:template>",
-        "line 3: unsupported XSLT element xsl:element",
+        "<xsl:template match='/'><xsl:apply-imports/></xsl:template>",
+        "line 3: unsupported XSLT element xsl:apply-imports",
     );
     refused(
         "<xsl:key name='k' match='a' use='b'/>",
         "line 3: unsupported XSLT element xsl:key",
+    );
+    refused(
+        "<xsl:include href='x.xsl'/>",
+        "line 3: unsupported XSLT element xsl:include",
     );
     refused(
         "<xsl:import href='x.xsl'/>",
@@ -382,8 +386,20 @@ fn unknown_attributes_and_values_are_refused() {
         "line 3: unsupported attribute `disable-output-escaping` on xsl:text",
     );
     refused(
-        "<xsl:template match='/'><xsl:attribute name='a' namespace='urn:x'/></xsl:template>",
-        "line 3: unsupported attribute `namespace` on xsl:attribute",
+        "<xsl:template match='/'><xsl:copy copy-namespaces='no'/></xsl:template>",
+        "line 3: unsupported attribute `copy-namespaces` on xsl:copy",
+    );
+    refused(
+        "<xsl:template match='/'><xsl:copy-of select='.' copy-namespaces='no'/></xsl:template>",
+        "line 3: unsupported attribute `copy-namespaces` on xsl:copy-of",
+    );
+    refused(
+        "<xsl:template match='/'><xsl:message select='1'/></xsl:template>",
+        "line 3: unsupported attribute `select` on xsl:message",
+    );
+    refused(
+        "<xsl:template match='/'><xsl:element name='e' inherit-namespaces='no'/></xsl:template>",
+        "line 3: unsupported attribute `inherit-namespaces` on xsl:element",
     );
     refused(
         "<xsl:template match='/'><xsl:comment select='1'/></xsl:template>",
@@ -614,12 +630,12 @@ fn duplicates_names_and_top_level_errors_are_reported() {
 #[test]
 fn all_errors_are_collected() {
     let messages = errors(
-        "<xsl:template match='/'>\n<xsl:message/>\n<xsl:if test='a except b'/>\n</xsl:template>\n<xsl:key name='k' match='a' use='b'/>\n<xsl:template match='a' bogus='1'/>",
+        "<xsl:template match='/'>\n<xsl:try/>\n<xsl:if test='a except b'/>\n</xsl:template>\n<xsl:key name='k' match='a' use='b'/>\n<xsl:template match='a' bogus='1'/>",
     );
     assert_eq!(
         messages,
         [
-            "line 4: unsupported XSLT element xsl:message",
+            "line 4: unsupported XSLT element xsl:try",
             "line 5: xsl:if/@test: unsupported at column 3: `except` operator",
             "line 7: unsupported XSLT element xsl:key",
             "line 8: unsupported attribute `bogus` on xsl:template",

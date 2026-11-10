@@ -112,6 +112,27 @@ impl IrCounts {
                     self.add("#lre");
                     self.body(&e.body);
                 }
+                Instruction::Copy(i) => {
+                    self.add("copy");
+                    self.body(&i.body);
+                }
+                Instruction::CopyOf(_) => self.add("copy-of"),
+                Instruction::Element(i) => {
+                    self.add("element");
+                    self.body(&i.body);
+                }
+                Instruction::Namespace(i) => {
+                    self.add("namespace");
+                    self.body(&i.body);
+                }
+                Instruction::ProcessingInstruction(i) => {
+                    self.add("processing-instruction");
+                    self.body(&i.body);
+                }
+                Instruction::Message(i) => {
+                    self.add("message");
+                    self.body(&i.body);
+                }
             }
         }
     }

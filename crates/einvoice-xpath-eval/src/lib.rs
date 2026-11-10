@@ -70,5 +70,6 @@ pub use eval::{Argument, NodeSelection, SelectionStorage};
 pub use item::Item;
 pub use limit::{DEFAULT_MAX_DEPTH, LimitExceeded, StackLimit};
 pub use tree::{
-    Document, DocumentCache, DocumentError, Node, NodeAxis, NodeKind, TreeBuilder, file_uri,
+    Document, DocumentCache, DocumentError, Node, NodeAxis, NodeKind, TreeBuilder, TreeView,
+    file_uri,
 };

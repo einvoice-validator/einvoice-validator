@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><out><?p1 data?><?p2 leading spaces?><?p3 a? >b c?><?p4?><?p5 two? > 	?><?p6 x?><in-variable><?pv x?>pv x</in-variable></out>

@@ -13,13 +13,15 @@
 //! twice with the streaming reader of `einvoice-xml`, which builds no tree of its own:
 //! once to check it and count its nodes, then to fill an arena of exactly that size.
 //!
-//! A built tree may have no document node: a parentless element, attribute, text node or
-//! comment ([`TreeBuilder::parentless`]), as the XSLT layer constructs them in a sequence
-//! (the root of its tree is the node itself). The elements of a built tree have the
-//! namespace nodes they were given ([`TreeBuilder::start_element_with_namespaces`]), and
-//! those of their ancestors in the tree; a parsed document keeps none (only the namespaces
-//! of the names of its elements and attributes). There are no type annotations: every
-//! element and attribute is untyped, so its typed value is `xs:untypedAtomic`.
+//! A built tree may have no document node: a parentless element, attribute, text node,
+//! comment or processing instruction ([`TreeBuilder::parentless`]), as the XSLT layer
+//! constructs them in a sequence (the root of its tree is the node itself). The elements
+//! of a built tree have the namespace nodes they were given
+//! ([`TreeBuilder::start_element_with_namespaces`], [`TreeBuilder::add_namespace`]), and
+//! those of their ancestors in the tree; the elements of a parsed document have those
+//! declared on them and on their ancestors ([`Node::namespaces_in_scope`]). There are no
+//! type annotations: every element and attribute is untyped, so its typed value is
+//! `xs:untypedAtomic`.
 //!
 //! A parsed document may be nested at most [`DEFAULT_MAX_DEPTH`] elements deep, or the
 //! maximum given to [`Document::parse_with_max_depth`]: beyond it the parse fails with
@@ -226,6 +228,25 @@ pub struct Document {
     elements: OnceCell<ElementIndex>,
     /// The searches [`Document::elements_named`] answered without the index.
     searches: Cell<u32>,
+    /// What kind of tree Saxon would hold: its `id()` and `generate-id()`.
+    view: TreeView,
+    /// The elements by ID (`xml:id`), built by the first call of [`Node::by_id`].
+    ids: OnceCell<HashMap<String, u32>>,
+}
+
+/// The kind of tree Saxon-HE 12.10 holds for a document, which decides what `id()` finds
+/// and the form of `generate-id()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TreeView {
+    /// A tree Saxon builds itself (a `TinyTree`): a parsed document, a temporary tree.
+    /// Its `xml:id` attributes are IDs (their value whitespace-collapsed), and
+    /// `generate-id()` gives `d` + document number + node kind letter + node number.
+    #[default]
+    Tiny,
+    /// A DOM document Saxon wraps (a `DOMSource` built by its `DOMWriter`): no attribute
+    /// is an ID for the DOM, and `generate-id()` gives `w` + document number + the
+    /// sibling positions down from the root (`Navigator.getSequentialKey`).
+    Dom,
 }
 
 /// The fewest nodes a search for elements of a name must span to use an index.
@@ -380,6 +401,8 @@ impl Document {
             text: self.text.clone(),
             elements: OnceCell::new(),
             searches: Cell::new(0),
+            view: self.view,
+            ids: OnceCell::new(),
         }
     }
 
@@ -837,10 +860,11 @@ impl Node {
         Self::new(Rc::clone(&self.doc), 0)
     }
 
-    /// The namespace nodes of an element of a built tree (XDM `dm:namespace-nodes`): those
-    /// it was given and those of its ancestors, the nearest binding of a prefix winning,
-    /// innermost element first. Empty for other nodes and for the elements of a parsed
-    /// document.
+    /// The namespace nodes of an element (XDM `dm:namespace-nodes`, the implicit `xml`
+    /// namespace excepted): those it was given, or declared in the text it was parsed
+    /// from, and those of its ancestors, the nearest binding of a prefix winning,
+    /// innermost element first; a binding to the empty URI (`xmlns=""`) takes the default
+    /// namespace away. Empty for other nodes.
     #[must_use]
     pub fn namespaces_in_scope(&self) -> Vec<NamespaceBinding> {
         let doc = &self.doc;
@@ -859,6 +883,7 @@ impl Node {
             }
             index = doc.record(index).parent;
         }
+        out.retain(|b| !b.uri.is_empty());
         out
     }
 
@@ -866,6 +891,112 @@ impl Node {
     #[must_use]
     pub fn string_value(&self) -> Cow<'_, str> {
         self.doc.string_value(self.index)
+    }
+
+    /// The element of the node's tree with the ID `id`: for a [`TreeView::Tiny`] tree,
+    /// the first element in document order with an `xml:id` attribute of that value
+    /// (whitespace-collapsed), as Saxon-HE 12.10 finds it; never for a
+    /// [`TreeView::Dom`] tree.
+    #[must_use]
+    pub fn by_id(&self, id: &str) -> Option<Self> {
+        let doc = &self.doc;
+        if doc.view == TreeView::Dom {
+            return None;
+        }
+        let ids = doc.ids.get_or_init(|| {
+            let mut ids = HashMap::new();
+            for (index, record) in (0_u32..).zip(&doc.records) {
+                if record.kind != NodeKind::Attribute {
+                    continue;
+                }
+                let is_xml_id = doc.name(index).is_some_and(|n| {
+                    n.local == "id" && n.namespace.as_deref() == Some(XML_NAMESPACE)
+                });
+                if is_xml_id {
+                    let value: Vec<&str> = doc
+                        .own_text(index)
+                        .split([' ', '\t', '\n', '\r'])
+                        .filter(|t| !t.is_empty())
+                        .collect();
+                    ids.entry(value.join(" ")).or_insert(record.parent);
+                }
+            }
+            ids
+        });
+        ids.get(id).map(|&i| Self::new(Rc::clone(doc), i))
+    }
+
+    /// `generate-id()` as Saxon-HE 12.10 forms it for the kind of tree
+    /// ([`TreeView`]); the document number is the creation order of the document, which
+    /// in Saxon depends on what the JVM read before (so are its IDs: only their form is
+    /// Saxon's). An attribute of a [`TreeView::Tiny`] tree gets its element's ID, `a` and
+    /// its number among the attributes of the tree (Saxon's, the fingerprint of its name
+    /// in Saxon's name pool, depends on the JVM too).
+    #[must_use]
+    pub fn generate_id(&self) -> String {
+        let doc = &self.doc;
+        let number = doc.serial + 1;
+        match doc.view {
+            TreeView::Tiny => {
+                let attributes_before = |index: u32| {
+                    doc.records[..index as usize]
+                        .iter()
+                        .filter(|r| r.kind == NodeKind::Attribute)
+                        .count()
+                };
+                let tiny = |index: u32| {
+                    let kind = doc.kind(index);
+                    if kind == NodeKind::Document {
+                        return format!("d{number}");
+                    }
+                    let letter = match kind {
+                        NodeKind::Text => 't',
+                        NodeKind::Comment => 'c',
+                        NodeKind::ProcessingInstruction => 'p',
+                        _ => 'e',
+                    };
+                    let node_number = index as usize - attributes_before(index);
+                    format!("d{number}{letter}{node_number}")
+                };
+                if self.kind() == NodeKind::Attribute {
+                    let parent = doc.record(self.index).parent;
+                    let owner = if parent == NONE {
+                        format!("d{number}")
+                    } else {
+                        tiny(parent)
+                    };
+                    format!("{owner}a{}", attributes_before(self.index))
+                } else {
+                    tiny(self.index)
+                }
+            }
+            TreeView::Dom => {
+                let lineage: Vec<u32> = doc
+                    .cursor(self.index, NodeAxis::AncestorOrSelf)
+                    .walk(doc)
+                    .collect();
+                let mut id = format!("w{number}");
+                for &index in lineage.iter().rev() {
+                    let record = doc.record(index);
+                    if record.parent == NONE {
+                        continue;
+                    }
+                    let position = if record.kind == NodeKind::Attribute {
+                        id.push('a');
+                        index - record.parent - 1
+                    } else {
+                        u32::try_from(
+                            doc.cursor(index, NodeAxis::PrecedingSibling)
+                                .walk(doc)
+                                .count(),
+                        )
+                        .unwrap_or(u32::MAX)
+                    };
+                    id.push_str(&alpha_key(position));
+                }
+                id
+            }
+        }
     }
 
     /// The typed value of the node in an untyped tree: `xs:untypedAtomic`, except for
@@ -1039,6 +1170,7 @@ pub struct TreeBuilder {
     /// The last child of each open node, or [`NONE`].
     last_child: Vec<u32>,
     has_xml_base: bool,
+    view: TreeView,
 }
 
 impl Default for TreeBuilder {
@@ -1078,7 +1210,15 @@ impl TreeBuilder {
             open: vec![0],
             last_child: vec![NONE],
             has_xml_base: false,
+            view: TreeView::Tiny,
         }
+    }
+
+    /// The tree is the view Saxon has of a DOM document it wraps ([`TreeView::Dom`]).
+    #[must_use]
+    pub const fn dom_view(mut self) -> Self {
+        self.view = TreeView::Dom;
+        self
     }
 
     /// A builder of a tree without document node, whose root is the one node added at
@@ -1185,6 +1325,35 @@ impl TreeBuilder {
     pub fn start_element(&mut self, name: QName) -> Result<(), DocumentError> {
         let name = self.intern(name)?;
         self.open_element(name)
+    }
+
+    /// Adds a namespace node to the element just opened (before its content).
+    ///
+    /// # Errors
+    ///
+    /// No element is open, or it already has content.
+    pub fn add_namespace(&mut self, binding: NamespaceBinding) -> Result<(), DocumentError> {
+        let element = self.top();
+        let has_content = self.last_child.last().is_some_and(|&l| l != NONE);
+        if element == NONE
+            || self.records[element as usize].kind != NodeKind::Element
+            || has_content
+        {
+            return Err(DocumentError::new(format!(
+                "namespace {:?} outside an element start",
+                binding.prefix
+            )));
+        }
+        match self.namespaces.last_mut() {
+            Some((e, bindings)) if *e == element => {
+                let mut extended: Vec<NamespaceBinding> = bindings.to_vec();
+                extended.retain(|b| b.prefix != binding.prefix);
+                extended.push(binding);
+                *bindings = extended.into();
+            }
+            _ => self.namespaces.push((element, vec![binding].into())),
+        }
+        Ok(())
     }
 
     /// Opens an element with namespace nodes (besides those it inherits from its
@@ -1417,8 +1586,21 @@ impl TreeBuilder {
             text: self.text,
             elements: OnceCell::new(),
             searches: Cell::new(0),
+            view: self.view,
+            ids: OnceCell::new(),
         }))
     }
+}
+
+/// Saxon's `Navigator.alphaKey`: a number as a string that sorts as the number does, a
+/// letter for its number of digits first.
+fn alpha_key(value: u32) -> String {
+    if value < 1 {
+        return "a".to_owned();
+    }
+    let digits = value.to_string();
+    let letter = char::from(b'a' + u8::try_from(digits.len()).unwrap_or(10));
+    format!("{letter}{digits}")
 }
 
 fn is_xml_base(namespace: Option<&str>, local: &str) -> bool {
@@ -1677,6 +1859,17 @@ impl<'a> Pass<'a> for Fill<'a> {
     fn start(&mut self, start: einvoice_xml::StartElement<'_, 'a>) -> Result<(), DocumentError> {
         let id = self.names.id(&mut self.builder, start.name())?;
         self.builder.open_element(id)?;
+        let declarations = start.namespace_declarations();
+        if declarations.len() > 0 {
+            let bindings: Arc<[NamespaceBinding]> = declarations
+                .map(|(prefix, uri)| NamespaceBinding {
+                    prefix: (!prefix.is_empty()).then(|| prefix.to_owned()),
+                    uri: uri.to_owned(),
+                })
+                .collect();
+            let element = self.builder.top();
+            self.builder.namespaces.push((element, bindings));
+        }
         // The reader refuses duplicate attributes: each one is new.
         for attribute in start.attributes() {
             let id = self.names.id(&mut self.builder, attribute.name)?;

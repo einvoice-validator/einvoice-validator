@@ -566,6 +566,7 @@ pub(crate) fn run(
             .map(|output| einvoice_xslt_exec::Transformation {
                 output,
                 warnings: Vec::new(),
+                messages: Vec::new(),
             })
         }
         other => {

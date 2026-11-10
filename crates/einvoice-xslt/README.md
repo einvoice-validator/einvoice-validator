@@ -1,7 +1,8 @@
 # einvoice-xslt
 
 Loader for the XSLT 2.0 subset that the official e-invoicing validation stylesheets use
-(Schematron compiled to XSLT): templates with their match patterns, modes and priorities,
+(Schematron compiled to XSLT), and that the ISO Schematron skeleton uses to compile
+Schematron (imports, `use-when`, node construction and copying, messages): templates with their match patterns, modes and priorities,
 named templates, functions, global and local variables and parameters, and the instructions
 of each sequence constructor, each with its source line. XPath expressions are parsed with
 [`einvoice-xpath`](https://crates.io/crates/einvoice-xpath); nothing is evaluated. The

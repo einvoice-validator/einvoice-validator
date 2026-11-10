@@ -181,7 +181,13 @@ impl<'a> Run<'a> {
             | Builtin::NamespaceUri
             | Builtin::DocumentUri
             | Builtin::Root
-            | Builtin::BaseUri => self.node_function(function, args, ctx),
+            | Builtin::BaseUri
+            | Builtin::GenerateId => self.node_function(function, args, ctx),
+            Builtin::Id => Ok(from_vec(self.id(args, ctx)?)),
+            Builtin::ElementAvailable | Builtin::FunctionAvailable => match data {
+                CallData::Available(answer) => Ok(boolean(*answer)),
+                _ => err(ErrorCode::Internal, "an availability without its answer"),
+            },
             Builtin::Matches | Builtin::Replace | Builtin::Tokenize => {
                 self.regex_function(function, args, data, ctx)
             }
@@ -399,7 +405,7 @@ impl<'a> Run<'a> {
                     "The current() function is not available here: there is no current item",
                 )
             })?),
-            Builtin::Document => from_vec(self.document(&args[0], ctx)?),
+            Builtin::Document => from_vec(self.document(args, data, ctx)?),
             _ => match data {
                 CallData::Property(name) => string(self.dc.host.system_property(name)),
                 _ => return err(ErrorCode::Internal, "system-property without its name"),
@@ -537,6 +543,7 @@ impl<'a> Run<'a> {
                 Some(n) => once(Item::Node(n.root())),
                 None => empty(),
             },
+            Builtin::GenerateId => string(node.map(|n| n.generate_id()).unwrap_or_default()),
             _ => match node {
                 None => empty(),
                 Some(n) if n.document().has_xml_base() => {
@@ -647,19 +654,92 @@ impl<'a> Run<'a> {
         Ok(out)
     }
 
-    fn document(&self, arg: &Expr, ctx: &Ctx) -> Result<Vec<Item>> {
+    /// `document($uris)` and `document($uris, $base)`: each URI is resolved against the
+    /// base URI of the node it is the value of (for a string, the static base URI of the
+    /// expression), or with `$base` against the base URI of that node.
+    fn document(&self, args: &[Expr], data: &CallData, ctx: &Ctx) -> Result<Vec<Item>> {
+        let static_base = match data {
+            CallData::Base(base) => base.as_deref(),
+            _ => None,
+        };
+        let base_node = match args.get(1) {
+            None => None,
+            Some(arg) => match self.item_opt(arg, ctx, What::Argument(1, "document"))? {
+                Some(Item::Node(n)) => Some(n),
+                _ => {
+                    return err(
+                        ErrorCode::Xpty0004,
+                        "Required item type of second argument of document() is node()",
+                    );
+                }
+            },
+        };
+        let given_base = base_node.map(|n| n.document().base_uri().map(str::to_owned));
         let mut nodes = Vec::new();
-        for item in self.seq(arg, ctx)? {
-            let node = match item? {
-                Item::Node(n) => {
+        for item in self.seq(&args[0], ctx)? {
+            let node = match (item?, &given_base) {
+                (item, Some(base)) => self
+                    .dc
+                    .host
+                    .document(&item.string_value(), base.as_deref())?,
+                (Item::Node(n), None) => {
                     let base = n.document().base_uri().map(str::to_owned);
                     self.dc.host.document(&n.string_value(), base.as_deref())?
                 }
-                Item::Atomic(value) => self.dc.host.document(&value.to_string(), None)?,
+                (Item::Atomic(value), None) => {
+                    self.dc.host.document(&value.to_string(), static_base)?
+                }
             };
             nodes.push(node);
         }
         Ok(sort_nodes(nodes))
+    }
+
+    /// `id($idrefs)` and `id($idrefs, $node)`: the elements of the tree of `$node` (the
+    /// context node by default), which must be a document, with an ID ([`Node::by_id`])
+    /// equal to one of the whitespace-separated tokens of the strings, in document
+    /// order, each once.
+    fn id(&self, args: &[Expr], ctx: &Ctx) -> Result<Vec<Item>> {
+        let node = match args.get(1) {
+            None => match focus_item(ctx, "id")? {
+                Item::Node(n) => n,
+                Item::Atomic(_) => {
+                    return err(
+                        ErrorCode::Xpty0004,
+                        "The context item for id() is not a node",
+                    );
+                }
+            },
+            Some(arg) => match self.item_opt(arg, ctx, What::Argument(1, "id"))? {
+                Some(Item::Node(n)) => n,
+                _ => {
+                    return err(
+                        ErrorCode::Xpty0004,
+                        "Required item type of second argument of id() is node()",
+                    );
+                }
+            },
+        };
+        let root = node.root();
+        if root.kind() != NodeKind::Document {
+            return err(
+                ErrorCode::Fodc0001,
+                "The context node for id() is not in a tree whose root is a document node",
+            );
+        }
+        let mut found = Vec::new();
+        for value in self.atomized(&args[0], ctx)? {
+            let value = string_value(value?, "id", 0)?;
+            for token in value
+                .split(einvoice_xpath::is_xml_whitespace)
+                .filter(|t| !t.is_empty())
+            {
+                if let Some(element) = root.by_id(token) {
+                    found.push(element);
+                }
+            }
+        }
+        Ok(sort_nodes(found))
     }
 }
 

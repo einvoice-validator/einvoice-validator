@@ -3,19 +3,22 @@
 use roxmltree::Node;
 
 use super::declarations::BindingKind;
-use super::strip::{Child, children};
+use super::strip::Child;
 use super::{Failed, InScope, Load, Loader, XSL, is_xsl};
 use crate::MAX_NESTING;
 use crate::error::LoadErrorKind;
 use crate::ir::{
-    ApplyMode, ApplyTemplates, Attribute, CallTemplate, Choose, Comment, ForEach, If, Instruction,
-    LiteralAttribute, LiteralElement, Mode, NextMatch, Number, NumberLevel, Sequence, Text,
+    ApplyMode, ApplyTemplates, Attribute, CallTemplate, Choose, Comment, Copy, CopyOf, Element,
+    ForEach, If, Instruction, LiteralAttribute, LiteralElement, Message, Mode, NamespaceBinding,
+    NamespaceNode, NextMatch, Number, NumberLevel, ProcessingInstruction, Sequence, Text,
     TextOrigin, ValueOf, Variable, When,
 };
-use einvoice_xpath::{is_xml_whitespace, parse_avt, parse_expr, parse_pattern};
+use einvoice_xpath::{
+    QName, XML_NAMESPACE, is_xml_whitespace, parse_avt, parse_expr, parse_pattern,
+};
 
 /// XSLT elements that are supported but not as instructions.
-const DECLARATIONS: [&str; 8] = [
+const DECLARATIONS: [&str; 10] = [
     "template",
     "function",
     "output",
@@ -24,6 +27,8 @@ const DECLARATIONS: [&str; 8] = [
     "when",
     "otherwise",
     "stylesheet",
+    "import",
+    "namespace-alias",
 ];
 
 impl<'input> Loader<'_, 'input> {
@@ -32,7 +37,7 @@ impl<'input> Loader<'_, 'input> {
         &mut self,
         node: Node<'_, 'input>,
     ) -> Load<Vec<Instruction>> {
-        self.instructions(children(node))
+        self.instructions(self.children(node))
     }
 
     /// A list of stripped children as instructions: a sequence constructor, one level
@@ -86,6 +91,12 @@ impl<'input> Loader<'_, 'input> {
             "comment" => self.comment(node),
             "text" => self.xsl_text(node).map(Instruction::Text),
             "number" => self.number(node),
+            "copy" => self.copy(node),
+            "copy-of" => self.copy_of(node),
+            "element" => self.element(node),
+            "namespace" => self.namespace(node),
+            "processing-instruction" => self.processing_instruction(node),
+            "message" => self.message(node),
             name if DECLARATIONS.contains(&name) => Err(self.not_allowed_here(node)),
             _ => Err(self.unsupported_element(node)),
         }
@@ -176,7 +187,7 @@ impl<'input> Loader<'_, 'input> {
 
     /// The `xsl:with-param` children of `node`, which may have no other child.
     fn with_params(&mut self, node: Node<'_, 'input>) -> Load<Vec<Variable>> {
-        let params = super::each(children(node), |child| match child {
+        let params = super::each(self.children(node), |child| match child {
             Child::Element(e) if e.has_tag_name((XSL, "with-param")) => {
                 self.variable(e, BindingKind::Param)
             }
@@ -265,7 +276,7 @@ impl<'input> Loader<'_, 'input> {
         let mut whens = Vec::new();
         let mut otherwise = None;
         let mut failed = false;
-        for child in children(node) {
+        for child in self.children(node) {
             let result = match child {
                 Child::Element(e) if e.has_tag_name((XSL, "when")) && otherwise.is_none() => {
                     self.test_and_body(e).map(|(test, body)| {
@@ -346,15 +357,16 @@ impl<'input> Loader<'_, 'input> {
 
     /// `xsl:attribute`.
     fn attribute(&mut self, node: Node<'_, 'input>) -> Load<Instruction> {
-        let attributes = self.check_attributes(node, &["name", "select"]);
+        let attributes = self.check_attributes(node, &["name", "namespace", "select"]);
         let name = self
             .required(node, "name")
             .and_then(|_| self.xpath(node, "name", parse_avt)?.ok_or(Failed));
+        let namespace = self.xpath(node, "namespace", parse_avt);
         let select = self
             .xpath(node, "select", parse_expr)
             .map(|e| e.map(Box::new));
         let body = self.sequence_constructor(node);
-        let (name, select, body) = (name?, select?, body?);
+        let (name, namespace, select, body) = (name?, namespace?, select?, body?);
         attributes?;
         if select.is_some() && !body.is_empty() {
             return Err(self.invalid(
@@ -365,6 +377,7 @@ impl<'input> Loader<'_, 'input> {
         Ok(Instruction::Attribute(Attribute {
             line: self.line(node),
             name,
+            namespace,
             namespaces: self.in_scope_namespaces(node, false),
             select: select.map(|e| *e),
             body,
@@ -375,7 +388,7 @@ impl<'input> Loader<'_, 'input> {
     fn xsl_text(&mut self, node: Node<'_, 'input>) -> Load<Text> {
         self.check_attributes(node, &[])?;
         let mut value = String::new();
-        for child in children(node) {
+        for child in self.children(node) {
             match child {
                 Child::Text { value: text, .. } => value.push_str(&text),
                 Child::Element(e) => {
@@ -418,14 +431,32 @@ impl<'input> Loader<'_, 'input> {
 
     /// A literal result element: attributes are attribute value templates; attributes in
     /// the XSLT namespace (`xsl:use-attribute-sets`, `xsl:exclude-result-prefixes`, ...)
-    /// are not supported.
+    /// are not supported, except `xsl:use-when`, already evaluated. Names in a literal
+    /// namespace of `xsl:namespace-alias` are written in its target namespace, and the
+    /// namespace nodes copied are those XSLT 2.0 sections 11.1.3 and 11.1.4 keep. An
+    /// element in an extension namespace is an extension instruction, refused.
     fn literal_element(&mut self, node: Node<'_, 'input>) -> Load<Instruction> {
+        let element_namespace = node.tag_name().namespace().unwrap_or("");
+        if self
+            .extension_namespaces
+            .iter()
+            .any(|uri| uri == element_namespace)
+        {
+            let message = format!(
+                "extension instruction {} is not supported",
+                self.element_name(node)
+            );
+            return Err(self.invalid(node, message));
+        }
         let mut failed = false;
         let mut attributes = Vec::new();
         for attribute in node.attributes() {
             let name = self.attribute_qname(&attribute);
             let line = self.line_at(attribute.range().start);
             if attribute.namespace() == Some(XSL) {
+                if attribute.name() == "use-when" {
+                    continue;
+                }
                 let element = self.element_name(node);
                 self.fail(
                     line,
@@ -438,7 +469,10 @@ impl<'input> Loader<'_, 'input> {
                 continue;
             }
             match parse_avt(attribute.value(), &InScope(node)) {
-                Ok(value) => attributes.push(LiteralAttribute { name, value }),
+                Ok(value) => attributes.push(LiteralAttribute {
+                    name: self.aliased(name),
+                    value,
+                }),
                 Err(error) => {
                     let element = self.element_name(node);
                     self.fail(
@@ -453,17 +487,166 @@ impl<'input> Loader<'_, 'input> {
                 }
             }
         }
-        let namespaces = self.in_scope_namespaces(node, true);
+        let namespaces = self.literal_namespaces(node);
         let body = self.sequence_constructor(node);
         if failed {
             return Err(Failed);
         }
+        let name = self.element_qname(node);
         Ok(Instruction::LiteralElement(LiteralElement {
             line: self.line(node),
-            name: self.element_qname(node),
+            name: self.aliased(name),
             attributes,
             namespaces,
             body: body?,
+        }))
+    }
+
+    /// A name of a literal result element or of one of its attributes as written to the
+    /// result: in the target namespace with the result prefix when its namespace is the
+    /// literal namespace of an alias (a name in no namespace is never aliased here: an
+    /// alias of `#default` without a default namespace is not supported).
+    fn aliased(&self, name: QName) -> QName {
+        let namespace = name.namespace.as_deref().unwrap_or("");
+        match self.module.aliases.iter().find(|a| a.literal == namespace) {
+            Some(alias) if name.namespace.is_some() => QName {
+                prefix: alias.prefix.clone(),
+                namespace: (!alias.target.is_empty()).then(|| alias.target.clone()),
+                local: name.local,
+            },
+            _ => name,
+        }
+    }
+
+    /// The namespace nodes a literal result element copies to the result: those in scope
+    /// on it except the `xml` namespace, the XSLT namespace, the extension namespaces of
+    /// the module and the literal namespaces of the aliases; a namespace that is the
+    /// target of an alias is copied whatever else it is.
+    fn literal_namespaces(&mut self, node: Node<'_, 'input>) -> std::sync::Arc<[NamespaceBinding]> {
+        let aliases = std::sync::Arc::clone(&self.module.aliases);
+        let set: Vec<NamespaceBinding> = node
+            .namespaces()
+            .filter(|ns| ns.uri() != XML_NAMESPACE)
+            .filter(|ns| {
+                let uri = ns.uri();
+                aliases.iter().any(|a| a.target == uri)
+                    || !(uri == XSL
+                        || self.extension_namespaces.iter().any(|e| e == uri)
+                        || aliases.iter().any(|a| a.literal == uri))
+            })
+            .map(|ns| NamespaceBinding {
+                prefix: ns.name().map(str::to_owned),
+                uri: ns.uri().to_owned(),
+            })
+            .collect();
+        self.share(set)
+    }
+
+    /// `xsl:copy` (no attributes supported).
+    fn copy(&mut self, node: Node<'_, 'input>) -> Load<Instruction> {
+        self.check_attributes(node, &[])?;
+        Ok(Instruction::Copy(Copy {
+            line: self.line(node),
+            body: self.sequence_constructor(node)?,
+        }))
+    }
+
+    /// `xsl:copy-of` with `select` only.
+    fn copy_of(&mut self, node: Node<'_, 'input>) -> Load<Instruction> {
+        let attributes = self.check_attributes(node, &["select"]);
+        let select = self.required_xpath(node, "select", parse_expr);
+        let empty = self.empty_content(node);
+        let (select, ()) = (select?, empty?);
+        attributes?;
+        Ok(Instruction::CopyOf(CopyOf {
+            line: self.line(node),
+            select,
+        }))
+    }
+
+    /// `xsl:element` with `name` and `namespace`.
+    fn element(&mut self, node: Node<'_, 'input>) -> Load<Instruction> {
+        let attributes = self.check_attributes(node, &["name", "namespace"]);
+        let name = self
+            .required(node, "name")
+            .and_then(|_| self.xpath(node, "name", parse_avt)?.ok_or(Failed));
+        let namespace = self.xpath(node, "namespace", parse_avt);
+        let body = self.sequence_constructor(node);
+        let (name, namespace, body) = (name?, namespace?, body?);
+        attributes?;
+        Ok(Instruction::Element(Element {
+            line: self.line(node),
+            name,
+            namespace,
+            namespaces: self.in_scope_namespaces(node, false),
+            body,
+        }))
+    }
+
+    /// `xsl:namespace` with `name` and `select` or content.
+    fn namespace(&mut self, node: Node<'_, 'input>) -> Load<Instruction> {
+        let attributes = self.check_attributes(node, &["name", "select"]);
+        let name = self
+            .required(node, "name")
+            .and_then(|_| self.xpath(node, "name", parse_avt)?.ok_or(Failed));
+        let select = self
+            .xpath(node, "select", parse_expr)
+            .map(|e| e.map(Box::new));
+        let body = self.sequence_constructor(node);
+        let (name, select, body) = (name?, select?, body?);
+        attributes?;
+        if select.is_some() && !body.is_empty() {
+            return Err(self.invalid(
+                node,
+                "xsl:namespace has both a `select` attribute and content (XTSE0910)".into(),
+            ));
+        }
+        Ok(Instruction::Namespace(NamespaceNode {
+            line: self.line(node),
+            name,
+            select: select.map(|e| *e),
+            body,
+        }))
+    }
+
+    /// `xsl:processing-instruction` with `name` and `select` or content.
+    fn processing_instruction(&mut self, node: Node<'_, 'input>) -> Load<Instruction> {
+        let attributes = self.check_attributes(node, &["name", "select"]);
+        let name = self
+            .required(node, "name")
+            .and_then(|_| self.xpath(node, "name", parse_avt)?.ok_or(Failed));
+        let select = self
+            .xpath(node, "select", parse_expr)
+            .map(|e| e.map(Box::new));
+        let body = self.sequence_constructor(node);
+        let (name, select, body) = (name?, select?, body?);
+        attributes?;
+        if select.is_some() && !body.is_empty() {
+            return Err(self.invalid(
+                node,
+                "xsl:processing-instruction has both a `select` attribute and content (XTSE0880)"
+                    .into(),
+            ));
+        }
+        Ok(Instruction::ProcessingInstruction(ProcessingInstruction {
+            line: self.line(node),
+            name,
+            select: select.map(|e| *e),
+            body,
+        }))
+    }
+
+    /// `xsl:message` with `terminate` and content.
+    fn message(&mut self, node: Node<'_, 'input>) -> Load<Instruction> {
+        let attributes = self.check_attributes(node, &["terminate"]);
+        let terminate = self.xpath(node, "terminate", parse_avt);
+        let body = self.sequence_constructor(node);
+        let (terminate, body) = (terminate?, body?);
+        attributes?;
+        Ok(Instruction::Message(Message {
+            line: self.line(node),
+            terminate,
+            body,
         }))
     }
 }

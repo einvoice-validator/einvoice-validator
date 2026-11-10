@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><out><ids>true</ids><distinct>true</distinct><same>true</same><different>true</different><empty>|</empty><context>true</context><temporary>true true true</temporary></out>

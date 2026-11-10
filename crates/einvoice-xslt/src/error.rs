@@ -59,7 +59,10 @@ pub enum LoadErrorKind {
 /// One load error, with the line where it was found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadError {
-    /// The 1-based line in the stylesheet.
+    /// The URI of the stylesheet module, for a stylesheet loaded with its imports
+    /// ([`load_with_imports`](crate::load_with_imports)).
+    pub module: Option<String>,
+    /// The 1-based line in the stylesheet module.
     pub line: u32,
     /// What is wrong.
     pub kind: LoadErrorKind,
@@ -67,6 +70,9 @@ pub struct LoadError {
 
 impl fmt::Display for LoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(module) = &self.module {
+            write!(f, "{module}: ")?;
+        }
         write!(f, "line {}: ", self.line)?;
         match &self.kind {
             LoadErrorKind::Xml(message) => write!(f, "not well-formed XML: {message}"),

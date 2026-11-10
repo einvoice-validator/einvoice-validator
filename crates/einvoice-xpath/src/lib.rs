@@ -8,8 +8,8 @@
 //! else. Supported:
 //!
 //! - path expressions on the axes `child`, `attribute`, `self`, `parent`, `ancestor`,
-//!   `ancestor-or-self`, `descendant-or-self` (and `//`), `preceding-sibling`, `preceding`,
-//!   `following-sibling`; name tests, wildcards and the kind tests `node()`, `text()`,
+//!   `ancestor-or-self`, `descendant`, `descendant-or-self` (and `//`), `preceding-sibling`,
+//!   `preceding`, `following-sibling`; name tests, wildcards and the kind tests `node()`, `text()`,
 //!   `comment()`, `processing-instruction()`, `element(name?)`, `attribute(name?)`;
 //!   predicates; filter expressions as steps;
 //! - `for`, `some`, `every` (one or more bindings), `if then else`, `to`, `instance of`,
@@ -20,9 +20,9 @@
 //!   parenthesized patterns as Saxon-HE 12.10 reads them (see [`parse_pattern`]).
 //!
 //! Refused: `intersect`, `except`, the `union` keyword, `treat as`, node
-//! comparisons, unary `+`, XPath comments, the `descendant`, `following` and `namespace`
-//! axes, `document-node()`, `schema-element()`, `schema-attribute()`, typed `element()` and
-//! `attribute()` tests, `item()`, `empty-sequence()`, atomic types other than `xs:string`,
+//! comparisons, unary `+`, XPath comments, the `following` and `namespace` axes (in
+//! patterns, the axes other than `child` and `attribute`), `document-node()`,
+//! `schema-element()`, `schema-attribute()`, typed `element()` and `attribute()` tests, `item()`, `empty-sequence()`, atomic types other than `xs:string`,
 //! `xs:anyURI`, `xs:boolean`, `xs:integer`, `xs:decimal` and `xs:date`, and every XPath 3.0
 //! addition except the zero-argument `document-uri()`, which is an ordinary function call
 //! here.

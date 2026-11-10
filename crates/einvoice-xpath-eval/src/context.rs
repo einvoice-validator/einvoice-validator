@@ -80,6 +80,19 @@ pub trait StaticContext {
 
     /// The namespace bound to a prefix, for the `QName` argument of `system-property()`.
     fn namespace_uri(&self, prefix: &str) -> Option<String>;
+
+    /// The answer of `element-available()` for the element of that expanded name, if
+    /// known. By default, unknown (the call is refused).
+    fn element_available(&self, name: &QName) -> Option<bool> {
+        let _ = name;
+        None
+    }
+
+    /// The static base URI of the expression, against which `document()` resolves the
+    /// relative URIs given as strings. By default, none: the host's.
+    fn static_base_uri(&self) -> Option<String> {
+        None
+    }
 }
 
 /// A static context built by hand: namespaces, variables and functions declared one by

@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:q="urn:q"><e1><plain/></e1><e2><q:pre/></e2><e3><n xmlns="urn:n"/></e3><e4><z:n xmlns:z="urn:z"/></e4><e5><n/></e5><e6 xmlns="urn:dflt"><inherits/></e6><e7><ab xmlns="urn:ab" x="1">t<child xmlns=""/></ab></e7><e8><spaced/></e8></out>

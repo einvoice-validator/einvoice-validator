@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:exsl="http://exslt.org/common" xmlns:f="urn:f" xmlns:u="urn:u" xmlns:xs="http://www.w3.org/2001/XMLSchema" ea1="true" ea2="false" ea3="false" ea4="true" fa1="true" fa2="false" fa3="true" fa4="false" fa5="true" fa6="false" fa7="true" fa8="true" fa9="true" fa10="true"><p n="version" v="3.0"/><p n="vendor" v="Saxonica"/><p n="vendor-url" v="http://www.saxonica.com/"/><p n="product-name" v="SAXON"/><p n="product-version" v="HE 12.10"/><p n="is-schema-aware" v="no"/><p n="supports-serialization" v="yes"/><p n="supports-backwards-compatibility" v="yes"/><p n="supports-namespace-axis" v="yes"/><p n="supports-streaming" v="no"/><p n="supports-dynamic-evaluation" v="yes"/><p n="supports-higher-order-functions" v="yes"/><p n="xpath-version" v="3.1"/><p n="xsd-version" v="1.1"/><p n="other" v=""/><p n="u" v=""/></out>

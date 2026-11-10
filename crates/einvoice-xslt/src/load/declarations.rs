@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use roxmltree::Node;
 
-use super::strip::{Child, children};
+use super::strip::Child;
 use super::{Failed, Load, Loader, is_xsl};
 use crate::error::LoadErrorKind;
 use crate::ir::{
@@ -35,7 +35,7 @@ impl<'input> Loader<'_, 'input> {
                 format!("the document element is {name}, not xsl:stylesheet or xsl:transform (simplified stylesheets are not supported)"),
             ));
         }
-        let attributes = self.check_attributes(root, &["version"]);
+        let attributes = self.check_attributes(root, &["version", "extension-element-prefixes"]);
         let version = self
             .required(root, "version")?
             .trim_matches(is_xml_whitespace)
@@ -43,6 +43,7 @@ impl<'input> Loader<'_, 'input> {
         if version != "2.0" {
             return Err(self.unsupported_value(root, "version", &version));
         }
+        let extensions = self.extension_element_prefixes(root);
         let mut stylesheet = Stylesheet {
             version,
             output: None,
@@ -50,11 +51,26 @@ impl<'input> Loader<'_, 'input> {
             templates: Vec::new(),
             functions: Vec::new(),
             data_elements: Vec::new(),
+            modules: Vec::new(),
         };
-        let declarations = super::each(children(root), |child| {
+        let mut after_imports = false;
+        let declarations = super::each(self.children(root), |child| {
+            let is_import =
+                matches!(&child, Child::Element(n) if n.has_tag_name((super::XSL, "import")));
+            if is_import
+                && after_imports
+                && let Child::Element(node) = &child
+            {
+                return Err(self.invalid(
+                    *node,
+                    "xsl:import must come before every other declaration (XTSE0200)".into(),
+                ));
+            }
+            after_imports |= !is_import;
             self.declaration(&child, &mut stylesheet)
         });
         attributes?;
+        extensions?;
         declarations?;
         self.check_duplicates(&stylesheet)?;
         Ok(stylesheet)
@@ -83,20 +99,35 @@ impl<'input> Loader<'_, 'input> {
                 return Err(self.invalid(node, message));
             }
             let (line, name) = (self.line(node), self.element_qname(node));
-            stylesheet.data_elements.push(DataElement { line, name });
+            let module = self.module.index;
+            stylesheet
+                .data_elements
+                .push(DataElement { line, module, name });
             return Ok(());
         }
+        let module = self.module.index;
         match node.tag_name().name() {
             "template" => stylesheet.templates.push(self.template(node)?),
             "function" => stylesheet.functions.push(self.function(node)?),
             "param" => stylesheet.globals.push(GlobalVariable {
                 kind: GlobalKind::Param,
                 variable: self.variable(node, BindingKind::Param)?,
+                module,
             }),
             "variable" => stylesheet.globals.push(GlobalVariable {
                 kind: GlobalKind::Variable,
                 variable: self.variable(node, BindingKind::Variable)?,
+                module,
             }),
+            // Read before the walk (see `modules`): only checked here.
+            "import" => {
+                self.check_attributes(node, &["href"])?;
+                self.empty_content(node)?;
+            }
+            "namespace-alias" => {
+                self.check_attributes(node, &["stylesheet-prefix", "result-prefix"])?;
+                self.empty_content(node)?;
+            }
             "output" => {
                 let output = self.output(node)?;
                 if stylesheet.output.is_some() {
@@ -109,6 +140,33 @@ impl<'input> Loader<'_, 'input> {
             _ => return Err(self.unsupported_element(node)),
         }
         Ok(())
+    }
+
+    /// The namespaces of `extension-element-prefixes` on the stylesheet element (XSLT 2.0
+    /// section 18.2.2): their namespace nodes are not copied to the result, and an
+    /// element in one of them is an extension instruction, which is refused.
+    fn extension_element_prefixes(&mut self, root: Node<'_, 'input>) -> Load<()> {
+        let Some(value) = root.attribute("extension-element-prefixes") else {
+            return Ok(());
+        };
+        let mut failed = false;
+        for prefix in value.split(is_xml_whitespace).filter(|p| !p.is_empty()) {
+            let uri = if prefix == "#default" {
+                root.lookup_namespace_uri(None)
+            } else {
+                root.lookup_namespace_uri(Some(prefix))
+            };
+            if let Some(uri) = uri {
+                self.extension_namespaces.push(uri.to_owned());
+            } else {
+                failed = true;
+                let message = format!(
+                    "prefix `{prefix}` of extension-element-prefixes is not declared (XTSE1430)"
+                );
+                self.invalid(root, message);
+            }
+        }
+        if failed { Err(Failed) } else { Ok(()) }
     }
 
     pub(crate) fn unsupported_element(&mut self, node: Node<'_, '_>) -> Failed {
@@ -219,7 +277,7 @@ impl<'input> Loader<'_, 'input> {
 
     /// Fails unless `node` has no content (after whitespace stripping).
     pub(crate) fn empty_content(&mut self, node: Node<'_, 'input>) -> Load<()> {
-        if children(node).is_empty() {
+        if self.children(node).is_empty() {
             Ok(())
         } else {
             let message = format!("{} must be empty (XTSE0260)", self.element_name(node));
@@ -277,7 +335,7 @@ impl<'input> Loader<'_, 'input> {
         node: Node<'_, 'input>,
         kind: BindingKind,
     ) -> Load<(Vec<Variable>, Vec<crate::ir::Instruction>)> {
-        let all = children(node);
+        let all = self.children(node);
         let split = all
             .iter()
             .position(|c| !matches!(c, Child::Element(e) if e.has_tag_name((super::XSL, "param"))))
@@ -349,6 +407,7 @@ impl<'input> Loader<'_, 'input> {
         });
         Ok(Template {
             line: self.line(node),
+            module: self.module.index,
             name,
             pattern,
             modes,
@@ -409,6 +468,7 @@ impl<'input> Loader<'_, 'input> {
         }
         Ok(Function {
             line: self.line(node),
+            module: self.module.index,
             name,
             params,
             as_type,

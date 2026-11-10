@@ -110,6 +110,7 @@ fn axis() -> impl Strategy<Value = Axis> {
             Axis::Child,
             Axis::Attribute,
             Axis::SelfAxis,
+            Axis::Descendant,
             Axis::DescendantOrSelf,
             Axis::FollowingSibling,
             Axis::Parent,

@@ -1,0 +1,21 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:p="urn:p"><nodes b="two"><y z="3">t2<w/>t3</y><!--c1--><?pi data?><p:x>t5</p:x></nodes><atomics>1 2 a 3</atomics><document><!--before--><r a="1" b="two" p:c="3">
+  <x n="1">t1</x>
+  <y z="3">t2<w/>t3</y>
+  <x n="2">t4</x>
+  <p:x>t5</p:x>
+  <!--c1-->
+  <?pi data?>
+  <amounts>
+    <amount>10.50</amount>
+    <amount>2</amount>
+    <amount> 3.25 </amount>
+  </amounts>
+  <x n="3"/>
+  <codes>A B  C</codes>
+  <text>a--b- &amp; &lt;tag&gt; "q" 'a' 	tab
+line&#xD;cr nbsp</text>
+</r><?after?></document><undeclare xmlns="urn:d"><p:a xmlns:k="urn:k"><b xmlns=""/><p:c/><d xmlns="urn:inner"><e/></d></p:a><f xmlns="" xmlns:k="urn:k"/></undeclare><tree><wrap xmlns="urn:w"><p:a xmlns:k="urn:k"><b xmlns=""/><p:c/><d xmlns="urn:inner"><e/></d></p:a><f xmlns="" xmlns:k="urn:k"/></wrap><e xmlns="urn:inner" xmlns:k="urn:k"/></tree><sequence>4,x,a,,pi,0</sequence></out>

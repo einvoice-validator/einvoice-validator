@@ -35,6 +35,8 @@ pub enum ErrorCode {
     Foca0002,
     /// `FOCH0001`: a code point that is not a valid XML character.
     Foch0001,
+    /// `FODC0001`: no document node at the root of the tree (`id()`).
+    Fodc0001,
     /// `FODT0001`: date/time value out of range.
     Fodt0001,
     /// `FORG0001`: invalid value for a cast or constructor.
@@ -83,6 +85,7 @@ impl ErrorCode {
             Self::Foar0002 => "FOAR0002",
             Self::Foca0002 => "FOCA0002",
             Self::Foch0001 => "FOCH0001",
+            Self::Fodc0001 => "FODC0001",
             Self::Fodt0001 => "FODT0001",
             Self::Forg0001 => "FORG0001",
             Self::Forg0006 => "FORG0006",

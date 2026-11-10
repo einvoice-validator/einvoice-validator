@@ -149,6 +149,11 @@ pub(crate) enum CallData {
     Regex(Arc<std::result::Result<XPathRegex, Error>>),
     /// The property named by the literal argument of `system-property`.
     Property(QName),
+    /// The answer of `element-available` or `function-available`, known when the call is
+    /// compiled (its arguments are literals).
+    Available(bool),
+    /// The static base URI, for `document()` of strings.
+    Base(Option<String>),
     /// `xs:decimal` of an argument whose static type is `xs:integer`: Saxon-HE 12.10
     /// casts it with its up-casting converter, which strips the trailing zeros
     /// (`AtomicValue::upcast`), where the cast of an operand typed at run time keeps
@@ -1398,6 +1403,7 @@ fn node_axis(axis: ast::Axis) -> NodeAxis {
         ast::Axis::Child => NodeAxis::Child,
         ast::Axis::Attribute => NodeAxis::Attribute,
         ast::Axis::SelfAxis => NodeAxis::SelfAxis,
+        ast::Axis::Descendant => NodeAxis::Descendant,
         ast::Axis::DescendantOrSelf => NodeAxis::DescendantOrSelf,
         ast::Axis::FollowingSibling => NodeAxis::FollowingSibling,
         ast::Axis::Parent => NodeAxis::Parent,
@@ -2277,8 +2283,74 @@ impl Compiler<'_> {
                 };
                 self.property_name(text.trim()).map(CallData::Property)
             }
+            Builtin::ElementAvailable | Builtin::FunctionAvailable => {
+                self.availability(builtin, args).map(CallData::Available)
+            }
+            Builtin::Document => Ok(CallData::Base(self.context.static_base_uri())),
             _ => Ok(CallData::None),
         }
+    }
+
+    /// The answer of `element-available` or `function-available`, from its literal
+    /// arguments: the element's from the static context, the function's from the
+    /// stylesheet functions, then the library ([`functions::builtin_available`]).
+    fn availability(&self, builtin: Builtin, args: &[ast::Expr]) -> Result<bool> {
+        let literal = |i: usize| match args.get(i) {
+            Some(ast::Expr::Literal(ast::Literal::String(s))) => Some(s.as_str()),
+            _ => None,
+        };
+        let f = builtin.name();
+        let Some(text) = literal(0) else {
+            return err(
+                ErrorCode::Unsupported,
+                format!("{f}() with an argument that is not a string literal"),
+            );
+        };
+        let mut name = self.property_name(text.trim())?;
+        let unknown = || {
+            Error::new(
+                ErrorCode::Unsupported,
+                format!("{f}({text:?}): Saxon-HE's answer is not known here"),
+            )
+        };
+        if builtin == Builtin::ElementAvailable {
+            if name.namespace.is_none() {
+                return err(
+                    ErrorCode::Unsupported,
+                    format!("element-available() of the unprefixed name {text:?}"),
+                );
+            }
+            return self.context.element_available(&name).ok_or_else(unknown);
+        }
+        let arity = match args.get(1) {
+            None => None,
+            Some(ast::Expr::Literal(ast::Literal::Integer(n))) => {
+                Some(n.parse::<usize>().map_err(|_| {
+                    Error::new(
+                        ErrorCode::Unsupported,
+                        format!("function-available() with the arity {n}"),
+                    )
+                })?)
+            }
+            Some(_) => {
+                return err(
+                    ErrorCode::Unsupported,
+                    "function-available() with an arity that is not an integer literal",
+                );
+            }
+        };
+        if name.prefix.is_none() && name.namespace.is_none() {
+            // An unprefixed name is in the default function namespace.
+            name.namespace = Some(einvoice_xpath::FN_NAMESPACE.to_owned());
+        }
+        let stylesheet = match arity {
+            Some(a) => self.context.function(&name, a).is_some(),
+            None => (0..=64).any(|a| self.context.function(&name, a).is_some()),
+        };
+        if stylesheet {
+            return Ok(true);
+        }
+        functions::builtin_available(&name, arity).ok_or_else(unknown)
     }
 
     fn property_name(&self, text: &str) -> Result<QName> {

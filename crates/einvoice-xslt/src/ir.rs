@@ -28,6 +28,21 @@ pub struct Stylesheet {
     /// Top-level elements outside the XSLT namespace: user-defined data, which XSLT
     /// ignores (XSLT 2.0 section 3.6.2). Kept so that nothing is dropped unseen.
     pub data_elements: Vec<DataElement>,
+    /// The stylesheet modules: the principal module first, then the modules it imports
+    /// (`xsl:import`), in the order they were read. Each declaration names its module.
+    pub modules: Vec<Module>,
+}
+
+/// A stylesheet module: the principal module, or one imported with `xsl:import`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Module {
+    /// Its URI (the base URI of its declarations), `None` for a principal module loaded
+    /// without one.
+    pub uri: Option<String>,
+    /// Its import precedence (XSLT 2.0 section 2.8): a module has a higher precedence
+    /// than the modules it imports, and a module imported later than one imported before
+    /// it. The principal module has the highest.
+    pub precedence: u32,
 }
 
 /// One template rule: an alternative of a template's pattern, in a given mode.
@@ -88,12 +103,29 @@ impl Stylesheet {
         rules
     }
 
-    /// The template named `name`.
+    /// The import precedence of the declarations of module `module`.
     #[must_use]
-    pub fn named_template(&self, name: &QName) -> Option<&Template> {
+    pub fn precedence(&self, module: usize) -> u32 {
+        self.modules.get(module).map_or(0, |m| m.precedence)
+    }
+
+    /// The index of the template named `name` that `xsl:call-template` calls: the one of
+    /// the highest import precedence (the loader refuses two of the same precedence).
+    #[must_use]
+    pub fn named_template_index(&self, name: &QName) -> Option<usize> {
         self.templates
             .iter()
-            .find(|t| t.name.as_ref().is_some_and(|n| n.same_expanded_name(name)))
+            .enumerate()
+            .filter(|(_, t)| t.name.as_ref().is_some_and(|n| n.same_expanded_name(name)))
+            .max_by_key(|(_, t)| self.precedence(t.module))
+            .map(|(i, _)| i)
+    }
+
+    /// The template named `name` that `xsl:call-template` calls (see
+    /// [`Stylesheet::named_template_index`]).
+    #[must_use]
+    pub fn named_template(&self, name: &QName) -> Option<&Template> {
+        self.named_template_index(name).map(|i| &self.templates[i])
     }
 
     /// The function named `name` with `arity` parameters.
@@ -145,6 +177,10 @@ pub struct GlobalVariable {
     pub kind: GlobalKind,
     /// The declaration.
     pub variable: Variable,
+    /// The module that declares it (an index of [`Stylesheet::modules`]). A global
+    /// variable of an imported module that one of a higher import precedence overrides is
+    /// not kept.
+    pub module: usize,
 }
 
 /// Whether a global binding is a parameter (settable from outside) or a variable.
@@ -213,6 +249,9 @@ pub enum ApplyMode {
 pub struct Template {
     /// Source line.
     pub line: u32,
+    /// The module that declares it (an index of [`Stylesheet::modules`]), whose import
+    /// precedence ranks its rules before their priority.
+    pub module: usize,
     /// The `name`, for templates called with `xsl:call-template`.
     pub name: Option<QName>,
     /// The `match` pattern.
@@ -246,6 +285,9 @@ pub struct TemplateRule {
 pub struct Function {
     /// Source line.
     pub line: u32,
+    /// The module that declares it (an index of [`Stylesheet::modules`]). A function
+    /// that one of a higher import precedence overrides is not kept.
+    pub module: usize,
     /// The name (always prefixed, so never in no namespace).
     pub name: QName,
     /// The parameters, in order (their value is always [`VariableValue::Absent`]).
@@ -261,6 +303,8 @@ pub struct Function {
 pub struct DataElement {
     /// Source line.
     pub line: u32,
+    /// The module it is in (an index of [`Stylesheet::modules`]).
+    pub module: usize,
     /// The element name.
     pub name: QName,
 }
@@ -296,6 +340,94 @@ pub enum Instruction {
     Number(Number),
     /// A literal result element.
     LiteralElement(LiteralElement),
+    /// `xsl:copy`
+    Copy(Copy),
+    /// `xsl:copy-of`
+    CopyOf(CopyOf),
+    /// `xsl:element`
+    Element(Element),
+    /// `xsl:namespace`
+    Namespace(NamespaceNode),
+    /// `xsl:processing-instruction`
+    ProcessingInstruction(ProcessingInstruction),
+    /// `xsl:message`
+    Message(Message),
+}
+
+/// `xsl:copy`: a shallow copy of the context item, the body evaluated only for a
+/// document node or an element (`copy-namespaces`, `inherit-namespaces`,
+/// `use-attribute-sets`, `type` and `validation` are not supported).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Copy {
+    /// Source line.
+    pub line: u32,
+    /// The body.
+    pub body: Vec<Instruction>,
+}
+
+/// `xsl:copy-of` (`copy-namespaces`, `type` and `validation` are not supported).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CopyOf {
+    /// Source line.
+    pub line: u32,
+    /// `select`
+    pub select: Expr,
+}
+
+/// `xsl:element` (`inherit-namespaces`, `use-attribute-sets`, `type` and `validation`
+/// are not supported).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Element {
+    /// Source line.
+    pub line: u32,
+    /// `name`
+    pub name: Avt,
+    /// `namespace`
+    pub namespace: Option<Avt>,
+    /// The namespaces in scope on the instruction, which resolve the prefix of the
+    /// computed name when there is no `namespace` (the implicit `xml` namespace
+    /// excepted). Equal sets are shared.
+    pub namespaces: Arc<[NamespaceBinding]>,
+    /// The body.
+    pub body: Vec<Instruction>,
+}
+
+/// `xsl:namespace`: a namespace node.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NamespaceNode {
+    /// Source line.
+    pub line: u32,
+    /// `name`: the prefix, the default namespace when empty.
+    pub name: Avt,
+    /// `select`; without it, the namespace URI comes from the body.
+    pub select: Option<Expr>,
+    /// The body (empty when `select` is present).
+    pub body: Vec<Instruction>,
+}
+
+/// `xsl:processing-instruction`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProcessingInstruction {
+    /// Source line.
+    pub line: u32,
+    /// `name`: the target.
+    pub name: Avt,
+    /// `select`; without it, the value comes from the body.
+    pub select: Option<Expr>,
+    /// The body (empty when `select` is present).
+    pub body: Vec<Instruction>,
+}
+
+/// `xsl:message` (`select` and `error-code` are not supported).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Message {
+    /// Source line.
+    pub line: u32,
+    /// `terminate`: `yes` or `no` (also `true`, `false`, `1` and `0`, as in XSLT 3.0),
+    /// an attribute value template; `None` for `no`.
+    pub terminate: Option<Avt>,
+    /// The body: the content of the message.
+    pub body: Vec<Instruction>,
 }
 
 /// `xsl:apply-templates`.
@@ -404,8 +536,11 @@ pub struct Attribute {
     pub line: u32,
     /// `name`
     pub name: Avt,
+    /// `namespace`
+    pub namespace: Option<Avt>,
     /// The namespaces in scope on the element, which resolve the prefix of the computed
-    /// name (the implicit `xml` namespace excepted). Equal sets are shared.
+    /// name when there is no `namespace` (the implicit `xml` namespace excepted). Equal
+    /// sets are shared.
     pub namespaces: Arc<[NamespaceBinding]>,
     /// `select`; without it, the value comes from the body.
     pub select: Option<Expr>,
@@ -467,13 +602,18 @@ pub enum NumberLevel {
 pub struct LiteralElement {
     /// Source line.
     pub line: u32,
-    /// The element name.
+    /// The element name, as it is written to the result: a name in a namespace that
+    /// `xsl:namespace-alias` declares an alias is in the target namespace, with the
+    /// result prefix (XSLT 2.0 section 11.1.4).
     pub name: QName,
-    /// The attributes, in document order, as attribute value templates.
+    /// The attributes, in document order, as attribute value templates (their names
+    /// aliased as the element's).
     pub attributes: Vec<LiteralAttribute>,
-    /// The namespace nodes copied to the result (XSLT 2.0 section 11.1.3): every namespace
-    /// in scope on the element except the XSLT namespace and the implicit `xml` namespace.
-    /// Equal sets are shared.
+    /// The namespace nodes copied to the result (XSLT 2.0 sections 11.1.3 and 11.1.4):
+    /// every namespace in scope on the element except the implicit `xml` namespace, the
+    /// XSLT namespace, the namespaces of the extension element prefixes of the module
+    /// and the literal namespaces of `xsl:namespace-alias`; the target namespace of an
+    /// alias is copied even if it is one of those excluded. Equal sets are shared.
     pub namespaces: Arc<[NamespaceBinding]>,
     /// The body.
     pub body: Vec<Instruction>,

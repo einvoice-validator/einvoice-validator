@@ -110,6 +110,21 @@ pub use error::{PrepareError, PrepareErrors, TransformError};
 pub use output::{CompactOutput, CompactTransformation, ResultObserver};
 pub use prepare::Executable;
 pub use run::{
-    DEFAULT_MAX_NESTING, DEFAULT_MAX_STACK, DocumentResolver, TransformOptions, Transformation,
-    max_nesting_for_depth,
+    DEFAULT_MAX_NESTING, DEFAULT_MAX_STACK, DEFAULT_MAX_TAIL_CALLS, DocumentResolver,
+    TransformOptions, Transformation, TreeTransformation, max_nesting_for_depth,
 };
+pub use sink::Serialization;
+
+/// Writes a tree as XML, as Saxon-HE 12.10 writes it with the XML output method and the
+/// parameters `settings` ([`Serialization`]): `root` is a document node (its children
+/// are written) or any other node.
+///
+/// # Errors
+///
+/// Text outside the document element (`UNSUPPORTED`).
+pub fn serialize(
+    root: &einvoice_xpath_eval::Node,
+    settings: Serialization,
+) -> Result<String, TransformError> {
+    sink::serialize(root, settings, false)
+}

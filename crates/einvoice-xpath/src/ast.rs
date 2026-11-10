@@ -243,6 +243,8 @@ pub enum Axis {
     Attribute,
     /// `self::`
     SelfAxis,
+    /// `descendant::`
+    Descendant,
     /// `descendant-or-self::` (from `//`)
     DescendantOrSelf,
     /// `following-sibling::`
@@ -267,6 +269,7 @@ impl Axis {
             Self::Child => "child",
             Self::Attribute => "attribute",
             Self::SelfAxis => "self",
+            Self::Descendant => "descendant",
             Self::DescendantOrSelf => "descendant-or-self",
             Self::FollowingSibling => "following-sibling",
             Self::Parent => "parent",

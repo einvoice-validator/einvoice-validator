@@ -51,6 +51,14 @@ pub enum LimitExceeded {
         /// The maximum, in bytes.
         max: u32,
     },
+    /// A template ends with an `xsl:call-template`, which ends with another, and so on,
+    /// more than `max` times in a row: tail calls, which need no stack (Saxon runs them in
+    /// place, as the executor does), but would run for ever when the recursion does not
+    /// end.
+    TailCalls {
+        /// The maximum number of tail calls in a row.
+        max: u32,
+    },
 }
 
 /// A bound on the call stack: at most `max` bytes deeper than the position of the stack
@@ -112,7 +120,10 @@ impl LimitExceeded {
     #[must_use]
     pub const fn max(self) -> u32 {
         match self {
-            Self::Depth { max, .. } | Self::Nesting { max } | Self::Stack { max } => max,
+            Self::Depth { max, .. }
+            | Self::Nesting { max }
+            | Self::Stack { max }
+            | Self::TailCalls { max } => max,
         }
     }
 }
@@ -131,6 +142,10 @@ impl fmt::Display for LimitExceeded {
             Self::Stack { max } => write!(
                 f,
                 "templates and functions invoked one inside another use more than {max} bytes of stack"
+            ),
+            Self::TailCalls { max } => write!(
+                f,
+                "templates ending with a call of another template more than {max} times in a row"
             ),
         }
     }

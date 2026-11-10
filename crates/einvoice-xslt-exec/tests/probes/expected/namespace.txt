@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><out><a xmlns:n1="urn:n1" xmlns:n2="urn:n2"/><b xmlns:same="urn:same"/><c/><d xmlns:after="urn:after" x="1"/><e xmlns:p1="urn:p1" xmlns:p2="urn:p2"/><f><k xmlns:kk="urn:kk"><inner/></k></f><g><d xmlns="urn:default"/></g><h xmlns:spaced="urn:spaced"/></out>

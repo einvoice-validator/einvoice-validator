@@ -1,7 +1,9 @@
 //! Every probe of `tests/probes/` gives the result Saxon-HE gave (`expected/`, written by
 //! the `saxon-probes` example): the same result tree, or the same error code, the same
-//! number of distinct ambiguous-rule warnings, and the same errors recovered while
-//! matching patterns (line and code). No Java is needed.
+//! number of distinct ambiguous-rule warnings, the same errors recovered while matching
+//! patterns (line and code), and the same messages. No Java is needed. A probe may import
+//! the stylesheet modules of `tests/probes/modules/` and read with `document()` the files
+//! of `tests/probes/`, itself included.
 //!
 //! Result trees are compared node by node, not as text: the serializations of two
 //! engines may differ (attribute order, quoting, where namespaces are declared) without
@@ -17,6 +19,33 @@
 mod probes;
 
 use roxmltree::{Document, Node, NodeType};
+
+/// The files of `tests/probes/`, by their `file:` URI: the modules a probe imports and
+/// the documents it reads.
+struct Files(std::path::PathBuf);
+
+impl Files {
+    fn read(&self, uri: &str) -> Option<String> {
+        let dir = einvoice_xpath_eval::file_uri(&self.0)?;
+        let relative = uri.strip_prefix(&dir)?.strip_prefix('/')?;
+        if relative.split('/').any(|part| part == "..") {
+            return None;
+        }
+        std::fs::read_to_string(self.0.join(relative)).ok()
+    }
+}
+
+impl einvoice_xslt::ModuleResolver for Files {
+    fn resolve(&self, uri: &str) -> Option<String> {
+        self.read(uri)
+    }
+}
+
+impl einvoice_xslt_exec::DocumentResolver for Files {
+    fn resolve(&self, uri: &str) -> Option<String> {
+        self.read(uri)
+    }
+}
 
 /// The qualified name of an element or attribute as written.
 fn written(text: &str, range: std::ops::Range<usize>) -> String {
@@ -124,7 +153,8 @@ fn check_warnings(
 
 #[test]
 fn every_probe_gives_the_saxon_result() {
-    let dir = probes::probes_dir();
+    let dir = std::path::absolute(probes::probes_dir()).unwrap();
+    let files = Files(dir.clone());
     let input_path = dir.join("input.xml");
     let input = std::fs::read_to_string(&input_path).unwrap();
     let uri = einvoice_xpath_eval::file_uri(&std::path::absolute(&input_path).unwrap());
@@ -132,11 +162,13 @@ fn every_probe_gives_the_saxon_result() {
     assert!(names.len() >= 25, "{names:?}");
     let mut failures = Vec::new();
     for name in &names {
-        let stylesheet = std::fs::read_to_string(dir.join(format!("{name}.xsl"))).unwrap();
+        let path = dir.join(format!("{name}.xsl"));
+        let stylesheet = std::fs::read_to_string(&path).unwrap();
         let expected =
             probes::Expected::parse(&std::fs::read_to_string(probes::expected_path(name)).unwrap())
                 .unwrap();
-        let sheet = match einvoice_xslt::load(&stylesheet) {
+        let module_uri = einvoice_xpath_eval::file_uri(&path).unwrap();
+        let sheet = match einvoice_xslt::load_with_imports(&stylesheet, &module_uri, &files) {
             Ok(sheet) => sheet,
             Err(e) => {
                 failures.push(format!("{name}: does not load: {e}"));
@@ -150,10 +182,14 @@ fn every_probe_gives_the_saxon_result() {
                 continue;
             }
         };
-        let result = executable.transform(&input, uri.as_deref());
+        let options = einvoice_xslt_exec::TransformOptions {
+            resolver: Some(&files),
+            ..einvoice_xslt_exec::TransformOptions::default()
+        };
+        let result = executable.transform_with(input.as_str(), uri.as_deref(), &options);
         // The source given as an owned String (kept by the tree, and as a copy only when
         // document() may load it again) gives the same result.
-        let from_owned = executable.transform(input.clone(), uri.as_deref());
+        let from_owned = executable.transform_with(input.clone(), uri.as_deref(), &options);
         if from_owned != result {
             failures.push(format!(
                 "{name}: from an owned String: {from_owned:?}\n  from a &str: {result:?}"
@@ -176,6 +212,17 @@ fn every_probe_gives_the_saxon_result() {
                     ));
                 }
                 check_warnings(name, &ours.warnings, &expected, &mut failures);
+                let messages: String = ours.messages.iter().fold(String::new(), |mut all, m| {
+                    all.push_str(m);
+                    all.push('\n');
+                    all
+                });
+                if messages != expected.messages {
+                    failures.push(format!(
+                        "{name}: messages {messages:?}, Saxon {:?}",
+                        expected.messages
+                    ));
+                }
             }
             (Err(e), Some(code)) if e.code() == code => {
                 // The warnings reported before the error are not compared: the

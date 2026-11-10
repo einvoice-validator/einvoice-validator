@@ -584,7 +584,7 @@ pattern = 'Saxon-HE[-: ](?<v>[0-9]+(?:\.[0-9]+)*(?:-[0-9]+)?)'
 # The value of system-property('xsl:product-version') that the engine and the test host
 # of the einvoice-xpath-eval oracle give, as Saxon does.
 [[upstream.pin]]
-file = "crates/einvoice-xslt-exec/src/run.rs"
+file = "crates/einvoice-xslt/src/available.rs"
 pattern = '"product-version" => "HE (?<v>[0-9]+(?:\.[0-9]+)*)"'
 
 [[upstream.pin]]

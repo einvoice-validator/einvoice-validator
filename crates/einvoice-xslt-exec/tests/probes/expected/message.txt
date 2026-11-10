@@ -1,0 +1,6 @@
+result
+warnings 0
+pattern-errors
+messages "plain <b a=\"1\">bold</b> &amp; after\nsecond\nline\n1 2<!--c--><?p d?>\ntwo\n<x/>\nC1: &#x85; &lt;\n"
+---
+<?xml version="1.0" encoding="UTF-8"?><out><done/></out>

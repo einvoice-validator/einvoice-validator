@@ -45,7 +45,8 @@ use crate::prepare::{
     Executable, Inst, ModeRef, Plan, Value, When, WithParam, kind_index, rule_name_number,
 };
 use crate::sink::{
-    Compact, SequenceSink, Sink, Target, TextSink, TreeSink, WholeText, XmlWriter, attribute_name,
+    Compact, SequenceSink, Serialization, Sink, Target, TextSink, TreeSink, WholeText, XmlWriter,
+    attribute_name, copy_node, element_name, serialize,
 };
 
 /// Fetches the documents that `document()` asks for, by absolute URI. The engine never
@@ -60,6 +61,14 @@ pub trait DocumentResolver {
 /// templates and stylesheet functions invoked one inside another. It is
 /// [`max_nesting_for_depth`] of [`DEFAULT_MAX_DEPTH`]: 576.
 pub const DEFAULT_MAX_NESTING: u32 = max_nesting_for_depth(DEFAULT_MAX_DEPTH);
+
+/// The most tail calls in a row in a transformation, unless the caller sets another
+/// maximum ([`TransformOptions::max_tail_calls`]): 65 536. A template that ends with an
+/// `xsl:call-template` runs the template it calls in its place, as Saxon does, without
+/// stack in proportion to the recursion; the ISO Schematron skeleton recurses so over
+/// each character of every XPath expression of a schema (8519 for the longest of the CEN
+/// rules).
+pub const DEFAULT_MAX_TAIL_CALLS: u32 = 1 << 16;
 
 /// The nesting of invocations that the official stylesheets need on a document
 /// `max_depth` deep, with room to spare: twice the depth, plus 64.
@@ -108,6 +117,11 @@ pub struct TransformOptions<'r> {
     /// must have this much stack and some more, for its caller and for the deepest level.
     /// Default: [`DEFAULT_MAX_STACK`].
     pub max_stack: u32,
+    /// The most tail calls in a row (`xsl:call-template` at the end of a template, run in
+    /// its place): beyond it, the transformation ends with a `LIMIT` error
+    /// ([`LimitExceeded::TailCalls`]) rather than run for ever. Default:
+    /// [`DEFAULT_MAX_TAIL_CALLS`].
+    pub max_tail_calls: u32,
 }
 
 /// The default of [`TransformOptions::max_stack`]: 1.5 MiB, for a thread with the
@@ -139,6 +153,7 @@ impl Default for TransformOptions<'_> {
             max_depth: DEFAULT_MAX_DEPTH,
             max_nesting: DEFAULT_MAX_NESTING,
             max_stack: DEFAULT_MAX_STACK,
+            max_tail_calls: DEFAULT_MAX_TAIL_CALLS,
         }
     }
 }
@@ -153,6 +168,7 @@ impl std::fmt::Debug for TransformOptions<'_> {
             .field("max_depth", &self.max_depth)
             .field("max_nesting", &self.max_nesting)
             .field("max_stack", &self.max_stack)
+            .field("max_tail_calls", &self.max_tail_calls)
             .finish()
     }
 }
@@ -169,6 +185,24 @@ pub struct Transformation {
     /// not to match (`line <L>: <CODE>: An error occurred matching pattern {...}:
     /// <message>`, `L` the line of the `xsl:template` or `xsl:number`).
     pub warnings: Vec<String>,
+    /// The messages of `xsl:message`, in the order they were made, each its content
+    /// written as Saxon-HE 12.10's message handler writes it: as XML without
+    /// declaration nor indentation (text escaped, elements as tags). A message without
+    /// content is not kept, as Saxon prints nothing for it. The message of an
+    /// `xsl:message` that terminates is the error's ([`TransformError::message`], code
+    /// `XTMM9000`).
+    pub messages: Vec<String>,
+}
+
+/// The result of [`Executable::transform_tree`]: the result tree.
+#[derive(Debug, Clone)]
+pub struct TreeTransformation {
+    /// The result document (its nodes without base URI).
+    pub document: Rc<Document>,
+    /// The warnings, as [`Transformation::warnings`].
+    pub warnings: Vec<String>,
+    /// The messages, as [`Transformation::messages`].
+    pub messages: Vec<String>,
 }
 
 impl Executable {
@@ -208,8 +242,48 @@ impl Executable {
         base_uri: Option<&str>,
         options: &TransformOptions<'_>,
     ) -> std::result::Result<Transformation, TransformError> {
-        let ((output, WholeText), warnings) = self.run(source, base_uri, options, WholeText)?;
-        Ok(Transformation { output, warnings })
+        let ((output, WholeText), warnings, messages) =
+            self.run(source, base_uri, options, WholeText)?;
+        Ok(Transformation {
+            output,
+            warnings,
+            messages,
+        })
+    }
+
+    /// Runs the stylesheet on a tree (`source`, a document node) and gives the result
+    /// tree instead of its serialization, for a transformation whose result is read by
+    /// another one. `document()` loads every document through the resolver of the
+    /// options, the source's own URI included.
+    ///
+    /// # Errors
+    ///
+    /// The source is not a document node, or the transformation raised a dynamic error;
+    /// as [`Executable::transform_with`] otherwise.
+    pub fn transform_tree(
+        &self,
+        source: &Node,
+        options: &TransformOptions<'_>,
+    ) -> std::result::Result<TreeTransformation, TransformError> {
+        if source.kind() != NodeKind::Document {
+            return err(
+                "XTDE0040",
+                "the source of a tree transformation is a document node",
+            );
+        }
+        let mut sink = TreeSink::new();
+        let (warnings, messages) = self.execute(source, None, None, options, &mut sink)?;
+        Ok(TreeTransformation {
+            document: sink.finish()?,
+            warnings,
+            messages,
+        })
+    }
+
+    /// The serialization parameters of the stylesheet's `xsl:output`.
+    #[must_use]
+    pub const fn serialization(&self) -> Serialization {
+        self.serialization
     }
 
     /// [`Executable::transform_with`], the result kept as a
@@ -232,22 +306,30 @@ impl Executable {
             observer,
         };
         // The pieces are all taken: nothing is left in the writer's buffer.
-        let ((_, target), warnings) = self.run(source, base_uri, options, target)?;
+        let ((_, target), warnings, messages) = self.run(source, base_uri, options, target)?;
         let mut output = target.builder.finish();
         // The source tree is dropped: the room left in the buffers is released.
         output.shrink_to_fit();
-        Ok(CompactTransformation { output, warnings })
+        Ok(CompactTransformation {
+            output,
+            warnings,
+            messages,
+        })
     }
 
     /// Runs the stylesheet, its result written to `target`: what
-    /// [`XmlWriter::finish`] returns, and the warnings.
+    /// [`XmlWriter::finish`] returns, the warnings and the messages.
+    #[expect(
+        clippy::type_complexity,
+        reason = "the writer's result, the warnings and the messages"
+    )]
     fn run<'s, T: Target>(
         &self,
         source: impl Into<Cow<'s, str>>,
         base_uri: Option<&str>,
         options: &TransformOptions<'_>,
         target: T,
-    ) -> std::result::Result<((String, T), Vec<String>), TransformError> {
+    ) -> std::result::Result<((String, T), Vec<String>, Vec<String>), TransformError> {
         let source = source.into();
         // The text `document()` parses again when asked for the source document.
         let source_text = match &source {
@@ -262,12 +344,34 @@ impl Executable {
                 Some(limit) => TransformError::limit_exceeded(limit),
                 None => TransformError::new("SXXP0003", e.message()),
             })?;
-        let root = document.root();
+        let mut writer = XmlWriter::new(self.serialization, target);
+        let (warnings, messages) = self.execute(
+            &document.root(),
+            source_text,
+            base_uri,
+            options,
+            &mut writer,
+        )?;
+        let finished = writer.finish()?;
+        Ok((finished, warnings, messages))
+    }
+
+    /// Runs the stylesheet on the tree of `root`, its result written to `sink`: the
+    /// warnings and the messages. `source_text` and `source_uri` are the text of the
+    /// source and its URI, for `document()` asked for the source document by its URI.
+    fn execute<'a>(
+        &self,
+        root: &Node,
+        source_text: Option<Cow<'a, str>>,
+        source_uri: Option<&'a str>,
+        options: &'a TransformOptions<'a>,
+        sink: &mut dyn Sink,
+    ) -> std::result::Result<(Vec<String>, Vec<String>), TransformError> {
         let runtime = Runtime {
             exe: self,
             source_root: root.clone(),
             source_text: RefCell::new(source_text),
-            source_uri: base_uri,
+            source_uri,
             options,
             dc: Cell::new(None),
             globals: (0..self.globals.len())
@@ -277,6 +381,7 @@ impl Executable {
             documents: RefCell::new(Vec::new()),
             warnings: RefCell::new(Vec::new()),
             warned: RefCell::new(HashSet::new()),
+            messages: RefCell::new(Vec::new()),
             stashed: RefCell::new(None),
             nesting: Cell::new(0),
             stack: StackLimit::from_here(options.max_stack),
@@ -294,19 +399,10 @@ impl Executable {
             .with_stack_limit(runtime.stack)
             .with_regex_cache(&self.regexes);
         runtime.dc.set(Some(&dc));
-        let mut writer = XmlWriter::new(self.serialization, target);
-        runtime.apply_rule(
-            &root,
-            1,
-            &Size::Known(1),
-            self.default_mode,
-            None,
-            &[],
-            &mut writer,
-        )?;
-        let finished = writer.finish()?;
+        runtime.apply_rule(root, 1, &Size::Known(1), self.default_mode, None, &[], sink)?;
         let warnings = runtime.warnings.take();
-        Ok((finished, warnings))
+        let messages = runtime.messages.take();
+        Ok((warnings, messages))
     }
 }
 
@@ -347,6 +443,32 @@ struct Thunk<'e> {
     memo: OnceCell<Rc<[Item]>>,
     /// The learner to tell when the value is computed ([`Eval::Learning`]).
     report: Option<Rc<Learner>>,
+    /// The frame, kept alive until the value is computed: for a parameter of a tail call
+    /// (see [`Runtime::invoke`]), whose frame ends before the template it calls.
+    hold: RefCell<Option<Rc<Frame<'e>>>>,
+}
+
+/// Dropping a value kept by the parameters of tail calls drops the frames they keep, and
+/// the values not computed in those frames, and so on: a chain as long as the tail calls
+/// (a parameter passed down a recursion and never read). It is dropped here in a loop,
+/// not by a recursion of drops as deep as the chain.
+impl Drop for Thunk<'_> {
+    fn drop(&mut self) {
+        let mut frames: Vec<Rc<Frame<'_>>> = self.hold.get_mut().take().into_iter().collect();
+        while let Some(frame) = frames.pop() {
+            // A frame still read elsewhere is not dropped here.
+            let Ok(frame) = Rc::try_unwrap(frame) else {
+                continue;
+            };
+            for slot in frame.slots.into_inner() {
+                if let Slot::Lazy(thunk) = slot
+                    && let Ok(mut thunk) = Rc::try_unwrap(thunk)
+                {
+                    frames.extend(thunk.hold.get_mut().take());
+                }
+            }
+        }
+    }
 }
 
 /// The argument of a stylesheet function call, computed when first read, in the frame
@@ -438,6 +560,13 @@ struct State<'c> {
 
 type Params<'e> = Vec<(&'e QName, Slot<'e>)>;
 
+/// An `xsl:call-template` in tail position, its parameters bound: the template to run in
+/// place of the one whose body it ends.
+struct TailCall<'e> {
+    template: usize,
+    params: Params<'e>,
+}
+
 struct Runtime<'e, 'a> {
     exe: &'e Executable,
     source_root: Node,
@@ -454,6 +583,8 @@ struct Runtime<'e, 'a> {
     /// The warnings, each distinct one once, in the order first reported.
     warnings: RefCell<Vec<String>>,
     warned: RefCell<HashSet<String>>,
+    /// The messages of `xsl:message`.
+    messages: RefCell<Vec<String>>,
     /// The error a host callback raised, given back when the evaluator returns it.
     stashed: RefCell<Option<TransformError>>,
     /// The invocations in progress: template rules, built-in template rules, named
@@ -810,6 +941,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
             self.value(thunk.value, thunk.as_type, &state, thunk.code)
         })?;
         let _ = thunk.memo.set(Rc::clone(&value));
+        thunk.hold.borrow_mut().take();
         if let Some(learner) = &thunk.report {
             learner.completed();
         }
@@ -1017,6 +1149,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
             frame: self.top_frame().map(|f| Rc::downgrade(&f)),
             memo: OnceCell::new(),
             report,
+            hold: RefCell::new(None),
         })))
     }
 
@@ -1101,18 +1234,53 @@ impl<'e, 'a> Runtime<'e, 'a> {
             Inst::Attribute {
                 line,
                 name,
+                namespace,
                 namespaces,
                 select,
                 body,
             } => self.attribute(
                 *line,
-                name,
+                (name, namespace.as_ref()),
                 namespaces,
                 select.as_deref(),
                 body,
                 state,
                 sink,
             ),
+            Inst::CopyOf { line, select } => self.copy_of(*line, select, state, sink),
+            Inst::Copy { line, body } => self.copy(*line, body, state, sink),
+            Inst::ComputedElement {
+                line,
+                name,
+                namespace,
+                namespaces,
+                body,
+            } => self.computed_element(
+                *line,
+                name,
+                namespace.as_ref(),
+                namespaces,
+                body,
+                state,
+                sink,
+            ),
+            Inst::Namespace {
+                line,
+                name,
+                select,
+                body,
+            } => self.namespace(*line, name, select.as_deref(), body, state, sink),
+            Inst::ProcessingInstruction {
+                line,
+                name,
+                select,
+                body,
+            } => self.processing_instruction(*line, name, select.as_deref(), body, state, sink),
+            Inst::Message {
+                line,
+                terminate,
+                body,
+            } => self.message(*line, terminate.as_ref(), body, state),
             Inst::Comment { line, body } => self.comment(*line, body, state, sink),
             Inst::Text(text) => sink.text(text),
             Inst::Number { line, level, count } => {
@@ -1333,7 +1501,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
     fn attribute(
         &self,
         line: u32,
-        name: &'e CompiledAvt,
+        (name, namespace): (&'e CompiledAvt, Option<&'e CompiledAvt>),
         namespaces: &[NamespaceBinding],
         select: Option<&'e CompiledExpr>,
         body: &'e [Inst],
@@ -1341,7 +1509,11 @@ impl<'e, 'a> Runtime<'e, 'a> {
         sink: &mut dyn Sink,
     ) -> Result<()> {
         let name = self.avt(name, state).at(line)?;
-        let name = attribute_name(&name, namespaces).at(line)?;
+        let namespace = match namespace {
+            Some(avt) => Some(self.avt(avt, state).at(line)?),
+            None => None,
+        };
+        let name = attribute_name(&name, namespace.as_deref(), namespaces).at(line)?;
         let value = self.simple_content(select, body, state).at(line)?;
         sink.attribute(&name, &value).at(line)
     }
@@ -1406,6 +1578,220 @@ impl<'e, 'a> Runtime<'e, 'a> {
     ) -> Result<()> {
         let value = self.avt(value, state).at(line)?;
         sink.attribute(name, &value).at(line)
+    }
+
+    /// `xsl:copy`: a copy of the context item, the body evaluated for a document node or
+    /// an element only, which keeps its namespace nodes.
+    #[inline(never)]
+    fn copy(
+        &self,
+        line: u32,
+        body: &'e [Inst],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let Some(focus) = &state.context.focus else {
+            return err("XTTE0945", "xsl:copy without a context item").at(line);
+        };
+        let Item::Node(node) = &focus.item else {
+            return sink.item(&focus.item).at(line);
+        };
+        match node.kind() {
+            NodeKind::Document => {
+                sink.start_document().at(line)?;
+                self.exec(body, state, sink)?;
+                sink.end_document().at(line)
+            }
+            NodeKind::Element => {
+                let Some(name) = node.name() else {
+                    return err("INTERNAL", "element without name");
+                };
+                let namespaces: Arc<[NamespaceBinding]> = node.namespaces_in_scope().into();
+                sink.start_copied_element(name, &namespaces).at(line)?;
+                self.exec(body, state, sink)?;
+                sink.end_element().at(line)
+            }
+            // Of the other kinds, a copy of the node alone: the body is not evaluated.
+            _ => copy_node(sink, node).at(line),
+        }
+    }
+
+    /// `xsl:copy-of`: deep copies of the nodes selected, the atomic values as they are.
+    #[inline(never)]
+    fn copy_of(
+        &self,
+        line: u32,
+        select: &'e CompiledExpr,
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        for item in self.evaluate(select, state.context).at(line)? {
+            match &item {
+                Item::Node(node) => copy_node(sink, node).at(line)?,
+                Item::Atomic(_) => sink.item(&item).at(line)?,
+            }
+        }
+        Ok(())
+    }
+
+    /// `xsl:element`: an element named by the computed name, in the namespace it names,
+    /// without namespace nodes of its own: the binding its name needs is added when its
+    /// start tag is complete (namespace fixup, after those of `xsl:namespace`).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parts of the instruction, its dynamic context and its sink"
+    )]
+    #[inline(never)]
+    fn computed_element(
+        &self,
+        line: u32,
+        name: &'e CompiledAvt,
+        namespace: Option<&'e CompiledAvt>,
+        namespaces: &[NamespaceBinding],
+        body: &'e [Inst],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let name = self.element_name(line, name, namespace, namespaces, state)?;
+        sink.start_element(&name, &Arc::from(Vec::new())).at(line)?;
+        self.exec(body, state, sink)?;
+        sink.end_element().at(line)
+    }
+
+    /// The name of `xsl:element`.
+    #[inline(never)]
+    fn element_name(
+        &self,
+        line: u32,
+        name: &'e CompiledAvt,
+        namespace: Option<&'e CompiledAvt>,
+        namespaces: &[NamespaceBinding],
+        state: &State<'_>,
+    ) -> Result<QName> {
+        let text = self.avt(name, state).at(line)?;
+        let namespace = match namespace {
+            Some(avt) => Some(self.avt(avt, state).at(line)?),
+            None => None,
+        };
+        element_name(&text, namespace.as_deref(), namespaces).at(line)
+    }
+
+    /// `xsl:namespace`: a namespace node on the element being constructed (XSLT 2.0
+    /// section 11.7).
+    #[inline(never)]
+    fn namespace(
+        &self,
+        line: u32,
+        name: &'e CompiledAvt,
+        select: Option<&'e CompiledExpr>,
+        body: &'e [Inst],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let prefix = self.avt(name, state).at(line)?;
+        let prefix = prefix.trim_matches(einvoice_xpath::is_xml_whitespace);
+        let uri = self.simple_content(select, body, state).at(line)?;
+        if !(prefix.is_empty() || einvoice_xpath::is_ncname(prefix)) || prefix == "xmlns" {
+            return err(
+                "XTDE0920",
+                format!("invalid namespace prefix {prefix:?} in xsl:namespace"),
+            )
+            .at(line);
+        }
+        let xml = einvoice_xpath::XML_NAMESPACE;
+        if (prefix == "xml") != (uri == xml) {
+            return err(
+                "XTDE0925",
+                "the xml prefix and the XML namespace are bound to each other only",
+            )
+            .at(line);
+        }
+        if uri.is_empty() {
+            return err("XTDE0930", "xsl:namespace with an empty namespace URI").at(line);
+        }
+        if prefix == "xml" {
+            return Ok(());
+        }
+        sink.namespace((!prefix.is_empty()).then_some(prefix), &uri)
+            .at(line)
+    }
+
+    /// `xsl:processing-instruction` (XSLT 2.0 section 11.6): the target, an `NCName` other
+    /// than `xml` in any case; the value without leading whitespace, `?>` written `? >`.
+    #[inline(never)]
+    fn processing_instruction(
+        &self,
+        line: u32,
+        name: &'e CompiledAvt,
+        select: Option<&'e CompiledExpr>,
+        body: &'e [Inst],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let target = self.avt(name, state).at(line)?;
+        let target = target.trim_matches(einvoice_xpath::is_xml_whitespace);
+        if !einvoice_xpath::is_ncname(target) || target.eq_ignore_ascii_case("xml") {
+            return err(
+                "XTDE0890",
+                format!("invalid processing instruction name {target:?}"),
+            )
+            .at(line);
+        }
+        let value = self.simple_content(select, body, state).at(line)?;
+        let value = value
+            .trim_start_matches(einvoice_xpath::is_xml_whitespace)
+            .replace("?>", "? >");
+        sink.processing_instruction(target, &value).at(line)
+    }
+
+    /// `xsl:message`: its content, a document node, written as Saxon writes messages
+    /// (see [`Transformation::messages`]); with `terminate` `yes`, the transformation ends
+    /// with the error `XTMM9000`.
+    #[inline(never)]
+    fn message(
+        &self,
+        line: u32,
+        terminate: Option<&'e CompiledAvt>,
+        body: &'e [Inst],
+        state: &State<'_>,
+    ) -> Result<()> {
+        let terminate = match terminate {
+            None => false,
+            Some(avt) => {
+                let value = self.avt(avt, state).at(line)?;
+                match value.trim_matches(einvoice_xpath::is_xml_whitespace) {
+                    "yes" | "true" | "1" => true,
+                    "no" | "false" | "0" => false,
+                    other => {
+                        return err(
+                            "XTDE0030",
+                            format!("invalid value {other:?} of xsl:message/@terminate"),
+                        )
+                        .at(line);
+                    }
+                }
+            }
+        };
+        let mut content = TreeSink::new();
+        self.exec(body, state, &mut content)?;
+        let document = content.finish()?;
+        let root = document.root();
+        let text = if root.children().next().is_some() {
+            let settings = Serialization {
+                indent: false,
+                omit_xml_declaration: true,
+                standalone: None,
+            };
+            let text = serialize(&root, settings, true).at(line)?;
+            self.messages.borrow_mut().push(text.clone());
+            text
+        } else {
+            String::new()
+        };
+        if terminate {
+            return err("XTMM9000", text).at(line);
+        }
+        Ok(())
     }
 
     fn variable_instruction(&self, binding: &'e Binding, state: &State<'_>) -> Result<()> {
@@ -1630,7 +2016,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
                 return true;
             };
             let (r, c) = (&rules[rank as usize], &rules[current as usize]);
-            match r.priority.total_cmp(&c.priority) {
+            match r.compare_rank(c) {
                 std::cmp::Ordering::Less => true,
                 std::cmp::Ordering::Greater => false,
                 std::cmp::Ordering::Equal => {
@@ -1651,7 +2037,7 @@ impl<'e, 'a> Runtime<'e, 'a> {
                     continue;
                 };
                 let (head, b) = (&rules[rank as usize], &rules[chosen as usize]);
-                match head.priority.total_cmp(&b.priority) {
+                match head.compare_rank(b) {
                     std::cmp::Ordering::Less => break,
                     std::cmp::Ordering::Greater => {
                         if self.rule_matches(rank, mode, node)? {
@@ -1731,6 +2117,14 @@ impl<'e, 'a> Runtime<'e, 'a> {
 
     /// Runs a template: its parameters bound from `params` or their default values,
     /// then its body. Counted as an invocation ([`Runtime::nested`]).
+    ///
+    /// An `xsl:call-template` in tail position of the body (its last instruction, or the
+    /// last of the branch of an `xsl:choose` or `xsl:if` that is) runs as Saxon runs it,
+    /// in the same invocation rather than one more inside it (Saxon's tail calls): a
+    /// template that recurses so, over each character of a string for instance, needs no
+    /// stack in proportion to its recursion. The frame of an invocation replaced is kept
+    /// by the parameters it passes that are not computed yet, until they are
+    /// ([`Runtime::exec_tail`]). At most `max_tail_calls` in a row.
     fn invoke(
         &self,
         index: usize,
@@ -1741,6 +2135,9 @@ impl<'e, 'a> Runtime<'e, 'a> {
         sink: &mut dyn Sink,
     ) -> Result<()> {
         let template = &self.exe.templates[index];
+        if template.tail_calls {
+            return self.invoke_with_tail_calls(index, context, mode, rule, params, sink);
+        }
         let _nested = self.nested().at(template.line)?;
         let frame = (template.slots > 0).then(|| Frame::new(template.slots));
         let state = State {
@@ -1753,6 +2150,102 @@ impl<'e, 'a> Runtime<'e, 'a> {
             self.exec(&template.body, &state, sink)
         })
         .at(template.line)
+    }
+
+    /// [`Runtime::invoke`] of a template with an `xsl:call-template` in tail position
+    /// (see [`CompiledTemplate::tail_calls`](crate::prepare::CompiledTemplate)): the
+    /// templates it calls so run in a loop, in place of the one that calls them. Out of
+    /// [`Runtime::invoke`], whose stack use is part of every level of recursion through
+    /// the templates.
+    #[inline(never)]
+    fn invoke_with_tail_calls(
+        &self,
+        index: usize,
+        context: &Context,
+        mode: usize,
+        rule: Option<u32>,
+        params: &[(&'e QName, Slot<'e>)],
+        sink: &mut dyn Sink,
+    ) -> Result<()> {
+        let _nested = self.nested().at(self.exe.templates[index].line)?;
+        let state = State {
+            context,
+            mode,
+            rule,
+        };
+        let mut current = index;
+        let mut passed: Option<Params<'e>> = None;
+        let mut tail_calls = 0_u32;
+        loop {
+            let template = &self.exe.templates[current];
+            let frame = (template.slots > 0).then(|| Frame::new(template.slots));
+            let params = passed.as_deref().unwrap_or(params);
+            let tail = self
+                .in_frame(frame, || {
+                    self.bind_params(template, params, &state)?;
+                    self.exec_tail(&template.body, &state, sink)
+                })
+                .at(template.line)?;
+            let Some(tail) = tail else {
+                return Ok(());
+            };
+            tail_calls += 1;
+            if tail_calls > self.options.max_tail_calls {
+                return Err(TransformError::limit_exceeded(LimitExceeded::TailCalls {
+                    max: self.options.max_tail_calls,
+                })
+                .at(template.line));
+            }
+            current = tail.template;
+            passed = Some(tail.params);
+        }
+    }
+
+    /// Runs a sequence constructor in tail position of a template body: its
+    /// `xsl:call-template` in tail position, if any, is not run but returned, its
+    /// parameters bound, for [`Runtime::invoke`] to run in place of the template.
+    fn exec_tail(
+        &self,
+        body: &'e [Inst],
+        state: &State<'_>,
+        sink: &mut dyn Sink,
+    ) -> Result<Option<Box<TailCall<'e>>>> {
+        let Some((last, rest)) = body.split_last() else {
+            return Ok(None);
+        };
+        self.exec(rest, state, sink)?;
+        match last {
+            Inst::CallTemplate {
+                line,
+                template,
+                params,
+            } => {
+                let params = self.with_params(params, state).at(*line)?;
+                // The values not computed yet read this frame, which ends now.
+                let frame = self.top_frame();
+                for (_, slot) in &params {
+                    if let Slot::Lazy(thunk) = slot {
+                        thunk.hold.borrow_mut().clone_from(&frame);
+                    }
+                }
+                Ok(Some(Box::new(TailCall {
+                    template: *template,
+                    params,
+                })))
+            }
+            Inst::Choose { whens, otherwise } => {
+                for when in whens {
+                    if self.test(&when.test, state.context).at(when.line)? {
+                        return self.exec_tail(&when.body, state, sink);
+                    }
+                }
+                self.exec_tail(otherwise, state, sink)
+            }
+            other => {
+                self.instruction(other, state, sink)?;
+                Ok(None)
+            }
+        }
     }
 
     /// Binds the parameters of a template being invoked, in its frame: from `params`, or
@@ -2049,18 +2542,7 @@ impl Host for Runtime<'_, '_> {
 
     fn system_property(&self, name: &QName) -> String {
         // Saxon-HE 12.10's values.
-        if name.namespace.as_deref() != Some(einvoice_xslt::XSLT_NAMESPACE) {
-            return String::new();
-        }
-        match name.local.as_str() {
-            "version" => "3.0",
-            "vendor" => "Saxonica",
-            "vendor-url" => "http://www.saxonica.com/",
-            "product-name" => "SAXON",
-            "product-version" => "HE 12.10",
-            _ => "",
-        }
-        .to_owned()
+        einvoice_xslt::system_property(name.namespace.as_deref(), &name.local).to_owned()
     }
 }
 

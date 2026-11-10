@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><xsl:stylesheet xmlns:o="urn:other" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="2.0" o:attr="1" xsl:attr="2"><xsl:template match="/"><lit><xsl:value-of xmlns:m="urn:module" select="."/><m:e xmlns:m="urn:module"/></lit></xsl:template></xsl:stylesheet>

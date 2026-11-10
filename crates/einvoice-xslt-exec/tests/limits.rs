@@ -14,8 +14,8 @@ mod common;
 
 use einvoice_xpath_eval::{DEFAULT_MAX_DEPTH, LimitExceeded};
 use einvoice_xslt_exec::{
-    DEFAULT_MAX_NESTING, DEFAULT_MAX_STACK, DocumentResolver, Executable, TransformError,
-    TransformOptions, max_nesting_for_depth,
+    DEFAULT_MAX_NESTING, DEFAULT_MAX_STACK, DEFAULT_MAX_TAIL_CALLS, DocumentResolver, Executable,
+    TransformError, TransformOptions, max_nesting_for_depth,
 };
 
 /// The default stack of a spawned thread.
@@ -33,8 +33,9 @@ fn on_a_default_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static)
 
 const HEAD: &str = r#"<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:f="urn:f">
 <xsl:output omit-xml-declaration="yes"/>"#;
-/// The namespaces the literal result elements copy from [`HEAD`].
-const NS: &str = r#" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:f="urn:f""#;
+/// The namespaces the literal result elements copy from [`HEAD`], sorted by prefix as
+/// Saxon writes them.
+const NS: &str = r#" xmlns:f="urn:f" xmlns:xs="http://www.w3.org/2001/XMLSchema""#;
 
 /// A result element `r` with the namespaces of [`HEAD`], holding `text`.
 fn r(text: &str) -> String {
@@ -252,6 +253,16 @@ fn unbounded_recursion_is_a_limit() {
                 message.contains("use more than 1572864 bytes of stack"),
                 "{message}"
             ),
+            // A named template calling itself last: tail calls, run in place, which need
+            // no stack.
+            Some(LimitExceeded::TailCalls { max }) if max == DEFAULT_MAX_TAIL_CALLS && i == 1 => {
+                assert!(
+                    message.contains(
+                        "ending with a call of another template more than 65536 times in a row"
+                    ),
+                    "{message}"
+                );
+            }
             other => panic!("{body}: {other:?}"),
         }
     }
@@ -262,7 +273,13 @@ fn unbounded_recursion_is_a_limit() {
 #[test]
 fn bounded_recursion_and_the_configurable_limits() {
     // `$total` is read at each level: computed there (xsl:call-template passes it lazily).
+    // The call is not the last instruction: not a tail call.
     let template = prepare(
+        r#"<xsl:template match="/"><r><xsl:call-template name="sum"><xsl:with-param name="n" select="xs:integer(/n)"/></xsl:call-template></r></xsl:template>
+<xsl:template name="sum"><xsl:param name="n"/><xsl:param name="total" select="0"/><xsl:choose><xsl:when test="$n eq 0 or $total lt 0"><xsl:value-of select="$total"/></xsl:when><xsl:otherwise><xsl:call-template name="sum"><xsl:with-param name="n" select="$n - 1"/><xsl:with-param name="total" select="$total + $n"/></xsl:call-template><xsl:sequence select="()"/></xsl:otherwise></xsl:choose></xsl:template>"#,
+    );
+    // The same as tail calls.
+    let tail = prepare(
         r#"<xsl:template match="/"><r><xsl:call-template name="sum"><xsl:with-param name="n" select="xs:integer(/n)"/></xsl:call-template></r></xsl:template>
 <xsl:template name="sum"><xsl:param name="n"/><xsl:param name="total" select="0"/><xsl:choose><xsl:when test="$n eq 0 or $total lt 0"><xsl:value-of select="$total"/></xsl:when><xsl:otherwise><xsl:call-template name="sum"><xsl:with-param name="n" select="$n - 1"/><xsl:with-param name="total" select="$total + $n"/></xsl:call-template></xsl:otherwise></xsl:choose></xsl:template>"#,
     );
@@ -305,6 +322,19 @@ fn bounded_recursion_and_the_configurable_limits() {
                 LimitExceeded::Stack { max: 64 << 10 }
             );
         }
+        // Tail calls need neither nesting nor stack, and are counted.
+        assert_eq!(run(&tail, 60_000, &defaults).unwrap(), r("1800030000"));
+        assert_eq!(run(&tail, 200, &nesting).unwrap(), r("20100"));
+        assert_eq!(run(&tail, 200, &stack).unwrap(), r("20100"));
+        let tail_calls = TransformOptions {
+            max_tail_calls: 8,
+            ..TransformOptions::default()
+        };
+        assert_eq!(run(&tail, 8, &tail_calls).unwrap(), r("36"));
+        assert_eq!(
+            limit(run(&tail, 9, &tail_calls)),
+            LimitExceeded::TailCalls { max: 8 }
+        );
     });
 }
 

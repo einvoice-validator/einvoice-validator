@@ -13,6 +13,14 @@ template or function invocations nested beyond a maximum nesting or stack (the e
 they evaluate included), end the transformation with a `LIMIT` error rather than overflowing
 the stack.
 
+It also runs the three stylesheets of the ISO Schematron skeleton that ph-schematron runs
+to compile Schematron, with the same results as Saxon-HE (used by
+[`einvoice-schematron`](https://crates.io/crates/einvoice-schematron)): `xsl:copy`,
+`xsl:copy-of`, `xsl:element`, `xsl:namespace`, `xsl:processing-instruction`,
+`xsl:message`, imports, namespace aliases, `document()` through a resolver given by the
+caller, `id()`, `generate-id()`, and named templates that end with a call of another
+template run in place (tail calls, bounded by `TransformOptions::max_tail_calls`).
+
 This crate is part of [einvoice-validator](https://github.com/einvoice-validator/einvoice-validator), which validates EN 16931 and Peppol BIS
 Billing 3.0 e-invoices against the official validation artefacts in pure Rust. On every case
 of the CEN EN 16931 UBL 1.3.17 and Peppol BIS Billing 3.0.22 test corpora it produces the same

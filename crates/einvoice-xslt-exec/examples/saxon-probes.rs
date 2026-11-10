@@ -1,8 +1,10 @@
 //! The Saxon-HE oracle of the probes in `tests/probes/` (format in
 //! `tests/common/probes.rs`): runs Saxon on every probe stylesheet with `input.xml` and
-//! compares its result, error code and warnings with `expected/`, or rewrites them.
-//! Saxon may print two kinds of warnings, ambiguous rule matches (XTDE0540) and dynamic
-//! errors recovered while matching a pattern; any other is an error.
+//! compares its result, error code, warnings and messages with `expected/`, or rewrites
+//! them. Saxon may print two kinds of warnings, ambiguous rule matches (XTDE0540) and
+//! dynamic errors recovered while matching a pattern; any other is an error. What else it
+//! prints before the error that ends the transformation, if any, is what `xsl:message`
+//! printed.
 //!
 //! ```text
 //! cargo run -p einvoice-xslt-exec --example saxon-probes              compare with expected/
@@ -256,9 +258,9 @@ fn run_saxon(
     let found = warnings(&stderr).map_err(|e| format!("{}: {e}", probe.display()))?;
     let pattern_errors = found.pattern_errors.into_iter().collect();
     if output.status.success() {
-        if !found.rest.trim().is_empty() {
+        if found.rest.lines().any(starts_report) {
             return Err(format!(
-                "{}: Saxon printed more than warnings:\n{stderr}",
+                "{}: Saxon printed more than warnings and messages:\n{stderr}",
                 probe.display()
             ));
         }
@@ -266,16 +268,28 @@ fn run_saxon(
             error: None,
             warnings: found.ambiguities,
             pattern_errors,
+            messages: found.rest,
             output: stdout,
         })
     } else {
+        // The messages, then the error.
+        let at = found
+            .rest
+            .match_indices('\n')
+            .map(|(i, _)| i + 1)
+            .chain(std::iter::once(0))
+            .filter(|&i| found.rest[i..].lines().next().is_some_and(starts_report))
+            .min()
+            .unwrap_or(found.rest.len());
+        let (messages, report) = found.rest.split_at(at);
         // The code of the error, after the warnings.
-        let code = error_code(&found.rest)
+        let code = error_code(report)
             .ok_or_else(|| format!("{}: no error code in\n{stderr}", probe.display()))?;
         Ok(Expected {
             error: Some(code),
             warnings: found.ambiguities,
             pattern_errors,
+            messages: messages.to_owned(),
             output: String::new(),
         })
     }

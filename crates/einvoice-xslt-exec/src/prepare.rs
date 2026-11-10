@@ -17,9 +17,10 @@ use einvoice_xpath_eval::{
     ValueType, VariableId, VariableInfo, compile,
 };
 use einvoice_xslt::{
-    ApplyMode, ApplyTemplates, Attribute, CallTemplate, Choose, Comment, ForEach, GlobalKind, If,
-    Instruction, LiteralElement, Mode, NamespaceBinding, NextMatch, Number, NumberLevel, Priority,
-    Sequence, Standalone, Stylesheet, Template, TemplateModes, ValueOf, Variable, VariableValue,
+    ApplyMode, ApplyTemplates, Attribute, CallTemplate, Choose, Comment, Copy, CopyOf, Element,
+    ForEach, GlobalKind, If, Instruction, LiteralElement, Message, Mode, NamespaceBinding,
+    NamespaceNode, NextMatch, Number, NumberLevel, Priority, ProcessingInstruction, Sequence,
+    Standalone, Stylesheet, Template, TemplateModes, ValueOf, Variable, VariableValue,
 };
 
 use crate::error::{PrepareError, PrepareErrors};
@@ -194,6 +195,23 @@ pub(crate) struct CompiledTemplate {
     /// The match pattern as written, and each of its alternatives, for warnings.
     pub(crate) pattern_text: String,
     pub(crate) alternative_texts: Vec<String>,
+    /// Whether the body can end with an `xsl:call-template` in tail position (its last
+    /// instruction, or the last of a branch of an `xsl:choose` or `xsl:if` that is): run
+    /// as a tail call ([`has_tail_call`]).
+    pub(crate) tail_calls: bool,
+}
+
+/// Whether a sequence constructor can end with an `xsl:call-template` in tail position:
+/// its last instruction is one, or is an `xsl:choose` (or `xsl:if`) with a branch that
+/// can.
+fn has_tail_call(body: &[Inst]) -> bool {
+    match body.last() {
+        Some(Inst::CallTemplate { .. }) => true,
+        Some(Inst::Choose { whens, otherwise }) => {
+            whens.iter().any(|w| has_tail_call(&w.body)) || has_tail_call(otherwise)
+        }
+        _ => false,
+    }
 }
 
 #[derive(Debug)]
@@ -265,6 +283,7 @@ pub(crate) enum Inst {
     Attribute {
         line: u32,
         name: CompiledAvt,
+        namespace: Option<CompiledAvt>,
         namespaces: Arc<[NamespaceBinding]>,
         select: Option<Box<CompiledExpr>>,
         body: Vec<Inst>,
@@ -285,6 +304,44 @@ pub(crate) enum Inst {
         name: Arc<QName>,
         namespaces: Arc<[NamespaceBinding]>,
         attributes: Vec<(Arc<QName>, CompiledAvt)>,
+        body: Vec<Inst>,
+    },
+    /// `xsl:copy`.
+    Copy {
+        line: u32,
+        body: Vec<Inst>,
+    },
+    /// `xsl:copy-of`.
+    CopyOf {
+        line: u32,
+        select: Box<CompiledExpr>,
+    },
+    /// `xsl:element`.
+    ComputedElement {
+        line: u32,
+        name: CompiledAvt,
+        namespace: Option<CompiledAvt>,
+        namespaces: Arc<[NamespaceBinding]>,
+        body: Vec<Inst>,
+    },
+    /// `xsl:namespace`.
+    Namespace {
+        line: u32,
+        name: CompiledAvt,
+        select: Option<Box<CompiledExpr>>,
+        body: Vec<Inst>,
+    },
+    /// `xsl:processing-instruction`.
+    ProcessingInstruction {
+        line: u32,
+        name: CompiledAvt,
+        select: Option<Box<CompiledExpr>>,
+        body: Vec<Inst>,
+    },
+    /// `xsl:message`.
+    Message {
+        line: u32,
+        terminate: Option<CompiledAvt>,
         body: Vec<Inst>,
     },
 }
@@ -313,6 +370,8 @@ pub(crate) struct Rule {
     pub(crate) template: usize,
     /// The alternative of the template's pattern; `None` for the whole pattern.
     pub(crate) alternative: Option<usize>,
+    /// The import precedence of the template's module, compared before the priority.
+    pub(crate) precedence: u32,
     /// The priority, compared as Saxon compares it: as a double.
     pub(crate) priority: f64,
     /// Declaration order: the template's position.
@@ -327,6 +386,16 @@ pub(crate) struct Rule {
     /// `node()`, `*` or `@*` alone without predicates, or `cac:X` in the chain of that
     /// name ([`certain_kinds`]).
     pub(crate) certain: u8,
+}
+
+impl Rule {
+    /// The rank of the rule against another, as Saxon ranks rules: import precedence,
+    /// then priority (declaration order and part tell the rules apart beyond it).
+    pub(crate) fn compare_rank(&self, other: &Self) -> std::cmp::Ordering {
+        self.precedence
+            .cmp(&other.precedence)
+            .then(self.priority.total_cmp(&other.priority))
+    }
 }
 
 /// The [`Rule::certain`] kinds of a rule whose pattern's alternatives are tried in the
@@ -377,9 +446,9 @@ type ByName = HashMap<String, Vec<(Option<String>, Vec<u32>)>>;
 #[derive(Debug, Default)]
 pub(crate) struct CompiledMode {
     pub(crate) name: String,
-    /// In rank order: priority descending, then declaration order descending, then part
-    /// descending (Saxon puts a rule added later before the earlier ones of the same
-    /// priority).
+    /// In rank order: import precedence descending, priority descending, then
+    /// declaration order descending, then part descending (Saxon puts a rule added later
+    /// before the earlier ones of the same priority).
     pub(crate) rules: Vec<Rule>,
     elements: ByName,
     attributes: ByName,
@@ -503,7 +572,9 @@ impl CompiledMode {
                     let rule = &self.rules[first as usize];
                     let unconditional = rule.certain & (1 << kind_index(kind)) != 0;
                     if unconditional
-                        && ranks.all(|r| self.rules[r as usize].priority < rule.priority)
+                        && ranks.all(|r| {
+                            self.rules[r as usize].compare_rank(rule) == std::cmp::Ordering::Less
+                        })
                     {
                         Plan::Rule(first)
                     } else {
@@ -656,6 +727,8 @@ struct Scope<'a> {
     /// The declared result types of the functions.
     function_types: &'a [ValueType],
     frame: Option<&'a Frame>,
+    /// The URI of the module of the declaration: the static base URI of `document()`.
+    static_base: Option<&'a str>,
 }
 
 impl Scope<'_> {
@@ -727,10 +800,19 @@ impl StaticContext for Scope<'_> {
         true
     }
 
-    /// The parser has resolved the prefixed names of `system-property()` already (as
-    /// `Q{uri}local`): a prefix the compiler asks for is not bound.
+    /// The parser has resolved the prefixed names of `system-property()`,
+    /// `element-available()` and `function-available()` already (as `Q{uri}local`): a
+    /// prefix the compiler asks for is not bound.
     fn namespace_uri(&self, _prefix: &str) -> Option<String> {
         None
+    }
+
+    fn element_available(&self, name: &QName) -> Option<bool> {
+        einvoice_xslt::element_available(name.namespace.as_deref(), &name.local)
+    }
+
+    fn static_base_uri(&self) -> Option<String> {
+        self.static_base.map(str::to_owned)
     }
 }
 
@@ -763,8 +845,13 @@ fn for_each_body(inst: &Inst, f: &mut dyn FnMut(&[Inst])) {
         | Inst::ValueOf { body, .. }
         | Inst::Attribute { body, .. }
         | Inst::Comment { body, .. }
-        | Inst::Element { body, .. } => f(body),
-        Inst::Sequence { .. } | Inst::Text(_) | Inst::Number { .. } => {}
+        | Inst::Element { body, .. }
+        | Inst::Copy { body, .. }
+        | Inst::ComputedElement { body, .. }
+        | Inst::Namespace { body, .. }
+        | Inst::ProcessingInstruction { body, .. }
+        | Inst::Message { body, .. } => f(body),
+        Inst::Sequence { .. } | Inst::Text(_) | Inst::Number { .. } | Inst::CopyOf { .. } => {}
     }
 }
 
@@ -796,8 +883,13 @@ fn for_each_body_mut<'i>(inst: &'i mut Inst, f: &mut dyn FnMut(&'i mut Vec<Inst>
         | Inst::ValueOf { body, .. }
         | Inst::Attribute { body, .. }
         | Inst::Comment { body, .. }
-        | Inst::Element { body, .. } => f(body),
-        Inst::Sequence { .. } | Inst::Text(_) | Inst::Number { .. } => {}
+        | Inst::Element { body, .. }
+        | Inst::Copy { body, .. }
+        | Inst::ComputedElement { body, .. }
+        | Inst::Namespace { body, .. }
+        | Inst::ProcessingInstruction { body, .. }
+        | Inst::Message { body, .. } => f(body),
+        Inst::Sequence { .. } | Inst::Text(_) | Inst::Number { .. } | Inst::CopyOf { .. } => {}
     }
 }
 
@@ -844,6 +936,7 @@ fn instructions_depend_on_focus_position(instructions: &[Instruction]) -> bool {
         }
         Instruction::Attribute(a) => {
             avt(&a.name)
+                || a.namespace.as_ref().is_some_and(avt)
                 || a.select.as_ref().is_some_and(expr)
                 || instructions_depend_on_focus_position(&a.body)
         }
@@ -851,6 +944,26 @@ fn instructions_depend_on_focus_position(instructions: &[Instruction]) -> bool {
         Instruction::LiteralElement(e) => {
             e.attributes.iter().any(|a| avt(&a.value))
                 || instructions_depend_on_focus_position(&e.body)
+        }
+        Instruction::Copy(c) => instructions_depend_on_focus_position(&c.body),
+        Instruction::CopyOf(c) => expr(&c.select),
+        Instruction::Element(e) => {
+            avt(&e.name)
+                || e.namespace.as_ref().is_some_and(avt)
+                || instructions_depend_on_focus_position(&e.body)
+        }
+        Instruction::Namespace(n) => {
+            avt(&n.name)
+                || n.select.as_ref().is_some_and(expr)
+                || instructions_depend_on_focus_position(&n.body)
+        }
+        Instruction::ProcessingInstruction(p) => {
+            avt(&p.name)
+                || p.select.as_ref().is_some_and(expr)
+                || instructions_depend_on_focus_position(&p.body)
+        }
+        Instruction::Message(m) => {
+            m.terminate.as_ref().is_some_and(avt) || instructions_depend_on_focus_position(&m.body)
         }
         Instruction::Text(_) | Instruction::Number(_) => false,
     })
@@ -1008,6 +1121,8 @@ struct Compiler<'s> {
     learners: usize,
     /// Whether the bindings being compiled are in an `xsl:function` body.
     in_function: bool,
+    /// The URI of the module of the declaration being compiled.
+    module_uri: Option<String>,
 }
 
 /// Collects the modes named by templates and by `xsl:apply-templates`.
@@ -1037,7 +1152,15 @@ fn collect_modes(instructions: &[Instruction], modes: &mut BTreeSet<Mode>) {
             Instruction::Attribute(a) => collect_modes(&a.body, modes),
             Instruction::Comment(c) => collect_modes(&c.body, modes),
             Instruction::LiteralElement(e) => collect_modes(&e.body, modes),
-            Instruction::Sequence(_) | Instruction::Text(_) | Instruction::Number(_) => {}
+            Instruction::Copy(c) => collect_modes(&c.body, modes),
+            Instruction::Element(e) => collect_modes(&e.body, modes),
+            Instruction::Namespace(n) => collect_modes(&n.body, modes),
+            Instruction::ProcessingInstruction(p) => collect_modes(&p.body, modes),
+            Instruction::Message(m) => collect_modes(&m.body, modes),
+            Instruction::Sequence(_)
+            | Instruction::Text(_)
+            | Instruction::Number(_)
+            | Instruction::CopyOf(_) => {}
         }
     }
 }
@@ -1069,6 +1192,7 @@ impl Compiler<'_> {
             functions: &self.functions,
             function_types: &self.function_types,
             frame,
+            static_base: self.module_uri.as_deref(),
         }
     }
 
@@ -1333,6 +1457,12 @@ impl Compiler<'_> {
             Instruction::Text(t) => Some(Inst::Text(t.value.as_str().into())),
             Instruction::Number(n) => self.number(n),
             Instruction::LiteralElement(e) => self.literal_element(e, frame),
+            Instruction::Copy(c) => Some(self.copy(c, frame)),
+            Instruction::CopyOf(c) => self.copy_of(c, frame),
+            Instruction::Element(e) => self.computed_element(e, frame),
+            Instruction::Namespace(n) => self.namespace(n, frame),
+            Instruction::ProcessingInstruction(p) => self.processing_instruction(p, frame),
+            Instruction::Message(m) => self.message(m, frame),
         }
     }
 
@@ -1367,11 +1497,7 @@ impl Compiler<'_> {
 
     /// `xsl:call-template`.
     fn call_template(&mut self, call: &CallTemplate, frame: &mut Frame) -> Option<Inst> {
-        let Some(template) = self.sheet.templates.iter().position(|t| {
-            t.name
-                .as_ref()
-                .is_some_and(|n| n.same_expanded_name(&call.name))
-        }) else {
+        let Some(template) = self.sheet.named_template_index(&call.name) else {
             self.error(
                 call.line,
                 format!("no template named {} (XTSE0650)", call.name),
@@ -1509,11 +1635,16 @@ impl Compiler<'_> {
     /// `xsl:attribute`.
     fn attribute(&mut self, a: &Attribute, frame: &mut Frame) -> Option<Inst> {
         let name = self.avt(a.line, &a.name, Some(frame));
+        let namespace = a
+            .namespace
+            .as_ref()
+            .map(|n| self.avt(a.line, n, Some(frame)));
         let select = a.select.as_ref().map(|e| self.expr(a.line, e, Some(frame)));
         let body = self.sequence_constructor(&a.body, frame);
         Some(Inst::Attribute {
             line: a.line,
             name: name?,
+            namespace: namespace.map_or(Some(None), |n| n.map(Some))?,
             namespaces: Arc::clone(&a.namespaces),
             select: select.map_or(Some(None), |s| s.map(Some))?,
             body,
@@ -1526,6 +1657,83 @@ impl Compiler<'_> {
             line: c.line,
             body: self.sequence_constructor(&c.body, frame),
         }
+    }
+
+    /// `xsl:copy`.
+    fn copy(&mut self, c: &Copy, frame: &mut Frame) -> Inst {
+        Inst::Copy {
+            line: c.line,
+            body: self.sequence_constructor(&c.body, frame),
+        }
+    }
+
+    /// `xsl:copy-of`.
+    fn copy_of(&mut self, c: &CopyOf, frame: &mut Frame) -> Option<Inst> {
+        Some(Inst::CopyOf {
+            line: c.line,
+            select: self.expr(c.line, &c.select, Some(frame))?,
+        })
+    }
+
+    /// `xsl:element`.
+    fn computed_element(&mut self, e: &Element, frame: &mut Frame) -> Option<Inst> {
+        let name = self.avt(e.line, &e.name, Some(frame));
+        let namespace = e
+            .namespace
+            .as_ref()
+            .map(|n| self.avt(e.line, n, Some(frame)));
+        let body = self.sequence_constructor(&e.body, frame);
+        Some(Inst::ComputedElement {
+            line: e.line,
+            name: name?,
+            namespace: namespace.map_or(Some(None), |n| n.map(Some))?,
+            namespaces: Arc::clone(&e.namespaces),
+            body,
+        })
+    }
+
+    /// `xsl:namespace`.
+    fn namespace(&mut self, n: &NamespaceNode, frame: &mut Frame) -> Option<Inst> {
+        let name = self.avt(n.line, &n.name, Some(frame));
+        let select = n.select.as_ref().map(|e| self.expr(n.line, e, Some(frame)));
+        let body = self.sequence_constructor(&n.body, frame);
+        Some(Inst::Namespace {
+            line: n.line,
+            name: name?,
+            select: select.map_or(Some(None), |s| s.map(Some))?,
+            body,
+        })
+    }
+
+    /// `xsl:processing-instruction`.
+    fn processing_instruction(
+        &mut self,
+        p: &ProcessingInstruction,
+        frame: &mut Frame,
+    ) -> Option<Inst> {
+        let name = self.avt(p.line, &p.name, Some(frame));
+        let select = p.select.as_ref().map(|e| self.expr(p.line, e, Some(frame)));
+        let body = self.sequence_constructor(&p.body, frame);
+        Some(Inst::ProcessingInstruction {
+            line: p.line,
+            name: name?,
+            select: select.map_or(Some(None), |s| s.map(Some))?,
+            body,
+        })
+    }
+
+    /// `xsl:message`.
+    fn message(&mut self, m: &Message, frame: &mut Frame) -> Option<Inst> {
+        let terminate = m
+            .terminate
+            .as_ref()
+            .map(|t| self.avt(m.line, t, Some(frame)));
+        let body = self.sequence_constructor(&m.body, frame);
+        Some(Inst::Message {
+            line: m.line,
+            terminate: terminate.map_or(Some(None), |t| t.map(Some))?,
+            body,
+        })
     }
 
     /// `xsl:number`.
@@ -1614,7 +1822,8 @@ impl Compiler<'_> {
     }
 
     fn template(&mut self, template: &Template) -> CompiledTemplate {
-        self.typed_globals = self.globals_before(template.line);
+        self.typed_globals = self.globals_before(template.module, template.line);
+        self.module_uri = self.module_uri_of(template.module);
         let mut frame = Frame::default();
         let mut params = self.params(&template.params, &mut frame);
         let mut body = self.sequence_constructor(&template.body, &mut frame);
@@ -1630,6 +1839,7 @@ impl Compiler<'_> {
         CompiledTemplate {
             line: template.line,
             params,
+            tail_calls: has_tail_call(&body),
             body,
             slots: frame.slots,
             pattern,
@@ -1688,6 +1898,7 @@ impl Executable {
             calls_document: false,
             learners: 0,
             in_function: false,
+            module_uri: None,
         };
         let globals = compiler.globals(sheet);
         let templates: Vec<CompiledTemplate> = sheet
@@ -1699,7 +1910,8 @@ impl Executable {
             .functions
             .iter()
             .map(|f| {
-                compiler.typed_globals = compiler.globals_before(f.line);
+                compiler.typed_globals = compiler.globals_before(f.module, f.line);
+                compiler.module_uri = compiler.module_uri_of(f.module);
                 let mut frame = Frame::default();
                 let mut params = compiler.params(&f.params, &mut frame);
                 compiler.in_function = true;
@@ -1759,14 +1971,24 @@ impl Executable {
 }
 
 impl Compiler<'_> {
-    /// How many global variables and parameters are declared before `line`: Saxon types
-    /// the declarations in document order.
-    fn globals_before(&self, line: u32) -> usize {
+    /// How many global variables and parameters are declared before `line` of module
+    /// `module`: Saxon types the declarations in document order, the modules of a lower
+    /// import precedence first.
+    fn globals_before(&self, module: usize, line: u32) -> usize {
+        let precedence = self.sheet.precedence(module);
         self.sheet
             .globals
             .iter()
-            .take_while(|g| g.variable.line < line)
+            .take_while(|g| {
+                let p = self.sheet.precedence(g.module);
+                p < precedence || (p == precedence && g.variable.line < line)
+            })
             .count()
+    }
+
+    /// The URI of module `module`, the static base URI of its expressions.
+    fn module_uri_of(&self, module: usize) -> Option<String> {
+        self.sheet.modules.get(module).and_then(|m| m.uri.clone())
     }
 
     /// The global variables. Their static cardinality comes from their compiled value,
@@ -1801,6 +2023,7 @@ impl Compiler<'_> {
             for (index, g) in sheet.globals.iter().enumerate() {
                 let v = &g.variable;
                 self.typed_globals = index;
+                self.module_uri = self.module_uri_of(g.module);
                 let mut frame = Frame::default();
                 let mut value = self.value(v.line, &v.value, &mut frame);
                 if let Value::Content(body) = &mut value {
@@ -1867,6 +2090,7 @@ fn rank_rules(sheet: &Stylesheet, templates: &[CompiledTemplate], mode: &Mode) -
             rules.push(Rule {
                 template: index,
                 alternative: (!whole).then_some(rule.alternative),
+                precedence: sheet.precedence(template.module),
                 priority: as_double(rule.priority),
                 sequence: index,
                 part: if rule.is_default { rule.alternative } else { 0 },
@@ -1878,8 +2102,7 @@ fn rank_rules(sheet: &Stylesheet, templates: &[CompiledTemplate], mode: &Mode) -
         }
     }
     rules.sort_by(|a, b| {
-        b.priority
-            .total_cmp(&a.priority)
+        b.compare_rank(a)
             .then(b.sequence.cmp(&a.sequence))
             .then(b.part.cmp(&a.part))
     });

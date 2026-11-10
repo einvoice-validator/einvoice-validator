@@ -258,6 +258,7 @@ pub(crate) fn transform_observed<'s>(
     Ok(Transformation {
         output,
         warnings: result.warnings,
+        messages: result.messages,
     })
 }
 

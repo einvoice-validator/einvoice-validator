@@ -2,7 +2,8 @@
 //! [`MAX_NESTING`] deep holding expressions [`MAX_DEPTH`] deep are prepared and run on a
 //! thread with the default stack of a spawned thread, 2 MiB, in the build being tested
 //! (debug for `cargo test`); deep expressions evaluated inside a deep recursion end with
-//! the stack limit of the transformation, never a stack overflow; random nestings
+//! the stack limit of the transformation (the limit on tail calls in a row, for a tail
+//! recursion), never a stack overflow; random nestings
 //! around the limits are loaded exactly up to them, and never abort the process.
 
 // Integration tests are only ever built with `cfg(test)`; saying so lets clippy apply its
@@ -124,12 +125,13 @@ fn a_stylesheet_at_both_limits_is_prepared_and_run() {
 /// A recursion that evaluates a deep expression at each level ends with the stack
 /// limit, whether the limit is found by an invocation or by the evaluation of the
 /// expression: here the 128 KiB left on the thread above the limit are less than the
-/// evaluation of the expression needs in a debug build.
+/// evaluation of the expression needs in a debug build. The call is not the last
+/// instruction of the template: not a tail call, which would run in place.
 #[test]
 fn deep_expressions_in_a_deep_recursion_end_with_the_stack_limit() {
     for (name, expr) in expressions() {
         let xslt = format!(
-            r#"{HEAD}<xsl:template match='/'><r><xsl:call-template name='t'/></r></xsl:template><xsl:template name='t'><xsl:value-of select="{expr}"/><xsl:call-template name='t'/></xsl:template></xsl:stylesheet>"#
+            r#"{HEAD}<xsl:template match='/'><r><xsl:call-template name='t'/></r></xsl:template><xsl:template name='t'><xsl:value-of select="{expr}"/><xsl:call-template name='t'/><xsl:sequence select="()"/></xsl:template></xsl:stylesheet>"#
         );
         let executable = Executable::new(&load(&xslt).unwrap()).unwrap();
         let outcome = on_a_default_stack(move || {
@@ -149,6 +151,36 @@ fn deep_expressions_in_a_deep_recursion_end_with_the_stack_limit() {
             Some(LimitExceeded::Stack {
                 max: u32::try_from(STACK - (128 << 10)).unwrap()
             }),
+            "{name}"
+        );
+    }
+}
+
+/// The same recursion as tail calls (the call is the last instruction), which run in
+/// place: the stack does not grow with it, and the recursion ends with the limit on tail
+/// calls in a row, the deep expressions evaluated at each call on the 2 MiB stack.
+#[test]
+fn deep_expressions_in_a_tail_recursion_end_with_the_tail_call_limit() {
+    for (name, expr) in expressions() {
+        let xslt = format!(
+            r#"{HEAD}<xsl:template match='/'><r><xsl:call-template name='t'/></r></xsl:template><xsl:template name='t'><xsl:value-of select="{expr}"/><xsl:call-template name='t'/></xsl:template></xsl:stylesheet>"#
+        );
+        let executable = Executable::new(&load(&xslt).unwrap()).unwrap();
+        let outcome = on_a_default_stack(move || {
+            let options = TransformOptions {
+                max_stack: u32::try_from(STACK - (128 << 10)).unwrap(),
+                max_tail_calls: 1000,
+                ..TransformOptions::default()
+            };
+            executable
+                .transform_with(source(), None, &options)
+                .map(|t| t.output)
+        });
+        let error = outcome.unwrap_err();
+        assert_eq!(error.code(), "LIMIT", "{name}: {error}");
+        assert_eq!(
+            error.limit(),
+            Some(LimitExceeded::TailCalls { max: 1000 }),
             "{name}"
         );
     }

@@ -11,7 +11,9 @@ use einvoice_xslt_exec::{DocumentResolver, Executable, PrepareErrors, TransformO
 
 const HEAD: &str = r#"<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:f="urn:f">"#;
 /// The namespaces the literal result elements copy from [`HEAD`].
-const NS: &str = r#" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:f="urn:f""#;
+/// The namespace declarations of the result's root element, sorted by prefix as Saxon
+/// writes them.
+const NS: &str = r#" xmlns:f="urn:f" xmlns:xs="http://www.w3.org/2001/XMLSchema""#;
 
 fn prepare(body: &str) -> Result<Executable, PrepareErrors> {
     let xslt = format!("{HEAD}\n{body}\n</xsl:stylesheet>");

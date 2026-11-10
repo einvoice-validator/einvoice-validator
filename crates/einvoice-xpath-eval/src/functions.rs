@@ -51,10 +51,14 @@ pub(crate) enum Builtin {
     Reverse,
     CurrentDateTime,
     DistinctValues,
+    Id,
     // XSLT 2.0.
     Current,
     Document,
     SystemProperty,
+    GenerateId,
+    ElementAvailable,
+    FunctionAvailable,
     // Constructor functions.
     XsDecimal,
     XsDate,
@@ -132,9 +136,13 @@ const FN_TABLE: &[(&str, Builtin, usize, usize, bool)] = &[
     ("reverse", Builtin::Reverse, 1, 1, false),
     ("current-dateTime", Builtin::CurrentDateTime, 0, 0, false),
     ("distinct-values", Builtin::DistinctValues, 1, 1, false),
+    ("id", Builtin::Id, 1, 2, false),
     ("current", Builtin::Current, 0, 0, true),
-    ("document", Builtin::Document, 1, 1, true),
+    ("document", Builtin::Document, 1, 2, true),
     ("system-property", Builtin::SystemProperty, 1, 1, true),
+    ("generate-id", Builtin::GenerateId, 0, 1, true),
+    ("element-available", Builtin::ElementAvailable, 1, 1, true),
+    ("function-available", Builtin::FunctionAvailable, 1, 2, true),
 ];
 
 const XS_TABLE: &[(&str, Builtin)] = &[
@@ -167,7 +175,6 @@ const KNOWN_UNSUPPORTED: &[&str] = &[
     "default-collation",
     "doc",
     "doc-available",
-    "element-available",
     "element-with-id",
     "encode-for-uri",
     "error",
@@ -178,12 +185,9 @@ const KNOWN_UNSUPPORTED: &[&str] = &[
     "format-dateTime",
     "format-number",
     "format-time",
-    "function-available",
-    "generate-id",
     "hours-from-dateTime",
     "hours-from-duration",
     "hours-from-time",
-    "id",
     "idref",
     "implicit-timezone",
     "in-scope-prefixes",
@@ -235,6 +239,43 @@ const KNOWN_UNSUPPORTED: &[&str] = &[
     "years-from-duration",
     "zero-or-one",
 ];
+
+/// Saxon-HE 12.10's `function-available()` for a function of the libraries this crate
+/// knows (stylesheet functions aside): `None` when this crate does not know Saxon's
+/// answer. With `arity`, whether a function of that name has that arity; without, whether
+/// one of that name exists. Known: the functions of the XPath 2.0 and XSLT 2.0 libraries
+/// in the function namespace, the constructors of [`XS_TABLE`] (one argument), EXSLT's
+/// `exsl:node-set` (which Saxon-HE integrates), and no function in a namespace other than
+/// those of the specifications, Saxon's and EXSLT's.
+pub(crate) fn builtin_available(name: &QName, arity: Option<usize>) -> Option<bool> {
+    const EXSLT_COMMON: &str = "http://exslt.org/common";
+    const KNOWN_ELSEWHERE: &[&str] = &[
+        "http://saxon.sf.net/",
+        "http://www.w3.org/2005/xpath-functions/math",
+        "http://www.w3.org/2005/xpath-functions/map",
+        "http://www.w3.org/2005/xpath-functions/array",
+    ];
+    match name.namespace.as_deref() {
+        Some(FN_NAMESPACE) => {
+            if let Some(&(_, _, min, max, _)) =
+                FN_TABLE.iter().find(|(local, ..)| *local == name.local)
+            {
+                return Some(arity.is_none_or(|a| (min..=max).contains(&a)));
+            }
+            if KNOWN_UNSUPPORTED.contains(&name.local.as_str()) && arity.is_none() {
+                return Some(true);
+            }
+            None
+        }
+        Some(XS_NAMESPACE) => XS_TABLE
+            .iter()
+            .any(|(local, _)| *local == name.local)
+            .then_some(arity.is_none_or(|a| a == 1)),
+        Some(EXSLT_COMMON) => (name.local == "node-set").then_some(arity.is_none_or(|a| a == 1)),
+        Some(uri) if KNOWN_ELSEWHERE.contains(&uri) || uri.starts_with("http://exslt.org/") => None,
+        _ => Some(false),
+    }
+}
 
 /// Resolves a call to a built-in function.
 ///
@@ -303,7 +344,9 @@ impl Builtin {
             | Self::Contains
             | Self::StartsWith
             | Self::EndsWith
-            | Self::Matches => Returns::Boolean,
+            | Self::Matches
+            | Self::ElementAvailable
+            | Self::FunctionAvailable => Returns::Boolean,
             Self::NormalizeSpace
             | Self::String
             | Self::SubstringBefore
@@ -323,6 +366,7 @@ impl Builtin {
             | Self::StringJoin
             | Self::CurrentDateTime
             | Self::SystemProperty
+            | Self::GenerateId
             | Self::XsDate
             | Self::XsString => Returns::NonNumeric,
             Self::Count
@@ -337,7 +381,7 @@ impl Builtin {
             | Self::DistinctValues
             | Self::XsDecimal
             | Self::XsInteger => Returns::Atomic,
-            Self::Root | Self::Document => Returns::Nodes,
+            Self::Root | Self::Document | Self::Id => Returns::Nodes,
             Self::Reverse | Self::Current => Returns::Items,
         }
     }
@@ -379,6 +423,9 @@ impl Builtin {
                 | Self::CodepointsToString
                 | Self::CurrentDateTime
                 | Self::SystemProperty
+                | Self::GenerateId
+                | Self::ElementAvailable
+                | Self::FunctionAvailable
         )
     }
 
@@ -391,6 +438,7 @@ impl Builtin {
                 | Self::DistinctValues
                 | Self::Reverse
                 | Self::Document
+                | Self::Id
         )
     }
 

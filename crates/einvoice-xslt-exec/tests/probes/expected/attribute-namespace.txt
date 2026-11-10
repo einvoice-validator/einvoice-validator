@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:p="urn:p" xmlns:p_4="urn:other" xmlns:q="urn:q1" q:a="1" b="2" p:c="3" p_4:d="4" xml:lang="en"/>

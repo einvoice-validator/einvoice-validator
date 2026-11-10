@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Read by the id and document-base probes: xml:id attributes (one with whitespace, one
+     duplicated), an id attribute that is not an ID. -->
+<doc kind="ids"><e xml:id=" a "/><e xml:id="b" k="1"/><e xml:id="c"/><e id="x"/><e xml:id="dup" k="first"/><e xml:id="dup" k="second"/><p:f xmlns:p="urn:p" xml:id="pf"/>t</doc>

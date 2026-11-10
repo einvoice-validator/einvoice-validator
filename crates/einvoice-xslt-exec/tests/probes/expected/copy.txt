@@ -1,0 +1,5 @@
+result
+warnings 0
+pattern-errors
+---
+<?xml version="1.0" encoding="UTF-8"?><out xmlns:f="urn:f" xmlns:p="urn:p"><doc><k/></doc><elem><p:x added="1">t5</p:x></elem><attr a="1" b="two" p:c="3"/><text>t1</text><comment><!--c1--></comment><pi><?pi data?></pi><atomic>1 a 2.5</atomic><in-variable>3<y z="3">t2<w/>t3</y></in-variable><in-function>4,x,a,,pi,0</in-function></out>

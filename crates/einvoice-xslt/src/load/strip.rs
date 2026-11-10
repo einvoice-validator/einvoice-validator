@@ -9,8 +9,13 @@
 //!    `xsl:character-map`, `xsl:choose`, `xsl:next-match`, `xsl:stylesheet`,
 //!    `xsl:transform`;
 //! 5. and when its following sibling is `xsl:param` or `xsl:sort`.
+//!
+//! The elements that `use-when` leaves out are not children: the text around one is
+//! merged.
 
-use roxmltree::Node;
+use std::collections::HashSet;
+
+use roxmltree::{Node, NodeId};
 
 use super::{XSL, is_xsl};
 use einvoice_xpath::{XML_NAMESPACE, is_xml_whitespace};
@@ -45,10 +50,16 @@ fn space_preserved(node: Node<'_, '_>) -> bool {
         .is_some_and(|value| value == "preserve")
 }
 
-/// The children of `node` after stripping.
-pub(crate) fn children<'a, 'input>(node: Node<'a, 'input>) -> Vec<Child<'a, 'input>> {
+/// The children of `node` after stripping, without the elements of `excluded`.
+pub(crate) fn children<'a, 'input>(
+    node: Node<'a, 'input>,
+    excluded: &HashSet<NodeId>,
+) -> Vec<Child<'a, 'input>> {
     let mut merged: Vec<Child<'a, 'input>> = Vec::new();
     for child in node.children() {
+        if child.is_element() && excluded.contains(&child.id()) {
+            continue;
+        }
         if child.is_element() {
             merged.push(Child::Element(child));
         } else if child.is_text() {
@@ -93,7 +104,7 @@ mod tests {
         for &i in path {
             node = node.children().filter(Node::is_element).nth(i).unwrap();
         }
-        children(node)
+        children(node, &HashSet::new())
             .into_iter()
             .map(|c| match c {
                 Child::Element(e) => format!("<{}>", e.tag_name().name()),

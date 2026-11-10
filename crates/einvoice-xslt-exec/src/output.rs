@@ -309,6 +309,10 @@ pub trait ResultObserver {
     fn text(&mut self, text: &str);
     /// A comment.
     fn comment(&mut self, text: &str);
+    /// A processing instruction: its target and its data. Ignored unless implemented.
+    fn processing_instruction(&mut self, target: &str, data: &str) {
+        let _ = (target, data);
+    }
 }
 
 /// Observes nothing.
@@ -327,6 +331,8 @@ pub struct CompactTransformation {
     pub output: CompactOutput,
     /// The warnings, as [`Transformation::warnings`](crate::Transformation::warnings).
     pub warnings: Vec<String>,
+    /// The messages, as [`Transformation::messages`](crate::Transformation::messages).
+    pub messages: Vec<String>,
 }
 
 #[cfg(test)]

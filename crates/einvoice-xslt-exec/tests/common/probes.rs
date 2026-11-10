@@ -11,6 +11,9 @@
 //!                         pattern's instruction and the error code, sorted (the
 //!                         messages are not compared: Saxon's quote values where ours
 //!                         do not, so that their distinct messages are not ours)
+//! messages "<TEXT>"       only when `xsl:message` printed something: what it printed,
+//!                         each message followed by a line feed, with `\`, `"`, line
+//!                         feeds, carriage returns and tabs escaped as in Rust
 //! ---
 //! <the serialized result, exactly as Saxon wrote it; empty after an error>
 //! ```
@@ -30,7 +33,46 @@ pub(crate) struct Expected {
     pub(crate) warnings: usize,
     /// `(line, code)` of the errors recovered while matching patterns, sorted.
     pub(crate) pattern_errors: Vec<(u32, String)>,
+    /// What `xsl:message` printed (see the format).
+    pub(crate) messages: String,
     pub(crate) output: String,
+}
+
+/// `text` with `\`, `"`, line feeds, carriage returns and tabs escaped.
+pub(crate) fn escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Undoes [`escape`].
+pub(crate) fn unescape(text: &str) -> Result<String, String> {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        out.push(match chars.next() {
+            Some('\\') => '\\',
+            Some('"') => '"',
+            Some('n') => '\n',
+            Some('r') => '\r',
+            Some('t') => '\t',
+            other => return Err(format!("bad escape {other:?} in {text:?}")),
+        });
+    }
+    Ok(out)
 }
 
 impl Expected {
@@ -47,19 +89,41 @@ impl Expected {
             )
             .collect::<Vec<_>>()
             .join(" ");
+        let messages = if self.messages.is_empty() {
+            String::new()
+        } else {
+            format!("messages \"{}\"\n", escape(&self.messages))
+        };
         format!(
-            "{status}\nwarnings {}\n{pattern_errors}\n---\n{}",
+            "{status}\nwarnings {}\n{pattern_errors}\n{messages}---\n{}",
             self.warnings, self.output
         )
     }
 
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
-        let mut parts = text.splitn(5, '\n');
-        let (Some(status), Some(warnings), Some(pattern_errors), Some("---")) =
-            (parts.next(), parts.next(), parts.next(), parts.next())
-        else {
-            return Err("expected file: bad header".to_owned());
+        let mut rest = text;
+        let mut line = || -> Result<&str, String> {
+            let (line, after) = rest
+                .split_once('\n')
+                .ok_or_else(|| "expected file: bad header".to_owned())?;
+            rest = after;
+            Ok(line)
         };
+        let (status, warnings, pattern_errors) = (line()?, line()?, line()?);
+        let messages = match line()? {
+            "---" => String::new(),
+            messages => {
+                let quoted = messages
+                    .strip_prefix("messages \"")
+                    .and_then(|l| l.strip_suffix('"'))
+                    .ok_or_else(|| format!("bad messages line {messages:?}"))?;
+                if line()? != "---" {
+                    return Err("expected file: no --- after the messages".to_owned());
+                }
+                unescape(quoted)?
+            }
+        };
+        let output = rest;
         let error = match status {
             "result" => None,
             s => Some(
@@ -86,7 +150,8 @@ impl Expected {
             error,
             warnings,
             pattern_errors,
-            output: parts.next().unwrap_or("").to_owned(),
+            messages,
+            output: output.to_owned(),
         })
     }
 }

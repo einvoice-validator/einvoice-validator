@@ -1,0 +1,4 @@
+error XTTE0945
+warnings 0
+pattern-errors
+---

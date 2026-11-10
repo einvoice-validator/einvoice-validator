@@ -285,6 +285,7 @@ impl Parser<'_> {
             "child" => Axis::Child,
             "attribute" => Axis::Attribute,
             "self" => Axis::SelfAxis,
+            "descendant" => Axis::Descendant,
             "descendant-or-self" => Axis::DescendantOrSelf,
             "following-sibling" => Axis::FollowingSibling,
             "parent" => Axis::Parent,
@@ -292,7 +293,7 @@ impl Parser<'_> {
             "ancestor-or-self" => Axis::AncestorOrSelf,
             "preceding-sibling" => Axis::PrecedingSibling,
             "preceding" => Axis::Preceding,
-            "descendant" | "following" | "namespace" => {
+            "following" | "namespace" => {
                 return Err(self.error_at(
                     ErrorKind::Unsupported,
                     offset,
@@ -571,17 +572,22 @@ impl Parser<'_> {
         Ok(Parsed::new(Expr::FunctionCall { name, args }, depth))
     }
 
-    /// The argument of `system-property("prefix:local")`, a lexical `QName` resolved with the
-    /// in-scope namespaces of the expression (XSLT 2.0 section 16.6.5), is rewritten as the
-    /// equivalent `Q{uri}local` (an `EQName`, which XSLT 3.0 accepts there), so that the name
-    /// no longer depends on namespaces the compiler does not see. A prefix that is not
-    /// bound is left for the compiler to report.
+    /// The first argument of `system-property("prefix:local")`, `element-available` and
+    /// `function-available`, a lexical `QName` resolved with the in-scope namespaces of
+    /// the expression (XSLT 2.0 sections 16.6.5, 18.1.1 and 18.1.2), is rewritten as the
+    /// equivalent `Q{uri}local` (an `EQName`, which XSLT 3.0 accepts there), so that the
+    /// name no longer depends on namespaces the compiler does not see. A prefix that is
+    /// not bound is left for the compiler to report.
     fn resolve_property_name(&self, name: &QName, args: &mut [Expr]) {
-        if name.namespace.as_deref() != Some(crate::FN_NAMESPACE) || name.local != "system-property"
+        if name.namespace.as_deref() != Some(crate::FN_NAMESPACE)
+            || !matches!(
+                name.local.as_str(),
+                "system-property" | "element-available" | "function-available"
+            )
         {
             return;
         }
-        let [Expr::Literal(Literal::String(text))] = args else {
+        let Some(Expr::Literal(Literal::String(text))) = args.first_mut() else {
             return;
         };
         let Some((prefix, local)) = text.trim_matches(is_xml_whitespace).split_once(':') else {
