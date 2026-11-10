@@ -33,7 +33,7 @@ fired rule per node, takes a few bytes per fired rule.
 
 ```toml
 [dependencies]
-einvoice-validator = "0.1"
+einvoice-validator = "0.4"
 ```
 
 ```rust
