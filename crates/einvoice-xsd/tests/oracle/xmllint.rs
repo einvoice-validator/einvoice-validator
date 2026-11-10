@@ -209,6 +209,7 @@ pub(crate) fn classify(message: &str) -> Result<String, String> {
     } else if message.contains("is not a valid value of")
         || message.contains("[facet '")
         || message.contains("does not match the fixed value constraint")
+        || message.contains("has no corresponding namespace declaration in scope")
     {
         if message.starts_with("Element '") && message.contains("', attribute '") {
             "attribute-value"

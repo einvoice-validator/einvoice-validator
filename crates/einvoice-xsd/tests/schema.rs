@@ -36,9 +36,9 @@ fn every_vendored_file_is_reachable_from_the_entry_points() {
     vendored.sort();
     assert_eq!(loaded, vendored);
     assert_eq!(schema.global_element_count(), 1581);
-    // 1168 named complex types, 3 named simple types, anyType and the 16
-    // implemented built-in simple types.
-    assert_eq!(schema.type_count(), 1168 + 3 + 1 + 16);
+    // 1168 named complex types, 3 named simple types, anyType and the 45 built-in
+    // simple types.
+    assert_eq!(schema.type_count(), 1168 + 3 + 1 + 45);
 }
 
 #[test]
@@ -254,10 +254,36 @@ fn malformed_and_unsupported_documents() {
         "<cbc:ID>1</cbc:ID><cbc:IssueDate>",
         "<cbc:ID xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xsi:type=\"xs:double\">1</cbc:ID><cbc:IssueDate>",
     );
-    let Err(DocumentError::Unsupported { message, .. }) = schema.validate(&xml) else {
-        panic!("not refused");
-    };
-    assert!(message.contains("xs:double"), "{message}");
+    // Every built-in type resolves; xs:double is not derived from the declared type.
+    let report = schema.validate(&xml).unwrap();
+    assert_eq!(report.errors.len(), 1, "{report:?}");
+    assert_eq!(
+        report.errors[0].kind,
+        einvoice_xsd::ErrorKind::InvalidXsiType
+    );
+    assert!(
+        report.errors[0].message.contains("xs:double")
+            || report.errors[0].message.contains("XMLSchema}double"),
+        "{}",
+        report.errors[0].message
+    );
+    // An xs:ENTITY value in a document with a document type declaration, which may
+    // declare unparsed entities: refused as unsupported.
+    let xml = format!(
+        "<!DOCTYPE CreditNote [<!NOTATION gif SYSTEM \"image/gif\"><!ENTITY logo SYSTEM \"logo.gif\" NDATA gif>]>\n{}",
+        credit_note(&format!(
+            "<ext:UBLExtensions xmlns:ext=\"urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2\">\
+             <ext:UBLExtension><ext:ExtensionContent>\
+             <x:e xmlns:x=\"urn:x\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xsi:type=\"xs:ENTITY\">logo</x:e>\
+             </ext:ExtensionContent></ext:UBLExtension></ext:UBLExtensions>{MINIMAL_BODY}"
+        ))
+    );
+    match schema.validate(&xml) {
+        Err(DocumentError::Unsupported { message, .. }) => {
+            assert!(message.contains("unparsed entity"), "{message}");
+        }
+        other => panic!("{other:?}"),
+    }
 }
 
 /// What the reading of the document as a stream of events must preserve from the tree

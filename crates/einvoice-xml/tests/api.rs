@@ -86,6 +86,33 @@ fn names_attributes_and_namespaces() {
     assert!(reader.next_event().unwrap().is_none());
 }
 
+/// At its end, an element's scope is still the one of its start: what resolves a
+/// qualified name in its content.
+#[test]
+fn the_scope_of_an_element_at_its_end() {
+    let mut reader =
+        Reader::new("<a xmlns:p='urn:p'><b xmlns:q='urn:q' xmlns:p='urn:p2'>p:x</b><c/></a>");
+    let mut ends = Vec::new();
+    while let Some(event) = reader.next_event().unwrap() {
+        if let Event::End(end) = event {
+            ends.push(format!(
+                "{} {:?} {:?}",
+                end.name().local,
+                end.lookup_namespace("p"),
+                end.lookup_namespace("q")
+            ));
+        }
+    }
+    assert_eq!(
+        ends,
+        [
+            "b Some(\"urn:p2\") Some(\"urn:q\")",
+            "c Some(\"urn:p\") None",
+            "a Some(\"urn:p\") None"
+        ]
+    );
+}
+
 #[test]
 fn text_is_borrowed_unless_it_changes() {
     let doc = "<a b='plain' c='a&amp;b' d='x\ty'>plain<![CDATA[raw]]>&amp;x\r\n</a>";

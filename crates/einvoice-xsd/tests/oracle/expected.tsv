@@ -1559,3 +1559,126 @@ mutation/xades-extension-ds-bad-serial	invalid	129:element-value
 mutation/xades-extension-unknown-element	invalid	129:element-value
 mutation/xades141-extension-valid	valid	
 mutation/xades141-extension-invalid	invalid	129:unexpected-element
+mutation/xsi-type-builtin-float-0	valid	
+mutation/xsi-type-builtin-float-1	valid	
+mutation/xsi-type-builtin-float-2	valid	
+mutation/xsi-type-builtin-float-3	invalid	121:element-value
+mutation/xsi-type-builtin-float-4	invalid	121:element-value
+mutation/xsi-type-builtin-float-5	valid	
+mutation/xsi-type-builtin-float-6	invalid	121:element-value
+mutation/xsi-type-builtin-float-7	invalid	121:element-value
+mutation/xsi-type-builtin-double-0	valid	
+mutation/xsi-type-builtin-double-1	valid	
+mutation/xsi-type-builtin-double-2	invalid	121:element-value
+mutation/xsi-type-builtin-double-3	invalid	121:element-value
+mutation/xsi-type-builtin-duration-0	valid	
+mutation/xsi-type-builtin-duration-1	valid	
+mutation/xsi-type-builtin-duration-2	valid	
+mutation/xsi-type-builtin-duration-3	valid	
+mutation/xsi-type-builtin-duration-4	invalid	121:element-value
+mutation/xsi-type-builtin-duration-5	invalid	121:element-value
+mutation/xsi-type-builtin-duration-6	invalid	121:element-value
+mutation/xsi-type-builtin-duration-7	invalid	121:element-value
+mutation/xsi-type-builtin-duration-8	invalid	121:element-value
+mutation/xsi-type-builtin-duration-9	invalid	121:element-value
+mutation/xsi-type-builtin-duration-10	invalid	121:element-value
+mutation/xsi-type-builtin-gYearMonth-0	valid	
+mutation/xsi-type-builtin-gYearMonth-1	valid	
+mutation/xsi-type-builtin-gYearMonth-2	invalid	121:element-value
+mutation/xsi-type-builtin-gYearMonth-3	invalid	121:element-value
+mutation/xsi-type-builtin-gYearMonth-4	invalid	121:element-value
+mutation/xsi-type-builtin-gYear-0	valid	
+mutation/xsi-type-builtin-gYear-1	valid	
+mutation/xsi-type-builtin-gYear-2	invalid	121:element-value
+mutation/xsi-type-builtin-gYear-3	invalid	121:element-value
+mutation/xsi-type-builtin-gYear-4	invalid	121:element-value
+mutation/xsi-type-builtin-gYear-5	invalid	121:element-value
+mutation/xsi-type-builtin-gMonthDay-0	valid	
+mutation/xsi-type-builtin-gMonthDay-1	invalid	121:element-value
+mutation/xsi-type-builtin-gMonthDay-2	invalid	121:element-value
+mutation/xsi-type-builtin-gMonthDay-3	valid	
+mutation/xsi-type-builtin-gMonthDay-4	invalid	121:element-value
+mutation/xsi-type-builtin-gDay-0	valid	
+mutation/xsi-type-builtin-gDay-1	invalid	121:element-value
+mutation/xsi-type-builtin-gDay-2	invalid	121:element-value
+mutation/xsi-type-builtin-gDay-3	invalid	121:element-value
+mutation/xsi-type-builtin-gDay-4	valid	
+mutation/xsi-type-builtin-gMonth-0	valid	
+mutation/xsi-type-builtin-gMonth-1	invalid	121:element-value
+mutation/xsi-type-builtin-gMonth-2	invalid	121:element-value
+mutation/xsi-type-builtin-gMonth-3	valid	
+mutation/xsi-type-builtin-hexBinary-0	valid	
+mutation/xsi-type-builtin-hexBinary-1	valid	
+mutation/xsi-type-builtin-hexBinary-2	valid	
+mutation/xsi-type-builtin-hexBinary-3	invalid	121:element-value
+mutation/xsi-type-builtin-hexBinary-4	invalid	121:element-value
+mutation/xsi-type-builtin-hexBinary-5	invalid	121:element-value
+mutation/xsi-type-builtin-nonPositiveInteger-0	valid	
+mutation/xsi-type-builtin-nonPositiveInteger-1	valid	
+mutation/xsi-type-builtin-nonPositiveInteger-2	valid	
+mutation/xsi-type-builtin-nonPositiveInteger-3	invalid	121:element-value
+mutation/xsi-type-builtin-negativeInteger-0	valid	
+mutation/xsi-type-builtin-negativeInteger-1	invalid	121:element-value
+mutation/xsi-type-builtin-negativeInteger-2	invalid	121:element-value
+mutation/xsi-type-builtin-long-0	valid	
+mutation/xsi-type-builtin-long-1	invalid	121:element-value
+mutation/xsi-type-builtin-long-2	valid	
+mutation/xsi-type-builtin-long-3	invalid	121:element-value
+mutation/xsi-type-builtin-long-4	valid	
+mutation/xsi-type-builtin-int-0	valid	
+mutation/xsi-type-builtin-int-1	invalid	121:element-value
+mutation/xsi-type-builtin-int-2	invalid	121:element-value
+mutation/xsi-type-builtin-short-0	valid	
+mutation/xsi-type-builtin-short-1	invalid	121:element-value
+mutation/xsi-type-builtin-byte-0	valid	
+mutation/xsi-type-builtin-byte-1	invalid	121:element-value
+mutation/xsi-type-builtin-byte-2	valid	
+mutation/xsi-type-builtin-nonNegativeInteger-0	valid	
+mutation/xsi-type-builtin-nonNegativeInteger-1	valid	
+mutation/xsi-type-builtin-nonNegativeInteger-2	invalid	121:element-value
+mutation/xsi-type-builtin-nonNegativeInteger-3	valid	
+mutation/xsi-type-builtin-unsignedLong-0	valid	
+mutation/xsi-type-builtin-unsignedLong-1	invalid	121:element-value
+mutation/xsi-type-builtin-unsignedLong-2	invalid	121:element-value
+mutation/xsi-type-builtin-unsignedLong-3	invalid	121:element-value
+mutation/xsi-type-builtin-unsignedLong-4	invalid	121:element-value
+mutation/xsi-type-builtin-unsignedInt-0	valid	
+mutation/xsi-type-builtin-unsignedInt-1	invalid	121:element-value
+mutation/xsi-type-builtin-unsignedInt-2	invalid	121:element-value
+mutation/xsi-type-builtin-unsignedShort-0	valid	
+mutation/xsi-type-builtin-unsignedShort-1	invalid	121:element-value
+mutation/xsi-type-builtin-unsignedByte-0	valid	
+mutation/xsi-type-builtin-unsignedByte-1	invalid	121:element-value
+mutation/xsi-type-builtin-unsignedByte-2	invalid	121:element-value
+mutation/xsi-type-builtin-positiveInteger-0	valid	
+mutation/xsi-type-builtin-positiveInteger-1	invalid	121:element-value
+mutation/xsi-type-builtin-positiveInteger-2	invalid	121:element-value
+mutation/xsi-type-builtin-positiveInteger-3	valid	
+mutation/xsi-type-builtin-NMTOKEN-0	valid	
+mutation/xsi-type-builtin-NMTOKEN-1	valid	
+mutation/xsi-type-builtin-NMTOKEN-2	invalid	121:element-value
+mutation/xsi-type-builtin-NMTOKEN-3	invalid	121:element-value
+mutation/xsi-type-builtin-NMTOKENS-0	valid	
+mutation/xsi-type-builtin-NMTOKENS-1	invalid	121:element-value 121:element-value
+mutation/xsi-type-builtin-NMTOKENS-2	valid	
+mutation/xsi-type-builtin-IDREF-0	valid	
+mutation/xsi-type-builtin-IDREF-1	valid	
+mutation/xsi-type-builtin-IDREF-2	invalid	121:element-value
+mutation/xsi-type-builtin-IDREFS-0	valid	
+mutation/xsi-type-builtin-IDREFS-1	valid	
+mutation/xsi-type-builtin-IDREFS-2	invalid	121:element-value 121:element-value
+mutation/xsi-type-builtin-IDREFS-3	valid	
+mutation/xsi-type-builtin-ENTITY-0	invalid	121:element-value
+mutation/xsi-type-builtin-ENTITY-1	invalid	121:element-value
+mutation/xsi-type-builtin-ENTITIES-0	invalid	121:element-value 121:element-value
+mutation/xsi-type-builtin-NOTATION-0	invalid	121:element-value
+mutation/xsi-type-builtin-NOTATION-1	invalid	121:element-value
+mutation/xsi-type-builtin-QName-0	valid	
+mutation/xsi-type-builtin-QName-1	valid	
+mutation/xsi-type-builtin-QName-2	valid	
+mutation/xsi-type-builtin-QName-3	invalid	121:element-value 121:element-value
+mutation/xsi-type-builtin-QName-4	invalid	121:element-value 121:element-value
+mutation/xsi-type-builtin-QName-5	invalid	121:element-value 121:element-value
+mutation/xsi-type-builtin-QName-6	invalid	121:element-value
+mutation/xsi-type-builtin-anyAtomicType-0	invalid	121:xsi-type
+mutation/xsi-type-builtin-ENTITY-declared	invalid	122:element-value

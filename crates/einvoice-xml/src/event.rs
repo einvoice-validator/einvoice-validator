@@ -142,6 +142,14 @@ impl<'r, 'a> EndElement<'r, 'a> {
         self.reader.empty
     }
 
+    /// The namespace bound to `prefix` in the scope of the element, as at its start
+    /// (see [`Reader::lookup_namespace`](crate::Reader::lookup_namespace)): what
+    /// resolves a qualified name in its content.
+    #[must_use]
+    pub fn lookup_namespace(&self, prefix: &str) -> Option<&'r str> {
+        self.reader.lookup_namespace(prefix)
+    }
+
     /// The byte range of the end tag, or of the empty-element tag.
     #[must_use]
     pub fn range(&self) -> Range<usize> {

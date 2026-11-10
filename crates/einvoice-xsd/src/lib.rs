@@ -84,9 +84,16 @@
 //!   `xsi:nil` refused since no declaration is nillable, `xsi:schemaLocation` and
 //!   `xsi:noNamespaceSchemaLocation` ignored as hints);
 //! * simple values: whitespace processing and the lexical space of every built-in
-//!   type the schemas use, the `enumeration`, `minLength` and `maxLength` facets
-//!   (lengths in characters, after whitespace processing, for the types derived from
-//!   `xs:string`), and uniqueness of `xs:ID` values;
+//!   simple type of XML Schema 1.0 (those the schemas use, and any a document names in
+//!   `xsi:type`: the integer types with their bounds, `float`, `double`, `duration`,
+//!   the `g*` types, `hexBinary`, `QName` with its prefix declared, `NMTOKEN`,
+//!   `IDREF`, `ENTITY`, `NOTATION` and the list types), the `enumeration`,
+//!   `minLength` and `maxLength` facets (lengths in characters, after whitespace
+//!   processing, for the types derived from `xs:string`), uniqueness of `xs:ID`
+//!   values, and every `xs:IDREF` value matching an `xs:ID` of the document (Part 1
+//!   3.3.4, which libxml2 does not check); an `xs:ENTITY` value is invalid, a
+//!   document without a document type declaration having no unparsed entity, and so
+//!   is an `xs:NOTATION`, the schemas declaring no notation;
 //! * value constraints (`default` and `fixed`) of element and attribute
 //!   declarations: a fixed value is compared with the value of the element or
 //!   attribute in the value space of its type (cvc-elt.5.2.2, cvc-attribute.4), so
@@ -356,7 +363,9 @@ impl Schema {
     /// [`DocumentError::Malformed`] when the text is not well-formed XML with
     /// namespaces, wherever the error is (it comes before the others);
     /// [`DocumentError::Unsupported`] when the document needs a feature outside the
-    /// implemented subset (`xsi:type` naming a built-in type the schemas do not use).
+    /// implemented subset (an `xs:ENTITY` value in a document with a document type declaration, whose
+    /// unparsed entities this crate does not read, or a value constraint of a
+    /// declaration taken as a value of a type valid only in a context).
     /// Validity errors are not errors: they are in the [`Report`].
     pub fn validate(&self, xml: &str) -> Result<Report, DocumentError> {
         validate::validate(self, xml)

@@ -167,6 +167,14 @@ fn documents_with_a_document_type_declaration_are_validated_alike() {
                         ..
                     }),
                 ) => (a, m) == (b, n),
+                // An xs:ENTITY value must name an unparsed entity of the document type
+                // declaration, which none has without one; with one, whose unparsed
+                // entities this crate does not read, the value is refused as unsupported.
+                (Ok(_), Err(einvoice_xsd::DocumentError::Unsupported { message, .. })) => {
+                    message.ends_with("names an unparsed entity of the document type declaration: not implemented")
+                        && (case.text.contains("xsi:type=\"xs:ENTITY\"")
+                            || case.text.contains("xsi:type=\"xs:ENTITIES\""))
+                }
                 _ => false,
             };
             compared += 1;

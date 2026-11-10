@@ -58,8 +58,11 @@ pub enum DocumentError {
         message: String,
     },
     /// The document needs a feature outside the subset this crate implements (an
-    /// encoding that [`einvoice_xml::decode`] does not read, or `xsi:type` naming a
-    /// built-in type the UBL schemas do not use). Refused rather than answered wrongly.
+    /// encoding that [`einvoice_xml::decode`] does not read, an `xs:ENTITY` value in a
+    /// document with a document type declaration, whose unparsed entities this crate
+    /// does not read, or a value constraint of a declaration taken as a value of a
+    /// type valid only in a context, such as `xs:QName`). Refused rather than answered
+    /// wrongly.
     Unsupported {
         /// 1-based line.
         line: u32,
@@ -128,6 +131,9 @@ pub enum ErrorKind {
     InvalidAttributeValue,
     /// An `xs:ID` value already used by an earlier attribute of the document (cvc-id.2).
     DuplicateId,
+    /// An `xs:IDREF` value (or an item of an `xs:IDREFS`) that is not the value of an
+    /// `xs:ID` of the document (cvc-id.1).
+    UnresolvedIdref,
     /// `xsi:type` is not a `QName`, does not resolve to a type, or names a type not
     /// validly derived from the declared type (cvc-elt.4).
     InvalidXsiType,
@@ -157,6 +163,7 @@ impl ErrorKind {
             Self::InvalidValue => "invalid-value",
             Self::InvalidAttributeValue => "invalid-attribute-value",
             Self::DuplicateId => "duplicate-id",
+            Self::UnresolvedIdref => "unresolved-idref",
             Self::InvalidXsiType => "invalid-xsi-type",
             Self::AbstractType => "abstract-type",
             Self::NotNillable => "not-nillable",

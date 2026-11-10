@@ -13,7 +13,7 @@ use std::sync::Arc;
 use roxmltree::{Node, NodeId};
 
 use crate::automaton::{Automaton, MAX_FINITE_OCCURS, Particle, ParticleTerm};
-use crate::datatypes::{self, Builtin, UNIMPLEMENTED_BUILTINS};
+use crate::datatypes::{self, Builtin};
 use crate::error::{LoadError, LoadErrorKind};
 use crate::model::{
     ANY_TYPE, AttributeUse, ComplexType, ConstraintKind, Content, ElementDecl, ElementId,
@@ -524,10 +524,10 @@ fn length_facet(
     builtin: Builtin,
 ) -> Result<usize> {
     if !builtin.has_length() {
-        // The length facets apply to anyURI and base64Binary too (Part 2, 4.1.5,
-        // Applicable Facets), which this crate does not restrict that way; not to
-        // the other types.
-        let applies = matches!(builtin, Builtin::AnyUri | Builtin::Base64Binary);
+        // The length facets apply to anyURI, the binary types, QName, NOTATION and
+        // the list types too (Part 2, 4.1.5, Applicable Facets), which this crate does
+        // not restrict that way; not to the other types.
+        let applies = builtin.length_applies();
         return Err(error(
             doc,
             facet,
@@ -764,7 +764,6 @@ impl<'d, 'a> Loader<'d, 'a> {
 
     /// Resolves a `QName` attribute value of a schema element to a global type.
     fn resolve_type(&mut self, doc: usize, node: Node<'_, '_>, value: &str) -> Result<TypeId> {
-        let d = self.doc(doc);
         let name = self.resolve_qname(doc, node, value)?;
         if let Some(id) = self
             .global_types
@@ -772,16 +771,6 @@ impl<'d, 'a> Loader<'d, 'a> {
             .and_then(|m| m.get(&name.local))
         {
             return Ok(*id);
-        }
-        if name.namespace.as_deref() == Some(XS)
-            && UNIMPLEMENTED_BUILTINS.contains(&name.local.as_str())
-        {
-            return Err(error(
-                d,
-                node,
-                LoadErrorKind::Unsupported,
-                format!("built-in type {name}"),
-            ));
         }
         Err(self.unresolved(doc, node, "type", &name))
     }
@@ -1851,6 +1840,17 @@ impl<'d, 'a> Loader<'d, 'a> {
                 format!("a {kind} value on a type derived from xs:ID"),
             ));
         }
+        if builtin.needs_context() {
+            return Err(error(
+                d,
+                node,
+                LoadErrorKind::Unsupported,
+                format!(
+                    "a {kind} value on a type derived from xs:{}, whose values are valid only in a context",
+                    builtin.name()
+                ),
+            ));
+        }
         if pending.constraint.kind == ConstraintKind::Fixed && !builtin.has_value_key() {
             return Err(error(
                 d,
@@ -2014,7 +2014,15 @@ mod tests {
             r#"<xs:complexType name="c"><xs:sequence><xs:element name="e"><xs:complexType/><xs:key name="k"/></xs:element></xs:sequence></xs:complexType>"#,
             r#"<xs:complexType name="c"><xs:sequence><xs:element name="e"><xs:complexType id="x"/></xs:element></xs:sequence></xs:complexType>"#,
             r#"<xs:simpleType name="s"><xs:list itemType="xs:string"/></xs:simpleType>"#,
-            r#"<xs:simpleType name="s"><xs:restriction base="xs:float"/></xs:simpleType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:float"><xs:enumeration value="1"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:hexBinary"><xs:maxLength value="2"/></xs:restriction></xs:simpleType>"#,
+            r#"<xs:simpleType name="s"><xs:restriction base="xs:NMTOKENS"><xs:maxLength value="2"/></xs:restriction></xs:simpleType>"#,
+            // Values constraints that are not compared, or valid only in a context.
+            r#"<xs:element name="e" type="xs:duration" fixed="P1D"/>"#,
+            r#"<xs:element name="e" type="xs:float" fixed="1"/>"#,
+            r#"<xs:element name="e" type="xs:QName" default="t:x"/>"#,
+            r#"<xs:complexType name="c"><xs:attribute name="a" type="xs:IDREF" default="x"/></xs:complexType>"#,
+            r#"<xs:complexType name="c"><xs:attribute name="a" type="xs:ENTITY" default="x"/></xs:complexType>"#,
             r#"<xs:simpleType name="s"><xs:restriction base="xs:decimal"><xs:enumeration value="1"/></xs:restriction></xs:simpleType>"#,
             r#"<xs:complexType name="c"><xs:sequence maxOccurs="1000"/></xs:complexType>"#,
             r#"<xs:import namespace="urn:x" schemaLocation="http://example.org/x.xsd"/>"#,
@@ -2097,8 +2105,8 @@ mod tests {
             </xs:schema>"#
         ))
         .unwrap();
-        // anyType, the 16 built-ins, three named types and the two anonymous ones.
-        assert_eq!(schema.type_count(), 1 + 16 + 4 + 2);
+        // anyType, the 45 built-ins, three named types and the two anonymous ones.
+        assert_eq!(schema.type_count(), 1 + 45 + 4 + 2);
         let total = schema.global_element(Some("urn:t"), "total").unwrap();
         let constraint = schema.element_constraint(total).unwrap();
         assert_eq!(

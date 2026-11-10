@@ -424,7 +424,7 @@ pub(crate) fn category(error: &einvoice_xsd::ValidationError) -> &'static str {
         ErrorKind::MissingAttribute => "attribute-missing",
         ErrorKind::InvalidValue => "element-value",
         ErrorKind::InvalidAttributeValue | ErrorKind::InvalidXsiNil => "attribute-value",
-        ErrorKind::DuplicateId => {
+        ErrorKind::DuplicateId | ErrorKind::UnresolvedIdref => {
             if error.attribute.is_some() {
                 "attribute-value"
             } else {

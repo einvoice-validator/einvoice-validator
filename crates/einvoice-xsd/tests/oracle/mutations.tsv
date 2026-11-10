@@ -378,3 +378,126 @@ xades-extension-ds-bad-serial	invoice-full	  </ext:UBLExtensions>	    <ext:UBLEx
 xades-extension-unknown-element	invoice-full	  </ext:UBLExtensions>	    <ext:UBLExtension>\n      <ext:ExtensionURI>urn:example:extension:xades</ext:ExtensionURI>\n      <ext:ExtensionContent><xades:NoSuchElement any="attribute"><xades:SigningTime>yesterday</xades:SigningTime></xades:NoSuchElement></ext:ExtensionContent>\n    </ext:UBLExtension>\n  </ext:UBLExtensions>
 xades141-extension-valid	invoice-full	  </ext:UBLExtensions>	    <ext:UBLExtension>\n      <ext:ExtensionURI>urn:example:extension:xades</ext:ExtensionURI>\n      <ext:ExtensionContent><xades141:TimeStampValidationData UR="urn:example:validation-data"><xades:CertificateValues><xades:EncapsulatedX509Certificate>Q2VydA==</xades:EncapsulatedX509Certificate></xades:CertificateValues></xades141:TimeStampValidationData></ext:ExtensionContent>\n    </ext:UBLExtension>\n  </ext:UBLExtensions>
 xades141-extension-invalid	invoice-full	  </ext:UBLExtensions>	    <ext:UBLExtension>\n      <ext:ExtensionURI>urn:example:extension:xades</ext:ExtensionURI>\n      <ext:ExtensionContent><xades141:TimeStampValidationData UR="urn:example:validation-data"><xades:CertificateValues><xades:Bad/></xades:CertificateValues></xades141:TimeStampValidationData></ext:ExtensionContent>\n    </ext:UBLExtension>\n  </ext:UBLExtensions>
+xsi-type-builtin-float-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:float">-1.5E3</ex:Item>
+xsi-type-builtin-float-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:float">INF</ex:Item>
+xsi-type-builtin-float-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:float">NaN</ex:Item>
+xsi-type-builtin-float-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:float"></ex:Item>
+xsi-type-builtin-float-4	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:float">+INF</ex:Item>
+xsi-type-builtin-float-5	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:float">1E</ex:Item>
+xsi-type-builtin-float-6	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:float">.</ex:Item>
+xsi-type-builtin-float-7	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:float">1f</ex:Item>
+xsi-type-builtin-double-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:double">1e400</ex:Item>
+xsi-type-builtin-double-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:double">-0</ex:Item>
+xsi-type-builtin-double-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:double">+INF</ex:Item>
+xsi-type-builtin-double-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:double">1e1.5</ex:Item>
+xsi-type-builtin-duration-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:duration">P1Y2M3DT4H5M6.7S</ex:Item>
+xsi-type-builtin-duration-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:duration">-PT0S</ex:Item>
+xsi-type-builtin-duration-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:duration">PT.5S</ex:Item>
+xsi-type-builtin-duration-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:duration">PT1.S</ex:Item>
+xsi-type-builtin-duration-4	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:duration">P</ex:Item>
+xsi-type-builtin-duration-5	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:duration">PT</ex:Item>
+xsi-type-builtin-duration-6	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:duration">P1DT</ex:Item>
+xsi-type-builtin-duration-7	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:duration">P1H</ex:Item>
+xsi-type-builtin-duration-8	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:duration">P1.5Y</ex:Item>
+xsi-type-builtin-duration-9	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:duration"> P1D </ex:Item>
+xsi-type-builtin-duration-10	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:duration">P99999999999999999999Y</ex:Item>
+xsi-type-builtin-gYearMonth-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gYearMonth">2024-02</ex:Item>
+xsi-type-builtin-gYearMonth-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gYearMonth">-0001-01Z</ex:Item>
+xsi-type-builtin-gYearMonth-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gYearMonth">2024-13</ex:Item>
+xsi-type-builtin-gYearMonth-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gYearMonth">0000-01</ex:Item>
+xsi-type-builtin-gYearMonth-4	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gYearMonth">2024-01+14:01</ex:Item>
+xsi-type-builtin-gYear-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gYear">2024</ex:Item>
+xsi-type-builtin-gYear-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gYear">-12345</ex:Item>
+xsi-type-builtin-gYear-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gYear">0000</ex:Item>
+xsi-type-builtin-gYear-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gYear">012345</ex:Item>
+xsi-type-builtin-gYear-4	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gYear">+2024</ex:Item>
+xsi-type-builtin-gYear-5	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gYear">99999999999999999999</ex:Item>
+xsi-type-builtin-gMonthDay-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gMonthDay">--02-29</ex:Item>
+xsi-type-builtin-gMonthDay-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gMonthDay">--02-30</ex:Item>
+xsi-type-builtin-gMonthDay-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gMonthDay">--04-31</ex:Item>
+xsi-type-builtin-gMonthDay-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gMonthDay">--12-31+01:00</ex:Item>
+xsi-type-builtin-gMonthDay-4	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gMonthDay">-01-01</ex:Item>
+xsi-type-builtin-gDay-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gDay">---31</ex:Item>
+xsi-type-builtin-gDay-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gDay">---32</ex:Item>
+xsi-type-builtin-gDay-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gDay">---00</ex:Item>
+xsi-type-builtin-gDay-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gDay">--01</ex:Item>
+xsi-type-builtin-gDay-4	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gDay">---15-12:00</ex:Item>
+xsi-type-builtin-gMonth-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gMonth">--12</ex:Item>
+xsi-type-builtin-gMonth-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gMonth">--13</ex:Item>
+xsi-type-builtin-gMonth-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gMonth">--01--</ex:Item>
+xsi-type-builtin-gMonth-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:gMonth">--05+10:00</ex:Item>
+xsi-type-builtin-hexBinary-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:hexBinary">0FB7</ex:Item>
+xsi-type-builtin-hexBinary-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:hexBinary">0f</ex:Item>
+xsi-type-builtin-hexBinary-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:hexBinary"></ex:Item>
+xsi-type-builtin-hexBinary-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:hexBinary">F</ex:Item>
+xsi-type-builtin-hexBinary-4	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:hexBinary">0G</ex:Item>
+xsi-type-builtin-hexBinary-5	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:hexBinary">0F B7</ex:Item>
+xsi-type-builtin-nonPositiveInteger-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:nonPositiveInteger">-0</ex:Item>
+xsi-type-builtin-nonPositiveInteger-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:nonPositiveInteger">+0</ex:Item>
+xsi-type-builtin-nonPositiveInteger-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:nonPositiveInteger">-1</ex:Item>
+xsi-type-builtin-nonPositiveInteger-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:nonPositiveInteger">1</ex:Item>
+xsi-type-builtin-negativeInteger-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:negativeInteger">-1</ex:Item>
+xsi-type-builtin-negativeInteger-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:negativeInteger">0</ex:Item>
+xsi-type-builtin-negativeInteger-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:negativeInteger">-0</ex:Item>
+xsi-type-builtin-long-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:long">9223372036854775807</ex:Item>
+xsi-type-builtin-long-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:long">9223372036854775808</ex:Item>
+xsi-type-builtin-long-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:long">-9223372036854775808</ex:Item>
+xsi-type-builtin-long-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:long">-9223372036854775809</ex:Item>
+xsi-type-builtin-long-4	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:long">+1</ex:Item>
+xsi-type-builtin-int-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:int">2147483647</ex:Item>
+xsi-type-builtin-int-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:int">2147483648</ex:Item>
+xsi-type-builtin-int-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:int">-2147483649</ex:Item>
+xsi-type-builtin-short-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:short">32767</ex:Item>
+xsi-type-builtin-short-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:short">-32769</ex:Item>
+xsi-type-builtin-byte-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:byte">-128</ex:Item>
+xsi-type-builtin-byte-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:byte">128</ex:Item>
+xsi-type-builtin-byte-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:byte">0127</ex:Item>
+xsi-type-builtin-nonNegativeInteger-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:nonNegativeInteger">0</ex:Item>
+xsi-type-builtin-nonNegativeInteger-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:nonNegativeInteger">-0</ex:Item>
+xsi-type-builtin-nonNegativeInteger-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:nonNegativeInteger">-1</ex:Item>
+xsi-type-builtin-nonNegativeInteger-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:nonNegativeInteger">99999999999999999999999</ex:Item>
+xsi-type-builtin-unsignedLong-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedLong">18446744073709551615</ex:Item>
+xsi-type-builtin-unsignedLong-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedLong">18446744073709551616</ex:Item>
+xsi-type-builtin-unsignedLong-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedLong">-1</ex:Item>
+xsi-type-builtin-unsignedLong-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedLong">+1</ex:Item>
+xsi-type-builtin-unsignedLong-4	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedLong">-0</ex:Item>
+xsi-type-builtin-unsignedInt-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedInt">4294967295</ex:Item>
+xsi-type-builtin-unsignedInt-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedInt">4294967296</ex:Item>
+xsi-type-builtin-unsignedInt-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedInt">+5</ex:Item>
+xsi-type-builtin-unsignedShort-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedShort">65535</ex:Item>
+xsi-type-builtin-unsignedShort-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedShort">65536</ex:Item>
+xsi-type-builtin-unsignedByte-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedByte">255</ex:Item>
+xsi-type-builtin-unsignedByte-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedByte">256</ex:Item>
+xsi-type-builtin-unsignedByte-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:unsignedByte">+255</ex:Item>
+xsi-type-builtin-positiveInteger-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:positiveInteger">1</ex:Item>
+xsi-type-builtin-positiveInteger-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:positiveInteger">0</ex:Item>
+xsi-type-builtin-positiveInteger-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:positiveInteger">-0</ex:Item>
+xsi-type-builtin-positiveInteger-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:positiveInteger">+1</ex:Item>
+xsi-type-builtin-NMTOKEN-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:NMTOKEN">a-b.c:d</ex:Item>
+xsi-type-builtin-NMTOKEN-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:NMTOKEN">1a</ex:Item>
+xsi-type-builtin-NMTOKEN-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:NMTOKEN">a b</ex:Item>
+xsi-type-builtin-NMTOKEN-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:NMTOKEN">a@b</ex:Item>
+xsi-type-builtin-NMTOKENS-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:NMTOKENS">a  b c</ex:Item>
+xsi-type-builtin-NMTOKENS-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:NMTOKENS">a @</ex:Item>
+xsi-type-builtin-NMTOKENS-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:NMTOKENS"></ex:Item>
+xsi-type-builtin-IDREF-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:IDREF">signature-1</ex:Item>
+xsi-type-builtin-IDREF-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:IDREF">nowhere</ex:Item>
+xsi-type-builtin-IDREF-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:IDREF">1a</ex:Item>
+xsi-type-builtin-IDREFS-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:IDREFS">signature-1 reference-1</ex:Item>
+xsi-type-builtin-IDREFS-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:IDREFS">signature-1 nowhere</ex:Item>
+xsi-type-builtin-IDREFS-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:IDREFS">a 1</ex:Item>
+xsi-type-builtin-IDREFS-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:IDREFS"></ex:Item>
+xsi-type-builtin-ENTITY-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:ENTITY">a</ex:Item>
+xsi-type-builtin-ENTITY-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:ENTITY">1</ex:Item>
+xsi-type-builtin-ENTITIES-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:ENTITIES">a b</ex:Item>
+xsi-type-builtin-NOTATION-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:NOTATION">xs:a</ex:Item>
+xsi-type-builtin-NOTATION-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:NOTATION">a</ex:Item>
+xsi-type-builtin-QName-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:QName">xs:string</ex:Item>
+xsi-type-builtin-QName-1	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:QName">string</ex:Item>
+xsi-type-builtin-QName-2	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:QName">xml:lang</ex:Item>
+xsi-type-builtin-QName-3	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:QName">nope:a</ex:Item>
+xsi-type-builtin-QName-4	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:QName">xmlns:a</ex:Item>
+xsi-type-builtin-QName-5	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:QName"> xs:a </ex:Item>
+xsi-type-builtin-QName-6	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:QName">a:</ex:Item>
+xsi-type-builtin-anyAtomicType-0	invoice-full	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:anyAtomicType">x</ex:Item>
+xsi-type-builtin-ENTITY-declared	invoice-full	<?xml version="1.0" encoding="UTF-8"?>\n	<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE Invoice [<!NOTATION gif SYSTEM "image/gif"><!ENTITY logo SYSTEM "logo.gif" NDATA gif>]>\n	<ex:Item code="B"><ex:Nested/></ex:Item>	<ex:Item xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:type="xs:ENTITY">logo</ex:Item>

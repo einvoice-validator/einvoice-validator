@@ -37,11 +37,11 @@ use std::collections::{HashMap, HashSet};
 use einvoice_xml::{Event, StartElement};
 
 use crate::automaton::{Automaton, State, Term};
-use crate::datatypes::{self, Builtin, UNIMPLEMENTED_BUILTINS, WhiteSpace};
+use crate::datatypes::{self, Builtin, WhiteSpace};
 use crate::error::{DocumentError, ErrorKind, Report, ValidationError};
 use crate::model::{
-    ANY_TYPE, ComplexType, ConstraintKind, Content, ElementId, ProcessContents, Schema, TypeDef,
-    TypeId, ValueConstraint, XS, XSI, clark, facet_problem, namespace_name, quote,
+    ANY_TYPE, AttributeUse, ComplexType, ConstraintKind, Content, ElementId, ProcessContents,
+    Schema, TypeDef, TypeId, ValueConstraint, XSI, clark, facet_problem, namespace_name, quote,
 };
 
 /// How a child element is to be validated.
@@ -243,7 +243,22 @@ struct Validator<'s, 'd> {
     errors: Vec<(usize, ValidationError)>,
     /// The `xs:ID` values seen, whitespace-processed.
     ids: HashSet<Cow<'d, str>>,
+    /// The `xs:IDREF` values seen, each to be the value of an `xs:ID` of the document
+    /// (checked once it is read).
+    idrefs: Vec<IdRef>,
+    /// Whether the document has a document type declaration (it is read with
+    /// `roxmltree`): it may declare unparsed entities.
+    dtd: bool,
     namespaces: Namespaces,
+}
+
+/// An `xs:IDREF` value and where it is: the byte offset of its element, the element and
+/// the attribute (`None` for the element's content), in Clark notation.
+struct IdRef {
+    offset: usize,
+    element: String,
+    attribute: Option<String>,
+    value: String,
 }
 
 /// Lines and columns from byte offsets, walking forward through a text.
@@ -308,6 +323,19 @@ enum ValueProblem {
     Invalid(String),
     /// A valid `xs:ID` that an earlier attribute or element of the document uses.
     DuplicateId(String),
+    /// A value whose validity this crate does not decide: an `xs:ENTITY` in a document
+    /// with a document type declaration (which may declare unparsed entities).
+    Unsupported(String),
+}
+
+/// Whether a prefix is declared in the scope of a value (an `xs:QName` value is valid
+/// only when it is): the `xml` prefix always is, the `xmlns` prefix never.
+fn declared_prefix(prefix: &str, lookup: impl Fn(&str) -> Option<String>) -> bool {
+    match prefix {
+        "xml" => true,
+        "xmlns" => false,
+        _ => lookup(prefix).is_some_and(|ns| !ns.is_empty()),
+    }
 }
 
 fn element_name<'d>(element: &impl Start<'d>) -> String {
@@ -354,14 +382,26 @@ fn validate_tree(schema: &Schema, xml: &str) -> Result<Report, DocumentError> {
         }
     })?;
     let mut walk = Walk::new(schema, xml);
+    walk.validator.dtd = true;
+    // The prefixes declared in the scope of an element of the tree.
+    let tree = &doc;
+    let lookup = |id: roxmltree::NodeId| {
+        move |prefix: &str| {
+            tree.get_node(id)
+                .and_then(|node| node.lookup_namespace_uri(Some(prefix)))
+                .map(str::to_owned)
+        }
+    };
     // The elements open, innermost last: closed when the walk in document order
     // reaches a node that is not inside them.
     let mut open: Vec<roxmltree::NodeId> = Vec::new();
     for node in doc.root().descendants().skip(1) {
         let parent = node.parent().map(|p| p.id());
-        while open.last().is_some_and(|&id| Some(id) != parent) {
+        while let Some(&id) = open.last()
+            && Some(id) != parent
+        {
             open.pop();
-            walk.end();
+            walk.end(&lookup(id));
         }
         match node.node_type() {
             roxmltree::NodeType::Element => {
@@ -373,8 +413,8 @@ fn validate_tree(schema: &Schema, xml: &str) -> Result<Report, DocumentError> {
             roxmltree::NodeType::Root => {}
         }
     }
-    for _ in open {
-        walk.end();
+    while let Some(id) = open.pop() {
+        walk.end(&lookup(id));
     }
     walk.finish()
 }
@@ -414,7 +454,9 @@ impl<'s, 'a> Validation<'s, 'a> {
     pub fn event(&mut self, event: Event<'_, 'a>) {
         match event {
             Event::Start(start) => self.walk.start(&start),
-            Event::End(_) => self.walk.end(),
+            Event::End(end) => self
+                .walk
+                .end(&|prefix: &str| end.lookup_namespace(prefix).map(str::to_owned)),
             Event::Text(text) => self.walk.text(text.value),
             Event::Comment(_) | Event::ProcessingInstruction(_) => self.walk.split_text(),
         }
@@ -425,8 +467,9 @@ impl<'s, 'a> Validation<'s, 'a> {
     /// # Errors
     ///
     /// [`DocumentError::Unsupported`] when the document needs a feature outside the
-    /// implemented subset (`xsi:type` naming a built-in type the schemas do not use):
-    /// the first such element in document order.
+    /// implemented subset (an `xs:ENTITY` value in a document with a document type declaration, whose
+    /// unparsed entities this crate does not read, or a value constraint of a
+    /// declaration taken as a value of a type valid only in a context): the first such element in document order.
     pub fn finish(self) -> Result<Report, DocumentError> {
         self.walk.finish()
     }
@@ -455,6 +498,8 @@ impl<'s, 'd> Walk<'s, 'd> {
                 text,
                 errors: Vec::new(),
                 ids: HashSet::new(),
+                idrefs: Vec::new(),
+                dtd: false,
                 namespaces: Namespaces::default(),
             },
             frames: Vec::new(),
@@ -490,15 +535,19 @@ impl<'s, 'd> Walk<'s, 'd> {
         }
     }
 
-    fn end(&mut self) {
+    /// The end of an element; `lookup` gives the namespace bound to a prefix in its
+    /// scope.
+    fn end(&mut self, lookup: &dyn Fn(&str) -> Option<String>) {
         self.split_text();
         if self.unsupported.is_some() {
             return;
         }
         if self.skipped > 0 {
             self.skipped -= 1;
-        } else if let Some(frame) = self.frames.pop() {
-            self.validator.end(&frame);
+        } else if let Some(frame) = self.frames.pop()
+            && let Err(e) = self.validator.end(&frame, lookup)
+        {
+            self.unsupported = Some(e);
         }
     }
 
@@ -527,6 +576,7 @@ impl<'s, 'd> Walk<'s, 'd> {
         if let Some(e) = self.unsupported {
             return Err(e);
         }
+        self.validator.resolve_idrefs();
         Ok(Report {
             errors: positions(self.validator.text, self.validator.errors),
         })
@@ -536,6 +586,26 @@ impl<'s, 'd> Walk<'s, 'd> {
 impl<'s, 'd> Validator<'s, 'd> {
     fn report(&mut self, offset: usize, element: String, kind: ErrorKind, message: String) {
         self.report_attribute(offset, element, kind, None, message);
+    }
+
+    /// Reports every `xs:IDREF` value that is not the value of an `xs:ID` of the
+    /// document (Part 1, 3.3.4, Validation Root Valid (ID/IDREF Table): no ID/IDREF
+    /// binding may be empty).
+    fn resolve_idrefs(&mut self) {
+        for idref in std::mem::take(&mut self.idrefs) {
+            if !self.ids.contains(idref.value.as_str()) {
+                self.report_attribute(
+                    idref.offset,
+                    idref.element,
+                    ErrorKind::UnresolvedIdref,
+                    idref.attribute,
+                    format!(
+                        "the IDREF {} is not the value of an ID of the document",
+                        quote(&idref.value)
+                    ),
+                );
+            }
+        }
     }
 
     fn report_attribute(
@@ -633,7 +703,7 @@ impl<'s, 'd> Validator<'s, 'd> {
         }
         let mut type_id = declared_type;
         if let Some(xsi_type) = element.xsi("type")
-            && let Some(local_type) = self.xsi_type(element, xsi_type, declared_type)?
+            && let Some(local_type) = self.xsi_type(element, xsi_type, declared_type)
         {
             type_id = local_type;
         }
@@ -650,7 +720,7 @@ impl<'s, 'd> Validator<'s, 'd> {
             );
             return Ok(None);
         }
-        self.attributes(element, type_id);
+        self.attributes(element, type_id)?;
         let constraint = declaration.and_then(|id| schema.element_constraint(id));
         let content = match &schema.types[type_id] {
             TypeDef::Simple(_) => FrameContent::Simple {
@@ -696,7 +766,7 @@ impl<'s, 'd> Validator<'s, 'd> {
         element: &impl Start<'d>,
         value: &str,
         declared: TypeId,
-    ) -> Result<Option<TypeId>, DocumentError> {
+    ) -> Option<TypeId> {
         let schema = self.schema;
         let offset = element.offset();
         let collapsed = datatypes::normalize(value, WhiteSpace::Collapse);
@@ -708,7 +778,7 @@ impl<'s, 'd> Validator<'s, 'd> {
                 Some(clark(Some(XSI), "type")),
                 format!("xsi:type {} is not a QName", quote(value)),
             );
-            return Ok(None);
+            return None;
         };
         let namespace = if let Some(p) = prefix {
             let Some(ns) = element.lookup_namespace(Some(p)) else {
@@ -719,19 +789,13 @@ impl<'s, 'd> Validator<'s, 'd> {
                     Some(clark(Some(XSI), "type")),
                     format!("xsi:type {}: prefix {p:?} is not declared", quote(value)),
                 );
-                return Ok(None);
+                return None;
             };
             Some(ns)
         } else {
             namespace_name(element.lookup_namespace(None))
         };
         let Some(type_id) = schema.global_type(namespace, local) else {
-            if namespace == Some(XS) && UNIMPLEMENTED_BUILTINS.contains(&local) {
-                let message = format!(
-                    "xsi:type names the built-in type xs:{local}, which this crate does not implement"
-                );
-                return Err(self.unsupported(offset, message));
-            }
             self.report_attribute(
                 offset,
                 element_name(element),
@@ -742,7 +806,7 @@ impl<'s, 'd> Validator<'s, 'd> {
                     quote(value)
                 ),
             );
-            return Ok(None);
+            return None;
         };
         if !schema.is_derived_from(type_id, declared) {
             let (name, declared_name) = (self.type_name(type_id), self.type_name(declared));
@@ -753,33 +817,41 @@ impl<'s, 'd> Validator<'s, 'd> {
                 Some(clark(Some(XSI), "type")),
                 format!("xsi:type {name} is not derived from the declared type {declared_name}"),
             );
-            return Ok(None);
+            return None;
         }
-        Ok(Some(type_id))
+        Some(type_id)
     }
 
     /// Checks a value, before whitespace processing, against a simple type; when
-    /// valid, registers `xs:ID` values. The processed value is only built when an
-    /// `enumeration` facet or the `xs:ID` registry needs it; a value that is a slice
-    /// of the text is registered as a slice of it.
-    fn check_value(&mut self, type_id: TypeId, raw: Value<'_, 'd>) -> Option<ValueProblem> {
+    /// valid, registers `xs:ID` values, and returns the `xs:IDREF` values it holds,
+    /// which the caller records. `lookup` gives the namespace bound to a prefix where
+    /// the value is (for an `xs:QName`). The processed value is only built when an
+    /// `enumeration` facet, the `xs:ID` registry or a type valid in a context needs
+    /// it; a value that is a slice of the text is registered as a slice of it.
+    fn check_value(
+        &mut self,
+        type_id: TypeId,
+        raw: Value<'_, 'd>,
+        lookup: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<Vec<String>, ValueProblem> {
         let schema = self.schema;
         let TypeDef::Simple(simple) = &schema.types[type_id] else {
-            return Some(ValueProblem::Invalid(format!(
+            return Err(ValueProblem::Invalid(format!(
                 "{} is not a simple type",
                 self.type_name(type_id)
             )));
         };
-        if !simple.builtin.is_valid_raw(raw.as_str()) {
-            return Some(ValueProblem::Invalid(format!(
+        let builtin = simple.builtin;
+        if !builtin.is_valid_raw(raw.as_str()) {
+            return Err(ValueProblem::Invalid(format!(
                 "{} is not a valid value of {}",
                 quote(raw.as_str()),
                 self.type_name(type_id)
             )));
         }
-        let is_id = simple.builtin == Builtin::Id;
-        if !is_id && !schema.has_facets(type_id) {
-            return None;
+        let is_id = builtin == Builtin::Id;
+        if !is_id && !builtin.needs_context() && !schema.has_facets(type_id) {
+            return Ok(Vec::new());
         }
         let white_space = simple.builtin.white_space();
         let value: Cow<'d, str> = match raw {
@@ -787,19 +859,58 @@ impl<'s, 'd> Validator<'s, 'd> {
             Value::Other(raw) => Cow::Owned(datatypes::normalize(raw, white_space).into_owned()),
         };
         if let Some(problem) = facet_problem(&schema.types, type_id, &value) {
-            return Some(ValueProblem::Invalid(format!(
+            return Err(ValueProblem::Invalid(format!(
                 "{} is {}",
                 quote(raw.as_str()),
                 problem.describe(&self.type_name(type_id))
             )));
         }
-        if is_id && !self.ids.insert(value) {
-            return Some(ValueProblem::DuplicateId(format!(
-                "the ID {} is already used in the document",
-                quote(raw.as_str())
-            )));
+        let invalid = |why: &str| {
+            Err(ValueProblem::Invalid(format!(
+                "{} is not a valid value of {}: {why}",
+                quote(raw.as_str()),
+                self.type_name(type_id)
+            )))
+        };
+        match builtin {
+            Builtin::Id => {
+                if !self.ids.insert(value) {
+                    return Err(ValueProblem::DuplicateId(format!(
+                        "the ID {} is already used in the document",
+                        quote(raw.as_str())
+                    )));
+                }
+            }
+            Builtin::QName => {
+                // Valid lexically: an NCName, or a prefix and an NCName.
+                if let Some((Some(prefix), _)) = datatypes::split_qname(&value)
+                    && !declared_prefix(prefix, lookup)
+                {
+                    return invalid(&format!("the prefix {prefix:?} is not declared"));
+                }
+            }
+            // Part 2, 3.2.19: the value space is the notations declared in the schema,
+            // and the supported subset has no xs:notation.
+            Builtin::Notation => return invalid("the schema declares no notation"),
+            // Part 2, 3.3.11: the name of an unparsed entity of the document type
+            // declaration, which a document without one cannot have.
+            Builtin::Entity | Builtin::Entities if self.dtd => {
+                return Err(ValueProblem::Unsupported(format!(
+                    "{} names an unparsed entity of the document type declaration: not implemented",
+                    quote(raw.as_str())
+                )));
+            }
+            Builtin::Entity | Builtin::Entities => {
+                return invalid(
+                    "the document has no document type declaration, so no unparsed entity",
+                );
+            }
+            Builtin::IdRef | Builtin::IdRefs => {
+                return Ok(value.split(' ').map(str::to_owned).collect());
+            }
+            _ => {}
         }
-        None
+        Ok(Vec::new())
     }
 
     /// Whether two valid values of a simple type, before whitespace processing,
@@ -822,21 +933,51 @@ impl<'s, 'd> Validator<'s, 'd> {
     /// Why a value constraint of an element's declaration is not a valid value of
     /// the simple type that the element's actual type gives its content, if it is
     /// not (it is valid for the declared type: the loader checks it).
-    fn constraint_problem(&self, type_id: TypeId, value: &str) -> Option<String> {
+    ///
+    /// # Errors
+    ///
+    /// A type whose values are valid only in a context ([`Builtin::needs_context`]):
+    /// the value of a declaration is resolved in the schema, not where the element is.
+    fn constraint_problem(
+        &self,
+        offset: usize,
+        type_id: TypeId,
+        value: &str,
+    ) -> Result<Option<String>, DocumentError> {
         let TypeDef::Simple(simple) = &self.schema.types[type_id] else {
-            return Some(format!("{} is not a simple type", self.type_name(type_id)));
+            return Ok(Some(format!(
+                "{} is not a simple type",
+                self.type_name(type_id)
+            )));
         };
+        if simple.builtin.needs_context() {
+            return Err(self.unsupported(
+                offset,
+                format!(
+                    "the value constraint of the declaration taken as a value of {}, whose values are valid only in a context",
+                    self.type_name(type_id)
+                ),
+            ));
+        }
         if !simple.builtin.is_valid_raw(value) {
-            return Some(format!("not a valid value of {}", self.type_name(type_id)));
+            return Ok(Some(format!(
+                "not a valid value of {}",
+                self.type_name(type_id)
+            )));
         }
         let processed = datatypes::normalize(value, simple.builtin.white_space());
-        facet_problem(&self.schema.types, type_id, &processed)
-            .map(|problem| problem.describe(&self.type_name(type_id)))
+        Ok(facet_problem(&self.schema.types, type_id, &processed)
+            .map(|problem| problem.describe(&self.type_name(type_id))))
     }
 
-    fn attributes(&mut self, element: &impl Start<'d>, type_id: TypeId) {
+    fn attributes(
+        &mut self,
+        element: &impl Start<'d>,
+        type_id: TypeId,
+    ) -> Result<(), DocumentError> {
         let schema = self.schema;
         let offset = element.offset();
+        let lookup = |prefix: &str| element.lookup_namespace(Some(prefix)).map(str::to_owned);
         let (uses, wildcard) = match &schema.types[type_id] {
             TypeDef::Simple(_) => (&[][..], None),
             TypeDef::Complex(complex) => {
@@ -857,44 +998,13 @@ impl<'s, 'd> Validator<'s, 'd> {
             // Spelt out only for an error.
             let name = || Some(clark(namespace, local));
             if let Some(attribute_use) = uses.iter().find(|u| u.name.matches(namespace, local)) {
-                match self.check_value(attribute_use.type_id, attribute.value) {
-                    None => {
-                        let value = attribute.value.as_str();
-                        if let Some(fixed) = attribute_use.fixed.map(|f| schema.fixed_value(f))
-                            && !self.same_value(attribute_use.type_id, value, fixed)
-                        {
-                            self.report_attribute(
-                                offset,
-                                element_name(element),
-                                ErrorKind::InvalidAttributeValue,
-                                name(),
-                                format!(
-                                    "{} is not the fixed value {} of the attribute",
-                                    quote(value),
-                                    quote(fixed)
-                                ),
-                            );
-                        }
-                    }
-                    Some(ValueProblem::Invalid(problem)) => {
-                        self.report_attribute(
-                            offset,
-                            element_name(element),
-                            ErrorKind::InvalidAttributeValue,
-                            name(),
-                            problem,
-                        );
-                    }
-                    Some(ValueProblem::DuplicateId(problem)) => {
-                        self.report_attribute(
-                            offset,
-                            element_name(element),
-                            ErrorKind::DuplicateId,
-                            name(),
-                            problem,
-                        );
-                    }
-                }
+                self.attribute_value(
+                    element,
+                    attribute_use,
+                    (namespace, local),
+                    attribute.value,
+                    &lookup,
+                )?;
                 continue;
             }
             match wildcard {
@@ -938,6 +1048,73 @@ impl<'s, 'd> Validator<'s, 'd> {
                 );
             }
         }
+        Ok(())
+    }
+
+    /// Checks the value of an attribute the type declares (`attribute_use`); `lookup`
+    /// gives the namespace bound to a prefix in the scope of the element.
+    fn attribute_value(
+        &mut self,
+        element: &impl Start<'d>,
+        attribute_use: &AttributeUse,
+        (namespace, local): (Option<&str>, &str),
+        value: Value<'_, 'd>,
+        lookup: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<(), DocumentError> {
+        let schema = self.schema;
+        let offset = element.offset();
+        // Spelt out only for an error.
+        let name = || Some(clark(namespace, local));
+        match self.check_value(attribute_use.type_id, value, lookup) {
+            Ok(idrefs) => {
+                for value in idrefs {
+                    self.idrefs.push(IdRef {
+                        offset,
+                        element: element_name(element),
+                        attribute: name(),
+                        value,
+                    });
+                }
+                let value = value.as_str();
+                if let Some(fixed) = attribute_use.fixed.map(|f| schema.fixed_value(f))
+                    && !self.same_value(attribute_use.type_id, value, fixed)
+                {
+                    self.report_attribute(
+                        offset,
+                        element_name(element),
+                        ErrorKind::InvalidAttributeValue,
+                        name(),
+                        format!(
+                            "{} is not the fixed value {} of the attribute",
+                            quote(value),
+                            quote(fixed)
+                        ),
+                    );
+                }
+            }
+            Err(ValueProblem::Invalid(problem)) => {
+                self.report_attribute(
+                    offset,
+                    element_name(element),
+                    ErrorKind::InvalidAttributeValue,
+                    name(),
+                    problem,
+                );
+            }
+            Err(ValueProblem::DuplicateId(problem)) => {
+                self.report_attribute(
+                    offset,
+                    element_name(element),
+                    ErrorKind::DuplicateId,
+                    name(),
+                    problem,
+                );
+            }
+            Err(ValueProblem::Unsupported(problem)) => {
+                return Err(self.unsupported(offset, problem));
+            }
+        }
+        Ok(())
     }
 
     /// A text node of the element of `frame`.
@@ -1066,7 +1243,13 @@ impl<'s, 'd> Validator<'s, 'd> {
         }
     }
 
-    fn end(&mut self, frame: &Frame<'s, 'd>) {
+    /// The end of the element of `frame`; `lookup` gives the namespace bound to a
+    /// prefix in its scope.
+    fn end(
+        &mut self,
+        frame: &Frame<'s, 'd>,
+        lookup: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<(), DocumentError> {
         let element = |v: &Self| v.frame_name(frame.namespace, frame.local);
         match &frame.content {
             FrameContent::Simple {
@@ -1082,7 +1265,9 @@ impl<'s, 'd> Validator<'s, 'd> {
                     // cvc-elt.5.1: an element without any character or element
                     // children takes the default or fixed value, which must be
                     // valid for the actual type (an xsi:type may change it).
-                    if let Some(problem) = self.constraint_problem(type_id, &constraint.value) {
+                    if let Some(problem) =
+                        self.constraint_problem(frame.offset, type_id, &constraint.value)?
+                    {
                         let element = element(self);
                         self.report(
                             frame.offset,
@@ -1095,14 +1280,23 @@ impl<'s, 'd> Validator<'s, 'd> {
                             ),
                         );
                     }
-                    return;
+                    return Ok(());
                 }
                 let value = match text {
                     Cow::Borrowed(text) => Value::Document(text),
                     Cow::Owned(text) => Value::Other(text.as_str()),
                 };
-                match self.check_value(type_id, value) {
-                    None => {
+                match self.check_value(type_id, value, lookup) {
+                    Ok(idrefs) => {
+                        for value in idrefs {
+                            let element = element(self);
+                            self.idrefs.push(IdRef {
+                                offset: frame.offset,
+                                element,
+                                attribute: None,
+                                value,
+                            });
+                        }
                         // cvc-elt.5.2.2.2.2: a fixed value is compared in the value
                         // space.
                         if let Some(constraint) = constraint
@@ -1122,13 +1316,16 @@ impl<'s, 'd> Validator<'s, 'd> {
                             );
                         }
                     }
-                    Some(ValueProblem::Invalid(problem)) => {
+                    Err(ValueProblem::Invalid(problem)) => {
                         let element = element(self);
                         self.report(frame.offset, element, ErrorKind::InvalidValue, problem);
                     }
-                    Some(ValueProblem::DuplicateId(problem)) => {
+                    Err(ValueProblem::DuplicateId(problem)) => {
                         let element = element(self);
                         self.report(frame.offset, element, ErrorKind::DuplicateId, problem);
+                    }
+                    Err(ValueProblem::Unsupported(problem)) => {
+                        return Err(self.unsupported(frame.offset, problem));
                     }
                 }
             }
@@ -1149,6 +1346,7 @@ impl<'s, 'd> Validator<'s, 'd> {
             }
             _ => {}
         }
+        Ok(())
     }
 }
 

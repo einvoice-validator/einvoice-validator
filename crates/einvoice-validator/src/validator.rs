@@ -1388,26 +1388,25 @@ mod tests {
             check(&malformed, 2, None),
             Err(Error::NotXml { .. })
         ));
-        // A construct the schema stage does not support comes after the depth limit,
-        // and after any well-formedness error.
-        let unsupported = invoice.replace(
+        // A schema error comes after the depth limit, and after any well-formedness
+        // error: an xsi:type naming a built-in type not derived from the declared one.
+        let retyped = invoice.replace(
             "<Invoice ",
             "<Invoice xsi:type='xs:IDREF' xmlns:xs='http://www.w3.org/2001/XMLSchema' ",
         );
+        let errors = check(&format!("{retyped}</Invoice>"), 3, Some(&schema)).unwrap();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.kind == einvoice_xsd::ErrorKind::InvalidXsiType),
+            "{errors:?}"
+        );
         assert!(matches!(
-            check(&format!("{unsupported}</Invoice>"), 3, Some(&schema)),
-            Err(Error::Unsupported { .. })
-        ));
-        assert!(matches!(
-            check(
-                &format!("{unsupported}<b><c/></b></Invoice>"),
-                2,
-                Some(&schema)
-            ),
+            check(&format!("{retyped}<b><c/></b></Invoice>"), 2, Some(&schema)),
             Err(Error::Limit { .. })
         ));
         assert!(matches!(
-            check(&format!("{unsupported}</Invoice><"), 3, Some(&schema)),
+            check(&format!("{retyped}</Invoice><"), 3, Some(&schema)),
             Err(Error::NotXml { .. })
         ));
         // A document type declaration is refused, also with a schema.
