@@ -55,9 +55,20 @@ proptest! {
             (name(), proptest::option::of(version()), path(), sha256()), 1..4),
         comments in proptest::bool::ANY,
     ) {
-        let mut seen = std::collections::BTreeSet::new();
-        let stylesheets: Vec<Stylesheet> =
-            stylesheets.into_iter().filter(|s| seen.insert(s.0.clone())).collect();
+        // Names and paths are unique in a bundle: keep the first stylesheet of each.
+        let mut names = std::collections::BTreeSet::new();
+        let mut paths = std::collections::BTreeSet::new();
+        let stylesheets: Vec<Stylesheet> = stylesheets
+            .into_iter()
+            .filter(|s| {
+                let fresh = !names.contains(&s.0) && !paths.contains(&s.2);
+                if fresh {
+                    names.insert(s.0.clone());
+                    paths.insert(s.2.clone());
+                }
+                fresh
+            })
+            .collect();
         let comment = if comments { "   # a comment" } else { "" };
         let mut manifest = String::new();
         let _ = writeln!(manifest, "format = 1{comment}");

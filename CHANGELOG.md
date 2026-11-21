@@ -12,6 +12,9 @@ against.
 
 ### Fixed
 
+- The property test `manifests_round_trip` could generate two stylesheets with the same
+  path, which a bundle refuses since 0.4.0, and failed at random; its stylesheets now have
+  distinct names and paths.
 - On WebAssembly, every document within the maximum depth gets a report (#39); a level of
   recursion through the templates no longer takes call stack (it took 0.6 to 2.1 KiB after #38). A document on
   whose every nesting level a rule fires and reports stopped, from 244 levels on, with the
